@@ -5,8 +5,8 @@
 | 任务 | 状态 | 提交区间 | 审查 |
 |---|---|---|---|
 | 1 工程骨架 | done | 49aa9fc..1a7d5d2 | PASS（次要 5 条，不阻塞） |
-| 2 config.rs | done | 1a7d5d2..9088bea | 待审查 |
-| 3 build.rs | pending | — | — |
+| 2 config.rs | done | 1a7d5d2..9088bea | PASS（次要 3 条，不阻塞） |
+| 3 build.rs | done | 9088bea..4af1114 | 待审查 |
 | 4 process.rs | pending | — | — |
 | 5 命令接线 | pending | — | — |
 | 6 style.css+布局 | pending | — | — |
