@@ -30,7 +30,7 @@ pub struct ConfigEntry {
     pub values: BTreeMap<String, String>,
 }
 
-type ConfigsMap = BTreeMap<String, ConfigEntry>;
+pub type ConfigsMap = BTreeMap<String, ConfigEntry>;
 
 // ---------- 加载 / 保存 ----------
 
