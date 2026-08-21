@@ -1,8 +1,6 @@
 .worktrees/
 dist/
 node_modules/
-src-tauri/target/
-src-tauri/gen/
 .cargo-home/
 .npm-cache/
 .superpowers/
