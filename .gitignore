@@ -1,8 +1,7 @@
 .worktrees/
 dist/
+dist-main/
+dist-release/
 node_modules/
-.cargo-home/
-.npm-cache/
 .superpowers/
-.npm/
 package-lock.json
