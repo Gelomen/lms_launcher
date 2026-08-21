@@ -1,0 +1,20 @@
+{
+  "productName": "lms_launch",
+  "version": "0.1.0",
+  "identifier": "com.lms.launch",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "lms_launch",
+        "width": 980,
+        "height": 720,
+        "minWidth": 760,
+        "minHeight": 540
+      }
+    ]
+  }
+}

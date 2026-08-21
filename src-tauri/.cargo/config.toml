@@ -1,0 +1,7 @@
+# Local mirror config. Default CARGO_HOME=%USERPROFILE%\.cargo was not writable from this session;
+# CARGO_HOME should point to a writable cargo home for builds.
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "https://rsproxy.cn/crates"
