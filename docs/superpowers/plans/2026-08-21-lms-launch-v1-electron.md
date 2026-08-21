@@ -58,7 +58,7 @@ node_modules/
 package-lock.json
 ~~~
 
-- [ ] **步骤 2：package.json 重写**
+- [ ] **步骤 2：package.json 重写**（部分已提前完成：tauri 依赖与 "type" 字段已清除，vue 保留。剩余工作 = 用上方完整版本覆盖 package.json——加 electron/vitest/yaml 依赖 + dev/build/test scripts + "main": "dist-main/main.js"）
 
 ~~~ json
 {
@@ -93,7 +93,7 @@ package-lock.json
 
 （不设 "type": "module"——主进程 CJS；yaml 放 dependencies 是运行时依赖。）
 
-- [ ] **步骤 3：vite.config.js 去 src-tauri 排除**
+- [x] **步骤 3：vite.config.js 去 src-tauri 排除**（已提前完成——当前文件已是目标形态，执行者跳过）
 
 ~~~ js
 import { defineConfig } from 'vite';
@@ -1396,5 +1396,3 @@ git commit -m "feat: v1 完整——Electron + Vue3 单 exe 启动器（§4.1–
 - **模块系统一致性**：主进程 CJS（tsconfig.main.json module: CommonJS、package.json 无 type:module）+ 渲染端 ESM（Vite）——任务 1 已锁定。
 
 ## 执行交接
-
-计划已完成并保存到 `docs/superpowers/plans/2026-08-21-lms-launch-v1-electron.md`。两种执行方式：
