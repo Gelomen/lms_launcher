@@ -36,7 +36,7 @@
 - 修改：package.json（去 tauri 依赖、加 electron/vitest/yaml + 新 scripts）、.gitignore（去 src-tauri 条目）、vite.config.js（去 src-tauri watch 排除）
 - 创建：src-main/main.ts、src-main/preload.ts、src-main/test-utils.ts、tsconfig.main.json、vitest.config.ts、electron-builder.yml
 
-- [ ] **步骤 1：救回图标，删 Rust 残留**
+- [x] **步骤 1：救回图标，删 Rust 残留**（已在计划定稿时提前完成：icon 已存 `src-main/icon.ico`、src-tauri/ 已从工作区与 git 移除——执行者跳过本步，直接进入步骤 2）
 
 运行：
 
@@ -1398,9 +1398,3 @@ git commit -m "feat: v1 完整——Electron + Vue3 单 exe 启动器（§4.1–
 ## 执行交接
 
 计划已完成并保存到 `docs/superpowers/plans/2026-08-21-lms-launch-v1-electron.md`。两种执行方式：
-
-**1. 子代理驱动（推荐）**——每个任务调度一个新的子代理，任务间进行审查，快速迭代。必需子技能 `superpowers:subagent-driven-development`；每个任务一个新子代理 + 两阶段审查（任务评审 + 集成验收）。
-
-**2. 内联执行**——在当前会话中使用 executing-plans 执行任务，批量执行并设有检查点。必需子技能 `superpowers:executing-plans`；每完成一个任务停下来给你看进度，你确认后再继续。
-
-选哪种方式？
