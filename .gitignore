@@ -3,5 +3,6 @@ dist/
 dist-main/
 dist-release/
 node_modules/
+.npm-cache/
 .superpowers/
 package-lock.json
