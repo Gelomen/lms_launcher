@@ -1,4 +1,4 @@
-appId: com.lms.launch
+appId: com.lms.launcher
 productName: lms_launcher
 directories:
   output: dist-release
