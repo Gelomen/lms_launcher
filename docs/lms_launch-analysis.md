@@ -1,7 +1,7 @@
 # lms_launch 分析文档
 
 > 来源：基于 docs/sketch.md 的需求，经头脑风暴流程（superpowers:brainstorming）梳理而成。
-> 结论先行：**Tauri 2 + Vue 3**，单 exe 轻量启动器；v1 只交付 llama-server 模块，扩展模块（deepseek harness / codex / GPU 状态面板）见「扩展设计」章节。
+> 结论先行：**Electron 28 + Vue 3**（2026-08-22 由 Tauri 2 改选 Electron，原因与取舍见 §2.1 修订说明），单 exe（portable）轻量启动器；v1 只交付 llama-server 模块，扩展模块（deepseek harness / codex / GPU 状态面板）见「扩展设计」章节。
 
 ## 1. 现状与目标
 
@@ -41,7 +41,9 @@
 | 杀软误报风险 | 低 | 较高（Electron 常见） | 低 |
 | 适合度 | **最佳** | 过重，与「轻量」冲突 | 可行但没必要 |
 
-**结论：Tauri 2。** 同时满足「轻量」「单 exe」「好写 UI」三个诉求。
+**原结论：Tauri 2。** 同时满足「轻量」「单 exe」「好写 UI」三个诉求。
+
+> **修订（2026-08-22）：改选 Electron + Node/TypeScript。** 原结论保留作评估历史；改选原因：(1) Rust 工具链在沙箱/CI 环境反复受阻（TLS、严格借用检查、4–5h 编译摩擦），Electron 侧 Node TLS 与即时编译消除了最大阻塞点；(2) Electron + electron-builder portable 仍满足「单 exe」「好写 UI」诉求，代价是体积更大与杀软误报风险略升——对内部工具可接受。前端（Vue 3 + 原生 CSS）与 §4.1–4.6 的 UI 设计、§6 错误语义完全不变。
 
 ### 2.2 前端框架：Vue 3
 
@@ -57,12 +59,12 @@ UI 好不好看 90% 取决于 CSS（布局/配色/圆角/字体），与框架�
 
 | 层 | 选型 | 说明 |
 |---|---|---|
-| 外壳 | Tauri 2 | 窗口、托盘、子进程管理 |
+| 外壳 | Electron 28 | 窗口、托盘、子进程管理 |
 | 前端 | Vue 3 + 原生 CSS | 无组件库 |
-| 后端语言 | Rust | serde_yaml 做 YAML 读写 |
-| 进程管理 | Rust std::process / tauri-plugin-fs 等 | spawn、PID 记录、轮询探活 |
+| 后端语言 | TypeScript（主/预加载进程，strict） | yaml@2 做 YAML 读写 |
+| 进程管理 | node:child_process | spawn（事件驱动管道）、SIGTERM→taskkill 强杀 |
 | GPU 查询（扩展） | nvidia-smi JSON 输出 | 见扩展设计 8.4 |
-| 构建 | cargo + npm（Vite） | 本机装 Rust 工具链 + Node 即可 |
+| 构建 | npm（Vite + tsc + electron-builder） | 本机装 Node 即可（免 Rust 工具链） |
 
 ## 3. 总体架构
 
@@ -223,7 +225,7 @@ config_1:                       # 用户输入的唯一 id（小写字母，无�
 ## 7. v1 范围（实现计划边界）
 
 **做**：
-- Tauri 2 + Vue 3 工程骨架
+- Electron + Vue 3 工程骨架（单 exe：electron-builder portable）
 - 模块 1（安装目录 + 校验）
 - 模块 2（模板弹窗、llama_params.yaml / llama_launch_configs.yaml 读写、校验、红框）
 - 模块 3（启动/停止按钮 + 下拉 + 状态轮询）
