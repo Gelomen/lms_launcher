@@ -1,0 +1,169 @@
+# Review package: c4e3d6f..495e696
+
+## Commits
+495e696 feat: Electron 骨架 + Vitest 基础设施（弃用 Rust/Tauri）
+
+## Files changed
+ electron-builder.yml   | 13 +++++++++++++
+ package.json           | 21 ++++++++++++++++++---
+ src-main/main.ts       | 28 ++++++++++++++++++++++++++++
+ src-main/preload.ts    |  2 ++
+ src-main/test-utils.ts | 13 +++++++++++++
+ tsconfig.main.json     | 15 +++++++++++++++
+ vitest.config.ts       | 10 ++++++++++
+ 7 files changed, 99 insertions(+), 3 deletions(-)
+
+## Diff
+diff --git a/electron-builder.yml b/electron-builder.yml
+new file mode 100644
+index 0000000..c14c1f1
+--- /dev/null
++++ b/electron-builder.yml
+@@ -0,0 +1,13 @@
++appId: com.lms.launch
++productName: lms_launch
++directories:
++  output: dist-release
++files:
++  - dist/**
++  - dist-main/**
++  - package.json
++win:
++  target: portable
++  icon: src-main/icon.ico
++portable:
++  artifactName: "lms-launch-${version}-portable.exe"
+diff --git a/package.json b/package.json
+index b14cbde..3e7eaa2 100644
+--- a/package.json
++++ b/package.json
+@@ -1,13 +1,28 @@
+ {
+   "name": "lms-launch",
+   "private": true,
+-  "scripts": { "dev": "vite", "build": "vite build" },
++  "main": "dist-main/main.js",
++  "scripts": {
++    "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\"",
++    "dev:vite": "vite",
++    "dev:electron": "wait-port 1420 -t 120000 && tsc -p tsconfig.main.json && cross-env VITE_DEV_SERVER_URL=http://localhost:1420 electron .",
++    "build": "vite build && tsc -p tsconfig.main.json",
++    "test": "vitest run",
++    "test:watch": "vitest"
++  },
+   "dependencies": {
+-    "vue": "^3.5.13"
++    "vue": "^3.5.13",
++    "yaml": "^2.7.0"
+   },
+   "devDependencies": {
+     "@vitejs/plugin-vue": "^5.2.3",
++    "concurrently": "^9.1.0",
++    "cross-env": "^10.0.0",
++    "electron": "^28.3.0",
++    "electron-builder": "^25.0.0",
+     "typescript": "^5.8.3",
+-    "vite": "^6.3.5"
++    "vite": "^6.3.5",
++    "vitest": "^2.1.0",
++    "wait-port": "^1.1.0"
+   }
+ }
+diff --git a/src-main/main.ts b/src-main/main.ts
+new file mode 100644
+index 0000000..824bc6f
+--- /dev/null
++++ b/src-main/main.ts
+@@ -0,0 +1,28 @@
++import { app, BrowserWindow } from 'electron';
++
++const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
++
++function createWindow(): void {
++  const win = new BrowserWindow({
++    title: 'lms_launch',
++    width: 980, height: 720, minWidth: 760, minHeight: 540,
++    webPreferences: {
++      preload: require.resolve('../dist-main/preload.js'),
++      contextIsolation: true,
++      nodeIntegration: false,
++    },
++  });
++  if (process.env.VITE_DEV_SERVER_URL) win.loadURL(DEV_URL);
++  else win.loadFile('dist/index.html');
++}
++
++app.whenReady().then(() => {
++  createWindow();
++  app.on('activate', () => {
++    if (BrowserWindow.getAllWindows().length === 0) createWindow();
++  });
++});
++
++app.on('window-all-closed', () => {
++  if (process.platform !== 'darwin') app.quit();
++});
+diff --git a/src-main/preload.ts b/src-main/preload.ts
+new file mode 100644
+index 0000000..11dc6a5
+--- /dev/null
++++ b/src-main/preload.ts
+@@ -0,0 +1,2 @@
++// 任务 5 补全 IPC 桥
++export {};
+diff --git a/src-main/test-utils.ts b/src-main/test-utils.ts
+new file mode 100644
+index 0000000..49708a6
+--- /dev/null
++++ b/src-main/test-utils.ts
+@@ -0,0 +1,13 @@
++import { rmSync, mkdirSync } from 'node:fs';
++import { join } from 'node:path';
++import { tmpdir } from 'node:os';
++
++export function tmpPath(name: string): string {
++  const dir = join(tmpdir(), 'lms_launch_test');
++  mkdirSync(dir, { recursive: true });
++  return join(dir, name);
++}
++
++export function rm(p: string): void {
++  rmSync(p, { force: true, recursive: true });
++}
+diff --git a/tsconfig.main.json b/tsconfig.main.json
+new file mode 100644
+index 0000000..78636d7
+--- /dev/null
++++ b/tsconfig.main.json
+@@ -0,0 +1,15 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "CommonJS",
++    "moduleResolution": "node",
++    "strict": true,
++    "esModuleInterop": true,
++    "skipLibCheck": true,
++    "outDir": "dist-main",
++    "rootDir": "src-main",
++    "types": ["node"],
++    "forceConsistentCasingInFileNames": true
++  },
++  "include": ["src-main/**/*.ts"]
++}
+diff --git a/vitest.config.ts b/vitest.config.ts
+new file mode 100644
+index 0000000..55b6549
+--- /dev/null
++++ b/vitest.config.ts
+@@ -0,0 +1,10 @@
++import { defineConfig } from 'vitest/config';
++
++export default defineConfig({
++  test: {
++    environment: 'node',
++    include: ['src-main/**/*.test.ts'],
++    // Windows 下 powershell 进程测试需要 30–60s（见任务 4）
++    testTimeout: 60000,
++  },
++});

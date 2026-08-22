@@ -1,0 +1,103 @@
+9097c26 feat: v1 release——electron-builder portable exe + icon 打包态 + dist-main 清理
+
+ electron-builder.yml |   8 ++++++++
+ package.json         |   1 +
+ src-main/icon.ico    | Bin 1150 -> 270398 bytes
+ src-main/main.ts     |   7 ++++++-
+ tsconfig.main.json   |   2 +-
+ 5 files changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/electron-builder.yml b/electron-builder.yml
+index c14c1f1..0c7441b 100644
+--- a/electron-builder.yml
++++ b/electron-builder.yml
+@@ -1,13 +1,21 @@
+ appId: com.lms.launch
+ productName: lms_launch
+ directories:
+   output: dist-release
+ files:
+   - dist/**
+   - dist-main/**
+   - package.json
++  # 明确排除 test 产物（防 dist-main 残留被打包）
++  - "!dist-main/*.test.js"
++  - "!dist-main/test-utils.js"
++asar: true
++electronDist: node_modules/electron/dist
++extraResources:
++  - from: src-main/icon.ico
++    to: icon.ico
+ win:
+   target: portable
+   icon: src-main/icon.ico
+ portable:
+   artifactName: "lms-launch-${version}-portable.exe"
+diff --git a/package.json b/package.json
+index 3e7eaa2..748cf9d 100644
+--- a/package.json
++++ b/package.json
+@@ -1,12 +1,13 @@
+ {
+   "name": "lms-launch",
++  "version": "1.0.0",
+   "private": true,
+   "main": "dist-main/main.js",
+   "scripts": {
+     "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\"",
+     "dev:vite": "vite",
+     "dev:electron": "wait-port 1420 -t 120000 && tsc -p tsconfig.main.json && cross-env VITE_DEV_SERVER_URL=http://localhost:1420 electron .",
+     "build": "vite build && tsc -p tsconfig.main.json",
+     "test": "vitest run",
+     "test:watch": "vitest"
+   },
+diff --git a/src-main/main.ts b/src-main/main.ts
+index eeb5bcd..c9867d6 100644
+--- a/src-main/main.ts
++++ b/src-main/main.ts
+@@ -26,21 +26,26 @@ function mainWin(): BrowserWindow | null {
+ }
+ type StreamName = 'sys' | 'out' | 'err';
+ function emitLog(line: string, stream: StreamName): void {
+   const win = mainWin();
+   if (win) win.webContents.send("log-line", { line, stream });
+ }
+ 
+ // ---------- 托盘（§4.6） ----------
+ let tray: Tray | null = null;
+ function createTray(): void {
+-  const icon = nativeImage.createFromPath(join(__dirname, '..', 'src-main', 'icon.ico'));
++  // I-1 修复：打包态 icon 通过 electron-builder extraResources 拷到 asar 外 resources/；
++  // 开发态仍在 src-main/icon.ico（__dirname = dist-main → ../src-main）。
++  const iconPath = app.isPackaged
++    ? join(process.resourcesPath, 'icon.ico')
++    : join(__dirname, '..', 'src-main', 'icon.ico');
++  const icon = nativeImage.createFromPath(iconPath);
+   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+   const menu = Menu.buildFromTemplate([
+     { label: '启动 lms_launch', click: () => {
+       const win = mainWin();
+       if (win) { win.show(); win.focus(); }
+     } },
+     { label: '退出', click: () => {
+       const win = mainWin();
+       if (win) win.webContents.send('tray-exit-request', {});
+     } },
+diff --git a/tsconfig.main.json b/tsconfig.main.json
+index cb9882d..9214486 100644
+--- a/tsconfig.main.json
++++ b/tsconfig.main.json
+@@ -5,12 +5,12 @@
+     "moduleResolution": "node",
+     "strict": true,
+     "esModuleInterop": true,
+     "skipLibCheck": true,
+     "outDir": "dist-main",
+     "rootDir": "src-main",
+     "types": ["node"],
+     "forceConsistentCasingInFileNames": true
+   },
+   "include": ["src-main/**/*.ts"],
+-  "exclude": ["src-main/**/*.test.ts"]
++  "exclude": ["src-main/**/*.test.ts", "src-main/test-utils.ts"]
+ }

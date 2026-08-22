@@ -1,0 +1,285 @@
+c413152 fix: validateParamKey 允许下划线（defaultParams 重读不再抛 VALIDATION）+ 回归测试
+c29f1e2 feat: IPC 接线——11 个命令 + log-line/process-exit/tray-exit-request 事件 + preload 桥
+
+ src-main/config.test.ts |  15 ++++++-
+ src-main/config.ts      |   2 +-
+ src-main/main.ts        | 106 +++++++++++++++++++++++++++++++++++++++++++++---
+ src-main/preload.ts     |  22 +++++++++-
+ src/ipc.ts              |  30 ++++++++++++++
+ tsconfig.main.json      |   3 +-
+ 6 files changed, 168 insertions(+), 10 deletions(-)
+
+diff --git a/src-main/config.test.ts b/src-main/config.test.ts
+index 4c49391..c4a9303 100644
+--- a/src-main/config.test.ts
++++ b/src-main/config.test.ts
+@@ -73,11 +73,24 @@ describe('config.ts', () => {
+     expect(validateConfigId('a b')).toBe(false);
+     expect(validateConfigId('1abc')).toBe(false);
+   });
+ 
+   it('default_params_covers_run_bat_common', () => {
+     const pf = defaultParams();
+     const keys = ['m','mmproj','spec_type','ngl','fa','load_mode','np','c','b','ub','t','tb','ctk','ctv','jinja','chat_template_file','reasoning_format','reasoning_effort','spec_draft_n_max','temp','top_p','top_k','min_p','presence_penalty','repeat_penalty','port'];
+     for (const k of keys) expect(pf.params[k], k).toBeDefined();
+     expect(pf.required).toEqual(['m']);
+   });
+-});
++
++  it('params_reread_after_default_write_succeeds', () => {
++    const p = tmpPath('params_reread.yaml');
++    rm(p);
++    // First load writes defaultParams yaml (includes 16 underscore keys)
++    paramsLoad(p);
++    // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
++    const pf2 = paramsLoad(p);
++    expect(Object.keys(pf2.params)).toHaveLength(26);
++    expect(pf2.params['spec_type']).toBe('--spec-type');
++    expect(pf2.params['presence_penalty']).toBe('--presence_penalty');
++    rm(p);
++  });
++});
+\ No newline at end of file
+diff --git a/src-main/config.ts b/src-main/config.ts
+index 513cfd8..87df201 100644
+--- a/src-main/config.ts
++++ b/src-main/config.ts
+@@ -86,21 +86,21 @@ export function deleteConfigEntry(path: string, id: string): void {
+ 
+ export function validateConfigId(id: string): boolean {
+   if (id.length === 0 || id.length > 32) return false;
+   if (!/^[a-z]/.test(id)) return false;
+   return /^[a-z0-9]+$/.test(id);
+ }
+ 
+ export function validateParamKey(key: string): boolean {
+   if (key.length === 0) return false;
+   if (!/^[a-z]/.test(key)) return false;
+-  return /^[a-z0-9]+$/.test(key);
++  return /^[a-z0-9_]+$/.test(key);
+ }
+ 
+ // 默认参数模板：run.bat COMMON 全量 flag-form 映射（m → -m …）；required = [m]
+ export function defaultParams(): ParamsFile {
+   const items: Array<[string, string]> = [
+     ['m', '-m'], ['mmproj', '--mmproj'], ['spec_type', '--spec-type'], ['ngl', '-ngl'],
+     ['fa', '-fa'], ['load_mode', '--load-mode'], ['np', '-np'], ['c', '-c'],
+     ['b', '-b'], ['ub', '-ub'], ['t', '-t'], ['tb', '-tb'], ['ctk', '-ctk'],
+     ['ctv', '--ctv'], ['jinja', '--jinja'], ['chat_template_file', '--chat-template-file'],
+     ['reasoning_format', '--reasoning-format'], ['reasoning_effort', '--reasoning-effort'],
+diff --git a/src-main/main.ts b/src-main/main.ts
+index 824bc6f..bb97109 100644
+--- a/src-main/main.ts
++++ b/src-main/main.ts
+@@ -1,28 +1,124 @@
+-import { app, BrowserWindow } from 'electron';
++import { app, BrowserWindow, ipcMain } from 'electron';
++import { existsSync } from 'node:fs';
++import { join } from 'node:path';
++import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry } from './config';
++import type { AppConfig, ParamsFile, ConfigsMap } from './config';
++import { prepareLaunch, summarize } from './build';
++import { ProcessState } from './process';
+ 
+-const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
++// ---------- AppState ----------
++const ps = new ProcessState();
++
++// 数据目录：打包后 = exe 所在目录（portable 解压目录，可写）；dev-time = 项目 cwd
++function dataDir(): string {
++  if (app.isPackaged) return process.execPath ? join(process.execPath, "..") : process.cwd();
++  return process.cwd();
++}
++function yamlPaths(): [string, string, string] {
++  const d = dataDir();
++  return [join(d, 'lms_launch.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
++}
++
++// ---------- 日志事件 ----------
++function mainWin(): BrowserWindow | null {
++  const ws = BrowserWindow.getAllWindows();
++  return ws.length > 0 ? ws[0] : null;
++}
++type StreamName = 'sys' | 'out' | 'err';
++function emitLog(line: string, stream: StreamName): void {
++  const win = mainWin();
++  if (win) win.webContents.send("log-line", { line, stream });
++}
+ 
++// ---------- 窗口 ----------
++const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
+ function createWindow(): void {
+   const win = new BrowserWindow({
+     title: 'lms_launch',
+     width: 980, height: 720, minWidth: 760, minHeight: 540,
+     webPreferences: {
+-      preload: require.resolve('../dist-main/preload.js'),
++      preload: require.resolve('./preload.js'),
+       contextIsolation: true,
+       nodeIntegration: false,
+     },
+   });
+   if (process.env.VITE_DEV_SERVER_URL) win.loadURL(DEV_URL);
+-  else win.loadFile('dist/index.html');
++  else win.loadFile(join(__dirname, '..', 'dist', 'index.html'));
+ }
+ 
++// ---------- IPC 命令（11 个） ----------
++ipcMain.handle('get_app_config', (): AppConfig => {
++  const [p] = yamlPaths();
++  return appConfigLoad(p);
++});
++ipcMain.handle('save_llama_dir', (_e, dir: string): void => {
++  const [p] = yamlPaths();
++  appConfigSave(p, { llama_dir: dir.trim() });
++});
++ipcMain.handle('validate_dir', (_e, dir: string): boolean => {
++  return existsSync(join(dir, 'llama-server.exe'));
++});
++ipcMain.handle('get_params', (): ParamsFile => {
++  const [, p] = yamlPaths();
++  return paramsLoad(p);
++});
++ipcMain.handle('get_configs', (): ConfigsMap => {
++  const [, , p] = yamlPaths();
++  return configsLoad(p); // MISSING: / YAML: 由 config 层抛出，原样传给渲染端
++});
++ipcMain.handle('save_config', (_e, id: string, desc: string | null, values: Record<string, string>): void => {
++  const [, , p] = yamlPaths();
++  saveConfigEntry(p, id, desc ?? undefined, values);
++});
++ipcMain.handle('delete_config', (_e, id: string): void => {
++  const [, , p] = yamlPaths();
++  deleteConfigEntry(p, id);
++});
++ipcMain.handle('get_state', () => {
++  return { running: ps.isRunning(), stopping: ps.state === "stopping", configId: ps.runningConfigId };
++});
++// start_server：启动前完整校验（MISSING/VALIDATION 由 build 层抛出），成功后订阅日志流 + 注册退出回调；
++// onExit 每次 launch 覆盖（旧进程回调随 close 失效），close 后 state 自动回落 ready
++ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => {
++  const [appCfgP, pfP, cfgP] = yamlPaths();
++  const appCfg = appConfigLoad(appCfgP);
++  if (appCfg.llama_dir.trim().length === 0) throw new Error('VALIDATION: 未配置 llama.cpp 目录');
++  const pf = paramsLoad(pfP);
++  const configs = configsLoad(cfgP); // MISSING: / YAML: 透传
++  const args = prepareLaunch(appCfg.llama_dir.trim(), pf, configs, configId); // MISSING: / VALIDATION: 透传
++  const summary = summarize(configs[configId], pf);
++  await ps.launch(args[0], args.slice(1), configId);
++  emitLog("[lms_launch] 启动配置 · " + summary, "sys");
++  const { stdout, stderr } = ps.takePipes();
++  stdout.on('data', (chunk: Buffer) => {
++    chunk.toString().split("\n").filter((l) => l.length > 0).forEach((l) => emitLog(l, "out"));
++  });
++  stderr.on('data', (chunk: Buffer) => {
++    chunk.toString().split("\n").filter((l) => l.length > 0).forEach((l) => emitLog(l, "err"));
++  });
++  ps.onExit((code, error) => {
++    // PROC 启动失败（error 非空）：日志区可见；process-exit 事件仍发 { code }
++    if (error) emitLog(error, "sys");
++    const win = mainWin();
++    if (win) win.webContents.send("process-exit", { code });
++  });
++  return summary;
++});
++ipcMain.handle('stop_server', async (): Promise<void> => {
++  await ps.stopGraceful(3);
++  emitLog('[lms_launch] 停止指令已发送', 'sys');
++});
++ipcMain.handle('exit_app', async (): Promise<void> => {
++  await ps.stopGraceful(3);
++  app.exit(0);
++});
++// ---------- app lifecycle ----------
+ app.whenReady().then(() => {
+   createWindow();
+   app.on('activate', () => {
+     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+   });
+ });
+-
+ app.on('window-all-closed', () => {
+   if (process.platform !== 'darwin') app.quit();
+ });
+diff --git a/src-main/preload.ts b/src-main/preload.ts
+index 11dc6a5..fdda80f 100644
+--- a/src-main/preload.ts
++++ b/src-main/preload.ts
+@@ -1,2 +1,20 @@
+-// 任务 5 补全 IPC 桥
+-export {};
++import { contextBridge, ipcRenderer } from 'electron';
++// 渲染端只能看到这个白名单 API（contextIsolation 下无 Node 直权）
++contextBridge.exposeInMainWorld('lms', {
++  invoke: (cmd: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(cmd, ...args),
++  onLogLine: (cb: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void) => {
++    const listener = (_e: unknown, payload: { line: string; stream: 'sys' | 'out' | 'err' }) => cb(payload);
++    ipcRenderer.on('log-line', listener);
++    return () => ipcRenderer.removeListener('log-line', listener);
++  },
++  onProcessExit: (cb: (e: { code: number }) => void) => {
++    const listener = (_e: unknown, payload: { code: number }) => cb(payload);
++    ipcRenderer.on('process-exit', listener);
++    return () => ipcRenderer.removeListener('process-exit', listener);
++  },
++  onTrayExitRequest: (cb: () => void) => {
++    const listener = () => cb();
++    ipcRenderer.on('tray-exit-request', listener);
++    return () => ipcRenderer.removeListener('tray-exit-request', listener);
++  },
++});
+diff --git a/src/ipc.ts b/src/ipc.ts
+new file mode 100644
+index 0000000..9d1c8fc
+--- /dev/null
++++ b/src/ipc.ts
+@@ -0,0 +1,30 @@
++// 渲染端 IPC 封装——window.lms 由 preload 注入（contextIsolation 下唯一通道）
++declare global {
++  interface Window {
++    lms: {
++      invoke: (cmd: string, ...args: unknown[]) => Promise<unknown>;
++      onLogLine: (cb: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void) => () => void;
++      onProcessExit: (cb: (e: { code: number }) => void) => () => void;
++      onTrayExitRequest: (cb: () => void) => () => void;
++    };
++  }
++}
++
++export function invoke<T = unknown>(cmd: string, ...args: unknown[]): Promise<T> {
++  return window.lms.invoke(cmd, ...args) as Promise<T>;
++}
++
++export function onLogLine(cb: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void): () => void {
++  return window.lms.onLogLine(cb);
++}
++
++export function onProcessExit(cb: (e: { code: number }) => void): () => void {
++  return window.lms.onProcessExit(cb);
++}
++
++export function onTrayExitRequest(cb: () => void): () => void {
++  return window.lms.onTrayExitRequest(cb);
++}
++
++export const isMissing = (msg: string): boolean => msg.startsWith("MISSING:");
++export const isValidation = (msg: string): boolean => msg.startsWith("VALIDATION:");
+diff --git a/tsconfig.main.json b/tsconfig.main.json
+index 78636d7..cb9882d 100644
+--- a/tsconfig.main.json
++++ b/tsconfig.main.json
+@@ -4,12 +4,13 @@
+     "module": "CommonJS",
+     "moduleResolution": "node",
+     "strict": true,
+     "esModuleInterop": true,
+     "skipLibCheck": true,
+     "outDir": "dist-main",
+     "rootDir": "src-main",
+     "types": ["node"],
+     "forceConsistentCasingInFileNames": true
+   },
+-  "include": ["src-main/**/*.ts"]
++  "include": ["src-main/**/*.ts"],
++  "exclude": ["src-main/**/*.test.ts"]
+ }

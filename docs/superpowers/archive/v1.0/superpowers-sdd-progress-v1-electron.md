@@ -1,6 +1,6 @@
 # SDD 进度账本 — lms_launcher v1（Electron 版）
 
-> **归档说明（2026-08-23）**：本文件为 v1 Electron 版 SDD 台账的*起始快照*，v1 推进期间未更新，不代表最终状态——v1 实际 10 任务全部完成并已合并回 master（见 `git log`）。执行期真实账本在 `.superpowers/sdd/progress.md`（随 `.superpowers/` 被 gitignore）。本文件留作历史参照，归档移出根目录。
+> **归档说明（2026-08-23）**：本文件为 v1 Electron 版 SDD 台账的*起始快照*——v1 推进期间未更新，不代表最终状态（v1 实际 10 任务全部完成并已合并回 master，见 `git log`）。执行期真实账本 = **同目录的 [progress.md](./progress.md)**（原 `.superpowers/sdd/progress.md`，随 v1 SDD 工件一并归档）；本表与任务简报/报告/审查 diff 均存于本目录。
 
 
 分支：lms-launch-v1 · 计划：docs/superpowers/plans/2026-08-21-lms-launch-v1-electron.md

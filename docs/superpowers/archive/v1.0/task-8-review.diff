@@ -1,0 +1,169 @@
+8f529b4 feat: 模块 3 启动控制 + 模块 4 日志区（Solarized Light）+ App 状态接线
+
+ src/modules/LaunchBar.vue     | 68 +++++++++++++++++++++++++++++++++++++++++--
+ src/modules/LogPanel.vue      | 48 ++++++++++++++++++++++++++++--
+ src/modules/TemplateModal.vue |  2 +-
+ 3 files changed, 112 insertions(+), 6 deletions(-)
+
+diff --git a/src/modules/LaunchBar.vue b/src/modules/LaunchBar.vue
+index 308d50f..82aff52 100644
+--- a/src/modules/LaunchBar.vue
++++ b/src/modules/LaunchBar.vue
+@@ -1,7 +1,71 @@
+-<script setup lang="ts"></script>
++<script setup lang="ts">
++import { computed, onMounted, ref } from 'vue';
++import { invoke, errMsg, isMissing } from '../ipc';
++
++// 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 三态按钮（.btn-launch 空闲 / .running / :disabled）。
++const props = defineProps<{
++  state: { running: boolean; stopping: boolean; configId: string | null };
++  statusText: string;
++}>();
++
++const emit = defineEmits<{ (e: 'start', configId: string): void; (e: 'stop'): void }>();
++
++type ConfigMap = Record<string, { desc?: string; values: Record<string, string> }>;
++const configs = ref<ConfigMap | null>(null);
++const missing = ref(false);
++const selected = ref('');
++const error = ref<string | null>(null);
++
++async function load(): Promise<void> {
++  try {
++    const map = await invoke<ConfigMap>('get_configs');
++    configs.value = map;
++    missing.value = false;
++    error.value = null;
++    // running 时锁定运行中的配置 id；否则保留当前选中、无选中取第一个
++    const ids = Object.keys(map);
++    if (props.state.running && props.state.configId !== null && map[props.state.configId] !== undefined) {
++      selected.value = props.state.configId;
++    } else if (ids.includes(selected.value)) {
++      // 保持选中（如模板模块保存后再次加载）
++    } else if (ids.length > 0) {
++      selected.value = ids[0];
++    } else {
++      selected.value = '';
++    }
++  } catch (e) {
++    // MISSING / YAML 透传——MISSING 显示提示不崩溃；configs 视为空
++    const msg = errMsg(e);
++    error.value = msg;
++    missing.value = isMissing(msg);
++    configs.value = null;
++    selected.value = '';
++  }
++}
++
++const canStart = computed((): boolean => !props.state.running && !props.state.stopping && selected.value.length > 0);
++
++function onStart(): void { emit('start', selected.value); }
++function onStop(): void { emit('stop'); }
++
++onMounted(load);
++// 无订阅 / 定时器；卸载无需清理。
++</script>
+ <template>
+   <section class="module module-launch">
+     <h2>启动控制</h2>
+-    <p class="label">占位——任务 8 实现</p>
++    <p v-if="error" class="error-text">{{ error }}<span v-if="missing">（请检查 llama_launch_configs.yaml）</span></p>
++    <label class="label">配置</label>
++    <select class="select" v-model="selected" :disabled="state.running">
++      <option value="" disabled>选择配置…</option>
++      <option v-for="id in configs ? Object.keys(configs) : []" :key="id" :value="id">
++        {{ id }}<span v-if="configs![id].desc"> — {{ configs![id].desc }}</span>
++      </option>
++    </select>
++    <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
++      <button class="btn btn-launch" :class="{ running: state.running }" :disabled="!canStart" @click="onStart">启动</button>
++      <button class="btn btn-danger" :disabled="!state.running || state.stopping" @click="onStop">{{ state.stopping ? '停止中…' : '停止' }}</button>
++    </div>
++    <p class="label" style="margin-top: 8px;">{{ statusText }}</p>
+   </section>
+ </template>
+diff --git a/src/modules/LogPanel.vue b/src/modules/LogPanel.vue
+index a829720..290322d 100644
+--- a/src/modules/LogPanel.vue
++++ b/src/modules/LogPanel.vue
+@@ -1,7 +1,49 @@
+-<script setup lang="ts"></script>
++<script setup lang="ts">
++import { ref, watch } from 'vue';
++
++// 模块 4 · 日志区（§4.4）：白底 Solarized Light、等宽 13px、自动滚动可关、500 行上限由 App 维持。
++const props = defineProps<{ lines: Array<{ line: string; stream: 'sys' | 'out' | 'err' }> }>();
++
++// 自动滚动：默认开；用户滚离底部暂停，滚回底部恢复
++const autoScroll = ref(true);
++const view = ref<HTMLElement | null>(null);
++
++// sys 行蓝灰（[lms_launch]）；stream=err 或 error/fatal → log-error；ready/listening → log-ok
++function cls(e: { line: string; stream: 'sys' | 'out' | 'err' }): string {
++  if (e.stream === 'sys') return 'ln-dim';
++  const low = e.line.toLowerCase();
++  if (e.stream === 'err' || low.includes('error') || low.includes('fatal')) return 'ln-err';
++  if (low.includes('server ready') || low.includes('listening')) return 'ln-ok';
++  return '';
++}
++
++// 仅当用户在底部附近才滚，避免读日志时跳回
++watch((): number => props.lines.length, () => {
++  if (!autoScroll.value) return;
++  const el = view.value;
++  if (!el) return;
++  if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) el.scrollTop = el.scrollHeight;
++});
++
++function onScroll(): void {
++  const el = view.value;
++  if (!el) return;
++  autoScroll.value = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
++}
++// DOM 事件随组件销毁失效；无定时器 / IPC 订阅需清理。
++</script>
+ <template>
+   <section class="log-panel">
+-    <h3>日志</h3>
+-    <div class="log-view"></div>
++    <div style="display: flex; justify-content: space-between; align-items: center;">
++      <h3>日志</h3>
++      <label style="display: flex; gap: 4px; align-items: center;" class="label">
++        <input type="checkbox" v-model="autoScroll" style="margin: 0;" />
++        <span>自动滚动</span>
++      </label>
++    </div>
++    <div ref="view" class="log-view" @scroll="onScroll">
++      <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>
++      <p v-for="(e, i) in lines" :key="i" :class="cls(e)" style="margin: 0;">{{ e.line }}</p>
++    </div>
+   </section>
+ </template>
+diff --git a/src/modules/TemplateModal.vue b/src/modules/TemplateModal.vue
+index 43c8180..9caec30 100644
+--- a/src/modules/TemplateModal.vue
++++ b/src/modules/TemplateModal.vue
+@@ -98,21 +98,21 @@ function close(): void { emit('close'); }
+       <div class="card modal-box">
+         <h3>{{ isEdit ? '编辑模板' : '新建模板' }}</h3>
+         <p v-if="saveError" class="error-text">{{ saveError }}</p>
+ 
+         <label class="label" style="display: block;">id</label>
+         <input
+           class="input"
+           :class="{ error: idError !== null }"
+           v-model="formId"
+           :disabled="isEdit"
+-          placeholder="小写字母，如 qwen_daily"
++          placeholder="小写字母与数字，如 qwendaily"
+         />
+         <p v-if="idError" class="error-text">{{ idError }}</p>
+ 
+         <label class="label" style="display: block; margin-top: 8px;">desc（说明）</label>
+         <input class="input" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
+ 
+         <div class="flag-grid">
+           <template v-for="row in rows" :key="row.key">
+             <label class="label flag-label">
+               {{ row.flag }}<span v-if="row.required" title="必填">*</span>

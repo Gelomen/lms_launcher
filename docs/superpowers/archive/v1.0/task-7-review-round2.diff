@@ -1,0 +1,111 @@
+4cdd180 fix: TemplateModal id 校验对齐 validateConfigId（去下划线 + 32 位上限）+ .vue 尾行换行
+
+ src/modules/DirModule.vue      | 2 +-
+ src/modules/TemplateModal.vue  | 6 ++++--
+ src/modules/TemplateModule.vue | 2 +-
+ 3 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/src/modules/DirModule.vue b/src/modules/DirModule.vue
+index bc94d66..27d5477 100644
+--- a/src/modules/DirModule.vue
++++ b/src/modules/DirModule.vue
+@@ -55,16 +55,16 @@ async function validate(): Promise<void> {
+ onMounted(load);
+ </script>
+ <template>
+   <section class="module module-dir">
+     <h2>llama.cpp 安装目录</h2>
+     <p v-if="error" class="error-text">{{ error }}</p>
+     <div style="display: flex; gap: 8px;">
+       <input class="input" v-model="dir" :placeholder="'C:' + String.fromCharCode(92) + 'llama.cpp' + String.fromCharCode(92) + 'build-cpu-avx2'" @change="status = null" />
+       <button class="btn btn-secondary" @click="pickDir">选择目录…</button>
+     </div>
+     <button class="btn btn-secondary" style="margin-top: 8px;" @click="validate">校验</button>
+     <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}（已保存）</p>
+     <p v-else-if="status && !status.ok" class="error-text">✗ {{ status.msg }}</p>
+     <p v-if="saving" class="label">保存中…</p>
+   </section>
+-</template>
+\ No newline at end of file
++</template>
+diff --git a/src/modules/TemplateModal.vue b/src/modules/TemplateModal.vue
+index 9a3f535..43c8180 100644
+--- a/src/modules/TemplateModal.vue
++++ b/src/modules/TemplateModal.vue
+@@ -34,31 +34,33 @@ function fill(): void {
+     for (const [k, v] of Object.entries(props.values)) {
+       if (init[k] !== undefined && (v ?? '').trim().length > 0) init[k] = v;
+     }
+   }
+   formValues.value = init;
+   saveError.value = null;
+ }
+ 
+ // 打开（含从新建切到另一个编辑目标）时重置表单
+ watch(() => props.open, (open) => { if (open) fill(); }, { immediate: true });
+ 
+ // ---------- 校验（对齐 config.ts validateConfigId）----------
+ const idError = computed((): string | null => {
+   const v = formId.value.trim();
+   if (v.length === 0) return 'id 必填';
+-  if (!/^[a-z][a-z0-9_]*$/.test(v)) return '须为小写字母开头的字母数字串（不含空格）';
++  // 与主进程 validateConfigId（config.ts:87-91）完全一致：小写字母开头、仅 [a-z0-9]、≤32
++  if (!/^[a-z][a-z0-9]*$/.test(v)) return '须为小写字母开头的字母数字串（不含下划线 / 空格 / 大写）';
++  if (v.length > 32) return '最长 32 位';
+   if (props.existingIds.includes(formId.value) && !isEdit.value) return 'id 已被使用';
+   return null;
+ });
+ 
+ type Row = { key: string; flag: string; required: boolean };
+ const rows = computed((): Row[] => {
+   const out: Row[] = [];
+   for (const [k, flag] of Object.entries(props.paramsMeta.params)) {
+     out.push({ key: k, flag, required: props.paramsMeta.required.includes(k) });
+   }
+   return out;
+ });
+ 
+ // 必填项（required 列表）留空 → 红框 + 不保存
+ const emptyRequired = computed((): string[] => {
+@@ -162,16 +164,16 @@ function close(): void { emit('close'); }
+   align-items: center;
+ }
+ .flag-label {
+   text-align: right;
+   font-family: var(--font-mono);
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+ }
+ .modal-actions {
+   display: flex;
+   justify-content: flex-end;
+   gap: 8px;
+   margin-top: 16px;
+ }
+-</style>
+\ No newline at end of file
++</style>
+diff --git a/src/modules/TemplateModule.vue b/src/modules/TemplateModule.vue
+index 994f4cb..630ea4f 100644
+--- a/src/modules/TemplateModule.vue
++++ b/src/modules/TemplateModule.vue
+@@ -101,16 +101,16 @@ onMounted(reload);
+       </tbody>
+     </table>
+     <p v-if="configs && Object.keys(configs).length === 0" class="label">暂无配置</p>
+ 
+     <TemplateModal
+       :open="modalOpen"
+       :id="editingId ?? ''"
+       :values="configs && editingId ? configs[editingId]?.values ?? {} : {}"
+       :desc="configs && editingId ? configs[editingId]?.desc ?? undefined : undefined"
+       :params-meta="paramsMeta"
+       :existing-ids="configs ? Object.keys(configs) : []"
+       @saved="onSaved"
+       @close="modalOpen = false"
+     />
+   </section>
+-</template>
+\ No newline at end of file
++</template>
