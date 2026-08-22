@@ -105,7 +105,7 @@ function close(): void { emit('close'); }
           :class="{ error: idError !== null }"
           v-model="formId"
           :disabled="isEdit"
-          placeholder="小写字母，如 qwen_daily"
+          placeholder="小写字母与数字，如 qwendaily"
         />
         <p v-if="idError" class="error-text">{{ idError }}</p>
 
