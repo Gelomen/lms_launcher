@@ -46,7 +46,9 @@ watch(() => props.open, (open) => { if (open) fill(); }, { immediate: true });
 const idError = computed((): string | null => {
   const v = formId.value.trim();
   if (v.length === 0) return 'id 必填';
-  if (!/^[a-z][a-z0-9_]*$/.test(v)) return '须为小写字母开头的字母数字串（不含空格）';
+  // 与主进程 validateConfigId（config.ts:87-91）完全一致：小写字母开头、仅 [a-z0-9]、≤32
+  if (!/^[a-z][a-z0-9]*$/.test(v)) return '须为小写字母开头的字母数字串（不含下划线 / 空格 / 大写）';
+  if (v.length > 32) return '最长 32 位';
   if (props.existingIds.includes(formId.value) && !isEdit.value) return 'id 已被使用';
   return null;
 });
