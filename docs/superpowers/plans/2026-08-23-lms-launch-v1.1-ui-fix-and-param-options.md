@@ -28,7 +28,7 @@
 | src/modules/DirModule.vue | 「…」（title=选择 llama.cpp 安装目录） | 6 |
 | src/style.css | webkit/Firefox 滚动条美化 | 7 |
 | （任务 8 目检后可能：TemplateModal.vue / LaunchBar.vue + style.css） | 全局下拉限高 3 行 + 圆角风格一致 | 8 |
-| superpowers-sdd-progress.md | 每任务完成后更新台账行 | 1–9 |
+| docs/superpowers/superpowers-sdd-progress.md | 每任务完成后更新台账行 | 1–9 |
 
 **现有测试基线（红→绿的参照物）：** config.test.ts 9 用例、build.test.ts 6 用例，当前全绿。注意 config.test.ts 的 `params_reread_after_default_write_succeeds` 硬断言 `toHaveLength(26)`，defaultParams 新增 2 个 key 后必须同步改 28（任务 1 步骤 1）。
 
@@ -37,7 +37,7 @@
 - **UI 修复批**：任务 4（校验门控）、任务 5（无配置文案）、任务 6（…按钮）、任务 7（滚动条）、任务 8（下拉限高）。
 - 收尾：任务 9（全量回归 + release）。
 
-**SDD 流程约定：** 每任务完成后——跑 `npx vitest run` 全绿 → git commit（提交信息格式见各任务）→ 更新 superpowers-sdd-progress.md 对应行（状态 done + 提交区间）→ commit 台账。任务顺序即依赖顺序（1→2→3…），勿并行改同一文件。
+**SDD 流程约定：** 每任务完成后——跑 `npx vitest run` 全绿 → git commit（提交信息格式见各任务）→ 更新 docs/superpowers/superpowers-sdd-progress.md 对应行（状态 done + 提交区间）→ commit 台账。任务顺序即依赖顺序（1→2→3…），勿并行改同一文件。
 
 ---
 
@@ -246,7 +246,7 @@ git commit -m "feat: params_options/params_boolean/params_file schema + boolean 
 
 - [ ] **步骤 7：更新 SDD 进度台账**
 
-把 superpowers-sdd-progress.md 顶部说明追加一行 v1.1 批次起算（新表替换旧表），任务 1 行标 done + 本次提交哈希。commit：`chore: sdd ledger task 1 (v1.1)`。
+把 docs/superpowers/superpowers-sdd-progress.md 的 v1.1 批次表更新（任务 1 行标 done + 本次提交哈希；若表尚为旧表则整表替换）（新表替换旧表），任务 1 行标 done + 本次提交哈希。commit：`chore: sdd ledger task 1 (v1.1)`。
 
 ---
 
@@ -725,7 +725,7 @@ git commit -m "feat: global dropdown cap-height (3 rows) with scroll, card-style
 ### 任务 9：全量测试回归 + release 打包验收（#1–#13 前端清单 + 内置模板检查）
 
 **文件：**
-- 修改（可能）：dev 中发现的零散修复；`dist-release/` 产物；`superpowers-sdd-progress.md`
+- 修改（可能）：dev 中发现的零散修复；`dist-release/` 产物；`docs/superpowers/superpowers-sdd-progress.md`
 
 - [ ] **步骤 1：全量测试**
 
@@ -753,7 +753,7 @@ git commit -m "feat: global dropdown cap-height (3 rows) with scroll, card-style
 
 - [ ] **步骤 5：台账收尾 + Commit**
 
-superpowers-sdd-progress.md v1.1 批次表全部 done；commit `chore: sdd ledger v1.1 complete`。
+docs/superpowers/superpowers-sdd-progress.md v1.1 批次表全部 done；commit `chore: sdd ledger v1.1 complete`。
 
 ---
 

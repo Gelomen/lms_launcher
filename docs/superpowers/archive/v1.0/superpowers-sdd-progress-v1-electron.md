@@ -1,7 +1,7 @@
 # SDD 进度账本 — lms_launcher v1（Electron 版）
 
 > **归档说明（2026-08-23，状态已定稿）**：下表已按同目录 [progress.md](./progress.md)（执行期真实账本）回填最终状态；首次写入时的全 pending 原貌保留在下方「说明」段（历史记录）。任务简报 / 报告 / 审查 diff 亦全部归档于本目录。
-> **v1 终态**：10 任务全部 complete，测试 20/20 绿；release portable `9097c26`（exe 67.6MB、icon 打包态修复）→ `4f51674` 合并回 master → `d8e1fc7` 项目整体更名 lms_launcher。v1.1 批次基线 = `d8e1fc7`（见根目录 superpowers-sdd-progress.md）。
+> **v1 终态**：10 任务全部 complete，测试 20/20 绿；release portable `9097c26`（exe 67.6MB、icon 打包态修复）→ `4f51674` 合并回 master → `d8e1fc7` 项目整体更名 lms_launcher。v1.1 批次基线 = `d8e1fc7`（批次台账：docs/superpowers/superpowers-sdd-progress.md）。
 
 分支：lms-launch-v1 · 计划：docs/superpowers/plans/2026-08-21-lms-launch-v1-electron.md
 
