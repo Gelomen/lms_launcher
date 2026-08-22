@@ -6,6 +6,9 @@ export type ProcStateName = "ready" | "running" | "stopping";
 export class ProcessState {
   state: ProcStateName = 'ready';
   private child: ChildProcess | null = null;
+  // close/error 回调置 true——stopGraceful 轮询判据（TS narrowing 不把回调内的 state 复位算入，
+  // 若判 this.state === 'ready' 会 TS2367 + 运行期永假）；launch 开头重置
+  private exited = false;
   private exitCode: number | null = null;
   // 退出回调：(code, error?) ——error 为 PROC 分类错误（仅启动失败路径非空，正常退出为 undefined）
   private onExitCb: ((code: number, error?: string) => void) | null = null;
@@ -19,6 +22,7 @@ export class ProcessState {
   async launch(exe: string, args: string[], configId: string | null): Promise<void> {
     if (this.state !== 'ready') throw new Error('STATE: 已有进程在运行');
     this.exitCode = null;
+    this.exited = false;
     this.runningConfigId = configId;
     const child = spawn(exe, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
     child.on("error", (err) => {
@@ -27,6 +31,7 @@ export class ProcessState {
       // 记录 + 状态复位到 ready + PROC 分类错误经 onExit 链路上报
       console.error(`PROC: ${exe} 启动失败: ${err.message}`);
       this.child = null;
+      this.exited = true;
       this.state = 'ready';
       this.runningConfigId = null;
       if (this.onExitCb) this.onExitCb(-1, `PROC: ${exe} 启动失败: ${err.message}`);
@@ -34,6 +39,7 @@ export class ProcessState {
     child.on("close", (code) => {
       if (this.child !== child) return;
       this.child = null;
+      this.exited = true;
       this.exitCode = code ?? -1;
       this.state = 'ready';
       this.runningConfigId = null;
@@ -56,15 +62,18 @@ export class ProcessState {
   async stopGraceful(timeoutSecs: number): Promise<void> {
     const child = this.child;
     if (!child) { this.state = 'ready'; return; }
+    if (this.state === 'stopping') return; // 双 stop 幂等守卫：已在停止流程中则不再重入
     this.state = 'stopping';
     const pid = child.pid;
     child.kill("SIGTERM");
     const deadline = Date.now() + timeoutSecs * 1000;
     for (;;) {
-      if (this.state === 'ready') return; // close 事件已触发
+      if (this.exited) return; // close/error 已落地（幂等退出，early-return 不走 taskkill）
       if (Date.now() >= deadline) break;
       await new Promise((r) => setTimeout(r, 100));
     }
+    // 强杀（taskkill /T /F）：deadline 到仍未退出则杀进程树。
+    // 强杀后 close 事件仍会落地并写 exitCode —— drainExit() 的语义依据，此处不重复上报
     if (process.platform === "win32" && pid) {
       try { execFileSync("taskkill", ["/T", "/F", "-PID", String(pid)]); } catch { /* 已退出 */ }
     }
