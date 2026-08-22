@@ -14,7 +14,7 @@ const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重�
 
 const logLines = ref<LogEntry[]>([]);
 const state = ref<ServerState>({ running: false, stopping: false, configId: null });
-let configsReloadKey = 0; // TemplateModule 保存/删除后 bump，触发 LaunchBar 重新 load()
+const configsReloadKey = ref(0); // TemplateModule 保存/删除后 bump（ref，Vue 响应式追踪）
 
 function appendLine(e: LogEntry): void {
   logLines.value.push(e);
@@ -71,7 +71,7 @@ onMounted(async () => {
 onUnmounted(() => { for (const u of unsubs) u(); });
 
 function onTemplateChanged(): void {
-  configsReloadKey = configsReloadKey + 1; // bump → LaunchBar watch 重新 load()
+  configsReloadKey.value += 1; // bump → LaunchBar watch 重新 load()
 }
 </script>
 <template>
