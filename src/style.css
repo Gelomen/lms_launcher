@@ -1,2 +1,173 @@
-body { font-family: "Segoe UI", system-ui, sans-serif; }
-.layout { padding: 16px; }
+/* lms_launch —— §4.5 设计语言（浅色干净主题，参考 LM Studio） */
+:root {
+  /* 色板（§4.5 原文） */
+  --bg: #F6F7F8;            /* 页面底色 浅灰 */
+  --card: #FFFFFF;          /* 功能卡片白底 */
+  --text: #222;             /* 正文深灰 */
+  --muted: #6B7280;         /* 标签/辅助文字（中灰） */
+  --border: #E2E5E9;        /* 卡片边框 1px */
+  --control-border: #D0D7DE;/* 次要按钮/输入框/下拉边框 */
+  --accent: #3B82F6;        /* 主色蓝：启动/选中态 */
+  --accent-hover: #2563EB;  /* 主按钮 hover 加深一档 */
+  --danger: #EF4444;        /* 运行中状态按钮红底 / 报错红 */
+  --ok: #16A34A;            /* 校验通过绿 */
+  --disabled-bg: #E5E7EB;   /* 禁用灰化 */
+  --focus-ring: rgba(59, 130, 246, 0.25); /* focus 柔和蓝 ring */
+
+  /* 日志着色 —— Solarized Light（§4.4） */
+  --log-text: #3B4252;      /* 普通输出深灰 */
+  --log-error: #D63E0A;     /* error / ERR 红 */
+  --log-warn: #B27500;      /* warn / warning 橙 */
+  --log-ok: #557C1F;        /* server ready / listening 绿 */
+  --log-dim: #7A8194;       /* 时间戳、命令回显 中灰 */
+
+  /* 圆角 / 字号 / 间距 / 高度 */
+  --radius-card: 12px;      /* 卡片圆角 */
+  --radius-btn: 8px;        /* 按钮/输入框/下拉圆角 */
+  --font-ui: 'Segoe UI', system-ui, sans-serif;   /* 跟随系统 */
+  --font-mono: 'Cascadia Code', Consolas, monospace; /* 日志等宽 */
+  --fs-title: 16px;         /* 卡片标题 */
+  --fs-body: 14px;          /* 正文/输入 */
+  --fs-label: 12px;         /* 标签/辅助 */
+  --h-control: 32px;        /* 输入框/下拉高 */
+  --h-primary: 36px;        /* 主按钮高 */
+  --card-gap: 12px;         /* 卡片间距 */
+  --card-pad: 16px;         /* 卡片内边距 */
+}
+
+/* ---- reset ---- */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+/* ---- 布局骨架：上区三卡片 + 下区日志区（约半高） ---- */
+.layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: var(--card-gap);
+  gap: var(--card-gap);
+}
+.app-title {
+  font-size: var(--fs-title);
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--card-gap);
+}
+.log-area {
+  flex: 1 1 50%;
+  min-height: 0;              /* 允许日志区收缩，滚动交给内部 */
+  display: flex;
+}
+
+/* ---- 卡片 ---- */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--card-pad);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); /* 极浅阴影 */
+}
+
+/* ---- 按钮 ---- */
+.btn {
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--control-border);
+  background: #fff;
+  color: var(--text);
+  font-size: var(--fs-body);
+  height: var(--h-control);
+  padding: 0 14px;
+  cursor: pointer;
+}
+.btn:hover { background: #F6F7F8; }
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  height: var(--h-primary);
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn-danger:hover { background: #DC2626; }
+
+/* 状态按钮（§4.3 联动）：空闲 / 运行中 / 禁用 */
+.btn-launch {}                       /* 空闲 = 白底蓝框「启动」 */
+.btn-launch.running {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);      /* 运行中 = 红底白字「停止」 */
+}
+.btn:disabled, .btn[disabled='true'] {
+  background: var(--disabled-bg);
+  color: var(--muted);
+  border-color: var(--disabled-bg);
+  cursor: not-allowed;
+}
+
+/* ---- 输入框 / 下拉 ---- */
+.input, .select {
+  width: 100%;
+  height: var(--h-control);
+  background: #fff;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-btn);
+  padding: 0 10px;
+  font-size: var(--fs-body);
+  color: var(--text);
+}
+.input:focus, .select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);   /* 蓝边框 + 柔和蓝 ring */
+}
+
+/* ---- 报错态（§4.5）：红框 + 下方 12px 红色说明 ---- */
+.input.error, .select.error { border-color: var(--danger); }
+.error-text { font-size: var(--fs-label); color: var(--danger); margin-top: 4px; }
+.ok-text { font-size: var(--fs-label); color: var(--ok); margin-top: 4px; }
+
+/* ---- 文本角色 ---- */
+.label { font-size: var(--fs-label); color: var(--muted); }
+.card h2, .card h3 {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+/* ---- 日志面板（§4.4：白底细边框、等宽 13px、只读） ---- */
+.log-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--card-pad);
+  min-width: 0;
+}
+.log-view {
+  flex: 1;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--log-text);
+  user-select: text;             /* 可选可复制、不可编辑 */
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log-view .ln-err { color: var(--log-error); }
+.log-view .ln-warn { color: var(--log-warn); }
+.log-view .ln-ok { color: var(--log-ok); }
+.log-view .ln-dim { color: var(--log-dim); }

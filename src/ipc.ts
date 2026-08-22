@@ -26,5 +26,10 @@ export function onTrayExitRequest(cb: () => void): () => void {
   return window.lms.onTrayExitRequest(cb);
 }
 
+/** invoke reject 的值是带 .message 的 Error——直接 String(err) 会得 [object Object] */
+export function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export const isMissing = (msg: string): boolean => msg.startsWith("MISSING:");
 export const isValidation = (msg: string): boolean => msg.startsWith("VALIDATION:");
