@@ -1,0 +1,13 @@
+appId: com.lms.launch
+productName: lms_launch
+directories:
+  output: dist-release
+files:
+  - dist/**
+  - dist-main/**
+  - package.json
+win:
+  target: portable
+  icon: src-main/icon.ico
+portable:
+  artifactName: "lms-launch-${version}-portable.exe"
