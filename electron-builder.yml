@@ -6,6 +6,14 @@ files:
   - dist/**
   - dist-main/**
   - package.json
+  # 明确排除 test 产物（防 dist-main 残留被打包）
+  - "!dist-main/*.test.js"
+  - "!dist-main/test-utils.js"
+asar: true
+electronDist: node_modules/electron/dist
+extraResources:
+  - from: src-main/icon.ico
+    to: icon.ico
 win:
   target: portable
   icon: src-main/icon.ico

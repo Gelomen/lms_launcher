@@ -33,7 +33,12 @@ function emitLog(line: string, stream: StreamName): void {
 // ---------- 托盘（§4.6） ----------
 let tray: Tray | null = null;
 function createTray(): void {
-  const icon = nativeImage.createFromPath(join(__dirname, '..', 'src-main', 'icon.ico'));
+  // I-1 修复：打包态 icon 通过 electron-builder extraResources 拷到 asar 外 resources/；
+  // 开发态仍在 src-main/icon.ico（__dirname = dist-main → ../src-main）。
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.ico')
+    : join(__dirname, '..', 'src-main', 'icon.ico');
+  const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   const menu = Menu.buildFromTemplate([
     { label: '启动 lms_launch', click: () => {
