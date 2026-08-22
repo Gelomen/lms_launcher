@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry } from './config';
@@ -30,6 +30,24 @@ function emitLog(line: string, stream: StreamName): void {
   if (win) win.webContents.send("log-line", { line, stream });
 }
 
+// ---------- 托盘（§4.6） ----------
+let tray: Tray | null = null;
+function createTray(): void {
+  const icon = nativeImage.createFromPath(join(__dirname, '..', 'src-main', 'icon.ico'));
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+  const menu = Menu.buildFromTemplate([
+    { label: '启动 lms_launch', click: () => {
+      const win = mainWin();
+      if (win) { win.show(); win.focus(); }
+    } },
+    { label: '退出', click: () => {
+      const win = mainWin();
+      if (win) win.webContents.send('tray-exit-request', {});
+    } },
+  ]);
+  tray.setContextMenu(menu);
+}
+
 // ---------- 窗口 ----------
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
 function createWindow(): void {
@@ -44,6 +62,8 @@ function createWindow(): void {
   });
   if (process.env.VITE_DEV_SERVER_URL) win.loadURL(DEV_URL);
   else win.loadFile(join(__dirname, '..', 'dist', 'index.html'));
+  // §4.6：关闭 = 隐藏到托盘，不退出；真正退出走 tray-exit-request → exit_app（任务 5）
+  win.on('close', (e) => { e.preventDefault(); win.hide(); });
 }
 
 // ---------- IPC 命令（11 个） ----------
@@ -123,6 +143,7 @@ ipcMain.handle('exit_app', async (): Promise<void> => {
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
   createWindow();
+  createTray();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

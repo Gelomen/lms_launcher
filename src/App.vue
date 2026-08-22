@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit } from './ipc';
+import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest } from './ipc';
 import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
 import LaunchBar from './modules/LaunchBar.vue';
@@ -58,6 +58,10 @@ const unsubs: Array<() => void> = [];
 onMounted(async () => {
   // 事件：日志流 / 进程退出（桥 onLogLine/onProcessExit）
   unsubs.push(onLogLine((e) => appendLine(e)));
+  // §4.6：托盘「退出」→ 确认后 stopGraceful + app.exit(0)（主进程 exit_app，任务 5）
+  unsubs.push(onTrayExitRequest(() => {
+    if (window.confirm('将停止 llama-server 并退出，确认？')) void invoke('exit_app');
+  }));
   unsubs.push(onProcessExit((e) => {
     state.value = { ...state.value, running: false, stopping: false };
     appendSys('进程退出 code=' + e.code);
