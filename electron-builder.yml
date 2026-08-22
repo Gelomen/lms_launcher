@@ -1,5 +1,5 @@
 appId: com.lms.launch
-productName: lms_launch
+productName: lms_launcher
 directories:
   output: dist-release
 files:
@@ -18,4 +18,4 @@ win:
   target: portable
   icon: src-main/icon.ico
 portable:
-  artifactName: "lms-launch-${version}-portable.exe"
+  artifactName: "lms-launcher-${version}-portable.exe"

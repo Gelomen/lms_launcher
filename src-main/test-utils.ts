@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 export function tmpPath(name: string): string {
-  const dir = join(tmpdir(), 'lms_launch_test');
+  const dir = join(tmpdir(), 'lms_launcher_test');
   mkdirSync(dir, { recursive: true });
   return join(dir, name);
 }

@@ -16,7 +16,7 @@ function dataDir(): string {
 }
 function yamlPaths(): [string, string, string] {
   const d = dataDir();
-  return [join(d, 'lms_launch.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
+  return [join(d, 'lms_launcher.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
 }
 
 // ---------- 日志事件 ----------
@@ -41,7 +41,7 @@ function createTray(): void {
   const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   const menu = Menu.buildFromTemplate([
-    { label: '启动 lms_launch', click: () => {
+    { label: '启动 lms_launcher', click: () => {
       const win = mainWin();
       if (win) { win.show(); win.focus(); }
     } },
@@ -57,7 +57,7 @@ function createTray(): void {
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
 function createWindow(): void {
   const win = new BrowserWindow({
-    title: 'lms_launch',
+    title: 'lms_launcher',
     width: 980, height: 720, minWidth: 760, minHeight: 540,
     webPreferences: {
       preload: require.resolve('./preload.js'),
@@ -113,7 +113,7 @@ ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => 
   const args = prepareLaunch(appCfg.llama_dir.trim(), pf, configs, configId); // MISSING: / VALIDATION: 透传
   const summary = summarize(configs[configId], pf);
   await ps.launch(args[0], args.slice(1), configId);
-  emitLog("[lms_launch] 启动配置 · " + summary, "sys");
+  emitLog("[lms_launcher] 启动配置 · " + summary, "sys");
   const { stdout, stderr } = ps.takePipes();
   stdout.on('data', (chunk: Buffer) => {
     chunk.toString().split("\n").filter((l) => l.length > 0).forEach((l) => emitLog(l, "out"));
@@ -139,7 +139,7 @@ ipcMain.handle('open_dir_dialog', async (): Promise<string | null> => {
 });
 ipcMain.handle('stop_server', async (): Promise<void> => {
   await ps.stopGraceful(3);
-  emitLog('[lms_launch] 停止指令已发送', 'sys');
+  emitLog('[lms_launcher] 停止指令已发送', 'sys');
 });
 ipcMain.handle('exit_app', async (): Promise<void> => {
   await ps.stopGraceful(3);

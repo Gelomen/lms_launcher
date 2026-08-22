@@ -1,4 +1,4 @@
-# lms_launch 分析文档
+# lms_launcher 分析文档
 
 > 来源：基于 docs/sketch.md 的需求，经头脑风暴流程（superpowers:brainstorming）梳理而成。
 > 结论先行：**Electron 28 + Vue 3**（2026-08-22 由 Tauri 2 改选 Electron，原因与取舍见 §2.1 修订说明），单 exe（portable）轻量启动器；v1 只交付 llama-server 模块，扩展模块（deepseek harness / codex / GPU 状态面板）见「扩展设计」章节。
@@ -18,7 +18,7 @@
 
 ### 1.2 目标
 
-把 run.bat 改造成图形化工具 **lms_launch**：
+把 run.bat 改造成图形化工具 **lms_launcher**：
 
 - 有 UI 界面，可配置 llama.cpp 安装目录
 - 管理多套启动参数模板（保存/修改/删除/选择）
@@ -73,7 +73,7 @@ UI 好不好看 90% 取决于 CSS（布局/配色/圆角/字体），与框架�
 ```
 核心层（v1 就做成通用的）
 ├── 进程管理器   通用 spawn / 停止 / PID 探活 / stdout+stderr 捕获（任何 exe 都能管）
-├── 配置存储     lms_launch.yaml（应用设置）、llama_params.yaml（参数模板）、llama_launch_configs.yaml（用户配置集）
+├── 配置存储     lms_launcher.yaml（应用设置）、llama_params.yaml（参数模板）、llama_launch_configs.yaml（用户配置集）
 └── 日志面板     通用 stdout/stderr 转发（前端只读组件）
 
 功能层（每个功能 = 一个「工具模块」，各自独立）
@@ -83,11 +83,11 @@ UI 好不好看 90% 取决于 CSS（布局/配色/圆角/字体），与框架�
 └── [预留]    GPU 状态面板                   ← 独立轮询器，不依赖其他模块
 ```
 
-数据文件全部与 lms_launch.exe 同目录（沿用 sketch 的约定）：
+数据文件全部与 lms_launcher.exe 同目录（沿用 sketch 的约定）：
 
 | 文件 | 用途 | 谁可改 |
 |---|---|---|
-| lms_launch.yaml | 应用设置：llama.cpp 目录等 | 工具生成/用户手改 |
+| lms_launcher.yaml | 应用设置：llama.cpp 目录等 | 工具生成/用户手改 |
 | llama_params.yaml | 参数模板（参数 key → 命令行 flag 映射 + 必填列表） | 仅手动修改，是「默认标准」 |
 | llama_launch_configs.yaml | 用户保存的多套启动配置 | 工具生成/用户手改 |
 
@@ -99,7 +99,7 @@ UI 好不好看 90% 取决于 CSS（布局/配色/圆角/字体），与框架�
 
 - 输入框 + 「浏览」按钮（系统目录选择器）
 - 选定后校验：该目录下是否存在 llama-server.exe，结果绿/红小字显示在旁
-- 写入 lms_launch.yaml，下次启动自动读取
+- 写入 lms_launcher.yaml，下次启动自动读取
 - 校验失败 → 启动按钮禁用
 
 ### 4.2 模块 2 · 启动参数模板管理
@@ -192,7 +192,7 @@ config_1:                       # 用户输入的唯一 id（小写字母，无�
 ### 4.6 窗口与托盘行为
 
 - 点 ×（关闭）→ 隐藏到系统托盘，llama-server **继续运行**
-- 托盘菜单：「打开 lms_launch」「退出」
+- 托盘菜单：「打开 lms_launcher」「退出」
 - 「退出」时若 llama-server 在跑 → 确认框；确认后先停服务再退出
 - 应用自身异常崩溃时，llama-server 作为子进程会随窗口进程组退出（Windows 上显式关闭 stdout/stderr 管道并设置 CREATE_NO_WINDOW 标志，保证服务不残留；此行为列入 v1 验证项）
 
@@ -205,7 +205,7 @@ config_1:                       # 用户输入的唯一 id（小写字母，无�
 弹窗表单 → 前端校验（id 唯一、必填非空）→ 通过后写 llama_launch_configs.yaml（读-改-写，YAML 序列化，不引入格式漂移）→ 刷新列表
 
 **状态流**：
-周期轮询 PID 存活（约 1s）→ 按钮颜色/文字切换；进程退出时日志区追加一行「[lms_launch] llama-server 已退出 (exit code N, time)」
+周期轮询 PID 存活（约 1s）→ 按钮颜色/文字切换；进程退出时日志区追加一行「[lms_launcher] llama-server 已退出 (exit code N, time)」
 
 ## 6. 错误处理
 
@@ -244,7 +244,7 @@ config_1:                       # 用户输入的唯一 id（小写字母，无�
 
 启动方式对齐手动操作：**在 PowerShell 中执行 `pnpm dsh web`**。
 
-- 配置项（写入 lms_launch.yaml）：harness 项目工作目录（即 dsh 项目根目录）
+- 配置项（写入 lms_launcher.yaml）：harness 项目工作目录（即 dsh 项目根目录）
 - 启动：`spawn(powershell, -NoProfile -Command "pnpm dsh web")`，工作目录设为该目录，stdout/stderr → 日志区；PATH 继承自应用启动环境，因此 pnpm/Node 需在本机 PATH 中
 - 停止：比 llama-server 复杂一层——直接子进程是 powershell，其下还有 pnpm → node → web server 的进程树，必须**杀整棵进程树**（Windows 上 `taskkill /T /F <pid>`），否则 node 子进程残留
 - 按钮状态：同 llama-server 的状态轮询逻辑，探活改为检测 powershell 子进程
@@ -266,7 +266,7 @@ config_1:                       # 用户输入的唯一 id（小写字母，无�
 
 ### 8.4 模块扩展约定
 
-新功能模块统一遵循：独立前端区块（不改核心）、状态走 Vue 响应式变量、进程走通用进程管理器、设置项追加到 lms_launch.yaml 的新 key。这样每次加模块只新增代码，不修改既有模块。
+新功能模块统一遵循：独立前端区块（不改核心）、状态走 Vue 响应式变量、进程走通用进程管理器、设置项追加到 lms_launcher.yaml 的新 key。这样每次加模块只新增代码，不修改既有模块。
 
 ## 9. 遗留问题（实现前需确认）
 

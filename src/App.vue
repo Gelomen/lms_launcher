@@ -23,9 +23,9 @@ function appendLine(e: LogEntry): void {
   }
 }
 
-// sys 行统一 [lms_launch] 前缀（主进程已发的不重复加）
+// sys 行统一 [lms_launcher] 前缀（主进程已发的不重复加）
 function appendSys(line: string): void {
-  appendLine({ line: line.startsWith('[lms_launch]') ? line : '[lms_launch] ' + line, stream: 'sys' });
+  appendLine({ line: line.startsWith('[lms_launcher]') ? line : '[lms_launcher] ' + line, stream: 'sys' });
 }
 
 const statusText = computed((): string => {
@@ -80,7 +80,7 @@ function onTemplateChanged(): void {
 </script>
 <template>
   <main class="layout">
-    <h1 class="app-title">lms_launch</h1>
+    <h1 class="app-title">lms_launcher</h1>
     <section class="grid">
       <div class="card"><DirModule /></div>
       <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>

@@ -1,10 +1,10 @@
-# lms_launch v1 实现计划（Electron + Node/TypeScript）
+# lms_launcher v1 实现计划（Electron + Node/TypeScript）
 
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（- [ ]）语法来跟踪进度。
 
 **目标：** 单 exe 桌面 GUI 启动器——用户填参数 → 启动 llama-server.exe → 实时看日志 → 停/杀进程。保留已批准的 Vue3 + Vite 前端与 10 任务架构，仅将后端从 Rust/Tauri 换为 Electron/Node/TS。
 
-**架构：** Electron 主进程（Node，TS strict）承担 config / build / process 三层业务 + IPC；渲染进程用 Vue 3 + Vite 6 写四个模块的 UI，通过 preload 暴露的 window.lms.* 调用主进程。所有 IPC 命令/事件命名与错误语义沿用 docs/lms_launch-analysis.md（§4.1–4.6）与已定型并经 15 个绿测试验证的 Rust 实现。
+**架构：** Electron 主进程（Node，TS strict）承担 config / build / process 三层业务 + IPC；渲染进程用 Vue 3 + Vite 6 写四个模块的 UI，通过 preload 暴露的 window.lms.* 调用主进程。所有 IPC 命令/事件命名与错误语义沿用 docs/lms_launcher-analysis.md（§4.1–4.6）与已定型并经 15 个绿测试验证的 Rust 实现。
 
 **技术栈：** Electron 28+ · Node（Electron bundled）· TypeScript 5.8 (strict) · Vue 3.5 + Vite 6 · Vitest（主进程侧单测）· electron-builder（win portable exe）。
 
@@ -17,7 +17,7 @@
 
 ## 全局约束
 
-- **工作目录**：D:\AI\Workspace\lms_launch\.worktrees\lms-launch-v1（git worktree，分支 lms-launch-v1）
+- **工作目录**：主仓库 D:\AI\Workspace\lms_launcher，分支 master（2026-08 原 git worktree 已合并回 master 并删除）
 - **BASE**：feb64d1（当前 HEAD，含被弃用的 Rust 任务 4 提交——本计划任务 1 会清掉 src-tauri）
 - **Rust 残留清理**（任务 1 一次性做完）：删除 src-tauri/ 整目录、package.json 里所有 tauri 依赖、vite.config.js 里 src-tauri watch 排除、.gitignore 里 src-tauri 条目
 - **测试策略**：主进程侧 config/build/process 用 **Vitest** 做 TDD（对应 Rust 15 个测试语义原样移植，共 9+6+4）；前端侧沿用 Vite dev 手动清单验证（YAGNI——不引入 JS 组件测试框架）
@@ -62,7 +62,7 @@ package-lock.json
 
 ~~~ json
 {
-  "name": "lms-launch",
+  "name": "lms-launcher",
   "private": true,
   "main": "dist-main/main.js",
   "scripts": {
@@ -145,7 +145,7 @@ export default defineConfig({
 
 ~~~ yaml
 appId: com.lms.launch
-productName: lms_launch
+productName: lms_launcher
 directories:
   output: dist-release
 files:
@@ -156,7 +156,7 @@ win:
   target: portable
   icon: src-main/icon.ico
 portable:
-  artifactName: "lms-launch-${version}-portable.exe"
+  artifactName: "lms-launcher-${version}-portable.exe"
 ~~~
 
 - [ ] **步骤 7：src-main/test-utils.ts（tmp 路径工具）**
@@ -167,7 +167,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 export function tmpPath(name: string): string {
-  const dir = join(tmpdir(), 'lms_launch_test');
+  const dir = join(tmpdir(), 'lms_launcher_test');
   mkdirSync(dir, { recursive: true });
   return join(dir, name);
 }
@@ -186,7 +186,7 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    title: 'lms_launch',
+    title: 'lms_launcher',
     width: 980, height: 720, minWidth: 760, minHeight: 540,
     webPreferences: {
       preload: require.resolve('../dist-main/preload.js'),
@@ -234,7 +234,7 @@ npm run build
 npm run dev
 ~~~
 
-预期：Vite 1420 起服 + Electron 窗口弹出（地址 http://localhost:1420）、页面显示「lms_launch 骨架」（App.vue 占位）、console 无报错。可视确认记入任务 10 人工验收清单。
+预期：Vite 1420 起服 + Electron 窗口弹出（地址 http://localhost:1420）、页面显示「lms_launcher 骨架」（App.vue 占位）、console 无报错。可视确认记入任务 10 人工验收清单。
 
 - [ ] **步骤 11：Commit**
 
@@ -398,7 +398,7 @@ export function appConfigLoad(path: string): AppConfig {
   try {
     const s = readFileSync(path, 'utf8');
     if (s.trim().length === 0) return EMPTY_APP_CONFIG;
-    const parsed = parseYaml(path, s, 'lms_launch.yaml') as Partial<AppConfig> | null;
+    const parsed = parseYaml(path, s, 'lms_launcher.yaml') as Partial<AppConfig> | null;
     return { llama_dir: parsed?.llama_dir ?? '' };
   } catch {
     return EMPTY_APP_CONFIG;
@@ -872,7 +872,7 @@ function dataDir(): string {
 }
 function yamlPaths(): [string, string, string] {
   const d = dataDir();
-  return [join(d, 'lms_launch.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
+  return [join(d, 'lms_launcher.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
 }
 
 // ---------- 日志事件 ----------
@@ -890,7 +890,7 @@ function emitLog(line: string, stream: StreamName): void {
 const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
 function createWindow(): void {
   const win = new BrowserWindow({
-    title: 'lms_launch',
+    title: 'lms_launcher',
     width: 980, height: 720, minWidth: 760, minHeight: 540,
     webPreferences: {
       preload: require.resolve('./preload.js'),
@@ -944,7 +944,7 @@ ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => 
   const args = prepareLaunch(appCfg.llama_dir.trim(), pf, configs, configId); // MISSING: / VALIDATION: 透传
   const summary = summarize(configs[configId], pf);
   await ps.launch(args[0], args.slice(1), configId);
-  emitLog("[lms_launch] 启动配置 · " + summary, "sys");
+  emitLog("[lms_launcher] 启动配置 · " + summary, "sys");
   const { stdout, stderr } = ps.takePipes();
   stdout.on('data', (chunk: Buffer) => {
     chunk.toString().split("\n").filter((l) => l.length > 0).forEach((l) => emitLog(l, "out"));
@@ -960,7 +960,7 @@ ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => 
 });
 ipcMain.handle('stop_server', async (): Promise<void> => {
   await ps.stopGraceful(3);
-  emitLog('[lms_launch] 停止指令已发送', 'sys');
+  emitLog('[lms_launcher] 停止指令已发送', 'sys');
 });
 ipcMain.handle('exit_app', async (): Promise<void> => {
   await ps.stopGraceful(3);
@@ -1067,7 +1067,7 @@ async function probe(): Promise<void> {
 }
 </script>
 <template>
-  <main class="layout"><h1>lms_launch 骨架</h1><button @click="probe">probe</button></main>
+  <main class="layout"><h1>lms_launcher 骨架</h1><button @click="probe">probe</button></main>
 </template>
 ~~~
 
@@ -1101,7 +1101,7 @@ git commit -m "feat: IPC 接线——11 个命令 + log-line/process-exit/tray-e
 **文件：**
 - 重写：`src/style.css`（整体）、`src/App.vue`（四模块网格骨架）
 
-实现 `docs/lms_launch-analysis.md` §4.5 设计语言——浅色干净主题。关键参数（从规格原文取）：背景 #F6F7F8、卡片白底 #FFFFFF、卡片圆角 12px、按钮圆角 8px、主色用于启动/选中态、正文 #222 系列深灰。
+实现 `docs/lms_launcher-analysis.md` §4.5 设计语言——浅色干净主题。关键参数（从规格原文取）：背景 #F6F7F8、卡片白底 #FFFFFF、卡片圆角 12px、按钮圆角 8px、主色用于启动/选中态、正文 #222 系列深灰。
 
 - [ ] **步骤 1：style.css 整体重写**
 
@@ -1160,7 +1160,7 @@ import LogPanel from './modules/LogPanel.vue';
 </script>
 <template>
   <main class="layout">
-    <h1 class="app-title">lms_launch</h1>
+    <h1 class="app-title">lms_launcher</h1>
     <section class="grid">
       <div class="card"><DirModule /></div>
       <div class="card"><TemplateModule /></div>
@@ -1269,7 +1269,7 @@ git commit -m "feat: 模块 1 目录校验 + 模块 2 模板管理（含 open_di
 
 - [ ] **步骤 3：LogPanel.vue**
 
-- 白底 + Solarized Light ANSI 关键字着色（规格 §4.4——非深色终端块）：`, 状态行高亮（如 [lms_launch] 前缀 sys 行用蓝灰），错误行（含 error/fatal 关键字或 stream=err）用 Solarized 红；
+- 白底 + Solarized Light ANSI 关键字着色（规格 §4.4——非深色终端块）：`, 状态行高亮（如 [lms_launcher] 前缀 sys 行用蓝灰），错误行（含 error/fatal 关键字或 stream=err）用 Solarized 红；
 - 等宽字体（Consolas/Menlo）；
 - 自动滚动到底（可关）；
 - 行上限 500（超出裁掉最旧）。
@@ -1309,7 +1309,7 @@ function createTray(): void {
   const icon = nativeImage.createFromPath(join(__dirname, '..', 'src-main', 'icon.ico'));
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   const menu = Menu.buildFromTemplate([
-    { label: '启动 lms_launch', click: () => {
+    { label: '启动 lms_launcher', click: () => {
       const win = mainWin();
       if (win) { win.show(); win.focus(); }
     } },
@@ -1366,7 +1366,7 @@ npm run build
 npx electron-builder --win portable
 ~~~
 
-预期：dist-release/lms-launch-<version>-portable.exe 生成。
+预期：dist-release/lms-launcher-<version>-portable.exe 生成。
 
 - [ ] **步骤 4：人工视觉验收（§4.1–4.6 全过一遍）**
 

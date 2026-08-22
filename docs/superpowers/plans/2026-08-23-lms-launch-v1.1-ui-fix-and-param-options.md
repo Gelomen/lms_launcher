@@ -1,14 +1,14 @@
-# lms_launch v1.1 实现计划：UI 修复 + 参数选项增强（批次 1/2）
+# lms_launcher v1.1 实现计划：UI 修复 + 参数选项增强（单计划，内部两执行批次）
 
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
 
-**目标：** 在已完成的 lms_launch v1（Electron + Vue 3 + Vitest）上，交付 v1.1 规格（docs/superpowers/specs/2026-08-23-lms-launch-v1.1-ui-fix-and-param-options.md）的全部 #1–#13：无配置红字改普通文案、弹窗保存后才校验、params_file「选择文件」按钮、params_options/params_boolean 下拉、flag-grid 标签自适应 + 圆角修复、滚动条美化、目录按钮省略号、下拉菜单限高。
+**目标：** 在已完成的 lms_launcher v1（Electron + Vue 3 + Vitest）上，交付 v1.1 规格（docs/superpowers/specs/2026-08-23-lms-launch-v1.1-ui-fix-and-param-options.md）的全部 #1–#13：无配置红字改普通文案、弹窗保存后才校验、params_file「选择文件」按钮、params_options/params_boolean 下拉、flag-grid 标签自适应 + 圆角修复、滚动条美化、目录按钮省略号、下拉菜单限高。
 
 **架构：** 主进程（Node/TS）承担 yaml schema 扩展（config.ts 新增 params_options / params_boolean / params_file 三段）与命令拼装规则（build.ts boolean 只拼 flag、options 透传）；渲染端（Vue 3）做弹窗 rows 三分支（文本 / 选项下拉 / 布尔下拉）、校验门控 attemptedSave、全局 CSS（滚动条）。IPC 仅新增一个命令 open_file_dialog。
 
 **技术栈：** Electron 28 + Vue 3 + TypeScript + Vitest + Vite + yaml + electron-builder portable。
 
-**工作区：** git worktree `D:\AI\Workspace\lms_launch\.worktrees\lms-launch-v1`，分支 lms-launch-v1，HEAD 6ec7147。**所有命令的 workdir 均为该 worktree 根目录。**
+**工作区：** 主仓库 `D:\AI\Workspace\lms_launcher`，分支 master（v1 已由 lms-launch-v1 分支/worktree 合并回 master，原 worktree 删除；基线提交 6ec7147）。**所有命令的 workdir 均为该目录。**
 
 **总原则（规格批注）：**
 - **开发阶段无兼容原则**：已生成的 yaml 运行时按最新 schema 解析，新段缺失按空处理；不做迁移/回写。defaultParams() 首次创建即写完整新模板。
@@ -143,7 +143,7 @@ it('summarize_boolean_true_flag_only_false_or_empty_skipped', () => {
 
 - [ ] **步骤 2：运行测试验证失败**
 
-运行：`npx vitest run`（workdir = worktree 根）
+运行：`npx vitest run`（workdir = 仓库根 D:\AI\Workspace\lms_launcher）
 预期：config.test 3 个新用例 FAIL（params_options/params_boolean/params_file 为 undefined、params key 数 26≠28），build.test 5 个新用例 FAIL（boolean 行被拼成 `--jinja true` 值对 / summarize 出现 `--jinja false` 噪声）；既有 15 用例仍绿。
 
 - [ ] **步骤 3：修改 config.ts**
@@ -735,7 +735,7 @@ git commit -m "feat: global dropdown cap-height (3 rows) with scroll, card-style
 - [ ] **步骤 2：release portable**
 
 运行：`npx electron-builder --win portable`
-产物：`dist-release/lms-launch-1.0.0-portable.exe`。
+产物：`dist-release/lms-launcher-1.0.0-portable.exe`（开发阶段保持 version = 1.0.0，首个可运行稳定版后再考虑升级）。
 
 - [ ] **步骤 3：前端验收清单（规格 §四，dev 窗口逐项过）**
 
@@ -764,4 +764,4 @@ superpowers-sdd-progress.md v1.1 批次表全部 done；commit `chore: sdd ledge
 3. **类型一致性：** ParamsFile 五字段名三处一致（config.ts / TemplateModule ParamMeta / TemplateModal props）；open_file_dialog 命令名在 main.ts 与 pickFile invoke 一致；Row.type 三分支值 text|options|boolean 全程一致；summarize 与 buildArgVector 的 boolean 规则描述逐字对齐。
 
 ---
-*计划生成：2026-08-23 · 状态：待终审（用户）· 批次：1/2（本计划为 v1.1 单计划第一份）*
+*计划生成：2026-08-23 · 状态：待终审（用户）· 2026-08 更新：worktree 已合并回主仓库 master，工作目录改为 D:\AI\Workspace\lms_launcher*

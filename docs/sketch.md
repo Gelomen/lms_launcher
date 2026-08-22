@@ -6,7 +6,7 @@
 
 ## 思路
 
-1. 暂且命名: lms_launch (使用什么技术还不确定, 但要轻量)
+1. 暂且命名: lms_launcher (使用什么技术还不确定, 但要轻量)
 2. 启动后, 可以关闭窗口, 保留在任务栏图标
 3. 界面里, 分为多个模块
 4. 模块1: 设置 llama.cpp 安装目录
@@ -14,7 +14,7 @@
 6. llama-server 启动参数模板: 允许用户创建多个模板
     - 有个添加模板按钮, 点开后, 弹出窗口
     - 窗口内显示 llama-server 的 `参数名: 输入框` 列表, 取消按钮和保存按钮
-    - 这些常用的参数是读取 lms_launch 同目录下的 `llama_params.yaml` 里配置的参数
+    - 这些常用的参数是读取 lms_launcher 同目录下的 `llama_params.yaml` 里配置的参数
     - 这个文件只能手动修改, 它是一个模板, 也就是默认标准
     - `llama_params.yaml` 模板内格式大概:
         ```yaml
@@ -34,7 +34,7 @@
     - 创建模板的时候, 先将 `llama_params.yaml` 这些配置好的参数读出来, 展示到弹出创建模板窗口的列表里
     - 窗口还有模板id输入框, 唯一id, 小字母英文字符, 不包括空格
     - 用户依次填写参数, 点击保存的时候, 要校验模板名字是否为空并且唯一
-    - 保存后, 也在 lms_launch 同目录下, 生成模板配置文件 `llama_launch_configs.yaml`
+    - 保存后, 也在 lms_launcher 同目录下, 生成模板配置文件 `llama_launch_configs.yaml`
     - `llama_launch_configs.yaml` 包含多套用户保存的不同配置(配置名字唯一)
         - 配置格式大概如下:
             ```yaml

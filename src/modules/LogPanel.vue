@@ -8,7 +8,7 @@ const props = defineProps<{ lines: Array<{ line: string; stream: 'sys' | 'out' |
 const autoScroll = ref(true);
 const view = ref<HTMLElement | null>(null);
 
-// sys 行蓝灰（[lms_launch]）；stream=err 或 error/fatal → log-error；ready/listening → log-ok
+// sys 行蓝灰（[lms_launcher]）；stream=err 或 error/fatal → log-error；ready/listening → log-ok
 function cls(e: { line: string; stream: 'sys' | 'out' | 'err' }): string {
   if (e.stream === 'sys') return 'ln-dim';
   const low = e.line.toLowerCase();

@@ -29,7 +29,7 @@ async function pickDir(): Promise<void> {
 }
 
 // 「校验」：validate_dir(dir) —— 主进程检查 <dir>\llama-server.exe 是否存在；
-// 通过后 save_llama_dir 写入 lms_launch.yaml（下次启动自动读取）
+// 通过后 save_llama_dir 写入 lms_launcher.yaml（下次启动自动读取）
 async function validate(): Promise<void> {
   error.value = null;
   if (dir.value.trim().length === 0) { status.value = null; return; }

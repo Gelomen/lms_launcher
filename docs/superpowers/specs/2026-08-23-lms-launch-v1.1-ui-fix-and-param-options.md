@@ -1,7 +1,7 @@
-# lms_launch v1.1 规格：UI 修复 + 参数选项增强（v2，已含用户批注，待审核）
+# lms_launcher v1.1 规格：UI 修复 + 参数选项增强（v2，已含用户批注，待审核）
 
 > **状态：** v4 草稿——已合入全部批注：开发阶段无兼容原则、params_file 声明驱动、「选择文件」按钮文案、boolean false 不写入 yaml、下拉占位项文案规则、滚动条美化、下拉菜单限高 3 行 + 滚动（#13）、下拉菜单风格一致 + 圆角（#13）。待终审。
-> **范围仓库：** 分支 lms-launch-v1（worktree: .worktrees/lms-launch-v1），HEAD 6ec7147。
+> **范围仓库：** 主仓库 D:\AI\Workspace\lms_launcher，分支 master（v1 已由 lms-launch-v1 分支/worktree 合并回 master；基线提交 6ec7147）。
 > **总原则（用户批注）：**
 > - **开发阶段**：所有已生成的运行时内容（llama_launch_configs.yaml、llama_params.yaml 等）**不做兼容/升级处理**——新代码只按最新 schema 工作；首次创建的文件由 defaultParams 直接写完整新模板。
 > - **一个计划**交付（约 8–10 个任务，两个批次：UI 修复批 + 参数选项批）。

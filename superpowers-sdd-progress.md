@@ -1,4 +1,4 @@
-# SDD 进度账本 — lms_launch v1（Electron 版）
+# SDD 进度账本 — lms_launcher v1（Electron 版）
 
 分支：lms-launch-v1 · 计划：docs/superpowers/plans/2026-08-21-lms-launch-v1-electron.md
 

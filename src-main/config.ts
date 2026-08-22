@@ -27,7 +27,7 @@ export function appConfigLoad(path: string): AppConfig {
   try {
     const s = readFileSync(path, 'utf8');
     if (s.trim().length === 0) return EMPTY_APP_CONFIG;
-    const parsed = parseYaml(path, s, 'lms_launch.yaml') as Partial<AppConfig> | null;
+    const parsed = parseYaml(path, s, 'lms_launcher.yaml') as Partial<AppConfig> | null;
     return { llama_dir: parsed?.llama_dir ?? '' };
   } catch {
     return EMPTY_APP_CONFIG;

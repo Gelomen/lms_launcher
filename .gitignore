@@ -1,5 +1,3 @@
-.codegraph/
-.worktrees/
 dist/
 dist-main/
 dist-release/
