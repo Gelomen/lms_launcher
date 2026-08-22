@@ -80,4 +80,17 @@ describe('config.ts', () => {
     for (const k of keys) expect(pf.params[k], k).toBeDefined();
     expect(pf.required).toEqual(['m']);
   });
+
+  it('params_reread_after_default_write_succeeds', () => {
+    const p = tmpPath('params_reread.yaml');
+    rm(p);
+    // First load writes defaultParams yaml (includes 16 underscore keys)
+    paramsLoad(p);
+    // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
+    const pf2 = paramsLoad(p);
+    expect(Object.keys(pf2.params)).toHaveLength(26);
+    expect(pf2.params['spec_type']).toBe('--spec-type');
+    expect(pf2.params['presence_penalty']).toBe('--presence_penalty');
+    rm(p);
+  });
 });

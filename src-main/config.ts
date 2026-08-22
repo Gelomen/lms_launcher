@@ -93,7 +93,7 @@ export function validateConfigId(id: string): boolean {
 export function validateParamKey(key: string): boolean {
   if (key.length === 0) return false;
   if (!/^[a-z]/.test(key)) return false;
-  return /^[a-z0-9]+$/.test(key);
+  return /^[a-z0-9_]+$/.test(key);
 }
 
 // 默认参数模板：run.bat COMMON 全量 flag-form 映射（m → -m …）；required = [m]
