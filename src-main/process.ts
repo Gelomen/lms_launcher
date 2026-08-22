@@ -7,7 +7,8 @@ export class ProcessState {
   state: ProcStateName = 'ready';
   private child: ChildProcess | null = null;
   private exitCode: number | null = null;
-  private onExitCb: ((code: number) => void) | null = null;
+  // 退出回调：(code, error?) ——error 为 PROC 分类错误（仅启动失败路径非空，正常退出为 undefined）
+  private onExitCb: ((code: number, error?: string) => void) | null = null;
   runningConfigId: string | null = null; // 任务 5 接线：running 时持有启动配置 id
 
   isRunning(): boolean {
@@ -22,11 +23,13 @@ export class ProcessState {
     const child = spawn(exe, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
     child.on("error", (err) => {
       if (this.child !== child) return;
+      // 事件回调内不得 throw（未捕获异常会让 Electron 主进程崩溃）：
+      // 记录 + 状态复位到 ready + PROC 分类错误经 onExit 链路上报
+      console.error(`PROC: ${exe} 启动失败: ${err.message}`);
       this.child = null;
       this.state = 'ready';
       this.runningConfigId = null;
-      // 启动失败（ENOENT 等）走 PROC 分类：
-      throw new Error(`PROC: ${exe} 启动失败: ${err.message}`);
+      if (this.onExitCb) this.onExitCb(-1, `PROC: ${exe} 启动失败: ${err.message}`);
     });
     child.on("close", (code) => {
       if (this.child !== child) return;
@@ -70,8 +73,8 @@ export class ProcessState {
     this.runningConfigId = null;
   }
 
-  // 注册退出回调（任务 5 发 process-exit 事件）
-  onExit(cb: (code: number) => void): void { this.onExitCb = cb; }
+  // 注册退出回调（任务 5 发 process-exit 事件）；error 参数可选，向后兼容 (code) 签名
+  onExit(cb: (code: number, error?: string) => void): void { this.onExitCb = cb; }
 
   // 已退出则返回退出码；未退出 → null
   drainExit(): number | null { return this.exitCode; }
