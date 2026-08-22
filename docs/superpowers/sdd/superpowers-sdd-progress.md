@@ -4,7 +4,8 @@
 规格：docs/superpowers/specs/2026-08-23-lms-launch-v1.1-ui-fix-and-param-options.md（#1–#13）
 
 > 批次：任务 1–3 = 参数选项批（新 schema 先行）；任务 4–8 = UI 修复批；任务 9 = 全量回归 + release。
-> v1 全部 SDD 工件（旧台账、progress、任务简报/报告/审查 diff）已归档至 [docs/superpowers/archive/v1.0/](docs/superpowers/archive/v1.0/)。
+> v1 全部 SDD 工件（旧台账、progress、任务简报/报告/审查 diff）已归档至 [archive/v1.0/](../archive/v1.0/)。
+> **双账本约定**：SDD 技能规定的 git-ignored *工作*账本在 `.superpowers/sdd/`（会话恢复地图，每次批次执行自动生成、不进版本库）；本文件是受版本控制的*批次*台账（每任务 commit）。两者镜像同目录命名，各司其职。
 
 | 任务 | 状态 | 提交区间 | 审查 |
 |---|---|---|---|
