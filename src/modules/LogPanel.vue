@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 
 // 模块 4 · 日志区（§4.4）：白底 Solarized Light、等宽 13px、自动滚动可关、500 行上限由 App 维持。
 const props = defineProps<{ lines: Array<{ line: string; stream: 'sys' | 'out' | 'err' }> }>();
@@ -17,12 +17,14 @@ function cls(e: { line: string; stream: 'sys' | 'out' | 'err' }): string {
   return '';
 }
 
-// 仅当用户在底部附近才滚，避免读日志时跳回
+// 仅当用户在底部附近才滚，避免读日志时跳回；nextTick 等 DOM 更新后再读 scrollHeight
 watch((): number => props.lines.length, () => {
   if (!autoScroll.value) return;
-  const el = view.value;
-  if (!el) return;
-  if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) el.scrollTop = el.scrollHeight;
+  void nextTick(() => {
+    const el = view.value;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) el.scrollTop = el.scrollHeight;
+  });
 });
 
 function onScroll(): void {

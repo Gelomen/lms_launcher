@@ -52,6 +52,8 @@ function openEdit(id: string): void {
   modalOpen.value = true;
 }
 
+const emit = defineEmits<{ (e: 'changed'): void }>(); // TemplateModule 保存/删除后通知 App bump LaunchBar configs-reload-key
+
 async function onDelete(id: string): Promise<void> {
   if (!confirm('删除配置「' + id + '」？将从 llama_launch_configs.yaml 移除。')) return;
   try {
@@ -61,9 +63,10 @@ async function onDelete(id: string): Promise<void> {
     return;
   }
   await reload();
+  emit('changed');
 }
 
-function onSaved(): void { modalOpen.value = false; void reload(); }
+function onSaved(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
 
 onMounted(reload);
 </script>

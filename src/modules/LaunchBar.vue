@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { invoke, errMsg, isMissing } from '../ipc';
 
 // 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 三态按钮（.btn-launch 空闲 / .running / :disabled）。
 const props = defineProps<{
   state: { running: boolean; stopping: boolean; configId: string | null };
   statusText: string;
+  configsReloadKey: number; // App bump（TemplateModule 保存/删除后）→ 重新 load()
 }>();
 
 const emit = defineEmits<{ (e: 'start', configId: string): void; (e: 'stop'): void }>();
@@ -49,6 +50,10 @@ function onStart(): void { emit('start', selected.value); }
 function onStop(): void { emit('stop'); }
 
 onMounted(load);
+
+// App bump configsReloadKey（TemplateModule 保存/删除配置后）→ 重新 load()，
+// running 时锁定当前 configId 不受影响（load 内部已处理）
+watch((): number => props.configsReloadKey, () => { void load(); });
 // 无订阅 / 定时器；卸载无需清理。
 </script>
 <template>
