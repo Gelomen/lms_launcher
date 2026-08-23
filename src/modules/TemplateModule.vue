@@ -76,7 +76,7 @@ onMounted(reload);
     <div style="display: flex; justify-content: flex-end;">
       <button class="btn btn-secondary" @click="openNew">新建模板</button>
     </div>
-    <p v-if="missing && error" class="error-text">{{ error }}（请新建 llama_launch_configs.yaml 后重试）</p>
+    <p v-if="missing && error" class="label">目前没有模板配置</p>
     <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
     <table v-if="configs" style="width: 100%; border-collapse: collapse; margin-top: 8px;">
       <thead>

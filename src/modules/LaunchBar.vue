@@ -37,7 +37,6 @@ async function load(): Promise<void> {
   } catch (e) {
     // MISSING / YAML 透传——MISSING 显示提示不崩溃；configs 视为空
     const msg = errMsg(e);
-    error.value = msg;
     missing.value = isMissing(msg);
     configs.value = null;
     selected.value = '';
@@ -59,13 +58,12 @@ watch((): number => props.configsReloadKey, () => { void load(); });
 <template>
   <section class="module module-launch">
     <h2>启动控制</h2>
-    <p v-if="error" class="error-text">{{ error }}<span v-if="missing">（请检查 llama_launch_configs.yaml）</span></p>
     <label class="label">配置</label>
     <select class="select" v-model="selected" :disabled="state.running">
-      <option value="" disabled>选择配置…</option>
-      <option v-for="id in configs ? Object.keys(configs) : []" :key="id" :value="id">
-        {{ id }}<span v-if="configs![id].desc"> — {{ configs![id].desc }}</span>
+      <option value="" disabled>
+        {{ missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…' }}
       </option>
+      <option v-for="id in configs ? Object.keys(configs) : []" :key="id" :value="id">{{ id }}</option>
     </select>
     <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
       <button class="btn btn-launch" :class="{ running: state.running }" :disabled="!canStart" @click="onStart">启动</button>
