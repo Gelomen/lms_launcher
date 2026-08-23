@@ -222,7 +222,6 @@ function close(): void { emit('close'); }
 .row-cell { display: flex; gap: 8px; min-width: 0; }
 .row-cell .input { flex: 1; }
 .file-btn { width: 72px; flex-shrink: 0; height: var(--h-control); padding: 0 6px; font-size: var(--fs-label); }
-.row-cell .select, .flag-grid > .select { width: 100%; min-width: 0; }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
