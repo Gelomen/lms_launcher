@@ -15,6 +15,6 @@
 | 4 attemptedSave 门控 + 去 * 号 + id「必填」文案 | done | 6a13102..30ff1e0（含 #9D fixup） | ✅ 规格+质量通过（用户裁决 #9D：save() 跳过 boolean=false，yaml 只留 true——按已定需求核） |
 | 5 无配置文案（TemplateModule/LaunchBar）+ 下拉占位规则 | done | 37b3aa4..40bc152 | ✅ 规格+质量通过（次要：error ref 保留为裁决口径合规 + catch 注释措辞过时，留最终分诊） |
 | 6 DirModule 「…」按钮 + title | done | 91cf93b..7d72dfb | ✅ 规格+质量通过（零发现；单字符 U+2026 确认） |
-| 7 style.css 滚动条美化（webkit + Firefox） | pending | — | — |
+| 7 style.css 滚动条美化（webkit + Firefox） | done | d9e2dce..2de9704 | ✅ 规格+质量通过（纯追加零偏差；vite build 控制器确认 CSS 可处理） |
 | 8 全局下拉限高 3 行 + 风格一致（先目检原生） | pending | — | — |
 | 9 全量回归 + release portable + 前端验收清单 | pending | — | — |
