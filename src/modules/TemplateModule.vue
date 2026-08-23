@@ -4,7 +4,7 @@ import { invoke, errMsg, isMissing, isValidation } from '../ipc';
 import TemplateModal from './TemplateModal.vue';
 
 // 模块 2 · 启动参数模板管理（规格 §4.2）
-interface ParamMeta { params: Record<string, string>; required: string[] }
+interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[] }
 type ConfigMap = Record<string, { desc?: string; values: Record<string, string> }>;
 
 const configs = ref<ConfigMap | null>(null);

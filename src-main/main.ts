@@ -137,6 +137,18 @@ ipcMain.handle('open_dir_dialog', async (): Promise<string | null> => {
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
   return res.canceled ? null : res.filePaths[0];
 });
+// params_file 行的文件选择器（规格 #7B）：m/mmproj → gguf 过滤；其余任意文件。canceled / 无窗口 → null
+ipcMain.handle('open_file_dialog', async (_e, key: string): Promise<string | null> => {
+  const { dialog } = await import('electron');
+  const win = mainWin();
+  if (!win) return null;
+  const options: Electron.OpenDialogOptions = {};
+  if (key === 'm' || key === 'mmproj') {
+    options.filters = [{ name: 'Model files', extensions: ['gguf'] }];
+  }
+  const res = await dialog.showOpenDialog(win, options);
+  return res.canceled ? null : res.filePaths[0];
+});
 ipcMain.handle('stop_server', async (): Promise<void> => {
   await ps.stopGraceful(3);
   emitLog('[lms_launcher] 停止指令已发送', 'sys');
