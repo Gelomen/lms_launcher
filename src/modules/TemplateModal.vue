@@ -30,6 +30,9 @@ const formDesc = ref('');
 const formValues = ref<Record<string, string>>({});
 const saveError = ref<string | null>(null);
 const saving = ref(false);
+// #3：保存前不显示任何校验提示；只有「保存」点击过才 revealed。
+// 打开（fill）重置为 false，点保存后置 true——保存失败不重置（下次点保存仍保留上次状态）。
+const attemptedSave = ref(false);
 
 function fill(): void {
   attemptedSave.value = false; // 打开弹窗重置（步骤 1）
@@ -56,9 +59,6 @@ function fill(): void {
   formValues.value = init;
   saveError.value = null;
 }
-
-// 打开（含从新建切到另一个编辑目标）时重置表单
-watch(() => props.open, (open) => { if (open) fill(); }, { immediate: true });
 
 // ---------- 校验（对齐 config.ts validateConfigId）----------
 const idError = computed((): string | null => {
@@ -88,6 +88,9 @@ const rows = computed((): Row[] => {
 });
 const fileKeys = computed((): string[] => props.paramsMeta.params_file ?? []);
 
+// 打开（含从新建切到另一个编辑目标）时重置表单——须在 rows/fileKeys 声明之后注册，immediate 首跑才能读到行定义
+watch(() => props.open, (open) => { if (open) fill(); }, { immediate: true });
+
 function requiredError(row: Row): boolean {
   return props.paramsMeta.required.includes(row.key) && (formValues.value[row.key] ?? '').trim().length === 0;
 }
@@ -109,6 +112,8 @@ const emptyRequired = computed((): string[] => {
 async function save(): Promise<void> {
   attemptedSave.value = true; // 保存失败不重置；关闭经 fill() 重置（步骤 1）
   saveError.value = null;
+  // id / 必填项 校验失败 → 保存被拒（计划 task-4 步骤 4「保存被拒」）；红框与「必填项未填写」文案由模板 attemptedSave 门控展示
+  if (idError.value !== null || emptyRequired.value.length > 0) return;
   // 空值（含编辑时清掉的字段）→ 不写入，保持 yaml 干净；#9D：boolean false 也不写入，yaml 只保留 true flags
   const boolKeys: string[] = props.paramsMeta.params_boolean ?? [];
   const values: Record<string, string> = {};

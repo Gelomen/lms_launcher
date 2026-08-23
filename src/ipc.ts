@@ -26,10 +26,19 @@ export function onTrayExitRequest(cb: () => void): () => void {
   return window.lms.onTrayExitRequest(cb);
 }
 
-/** invoke reject 的值是带 .message 的 Error——直接 String(err) 会得 [object Object] */
+/**
+ * invoke 的 reject 值是带 .message 的 Error——直接 String(err) 会得 [object Object]。
+ * Electron 主进程侧抛出的 Error 经 ipcRenderer.invoke 会被包一层外壳：
+ *   "Error invoking remote method 'get_configs': Error: MISSING: ..."
+ *   （外层 Error.message 还额外多一行 'Error invoking remote method'）。
+ * 分类（isMissing / isValidation）与展示都基于**剥掉外壳后的原始消息**：
+ * - errMsg 负责剥壳，露出 MISSING:/VALIDATION:/YAML:... 等真正内容；
+ * - isMissing / isValidation 用「包含匹配」兜底——万一未来再有多余的外壳，仍能识别。
+ */
 export function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error ? err.message : String(err);
+  return raw.replace(/^\s*(?:Error invoking remote method '[^']*':\s*)?(?:Error:\s*)*/, '');
 }
 
-export const isMissing = (msg: string): boolean => msg.startsWith("MISSING:");
-export const isValidation = (msg: string): boolean => msg.startsWith("VALIDATION:");
+export const isMissing = (msg: string): boolean => msg.includes("MISSING:");
+export const isValidation = (msg: string): boolean => msg.includes("VALIDATION:");

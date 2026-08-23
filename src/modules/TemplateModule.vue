@@ -38,9 +38,9 @@ async function reload(): Promise<void> {
 // flag-form 摘要：已填、且在 params 映射里的，取前 3 个（summarize 风格）
 function preview(cfg: { values: Record<string, string> }): string {
   return Object.entries(cfg.values)
-    .filter(([k, v]) => v.trim().length > 0 && paramsMeta.params[k] !== undefined)
+    .filter(([k, v]) => v.trim().length > 0 && paramsMeta.value.params[k] !== undefined) // Ref 在 script 函数体内不自动解包（模板内才解包）
     .slice(0, 3)
-    .map(([k, v]) => paramsMeta.params[k] + ' ' + v.trim())
+    .map(([k, v]) => paramsMeta.value.params[k] + ' ' + v.trim())
     .join('  ');
 }
 
