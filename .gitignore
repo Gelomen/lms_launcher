@@ -5,3 +5,5 @@ node_modules/
 .npm-cache/
 .superpowers/
 
+
+.dsh-watch/
