@@ -36,4 +36,32 @@ describe('TemplateModule', () => {
     expect(wrapper.findAll('.module-template table').length).toBe(1);
     wrapper.unmount();
   });
+
+  it('list_has_no_delete_and_edit_modal_shows_it', async () => {
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+
+    // 列表行不再渲染删除按钮（新建模板 / 编辑除外，均不出现「删除」字样）
+    expect(wrapper.text()).not.toContain('删除');
+
+    // 点「编辑」→ teleport 到 body 的弹窗 modal-actions 最左出现删除按钮
+    const editBtn = wrapper.findAll('button').find((b) => b.text() === '编辑')!;
+    await editBtn.trigger('click');
+    await flush();
+    const del = [...document.querySelectorAll('.modal-actions button')].find(
+      (b) => (b.textContent ?? '').includes('删除'),
+    );
+    expect(del).toBeDefined();
+    wrapper.unmount();
+  });
 });

@@ -45,17 +45,8 @@ function openEdit(id: string): void {
 
 const emit = defineEmits<{ (e: 'changed'): void }>(); // TemplateModule 保存/删除后通知 App bump LaunchBar configs-reload-key
 
-async function onDelete(id: string): Promise<void> {
-  if (!confirm('删除配置「' + id + '」？将从 llama_launch_configs.yaml 移除。')) return;
-  try {
-    await invoke('delete_config', id);
-  } catch (e) {
-    error.value = errMsg(e); // VALIDATION / IO / MISSING 前缀原样展示
-    return;
-  }
-  await reload();
-  emit('changed');
-}
+// 删除已挪入弹窗左下角（TemplateModal.onDelete）；成功后由它 emit('deleted') → 关窗 + 刷新
+function onDeleted(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
 
 function onSaved(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
 
@@ -75,8 +66,7 @@ onMounted(reload);
           <tr style="border-top: 1px solid var(--border);">
             <td style="padding: 4px 8px 4px 0; font-weight: 600;">{{ id }}</td>
             <td style="text-align: right; white-space: nowrap;">
-              <button class="btn btn-secondary" style="height: 24px; margin-right: 4px;" @click="openEdit(id)">编辑</button>
-              <button class="btn btn-secondary" style="height: 24px;" @click="onDelete(id)">删除</button>
+              <button class="btn btn-secondary" style="height: 24px;" @click="openEdit(id)">编辑</button>
             </td>
           </tr>
         </template>
@@ -92,6 +82,7 @@ onMounted(reload);
       :params-meta="paramsMeta"
       :existing-ids="configs ? Object.keys(configs) : []"
       @saved="onSaved"
+      @deleted="onDeleted"
       @close="modalOpen = false"
     />
   </section>
