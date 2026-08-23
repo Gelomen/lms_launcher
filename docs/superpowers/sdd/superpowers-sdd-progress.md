@@ -17,4 +17,4 @@
 | 6 DirModule 「…」按钮 + title | done | 91cf93b..7d72dfb | ✅ 规格+质量通过（零发现；单字符 U+2026 确认） |
 | 7 style.css 滚动条美化（webkit + Firefox） | done | d9e2dce..2de9704 | ✅ 规格+质量通过（纯追加零偏差；vite build 控制器确认 CSS 可处理） |
 | 8 全局下拉限高 3 行 + 风格一致（先目检原生） | done | 74f1115..6196d83（含死 CSS fixup） | ✅ 规格+质量通过（控制器裁定跳过原生目检直接走 2B；次要 disabled 面板可展开留最终分诊） |
-| 9 全量回归 + release portable + 前端验收清单 | pending | — | — |
+| 9 全量回归 + release portable + 前端验收清单 | done | （回归+打包由控制器执行；report .superpowers/sdd/task-9-report.md） | ✅ 步骤1 vitest 30/30+tsc+build 绿 / 步骤2 portable exe 70.9MB（v1.0.0）/ 步骤4 defaultParams 运行态核 33键+params_options5行+params_boolean3项+params_file3段；步骤3 dev 窗口 7 项目检清单已备好待 GUI 人工过 |
