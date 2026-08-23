@@ -9,5 +9,10 @@ node_modules/
 .dsh-watch/
 
 .repro/
-.tmp-*
+.tmp-rt/
+.tmp-roundtrip.mjs
+.tmp-repro-drive.mjs
+.tmp-red-drive.mjs
+.tmp-green-drive.mjs
+.tmp-assert-drive.mjs
 
