@@ -16,10 +16,16 @@ export function buildArgVector(exe: string, pf: ParamsFile, entry: ConfigEntry):
     if (v.length === 0) throw new Error(`VALIDATION: 必填参数 "${pf.params[key] ?? key}" 未填写`);
   }
   const out = [exe];
+  const boolKeys = pf.params_boolean ?? [];
   for (const [k, v] of Object.entries(entry.values)) {
     if (v.trim().length === 0) continue;
     const flag = pf.params[k];
     if (flag === undefined) throw new Error(`VALIDATION: 参数 "${k}" 不在 llama_params.yaml 的映射表里`);
+    if (boolKeys.includes(k)) {
+      if (v.trim() === 'true') { out.push(flag); continue; }        // boolean true → 只拼 flag，无值对
+      if (v.trim() !== 'false') { out.push(flag, quoted(v.trim())); continue; } // 其他字面量兜底：flag+值
+      continue;                                                       // false → 整对跳过（与空值一致）
+    }
     out.push(flag, quoted(v.trim()));
   }
   return out;
@@ -37,9 +43,11 @@ export function prepareLaunch(dir: string, pf: ParamsFile, configs: ConfigsMap, 
 
 // 日志/列表用的 flag 形式摘要，如 -m "D:\x.gguf" --port 9931
 export function summarize(e: ConfigEntry, pf: ParamsFile): string {
+  const boolKeys = pf.params_boolean ?? [];
   return Object.entries(e.values)
     .filter(([, v]) => v.trim().length > 0)
     .filter(([k]) => pf.params[k] !== undefined)
-    .map(([k, v]) => `${pf.params[k]} ${quoted(v.trim())}`)
+    .filter(([k, v]) => !(boolKeys.includes(k) && v.trim() === 'false')) // false 与 buildArgVector 一致：不出现
+    .map(([k, v]) => boolKeys.includes(k) && v.trim() === 'true' ? pf.params[k]! : `${pf.params[k]} ${quoted(v.trim())}`)
     .join(' ');
 }

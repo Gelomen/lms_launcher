@@ -2,7 +2,13 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 
 export interface AppConfig { llama_dir: string }
-export interface ParamsFile { params: Record<string, string>; required: string[] }
+export interface ParamsFile {
+  params: Record<string, string>;
+  required: string[];
+  params_options?: Record<string, string[]>;
+  params_boolean?: string[];
+  params_file?: string[];
+}
 export interface ConfigEntry { desc?: string; values: Record<string, string> }
 export type ConfigsMap = Record<string, ConfigEntry>
 
@@ -96,7 +102,9 @@ export function validateParamKey(key: string): boolean {
   return /^[a-z0-9_]+$/.test(key);
 }
 
-// 默认参数模板：run.bat COMMON 全量 flag-form 映射（m → -m …）；required = [m]
+// 默认参数模板：run.bat COMMON 全量 flag-form 映射 + v1.1 新增 reasoning/reasoning_preserve
+// + #14 n_cpu_moe/fit/fit_ctx/fit_target/metrics；required = [m]；
+// params_options / params_boolean / params_file 三段随首建模板一次写入（§#9A/#14）
 export function defaultParams(): ParamsFile {
   const items: Array<[string, string]> = [
     ['m', '-m'], ['mmproj', '--mmproj'], ['spec_type', '--spec-type'], ['ngl', '-ngl'],
@@ -104,11 +112,28 @@ export function defaultParams(): ParamsFile {
     ['b', '-b'], ['ub', '-ub'], ['t', '-t'], ['tb', '-tb'], ['ctk', '-ctk'],
     ['ctv', '--ctv'], ['jinja', '--jinja'], ['chat_template_file', '--chat-template-file'],
     ['reasoning_format', '--reasoning-format'], ['reasoning_effort', '--reasoning-effort'],
+    ['reasoning', '--reasoning'], ['reasoning_preserve', '--reasoning-preserve'],
+    // #14：调试/部署参数（n_cpu_moe 非 MoE 模型填 0；fit 三件套为自动填充显存调试参数）
+    ['n_cpu_moe', '--n-cpu-moe'], ['fit', '--fit'], ['fit_ctx', '--fit-ctx'], ['fit_target', '--fit-target'],
+    ['metrics', '--metrics'], // #14：无值调试 flag（Prometheus），声明进 params_boolean
     ['spec_draft_n_max', '--spec-draft-n-max'], ['temp', '--temp'], ['top_p', '--top-p'],
     ['top_k', '--top-k'], ['min_p', '--min-p'],
     ['presence_penalty', '--presence_penalty'], ['repeat_penalty', '--repeat_penalty'],
     ['port', '--port'],
   ];
   const params: Record<string, string> = Object.fromEntries(items);
-  return { params, required: ['m'] };
+  return {
+    params,
+    required: ['m'],
+    params_options: {
+      spec_type: ['none', 'draft-mtp', 'draft-simple', 'draft-eagle3', 'draft-dflash', 'draft-dspark',
+                 'ngram-cache', 'ngram-simple', 'ngram-map-k', 'ngram-map-k4v', 'ngram-mod'],
+      load_mode: ['none', 'auto', 'mmap', 'mlock', 'mmap+mlock', 'dio'],
+      reasoning: ['auto', 'on', 'off'],
+      reasoning_format: ['none', 'hide', 'deepseek'],
+      reasoning_effort: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    },
+    params_boolean: ['jinja', 'reasoning_preserve', 'metrics'], // #14：metrics 为无值 flag
+    params_file: ['m', 'mmproj', 'chat_template_file'],
+  };
 }

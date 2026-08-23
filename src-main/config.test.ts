@@ -88,9 +88,61 @@ describe('config.ts', () => {
     paramsLoad(p);
     // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
     const pf2 = paramsLoad(p);
-    expect(Object.keys(pf2.params)).toHaveLength(26);
+    expect(Object.keys(pf2.params)).toHaveLength(33);
     expect(pf2.params['spec_type']).toBe('--spec-type');
     expect(pf2.params['presence_penalty']).toBe('--presence_penalty');
     rm(p);
+  });
+
+  it('params_new_sections_parsed', () => {
+    const p = tmpPath('params_new.yaml');
+    rm(p);
+    writeText(p, `params:
+  m: "-m"
+  jinja: "--jinja"
+params_options:
+  spec_type: ["none", "draft-mtp"]
+params_boolean:
+  - jinja
+params_file:
+  - m
+`);
+    const pf = paramsLoad(p);
+    expect(pf.params_options?.spec_type).toEqual(['none', 'draft-mtp']);
+    expect(pf.params_boolean).toEqual(['jinja']);
+    expect(pf.params_file).toEqual(['m']);
+    rm(p);
+  });
+
+  it('params_missing_new_sections_are_empty', () => {
+    const p = tmpPath('params_legacy.yaml');
+    rm(p);
+    writeText(p, 'params:\n  m: "-m"\nrequired: ["m"]\n');
+    const pf = paramsLoad(p);
+    expect(pf.params_options ?? {}).toEqual({});
+    expect(pf.params_boolean ?? []).toEqual([]);
+    expect(pf.params_file ?? []).toEqual([]);
+    rm(p);
+  });
+
+  it('default_params_includes_v1_1_keys_and_sections', () => {
+    const pf = defaultParams();
+    expect(pf.params['reasoning']).toBe('--reasoning');
+    expect(pf.params['reasoning_preserve']).toBe('--reasoning-preserve');
+    // #14：五个新参数（n_cpu_moe / fit / fit_ctx / fit_target 为普通文本参数；metrics 为 boolean flag）
+    expect(pf.params['n_cpu_moe']).toBe('--n-cpu-moe');
+    expect(pf.params['fit']).toBe('--fit');
+    expect(pf.params['fit_ctx']).toBe('--fit-ctx');
+    expect(pf.params['fit_target']).toBe('--fit-target');
+    expect(pf.params['metrics']).toBe('--metrics');
+    expect(Object.keys(pf.params)).toHaveLength(33); // 既有 26 + v1.1 新增 7（reasoning*2 + #14 五参数）
+    expect(pf.params_options?.spec_type).toEqual(['none','draft-mtp','draft-simple','draft-eagle3','draft-dflash','draft-dspark','ngram-cache','ngram-simple','ngram-map-k','ngram-map-k4v','ngram-mod']);
+    expect(pf.params_options?.load_mode).toEqual(['none','auto','mmap','mlock','mmap+mlock','dio']);
+    expect(pf.params_options?.reasoning).toEqual(['auto','on','off']);
+    expect(pf.params_options?.reasoning_format).toEqual(['none','hide','deepseek']);
+    expect(pf.params_options?.reasoning_effort).toEqual(['none','low','medium','high','xhigh','max']);
+    expect(pf.params_boolean).toEqual(['jinja','reasoning_preserve','metrics']); // #14：metrics 声明为 boolean
+
+    expect(pf.params_file).toEqual(['m','mmproj','chat_template_file']);
   });
 });
