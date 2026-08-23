@@ -6,11 +6,17 @@ import { invoke, errMsg } from '../ipc';
 // flag-form 参数表单 + id 唯一性红框 + 必填(-m)红框不保存；其余空值不写入 yaml。
 const props = withDefaults(defineProps<{
   open: boolean;
-  id: string;              // 编辑中的 id（新建为空串）
+  id: string;
   values: Record<string, string>;
-  desc?: string;           // 编辑中原配置的 desc
-  paramsMeta: { params: Record<string, string>; required: string[] };
-  existingIds: string[];   // 已存在的配置 id（唯一性校验基准）
+  desc?: string;
+  paramsMeta: {
+    params: Record<string, string>;
+    required: string[];
+    params_options?: Record<string, string[]>;
+    params_boolean?: string[];
+    params_file?: string[];
+  };
+  existingIds: string[];
 }>(), { desc: '' });
 
 const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void }>();
@@ -27,12 +33,22 @@ const saving = ref(false);
 function fill(): void {
   formId.value = props.id;
   formDesc.value = props.desc ?? '';
+  const opts = props.paramsMeta.params_options ?? {};
+  const bools: string[] = props.paramsMeta.params_boolean ?? [];
   const init: Record<string, string> = {};
-  for (const k of Object.keys(props.paramsMeta.params)) init[k] = '';
-  // 编辑时：有填的展示、没填的留空
+  for (const row of rows.value) {
+    if (row.type === 'boolean') init[row.key] = 'false';            // §#9D：boolean 恒默认 false（'false' 不写入 yaml）
+    else if (row.type === 'options') init[row.key] = row.opts[0];   // options 恒默认首个选项（无未设置占位）
+    else init[row.key] = '';
+  }
   if (isEdit.value) {
     for (const [k, v] of Object.entries(props.values)) {
-      if (init[k] !== undefined && (v ?? '').trim().length > 0) init[k] = v;
+      const t = (v ?? '').trim();
+      if (t.length === 0) continue;
+      const row = rows.value.find((r) => r.key === k);
+      if (!row) continue; // 存值 key 不在 params 表（开发阶段无兼容）
+      if (row.type === 'options' && !row.opts.includes(t)) init[k] = row.opts[0]; // 回落首个
+      else init[k] = t;
     }
   }
   formValues.value = init;
@@ -53,14 +69,30 @@ const idError = computed((): string | null => {
   return null;
 });
 
-type Row = { key: string; flag: string; required: boolean };
+type RowType = 'text' | 'options' | 'boolean';
+type Row = { key: string; flag: string; required: boolean; type: RowType; opts: string[] };
 const rows = computed((): Row[] => {
+  const opts = props.paramsMeta.params_options ?? {};
+  const bools: string[] = props.paramsMeta.params_boolean ?? [];
+  const files: string[] = props.paramsMeta.params_file ?? [];
   const out: Row[] = [];
   for (const [k, flag] of Object.entries(props.paramsMeta.params)) {
-    out.push({ key: k, flag, required: props.paramsMeta.required.includes(k) });
+    let type: RowType = 'text';
+    if (bools.includes(k)) type = 'boolean';
+    else if (opts[k] !== undefined) type = 'options';
+    out.push({ key: k, flag, required: props.paramsMeta.required.includes(k), type, opts: opts[k] ?? [] });
   }
   return out;
 });
+const fileKeys = computed((): string[] => props.paramsMeta.params_file ?? []);
+
+function requiredError(row: Row): boolean {
+  return props.paramsMeta.required.includes(row.key) && (formValues.value[row.key] ?? '').trim().length === 0;
+}
+async function pickFile(key: string): Promise<void> {
+  const picked = await invoke<string | null>('open_file_dialog', key);
+  if (picked !== null) formValues.value[key] = picked; // null（取消）不动
+}
 
 // 必填项（required 列表）留空 → 红框 + 不保存
 const emptyRequired = computed((): string[] => {
@@ -114,15 +146,26 @@ function close(): void { emit('close'); }
 
         <div class="flag-grid">
           <template v-for="row in rows" :key="row.key">
-            <label class="label flag-label">
-              {{ row.flag }}<span v-if="row.required" title="必填">*</span>
-            </label>
-            <input
-              class="input"
-              :class="{ error: props.paramsMeta.required.includes(row.key) && (formValues[row.key] ?? '').trim().length === 0 }"
-              :value="formValues[row.key]"
-              @input="(ev: Event) => { formValues[row.key] = (ev.target as HTMLInputElement).value; }"
-            />
+            <label class="label flag-label">{{ row.flag }}</label>
+            <!-- boolean / options → 原生 select；text → input（params_file 行右侧加「选择文件」按钮） -->
+            <div class="row-cell" v-if="row.type === 'text'">
+              <input
+                class="input"
+                :class="{ error: requiredError(row) }"
+                :value="formValues[row.key]"
+                @input="(ev: Event) => { formValues[row.key] = (ev.target as HTMLInputElement).value; }"
+              />
+              <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn" @click="pickFile(row.key)">选择文件</button>
+            </div>
+            <select v-else-if="row.type === 'boolean'" class="select" :value="formValues[row.key]"
+                    @change="(ev: Event) => { formValues[row.key] = (ev.target as HTMLSelectElement).value; }">
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
+            <select v-else class="select" :value="formValues[row.key]"
+                    @change="(ev: Event) => { formValues[row.key] = (ev.target as HTMLSelectElement).value; }">
+              <option v-for="o in row.opts" :key="o" :value="o">{{ o }}</option>
+            </select>
           </template>
         </div>
 
@@ -155,21 +198,24 @@ function close(): void { emit('close'); }
   max-width: 520px;
   max-height: 85vh;
   overflow-y: auto;
+  overflow-x: hidden;                /* #11 兜底：内容不得横向撑破卡片 */
 }
 .flag-grid {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: 130px 1fr;
+  grid-template-columns: auto 1fr;   /* #8：130px → auto，长 label（--chat-template-file）完整可见 */
   gap: 6px 10px;
   align-items: center;
 }
 .flag-label {
   text-align: right;
   font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: nowrap;               /* #8：去掉 overflow/ellipsis，保留 nowrap */
 }
+.row-cell { display: flex; gap: 8px; min-width: 0; }
+.row-cell .input { flex: 1; }
+.file-btn { width: 72px; flex-shrink: 0; height: var(--h-control); padding: 0 6px; font-size: var(--fs-label); }
+.row-cell .select, .flag-grid > .select { width: 100%; min-width: 0; }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
