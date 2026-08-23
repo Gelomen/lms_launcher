@@ -61,7 +61,14 @@ body {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 两列：左列 = llama.cpp 安装目录 + 启动控制（上下堆叠），右列 = 启动参数模板 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: var(--card-gap);
+}
+/* 左列堆叠容器：卡片间保持 --card-gap 间距 */
+.stack {
+  display: flex;
+  flex-direction: column;
   gap: var(--card-gap);
 }
 .log-area {

@@ -82,11 +82,13 @@ function onTemplateChanged(): void {
   <main class="layout">
     <h1 class="app-title">lms_launcher</h1>
     <section class="grid">
-      <div class="card"><DirModule /></div>
-      <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>
-      <div class="card">
-        <LaunchBar :state="state" :status-text="statusText" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
+      <div class="stack">
+        <div class="card"><DirModule /></div>
+        <div class="card">
+          <LaunchBar :state="state" :status-text="statusText" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
+        </div>
       </div>
+      <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>
     </section>
     <section class="log-area">
       <LogPanel :lines="logLines" />
