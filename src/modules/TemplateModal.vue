@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{
   existingIds: string[];
 }>(), { desc: '' });
 
-const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void }>();
+const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void; (e: 'deleted', id: string): void }>();
 
 const isEdit = computed(() => props.id.length > 0);
 
@@ -133,6 +133,17 @@ async function save(): Promise<void> {
   }
 }
 
+// 删除（规格 2026-08-24）：仅编辑模式渲染；confirm 文案沿用列表行原句；失败进 saveError 区展示，不关窗
+async function onDelete(): Promise<void> {
+  if (!confirm('删除配置「' + props.id + '」？将从 llama_launch_configs.yaml 移除。')) return;
+  try {
+    await invoke('delete_config', props.id);
+    emit('deleted', props.id);
+  } catch (e) {
+    saveError.value = errMsg(e); // VALIDATION / IO / MISSING 前缀原样展示
+  }
+}
+
 function close(): void { emit('close'); }
 </script>
 <template>
@@ -184,6 +195,7 @@ function close(): void { emit('close'); }
         <p v-if="attemptedSave && emptyRequired.length > 0" class="error-text">必填项未填写：{{ emptyRequired.map((k) => props.paramsMeta.params[k]).join('、') }}</p>
 
         <div class="modal-actions">
+          <button v-if="isEdit" class="btn btn-secondary btn-delete" @click="onDelete">删除</button>
           <button class="btn btn-secondary" @click="close">取消</button>
           <button class="btn btn-primary" :disabled="saving" @click="save">
             {{ saving ? '保存中…' : '保存' }}
@@ -233,4 +245,6 @@ function close(): void { emit('close'); }
   gap: 8px;
   margin-top: 16px;
 }
+/* 删除按钮贴弹窗左下角（取消/保存仍右对齐） */
+.modal-actions .btn-delete { margin-right: auto; }
 </style>
