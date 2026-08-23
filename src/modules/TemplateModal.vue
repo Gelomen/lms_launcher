@@ -31,6 +31,7 @@ const saveError = ref<string | null>(null);
 const saving = ref(false);
 
 function fill(): void {
+  attemptedSave.value = false; // 打开弹窗重置（步骤 1）
   formId.value = props.id;
   formDesc.value = props.desc ?? '';
   const opts = props.paramsMeta.params_options ?? {};
@@ -61,7 +62,7 @@ watch(() => props.open, (open) => { if (open) fill(); }, { immediate: true });
 // ---------- 校验（对齐 config.ts validateConfigId）----------
 const idError = computed((): string | null => {
   const v = formId.value.trim();
-  if (v.length === 0) return 'id 必填';
+  if (v.length === 0) return '必填';
   // 与主进程 validateConfigId（config.ts:87-91）完全一致：小写字母开头、仅 [a-z0-9]、≤32
   if (!/^[a-z][a-z0-9]*$/.test(v)) return '须为小写字母开头的字母数字串（不含下划线 / 空格 / 大写）';
   if (v.length > 32) return '最长 32 位';
@@ -105,6 +106,7 @@ const emptyRequired = computed((): string[] => {
 
 // ---------- 保存 ----------
 async function save(): Promise<void> {
+  attemptedSave.value = true; // 保存失败不重置；关闭经 fill() 重置（步骤 1）
   saveError.value = null;
   // 空值（含编辑时清掉的字段）→ 不写入，保持 yaml 干净
   const values: Record<string, string> = {};
@@ -134,12 +136,12 @@ function close(): void { emit('close'); }
         <label class="label" style="display: block;">id</label>
         <input
           class="input"
-          :class="{ error: idError !== null }"
+          :class="{ error: attemptedSave && idError !== null }"
           v-model="formId"
           :disabled="isEdit"
           placeholder="小写字母与数字，如 qwendaily"
         />
-        <p v-if="idError" class="error-text">{{ idError }}</p>
+        <p v-if="attemptedSave && idError" class="error-text">{{ idError }}</p>
 
         <label class="label" style="display: block; margin-top: 8px;">desc（说明）</label>
         <input class="input" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
@@ -151,7 +153,7 @@ function close(): void { emit('close'); }
             <div class="row-cell" v-if="row.type === 'text'">
               <input
                 class="input"
-                :class="{ error: requiredError(row) }"
+                :class="{ error: attemptedSave && requiredError(row) }"
                 :value="formValues[row.key]"
                 @input="(ev: Event) => { formValues[row.key] = (ev.target as HTMLInputElement).value; }"
               />
@@ -169,11 +171,11 @@ function close(): void { emit('close'); }
           </template>
         </div>
 
-        <p v-if="emptyRequired.length > 0" class="error-text">必填项未填写：{{ emptyRequired.map((k) => props.paramsMeta.params[k]).join('、') }}</p>
+        <p v-if="attemptedSave && emptyRequired.length > 0" class="error-text">必填项未填写：{{ emptyRequired.map((k) => props.paramsMeta.params[k]).join('、') }}</p>
 
         <div class="modal-actions">
           <button class="btn btn-secondary" @click="close">取消</button>
-          <button class="btn btn-primary" :disabled="saving || idError !== null || emptyRequired.length > 0" @click="save">
+          <button class="btn btn-primary" :disabled="saving" @click="save">
             {{ saving ? '保存中…' : '保存' }}
           </button>
         </div>
