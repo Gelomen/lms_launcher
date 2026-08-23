@@ -60,7 +60,7 @@ onMounted(load);
     <p v-if="error" class="error-text">{{ error }}</p>
     <div style="display: flex; gap: 8px;">
       <input class="input" v-model="dir" :placeholder="'C:' + String.fromCharCode(92) + 'llama.cpp' + String.fromCharCode(92) + 'build-cpu-avx2'" @change="status = null" />
-      <button class="btn btn-secondary" @click="pickDir">选择目录…</button>
+      <button class="btn btn-secondary" title="选择 llama.cpp 安装目录" @click="pickDir">…</button>
     </div>
     <button class="btn btn-secondary" style="margin-top: 8px;" @click="validate">校验</button>
     <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}（已保存）</p>
