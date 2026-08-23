@@ -68,8 +68,11 @@ onMounted(load);
       <input class="input" v-model="dir" :placeholder="'C:' + String.fromCharCode(92) + 'llama.cpp' + String.fromCharCode(92) + 'build-cpu-avx2'" @change="status = null" />
       <button class="btn btn-secondary" title="选择 llama.cpp 安装目录" @click="pickDir">…</button>
     </div>
-    <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}（已保存）</p>
-    <p v-else-if="status && !status.ok" class="error-text">✗ {{ status.msg }}</p>
-    <p v-if="saving" class="label">保存中…</p>
+    <!-- 下方恒定槽位：预留校验结果行（单行，与「保存中…」共用；避免校验前后卡片高度抖动） -->
+    <div class="dir-status">
+      <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}（已保存）</p>
+      <p v-else-if="status && !status.ok" class="error-text">✗ {{ status.msg }}</p>
+      <p v-else-if="saving" class="label">保存中…</p>
+    </div>
   </section>
 </template>

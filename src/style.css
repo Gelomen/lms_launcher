@@ -194,6 +194,14 @@ body {
 .dropdown-panel .option:hover { background: #F6F7F8; }   /* 与 btn:hover 一致 */
 .dropdown-panel .option.selected { color: var(--accent); font-weight: 600; }
 
+/* ---- 「llama.cpp 安装目录」卡片下方恒定槽位：预留校验结果 1 行（与「保存中…」共用），
+     避免校验前后卡片高度抖动 —— 校验后卡片不再把下方「启动控制」往下挤 ---- */
+.dir-status {
+  height: 22px; /* ≈1 行：12px 字号 × 1.5 line-height + 4px margin-top（.ok-text/.error-text 原占位） */
+  margin-top: 4px;
+}
+.dir-status .error-text, .dir-status .ok-text { margin-top: 0; } /* 槽位已含间距，内部不再叠加 margin */
+
 /* ---- 模板列表固定高度（方案 B）：≈6 行占位、超出内部滚动、卡片高度恒定 ---- */
 .template-list {
   height: 192px; /* ≈6 行模板（30px/行），不足留白、不收缩 */
