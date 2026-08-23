@@ -2,9 +2,9 @@
 
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
 
-**目标：** 在已完成的 lms_launcher v1（Electron + Vue 3 + Vitest）上，交付 v1.1 规格（docs/superpowers/specs/2026-08-23-lms-launch-v1.1-ui-fix-and-param-options.md）的全部 #1–#13：无配置红字改普通文案、弹窗保存后才校验、params_file「选择文件」按钮、params_options/params_boolean 下拉、flag-grid 标签自适应 + 圆角修复、滚动条美化、目录按钮省略号、下拉菜单限高。
+**目标：** 在已完成的 lms_launcher v1（Electron + Vue 3 + Vitest）上，交付 v1.1 规格（docs/superpowers/specs/2026-08-23-lms-launch-v1.1-ui-fix-and-param-options.md）的全部 #1–#14：无配置红字改普通文案、弹窗保存后才校验、params_file「选择文件」按钮、params_options/params_boolean 下拉、flag-grid 标签自适应 + 圆角修复、滚动条美化、目录按钮省略号、下拉菜单限高、五个新参数（#14：n_cpu_moe / fit / fit_ctx / fit_target / metrics，metrics 声明为 params_boolean）。
 
-**架构：** 主进程（Node/TS）承担 yaml schema 扩展（config.ts 新增 params_options / params_boolean / params_file 三段）与命令拼装规则（build.ts boolean 只拼 flag、options 透传）；渲染端（Vue 3）做弹窗 rows 三分支（文本 / 选项下拉 / 布尔下拉）、校验门控 attemptedSave、全局 CSS（滚动条）。IPC 仅新增一个命令 open_file_dialog。
+**架构：** 主进程（Node/TS）承担 yaml schema 扩展（config.ts 新增 params_options / params_boolean / params_file 三段）与命令拼装规则（build.ts boolean 只拼 flag——jinja / reasoning_preserve / metrics、options 透传）；渲染端（Vue 3）做弹窗 rows 三分支（文本 / 选项下拉 / 布尔下拉）、校验门控 attemptedSave、全局 CSS（滚动条）。IPC 仅新增一个命令 open_file_dialog。
 
 **技术栈：** Electron 28 + Vue 3 + TypeScript + Vitest + Vite + yaml + electron-builder portable。
 
@@ -30,7 +30,7 @@
 | （任务 8 目检后可能：TemplateModal.vue / LaunchBar.vue + style.css） | 全局下拉限高 3 行 + 圆角风格一致 | 8 |
 | docs/superpowers/sdd/superpowers-sdd-progress.md | 每任务完成后更新台账行 | 1–9 |
 
-**现有测试基线（红→绿的参照物）：** config.test.ts 9 用例、build.test.ts 6 用例，当前全绿。注意 config.test.ts 的 `params_reread_after_default_write_succeeds` 硬断言 `toHaveLength(26)`，defaultParams 新增 2 个 key 后必须同步改 28（任务 1 步骤 1）。
+**现有测试基线（红→绿的参照物）：** config.test.ts 9 用例、build.test.ts 6 用例，当前全绿。注意 config.test.ts 的 `params_reread_after_default_write_succeeds` 硬断言 `toHaveLength(26)`，defaultParams 在 v1.1 新增 7 个 key（reasoning*2 + #14 的 n_cpu_moe / fit / fit_ctx / fit_target / metrics）后必须同步改 **33**（任务 1 步骤 1）。
 
 **批次归属（规格总原则：一个计划、两个批次）：**
 - **参数选项批**（新 schema 先行）：任务 1（config/build TDD）、任务 2（IPC open_file_dialog）、任务 3（弹窗三分支 + 选择文件按钮）。
@@ -49,7 +49,7 @@
 
 - [ ] **步骤 1：编写失败的测试（config）**
 
-在 `src-main/config.test.ts` 的 `describe('config.ts')` 内追加三个用例，并把既有断言 26 改为 28：
+在 `src-main/config.test.ts` 的 `describe('config.ts')` 内追加三个用例，并把既有断言 26 改为 **33**：
 
 ```ts
 it('params_new_sections_parsed', () => {
@@ -87,26 +87,36 @@ it('default_params_includes_v1_1_keys_and_sections', () => {
   const pf = defaultParams();
   expect(pf.params['reasoning']).toBe('--reasoning');
   expect(pf.params['reasoning_preserve']).toBe('--reasoning-preserve');
-  expect(Object.keys(pf.params)).toHaveLength(28); // 既有 26 + reasoning*2
+  // #14：五个新参数（n_cpu_moe / fit / fit_ctx / fit_target 为普通文本参数；metrics 为 boolean flag）
+  expect(pf.params['n_cpu_moe']).toBe('--n-cpu-moe');
+  expect(pf.params['fit']).toBe('--fit');
+  expect(pf.params['fit_ctx']).toBe('--fit-ctx');
+  expect(pf.params['fit_target']).toBe('--fit-target');
+  expect(pf.params['metrics']).toBe('--metrics');
+  expect(Object.keys(pf.params)).toHaveLength(33); // 既有 26 + v1.1 新增 7（reasoning*2 + #14 五参数）
   expect(pf.params_options?.spec_type).toEqual(['none','draft-mtp','draft-simple','draft-eagle3','draft-dflash','draft-dspark','ngram-cache','ngram-simple','ngram-map-k','ngram-map-k4v','ngram-mod']);
   expect(pf.params_options?.load_mode).toEqual(['none','auto','mmap','mlock','mmap+mlock','dio']);
   expect(pf.params_options?.reasoning).toEqual(['auto','on','off']);
   expect(pf.params_options?.reasoning_format).toEqual(['none','hide','deepseek']);
   expect(pf.params_options?.reasoning_effort).toEqual(['none','low','medium','high','xhigh','max']);
-  expect(pf.params_boolean).toEqual(['jinja','reasoning_preserve']);
+  expect(pf.params_boolean).toEqual(['jinja','reasoning_preserve','metrics']); // #14：metrics 声明为 boolean
+
   expect(pf.params_file).toEqual(['m','mmproj','chat_template_file']);
 });
 ```
 
-并修改既有 `params_reread_after_default_write_succeeds`：expect(Object.keys(pf2.params)).toHaveLength(26) → **28**。
+并修改既有 `params_reread_after_default_write_succeeds`：expect(Object.keys(pf2.params)).toHaveLength(26) → **33**（+7 = reasoning*2 + n_cpu_moe / fit / fit_ctx / fit_target / metrics）。
 
-在 `src-main/build.test.ts` 追加四个用例（顶部新增 pfV11 测试夹具）：
+在 `src-main/build.test.ts` 追加七个用例（顶部新增 pfV11 测试夹具；夹具已含 #14 的五个新 key，供新参数拼装用例使用）：
 
 ```ts
 const pfV11: ParamsFile = {
-  params: { m: '-m', jinja: '--jinja', spec_type: '--spec-type', port: '--port' },
+  params: {
+    m: '-m', jinja: '--jinja', spec_type: '--spec-type', port: '--port',
+    n_cpu_moe: '--n-cpu-moe', fit: '--fit', fit_ctx: '--fit-ctx', fit_target: '--fit-target', metrics: '--metrics', // #14
+  },
   required: ['m'],
-  params_boolean: ['jinja'],
+  params_boolean: ['jinja', 'metrics'], // #14：metrics 为无值 flag
   params_options: { spec_type: ['none', 'draft-mtp'] },
 };
 
@@ -139,12 +149,25 @@ it('summarize_boolean_true_flag_only_false_or_empty_skipped', () => {
   const e2 = entry([['m', 'x.gguf'], ['jinja', 'false'], ['port', '9931']]);
   expect(summarize(e2, pfV11)).toBe('-m x.gguf --port 9931');
 });
+
+it('#14_new_params_build_flag_value_pairs', () => {
+  const e = entry([['m', 'x.gguf'], ['n_cpu_moe', '0'], ['fit', 'on'], ['fit_ctx', '128000'], ['fit_target', '1024']]);
+  expect(buildArgVector('llama-server.exe', pfV11, e)).toEqual(
+    ['llama-server.exe', '-m', 'x.gguf', '--n-cpu-moe', '0', '--fit', 'on', '--fit-ctx', '128000', '--fit-target', '1024']);
+});
+
+it('#14_metrics_boolean_true_flag_only_false_skipped', () => {
+  const on = entry([['m', 'x.gguf'], ['metrics', 'true']]);
+  expect(buildArgVector('llama-server.exe', pfV11, on)).toEqual(['llama-server.exe', '-m', 'x.gguf', '--metrics']);
+  const off = entry([['m', 'x.gguf'], ['metrics', 'false']]);
+  expect(buildArgVector('llama-server.exe', pfV11, off)).toEqual(['llama-server.exe', '-m', 'x.gguf']);
+});
 ```
 
 - [ ] **步骤 2：运行测试验证失败**
 
 运行：`npx vitest run`（workdir = 仓库根 D:\AI\Workspace\lms_launcher）
-预期：config.test 3 个新用例 FAIL（params_options/params_boolean/params_file 为 undefined、params key 数 26≠28），build.test 5 个新用例 FAIL（boolean 行被拼成 `--jinja true` 值对 / summarize 出现 `--jinja false` 噪声）；既有 15 用例仍绿。
+预期：config.test **3** 个新用例 FAIL（params_new_sections：三段为 undefined；missing_new_sections：同上；default_params：key 数 26≠33、五参数 undefined、boolean 段缺 metrics），build.test **7** 个新用例 FAIL（boolean 行被拼成 `--jinja true` 值对 / summarize 出现 `--jinja false` 噪声 / metrics 拼出值对 / #14 新参数不在 params 表抛 VALIDATION）；既有 15 用例仍绿。
 
 - [ ] **步骤 3：修改 config.ts**
 
@@ -159,11 +182,12 @@ export interface ParamsFile {
 }
 ```
 
-defaultParams() 内 items 数组增加两行并在 return 前补齐三段（第 99–114 行整体替换）：
+defaultParams() 内 items 数组在 v1 的 26 项上增加 **7** 行（reasoning*2 + #14 五参数），并在 return 前补齐三段（第 99–114 行整体替换）：
 
 ```ts
-// 默认参数模板：run.bat COMMON 全量 flag-form 映射 + v1.1 新增 reasoning/reasoning_preserve；
-// required = [m]；params_options / params_boolean / params_file 三段随首建模板一次写入（§#9A）
+// 默认参数模板：run.bat COMMON 全量 flag-form 映射 + v1.1 新增 reasoning/reasoning_preserve
+// + #14 n_cpu_moe/fit/fit_ctx/fit_target/metrics；required = [m]；
+// params_options / params_boolean / params_file 三段随首建模板一次写入（§#9A/#14）
 export function defaultParams(): ParamsFile {
   const items: Array<[string, string]> = [
     ['m', '-m'], ['mmproj', '--mmproj'], ['spec_type', '--spec-type'], ['ngl', '-ngl'],
@@ -172,6 +196,9 @@ export function defaultParams(): ParamsFile {
     ['ctv', '--ctv'], ['jinja', '--jinja'], ['chat_template_file', '--chat-template-file'],
     ['reasoning_format', '--reasoning-format'], ['reasoning_effort', '--reasoning-effort'],
     ['reasoning', '--reasoning'], ['reasoning_preserve', '--reasoning-preserve'],
+    // #14：调试/部署参数（n_cpu_moe 非 MoE 模型填 0；fit 三件套为自动填充显存调试参数）
+    ['n_cpu_moe', '--n-cpu-moe'], ['fit', '--fit'], ['fit_ctx', '--fit-ctx'], ['fit_target', '--fit-target'],
+    ['metrics', '--metrics'], // #14：无值调试 flag（Prometheus），声明进 params_boolean
     ['spec_draft_n_max', '--spec-draft-n-max'], ['temp', '--temp'], ['top_p', '--top-p'],
     ['top_k', '--top-k'], ['min_p', '--min-p'],
     ['presence_penalty', '--presence_penalty'], ['repeat_penalty', '--repeat_penalty'],
@@ -189,7 +216,7 @@ export function defaultParams(): ParamsFile {
       reasoning_format: ['none', 'hide', 'deepseek'],
       reasoning_effort: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
     },
-    params_boolean: ['jinja', 'reasoning_preserve'],
+    params_boolean: ['jinja', 'reasoning_preserve', 'metrics'], // #14：metrics 为无值 flag
     params_file: ['m', 'mmproj', 'chat_template_file'],
   };
 }
@@ -235,7 +262,7 @@ export function summarize(e: ConfigEntry, pf: ParamsFile): string {
 - [ ] **步骤 5：运行测试验证通过**
 
 运行：`npx vitest run`
-预期：PASS——config.test 10 + build.test 6 既有用例全绿，另有 v1.1 新增（config 3、build 5）全部通过；process.test 不受影响。
+预期：PASS——config.test 9 + build.test 6 既有用例全绿，另有 v1.1 新增（config **3**、build **7**）全部通过；process.test 不受影响。
 
 - [ ] **步骤 6：Commit**
 
@@ -630,7 +657,7 @@ git commit -m "feat: dir picker button uses ellipsis with hover title"
 
 - [ ] **步骤 2：dev 手动检查**
 
-log-view（灌入 >500 行日志后）与 modal-box（28 参数表单滚到底）滚动条为定制样式：10px 宽、圆角 thumb、hover 加深；不再出现浏览器默认粗灰条。
+log-view（灌入 >500 行日志后）与 modal-box（33 参数表单滚到底）滚动条为定制样式：10px 宽、圆角 thumb、hover 加深；不再出现浏览器默认粗灰条。
 
 - [ ] **步骤 3：Commit**
 
@@ -730,7 +757,7 @@ git commit -m "feat: global dropdown cap-height (3 rows) with scroll, card-style
 - [ ] **步骤 1：全量测试**
 
 运行：`npx vitest run && npx tsc -p tsconfig.main.json && npm run build`
-预期：config.test 13（10+3）+ build.test 11（6+5）全绿，process.test 维持 v1 状态；编译无错；dist/dist-main 产出。
+预期：config.test **12**（9+3）+ build.test **13**（6+7）全绿，process.test 维持 v1 状态；编译无错；dist/dist-main 产出。
 
 - [ ] **步骤 2：release portable**
 
@@ -741,7 +768,7 @@ git commit -m "feat: global dropdown cap-height (3 rows) with scroll, card-style
 
 1. 全新态：模板模块深色「目前没有模板配置」；启动控制无任何提示行、下拉占位「（目前没有模板配置）」——无红字。
 2. 弹窗打开即时无红框/红字；空表单点保存 → id 下「必填」+ -m 红框 + 汇总行。
-3. spec_type/load_mode/reasoning* 为下拉且默认首个选项；jinja/reasoning_preserve 为 false|true 下拉默认 false；保存后 yaml：boolean true 写入 'true'、false 不写入，options 写入所选值；日志区启动命令摘要出现 `--jinja`（true）/不拼（false）。
+3. spec_type/load_mode/reasoning* 为下拉且默认首个选项；jinja/reasoning_preserve/**metrics** 为 false|true 下拉默认 false；保存后 yaml：boolean true 写入 'true'、false 不写入，options 写入所选值；日志区启动命令摘要出现 `--jinja` / `--metrics`（true）/不拼（false）。#14 新参数：n_cpu_moe / fit / fit_ctx / fit_target 为普通文本输入行，填值后摘要出现对应 flag+值对。
 4. m/mmproj「选择文件」按钮出 gguf 过滤对话框；chat_template_file 任意文件；选定回填。
 5. flag-grid 全部标签完整可见；弹窗四角圆角完好；滚动条为定制样式。
 6. 「选择目录」按钮仅 …，hover 显 title。
@@ -749,7 +776,7 @@ git commit -m "feat: global dropdown cap-height (3 rows) with scroll, card-style
 
 - [ ] **步骤 4：内置 llama_params.yaml 检查**
 
-在干净目录解压 portable exe，首启后查看同目录 llama_params.yaml：必须含 params（28 key）+ required + params_options（5 行）+ params_boolean + params_file 三段完整新模板（任务 1 defaultParams 产物）。
+在干净目录解压 portable exe，首启后查看同目录 llama_params.yaml：必须含 params（**33** key，含 #14 五参数）+ required + params_options（5 行）+ params_boolean（jinja / reasoning_preserve / metrics 三项）+ params_file 三段完整新模板（任务 1 defaultParams 产物）。
 
 - [ ] **步骤 5：台账收尾 + Commit**
 

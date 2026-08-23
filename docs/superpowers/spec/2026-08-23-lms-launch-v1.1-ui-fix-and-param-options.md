@@ -1,6 +1,6 @@
 # lms_launcher v1.1 规格：UI 修复 + 参数选项增强（v2，已含用户批注，待审核）
 
-> **状态：** v4 草稿——已合入全部批注：开发阶段无兼容原则、params_file 声明驱动、「选择文件」按钮文案、boolean false 不写入 yaml、下拉占位项文案规则、滚动条美化、下拉菜单限高 3 行 + 滚动（#13）、下拉菜单风格一致 + 圆角（#13）。待终审。
+> **状态：** v5 草稿——已合入全部批注：开发阶段无兼容原则、params_file 声明驱动、「选择文件」按钮文案、boolean false 不写入 yaml、下拉占位项文案规则、滚动条美化、下拉菜单限高 3 行 + 滚动（#13）、下拉菜单风格一致 + 圆角（#13）。v5 新增：#14 五个调试/部署参数（n_cpu_moe / fit / fit_ctx / fit_target / metrics；metrics 声明为 boolean，用户已确认）。待终审。
 > **范围仓库：** 主仓库 D:\AI\Workspace\lms_launcher，分支 master（v1 已由 lms-launch-v1 分支/worktree 合并回 master；基线提交 6ec7147）。
 > **总原则（用户批注）：**
 > - **开发阶段**：所有已生成的运行时内容（llama_launch_configs.yaml、llama_params.yaml 等）**不做兼容/升级处理**——新代码只按最新 schema 工作；首次创建的文件由 defaultParams 直接写完整新模板。
@@ -25,6 +25,7 @@
 | 11 | 新建模板弹窗 | UI | 修复右上角、右下角圆角缺失（与 #8 同根因） |
 | 12 | 全局 | UI | 美化滚动条（当前浏览器默认样式太丑） |
 | 13 | 全局下拉菜单 | UI + 新功能 | 所有下拉菜单最多显示 3 个选项；超过 3 项时出现滚动条，可手动滚动选择 |
+| 14 | 参数系统 | 新功能 | params 新增五个参数：`n_cpu_moe: --n-cpu-moe`、`fit: --fit`、`fit_ctx: --fit-ctx`、`fit_target: --fit-target`、`metrics: --metrics`；其中 metrics 为无值调试 flag，声明进 **params_boolean**（用户已确认） |
 
 ---
 
@@ -104,10 +105,15 @@ params_file:
 **A. yaml schema（defaultParams 新建模板即写入；已有文件按最新解析、无兼容要求）：**
 
 ```yaml
-params:                      # 在现有 27 项基础上增加两行：
+params:                      # 在 v1 的 26 项上增加 7 行（reasoning*2 + n_cpu_moe/fit/fit_ctx/fit_target/metrics，#14）：
   ...
   reasoning: --reasoning
   reasoning_preserve: --reasoning-preserve
+  n_cpu_moe: --n-cpu-moe
+  fit: --fit
+  fit_ctx: --fit-ctx
+  fit_target: --fit-target
+  metrics: --metrics
 params_options:
   spec_type: [none, draft-mtp, draft-simple, draft-eagle3, draft-dflash, draft-dspark, ngram-cache, ngram-simple, ngram-map-k, ngram-map-k4v, ngram-mod]
   load_mode: [none, auto, mmap, mlock, mmap+mlock, dio]
@@ -117,6 +123,7 @@ params_options:
 params_boolean:
   - jinja
   - reasoning_preserve
+  - metrics            # #14：无值调试 flag（Prometheus），true 只拼 --metrics
 params_file:
   - m
   - mmproj
@@ -124,10 +131,11 @@ params_file:
 ```
 - spec_type / load_mode 可选值已按上游 llama.cpp（master tools/server/README.md「-lm, --load-mode」+ docs/speculative.md「--spec-type TYPE」完整枚举）核实并补齐：spec_type 补 draft-simple/draft-eagle3/draft-dflash/draft-dspark/ngram-cache/ngram-simple/ngram-map-k/ngram-map-k4v/ngram-mod 共 9 项；load_mode 补 **dio**。
 - reasoning* 三项上游无对应 flag，为用户自建环境参数——按用户列表原样收录，不做校验。
+- **#14（v5）**：params key 总数 = v1 的 26 + v1.1 新增 7（reasoning / reasoning_preserve / n_cpu_moe / fit / fit_ctx / fit_target / metrics）= **33**。前四个按普通文本参数处理；**metrics 是 run.bat 里的无值调试 flag**（`--metrics` 单独出现，Prometheus 数据监控），经用户确认声明进 params_boolean——复用 #9C 既有 boolean 规则（弹窗 false|true 下拉默认 false；build.ts true 只拼 `--metrics`、false/空不拼），零新增拼装逻辑。fit 三件套为 llama-server 自动填充显存的调试参数：`--fit on --fit-ctx 128000 --fit-target 1024`（不设置 -c 时自动填充，要求上下文至少 fit-ctx、填充后显存预留 fit-target MB）。
 
 **B. config.ts：**
 - `ParamsFile` = { params, required, params_options?, params_boolean?, params_file? }（字段名与 yaml 一致）。
-- defaultParams()：params 加 reasoning/reasoning_preserve；返回完整三段（options/boolean/file），首次创建即写完整模板。
+- defaultParams()：params 加 reasoning / reasoning_preserve 与 n_cpu_moe / fit / fit_ctx / fit_target / metrics（#14，共 +7）；params_boolean 为 `[jinja, reasoning_preserve, metrics]`；返回完整三段（options/boolean/file），首次创建即写完整模板。
 - paramsLoad：解析已有文件，新段缺失按空处理（运行时容错即可，无迁移/回写逻辑）。
 
 **C. build.ts（命令拼装）：**
@@ -180,7 +188,7 @@ params_file:
 **前端（沿用 v1 dev 手动验收清单，不引入组件测试框架）：**
 1. 全新态：模板模块深色「目前没有模板配置」；启动控制无任何提示行、下拉占位「（目前没有模板配置）」——无红字。
 2. 弹窗打开即时无红框/红字；空表单点保存 → id 下「必填」+ -m 红框 + 汇总行。
-3. spec_type / load_mode / reasoning* 为下拉且默认首个选项；jinja/reasoning_preserve 为 false|true 下拉默认 false；保存后 yaml：boolean true 写入 'true'、false 不写入，options 写入所选值；build 出 --jinja（true）/不拼（false）。
+3. spec_type / load_mode / reasoning* 为下拉且默认首个选项；jinja / reasoning_preserve / **metrics** 为 false|true 下拉默认 false；保存后 yaml：boolean true 写入 'true'、false 不写入，options 写入所选值；build 出 --jinja / --metrics（true）/不拼（false）。n_cpu_moe / fit / fit_ctx / fit_target 为普通文本输入行（#14），填值后按 flag+值拼装。
 4. m / mmproj「选择文件」按钮出 gguf 过滤对话框；chat_template_file 任意文件；选定回填。
 5. flag-grid 全部标签完整可见；弹窗四角圆角完好；滚动条为定制样式。
 7. spec_type（11 项）/ load_mode（6 项）下拉展开后可视区约 3 行、可滚动选到末尾项；配置下拉 ≥3 项时同样行为。
