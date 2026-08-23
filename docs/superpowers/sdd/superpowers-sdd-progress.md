@@ -9,7 +9,7 @@
 
 | 任务 | 状态 | 提交区间 | 审查 |
 |---|---|---|---|
-| 1 config/build schema + boolean（TDD，红→绿） | pending | — | — |
+| 1 config/build schema + boolean（TDD，红→绿） | done | edef36c..3cc93ed | ✅ 规格+质量通过（仅次要：trailing-newline/pre-existing；红6/绿30 控制器复跑确认） |
 | 2 IPC open_file_dialog（main.ts + ParamMeta） | pending | — | — |
 | 3 TemplateModal rows 三分支 + 选择文件按钮 + flag-grid 自适应 | pending | — | — |
 | 4 attemptedSave 门控 + 去 * 号 + id「必填」文案 | pending | — | — |
