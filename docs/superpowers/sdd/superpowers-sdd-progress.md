@@ -13,7 +13,7 @@
 | 2 IPC open_file_dialog（main.ts + ParamMeta） | done | 011b2a3..d412a89 | ✅ 规格+质量通过（零发现；tsc exit 0 + vitest 30/30 控制器复跑确认） |
 | 3 TemplateModal rows 三分支 + 选择文件按钮 + flag-grid 自适应 | done | fd58c52..bb2a11a | ✅ 规格+质量通过（次要：fill boolean 默认 false 会写入 yaml 字段——计划强制设计，主进程 false→skip pair 已保 #9D 语义；末审分诊） |
 | 4 attemptedSave 门控 + 去 * 号 + id「必填」文案 | done | 6a13102..30ff1e0（含 #9D fixup） | ✅ 规格+质量通过（用户裁决 #9D：save() 跳过 boolean=false，yaml 只留 true——按已定需求核） |
-| 5 无配置文案（TemplateModule/LaunchBar）+ 下拉占位规则 | pending | — | — |
+| 5 无配置文案（TemplateModule/LaunchBar）+ 下拉占位规则 | done | 37b3aa4..40bc152 | ✅ 规格+质量通过（次要：error ref 保留为裁决口径合规 + catch 注释措辞过时，留最终分诊） |
 | 6 DirModule 「…」按钮 + title | pending | — | — |
 | 7 style.css 滚动条美化（webkit + Firefox） | pending | — | — |
 | 8 全局下拉限高 3 行 + 风格一致（先目检原生） | pending | — | — |
