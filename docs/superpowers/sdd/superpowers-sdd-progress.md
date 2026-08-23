@@ -19,3 +19,9 @@
 | 8 全局下拉限高 3 行 + 风格一致（先目检原生） | done | 74f1115..6196d83（含死 CSS fixup） | ✅ 规格+质量通过（控制器裁定跳过原生目检直接走 2B；次要 disabled 面板可展开留最终分诊） |
 | 9 全量回归 + release portable + 前端验收清单 | done | （回归+打包由控制器执行；report .superpowers/sdd/task-9-report.md） | ✅ 步骤1 vitest 30/30+tsc+build 绿 / 步骤2 portable exe 70.9MB（v1.0.0）/ 步骤4 defaultParams 运行态核 33键+params_options5行+params_boolean3项+params_file3段；步骤3 dev 窗口 7 项目检清单已备好待 GUI 人工过 |
 | 10 修复任务 4 遗漏：必填(-m)保存 gate + preview() Ref 白屏（用户实机双 bug，TDD+CDP 现场验证） | done | （见下） | ✅ CDP RED 复现两 bug（含 TypeError 现场栈）→ RED 组件测试 → GREEN 33/33 → 现场 GREEN 验证（S1 拒保存 / S2 行渲染 + 0 异常）。根因：① save() 无早退守卫（git log -S 证明 gate 从未实现，计划 task-4 step4「保存被拒」未落地）；② preview() script body 内裸访问 paramsMeta.params——ref 不自动解包，首次真实数据即炸。附带修复 watch(immediate) TDZ |
+
+## v1.2 增量批次（单任务小改，独立规格）
+
+| 任务 | 状态 | 提交区间 | 审查 |
+|---|---|---|---|
+| 11 模板列表固定高度+内部滚动（方案 B：192px 恒定占位、超出出定制滚动条；A/B 两案用户已批 B） | done | e93de37..本提交 | ✅ RED（容器缺失 +0→1）→ GREEN（TemplateModule div 包裹 + .template-list CSS + Firefox scrollbar 追加）。vitest 38/38 PASS、npm run build EXIT=0。目检待 GUI：≥7 条模板出滚动条且卡片不撑高 |

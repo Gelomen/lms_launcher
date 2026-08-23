@@ -37,6 +37,26 @@ describe('TemplateModule', () => {
     wrapper.unmount();
   });
 
+  it('list_wrapped_in_fixed_height_container', async () => {
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule);
+    await flush();
+
+    // 方案 B：模板列表（含 table）必须包在 .template-list 固定高度容器内——卡片高度恒定、超出内部滚动
+    expect(wrapper.findAll('.module-template .template-list').length).toBe(1);
+    expect(wrapper.findAll('.module-template .template-list table').length).toBe(1);
+    wrapper.unmount();
+  });
+
   it('list_has_no_delete_and_edit_modal_shows_it', async () => {
     (window as any).lms = {
       invoke: (cmd: string) => {

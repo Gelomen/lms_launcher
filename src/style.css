@@ -187,6 +187,13 @@ body {
 .dropdown-panel .option:hover { background: #F6F7F8; }   /* 与 btn:hover 一致 */
 .dropdown-panel .option.selected { color: var(--accent); font-weight: 600; }
 
+/* ---- 模板列表固定高度（方案 B）：≈6 行占位、超出内部滚动、卡片高度恒定 ---- */
+.template-list {
+  height: 192px; /* ≈6 行模板（30px/行），不足留白、不收缩 */
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
 /* ---- #12 滚动条美化（Solarized 面板底色 + border 色 thumb；主要滚动区：modal-box / log-view）---- */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
@@ -196,7 +203,7 @@ body {
   border: 2px solid var(--card);    /* 与容器留白，视觉悬浮 */
 }
 *::-webkit-scrollbar-thumb:hover { background: #AEB5BD; }
-.log-view, .modal-box {
+.log-view, .modal-box, .template-list {
   scrollbar-width: thin;            /* Firefox */
   scrollbar-color: #CDD3D8 transparent;
 }

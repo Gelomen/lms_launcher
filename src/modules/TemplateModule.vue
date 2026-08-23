@@ -58,9 +58,10 @@ onMounted(reload);
     <div style="display: flex; justify-content: flex-end;">
       <button class="btn btn-secondary" @click="openNew">新建模板</button>
     </div>
-    <p v-if="missing && error" class="label">目前没有模板配置</p>
-    <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
-    <table v-if="configs" style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+    <div class="template-list">
+      <p v-if="missing && error" class="label">目前没有模板配置</p>
+      <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
+      <table v-if="configs" style="width: 100%; border-collapse: collapse; margin-top: 8px;">
       <tbody>
         <template v-for="id in Object.keys(configs)" :key="id">
           <tr style="border-top: 1px solid var(--border);">
@@ -72,7 +73,8 @@ onMounted(reload);
         </template>
       </tbody>
     </table>
-    <p v-if="configs && Object.keys(configs).length === 0" class="label">暂无配置</p>
+      <p v-if="configs && Object.keys(configs).length === 0" class="label">暂无配置</p>
+    </div>
 
     <TemplateModal
       :open="modalOpen"
