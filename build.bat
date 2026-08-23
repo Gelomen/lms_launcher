@@ -1,0 +1,1 @@
+npx tsc -p tsconfig.main.json && npm run build && npx electron-builder --win portable && pause

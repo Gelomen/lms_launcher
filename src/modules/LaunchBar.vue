@@ -58,7 +58,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
 </script>
 <template>
   <section class="module module-launch">
-    <h2>启动控制</h2>
+    <h2 style="margin: 0; line-height: var(--h-control);">启动控制</h2>
     <label class="label">配置</label>
     <Dropdown :disabled="state.running"
               :value="selected"
