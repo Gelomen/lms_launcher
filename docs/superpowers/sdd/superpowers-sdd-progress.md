@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 1 config/build schema + boolean（TDD，红→绿） | done | edef36c..3cc93ed | ✅ 规格+质量通过（仅次要：trailing-newline/pre-existing；红6/绿30 控制器复跑确认） |
 | 2 IPC open_file_dialog（main.ts + ParamMeta） | done | 011b2a3..d412a89 | ✅ 规格+质量通过（零发现；tsc exit 0 + vitest 30/30 控制器复跑确认） |
-| 3 TemplateModal rows 三分支 + 选择文件按钮 + flag-grid 自适应 | pending | — | — |
+| 3 TemplateModal rows 三分支 + 选择文件按钮 + flag-grid 自适应 | done | fd58c52..bb2a11a | ✅ 规格+质量通过（次要：fill boolean 默认 false 会写入 yaml 字段——计划强制设计，主进程 false→skip pair 已保 #9D 语义；末审分诊） |
 | 4 attemptedSave 门控 + 去 * 号 + id「必填」文案 | pending | — | — |
 | 5 无配置文案（TemplateModule/LaunchBar）+ 下拉占位规则 | pending | — | — |
 | 6 DirModule 「…」按钮 + title | pending | — | — |
