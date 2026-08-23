@@ -149,7 +149,7 @@ if not defined SPEC_TYPE (
     )
 )
 
-set "COMMON=-ngl 999 -fa on --load-mode mmap -np 1 -c 180224 -b 1024 -ub 512 -t 8 -tb 8 -ctk q8_0 -ctv q8_0 --jinja --chat-template-file %MODELS_DIR%\chat_template.jinja --reasoning-format deepseek --reasoning-effort low --spec-draft-n-max 4 --temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.01 --presence_penalty 0.0 --repeat_penalty 1.01 --port 9931"
+set "COMMON=-ngl 999 -fa on --load-mode mmap -np 1 -c 180224 -b 1024 -ub 512 -t 8 -tb 8 -ctk q8_0 -ctv q8_0 --jinja --chat-template-file %MODELS_DIR%\chat_template.jinja --reasoning-format deepseek --reasoning-effort low --spec-draft-n-max 4 --temp 1.0 --top-p 0.95 --top-k 20 --min-p 0.01 --presence_penalty 0.0 --repeat_penalty 1.05 --port 9931"
 
 :: ---------- 组装动态参数 ----------
 set "DYNAMIC=-m %MODELS_DIR%\!MODEL_FILE!"

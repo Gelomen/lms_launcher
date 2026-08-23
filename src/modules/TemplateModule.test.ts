@@ -26,10 +26,13 @@ describe('TemplateModule', () => {
     const wrapper = mount(TemplateModule);
     await flush();
 
-    // 配置行必须渲染：id、desc、preview（-m x.gguf --port 9931）
+    // 配置行必须渲染：仅 id + 操作按钮；表头整行已移除，desc/参数预览不再显示
     expect(wrapper.text()).toContain('c1');
-    expect(wrapper.text()).toContain('日常');
-    expect(wrapper.text()).toContain('-m x.gguf');
+    expect(wrapper.text()).not.toContain('id'); // 表头 id 列标签已移除
+    expect(wrapper.text()).not.toContain('日常');
+    expect(wrapper.text()).not.toContain('-m x.gguf');
+    expect(wrapper.text()).not.toContain('desc');
+    expect(wrapper.text()).not.toContain('参数预览');
     expect(wrapper.findAll('.module-template table').length).toBe(1);
     wrapper.unmount();
   });

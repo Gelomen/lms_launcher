@@ -20,7 +20,12 @@ async function load(): Promise<void> {
 async function pickDir(): Promise<void> {
   try {
     const picked = await invoke<string | null>('open_dir_dialog');
-    if (picked !== null) dir.value = picked;
+    if (picked !== null) {
+      dir.value = picked;
+      // 选择目录后自动触发校验（原「校验」按钮已移除，功能保留）
+      await validate();
+      return;
+    }
     status.value = null;
     error.value = null;
   } catch (e) {
@@ -28,7 +33,8 @@ async function pickDir(): Promise<void> {
   }
 }
 
-// 「校验」：validate_dir(dir) —— 主进程检查 <dir>\llama-server.exe 是否存在；
+// 校验：validate_dir(dir) —— 主进程检查 <dir>\llama-server.exe 是否存在；
+// 目录选择确定后自动触发（不再是按钮）；
 // 通过后 save_llama_dir 写入 lms_launcher.yaml（下次启动自动读取）
 async function validate(): Promise<void> {
   error.value = null;
@@ -62,7 +68,6 @@ onMounted(load);
       <input class="input" v-model="dir" :placeholder="'C:' + String.fromCharCode(92) + 'llama.cpp' + String.fromCharCode(92) + 'build-cpu-avx2'" @change="status = null" />
       <button class="btn btn-secondary" title="选择 llama.cpp 安装目录" @click="pickDir">…</button>
     </div>
-    <button class="btn btn-secondary" style="margin-top: 8px;" @click="validate">校验</button>
     <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}（已保存）</p>
     <p v-else-if="status && !status.ok" class="error-text">✗ {{ status.msg }}</p>
     <p v-if="saving" class="label">保存中…</p>

@@ -35,15 +35,6 @@ async function reload(): Promise<void> {
   }
 }
 
-// flag-form 摘要：已填、且在 params 映射里的，取前 3 个（summarize 风格）
-function preview(cfg: { values: Record<string, string> }): string {
-  return Object.entries(cfg.values)
-    .filter(([k, v]) => v.trim().length > 0 && paramsMeta.value.params[k] !== undefined) // Ref 在 script 函数体内不自动解包（模板内才解包）
-    .slice(0, 3)
-    .map(([k, v]) => paramsMeta.value.params[k] + ' ' + v.trim())
-    .join('  ');
-}
-
 function openNew(): void { editingId.value = null; modalOpen.value = true; }
 function openEdit(id: string): void {
   const c = configs.value ? configs.value[id] : undefined;
@@ -79,22 +70,10 @@ onMounted(reload);
     <p v-if="missing && error" class="label">目前没有模板配置</p>
     <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
     <table v-if="configs" style="width: 100%; border-collapse: collapse; margin-top: 8px;">
-      <thead>
-        <tr class="label">
-          <th style="text-align: left; padding-right: 8px;">id</th>
-          <th style="text-align: left; padding-right: 8px;">desc</th>
-          <th style="text-align: left; padding-right: 8px;">参数预览</th>
-          <th></th>
-        </tr>
-      </thead>
       <tbody>
         <template v-for="id in Object.keys(configs)" :key="id">
           <tr style="border-top: 1px solid var(--border);">
             <td style="padding: 4px 8px 4px 0; font-weight: 600;">{{ id }}</td>
-            <td class="label" style="padding: 4px 8px;">{{ configs[id].desc ?? '' }}</td>
-            <td style="font-family: var(--font-mono); font-size: 12px; padding: 4px 8px; word-break: break-all;">
-              {{ preview(configs[id]) || '（无）' }}
-            </td>
             <td style="text-align: right; white-space: nowrap;">
               <button class="btn btn-secondary" style="height: 24px; margin-right: 4px;" @click="openEdit(id)">编辑</button>
               <button class="btn btn-secondary" style="height: 24px;" @click="onDelete(id)">删除</button>
