@@ -108,10 +108,13 @@ const emptyRequired = computed((): string[] => {
 async function save(): Promise<void> {
   attemptedSave.value = true; // 保存失败不重置；关闭经 fill() 重置（步骤 1）
   saveError.value = null;
-  // 空值（含编辑时清掉的字段）→ 不写入，保持 yaml 干净
+  // 空值（含编辑时清掉的字段）→ 不写入，保持 yaml 干净；#9D：boolean false 也不写入，yaml 只保留 true flags
+  const boolKeys: string[] = props.paramsMeta.params_boolean ?? [];
   const values: Record<string, string> = {};
   for (const [k, v] of Object.entries(formValues.value)) {
-    if ((v ?? '').trim().length > 0) values[k] = v.trim();
+    if ((v ?? '').trim().length === 0) continue;
+    if (boolKeys.includes(k) && v.trim() === 'false') continue; // #9D：boolean false 不写入 yaml
+    values[k] = v.trim();
   }
   saving.value = true;
   try {
