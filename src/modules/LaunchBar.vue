@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { invoke, errMsg, isMissing } from '../ipc';
+import Dropdown from '../components/Dropdown.vue';
 
 // 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 三态按钮（.btn-launch 空闲 / .running / :disabled）。
 const props = defineProps<{
@@ -59,12 +60,11 @@ watch((): number => props.configsReloadKey, () => { void load(); });
   <section class="module module-launch">
     <h2>启动控制</h2>
     <label class="label">配置</label>
-    <select class="select" v-model="selected" :disabled="state.running">
-      <option value="" disabled>
-        {{ missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…' }}
-      </option>
-      <option v-for="id in configs ? Object.keys(configs) : []" :key="id" :value="id">{{ id }}</option>
-    </select>
+    <Dropdown :disabled="state.running"
+              :value="selected"
+              :options="configs ? Object.keys(configs).map((id) => ({ value: id, label: id })) : []"
+              :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
+              @update:value="(v: string) => { selected = v; }" />
     <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
       <button class="btn btn-launch" :class="{ running: state.running }" :disabled="!canStart" @click="onStart">启动</button>
       <button class="btn btn-danger" :disabled="!state.running || state.stopping" @click="onStop">{{ state.stopping ? '停止中…' : '停止' }}</button>

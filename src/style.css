@@ -172,6 +172,21 @@ body {
 .log-view .ln-ok { color: var(--log-ok); }
 .log-view .ln-dim { color: var(--log-dim); }
 
+/* ---- #13 自定义下拉弹层（卡片风格 + max-height 116px ≈3 行可滚动；#12 滚动条自动生效）---- */
+.dropdown { position: relative; width: 100%; }
+.select-trigger { width: 100%; text-align: left; height: var(--h-control); }
+.dropdown-panel {
+  position: absolute; top: calc(var(--h-control) + 2px); left: 0; right: 0; z-index: 20;
+  margin: 0; padding: 4px; list-style: none;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-btn);
+  box-shadow: 0 4px 12px rgba(16, 24, 40, .12);
+  max-height: 116px;              /* ≈3 行（28px/行 + padding） */
+  overflow-y: auto;
+}
+.dropdown-panel .option { padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+.dropdown-panel .option:hover { background: #F6F7F8; }   /* 与 btn:hover 一致 */
+.dropdown-panel .option.selected { color: var(--accent); font-weight: 600; }
+
 /* ---- #12 滚动条美化（Solarized 面板底色 + border 色 thumb；主要滚动区：modal-box / log-view）---- */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }

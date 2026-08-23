@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { invoke, errMsg } from '../ipc';
+import Dropdown from '../components/Dropdown.vue';
 
 // 模板弹窗（新建 / 编辑共用，规格 §4.2）：
 // flag-form 参数表单 + id 唯一性红框 + 必填(-m)红框不保存；其余空值不写入 yaml。
@@ -152,7 +153,7 @@ function close(): void { emit('close'); }
         <div class="flag-grid">
           <template v-for="row in rows" :key="row.key">
             <label class="label flag-label">{{ row.flag }}</label>
-            <!-- boolean / options → 原生 select；text → input（params_file 行右侧加「选择文件」按钮） -->
+            <!-- boolean / options → #13 共享 Dropdown 组件；text → input（params_file 行右侧加「选择文件」按钮） -->
             <div class="row-cell" v-if="row.type === 'text'">
               <input
                 class="input"
@@ -162,15 +163,16 @@ function close(): void { emit('close'); }
               />
               <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn" @click="pickFile(row.key)">选择文件</button>
             </div>
-            <select v-else-if="row.type === 'boolean'" class="select" :value="formValues[row.key]"
-                    @change="(ev: Event) => { formValues[row.key] = (ev.target as HTMLSelectElement).value; }">
-              <option value="false">false</option>
-              <option value="true">true</option>
-            </select>
-            <select v-else class="select" :value="formValues[row.key]"
-                    @change="(ev: Event) => { formValues[row.key] = (ev.target as HTMLSelectElement).value; }">
-              <option v-for="o in row.opts" :key="o" :value="o">{{ o }}</option>
-            </select>
+            <div v-else-if="row.type === 'boolean'" class="dropdown">
+              <Dropdown :value="formValues[row.key]"
+                        :options="[{ value: 'false', label: 'false' }, { value: 'true', label: 'true' }]"
+                        @update:value="(v: string) => { formValues[row.key] = v; }" />
+            </div>
+            <div v-else class="dropdown">
+              <Dropdown :value="formValues[row.key]"
+                        :options="row.opts.map((o) => ({ value: o, label: o }))"
+                        @update:value="(v: string) => { formValues[row.key] = v; }" />
+            </div>
           </template>
         </div>
 
