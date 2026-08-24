@@ -1,33 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
-  <defs>
-    <linearGradient id="edges" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#c3ccff"/>
-      <stop offset="100%" stop-color="#7a68f0"/>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 240 240" width="280" height="280">
+<defs>
+    <linearGradient id="ga-edges" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c3ccff"></stop><stop offset="100%" stop-color="#7a68f0"></stop>
     </linearGradient>
-  </defs>
-  <!-- 上锥：T=(120,46) 到中环各边 -->
-  <polygon points="120,46 120.00,96.00 173.67,108.00" fill="#a4b3ff" opacity=".95"/>
-  <polygon points="120,46 173.67,108.00 173.67,132.00" fill="#7f76e8" opacity=".95"/>
-  <polygon points="120,46 173.67,132.00 120.00,144.00" fill="#c0a6ff" opacity=".95"/>
-  <polygon points="120,46 120.00,144.00 66.33,132.00" fill="#6d64e4" opacity=".95"/>
-  <polygon points="120,46 66.33,132.00 66.33,108.00" fill="#8f9dff" opacity=".95"/>
-  <polygon points="120,46 66.33,108.00 120.00,96.00" fill="#5b56d4" opacity=".95"/>
-  <!-- 下锥：B=(120,206) 到中环各边 -->
-  <polygon points="120,206 173.67,108.00 120.00,96.00" fill="#4a42a8" opacity=".95"/>
-  <polygon points="120,206 173.67,132.00 173.67,108.00" fill="#2e2470" opacity=".95"/>
-  <polygon points="120,206 120.00,144.00 173.67,132.00" fill="#4a42a8" opacity=".95"/>
-  <polygon points="120,206 66.33,132.00 120.00,144.00" fill="#332a7e" opacity=".95"/>
-  <polygon points="120,206 66.33,108.00 66.33,132.00" fill="#463da0" opacity=".95"/>
-  <polygon points="120,206 120.00,96.00 66.33,108.00" fill="#2a2166" opacity=".95"/>
-  <!-- 棱线 -->
-  <g stroke="url(#edges)" stroke-width=".9" opacity=".8">
-    <line x1="120" y1="46" x2="120.00" y2="96.00"/><line x1="120" y1="46" x2="173.67" y2="108.00"/>
-    <line x1="120" y1="46" x2="173.67" y2="132.00"/><line x1="120" y1="46" x2="120.00" y2="144.00"/>
-    <line x1="120" y1="46" x2="66.33" y2="132.00"/><line x1="120" y1="46" x2="66.33" y2="108.00"/>
-    <line x1="120" y1="206" x2="173.67" y2="108.00"/><line x1="120" y1="206" x2="173.67" y2="132.00"/>
-    <line x1="120" y1="206" x2="120.00" y2="144.00"/><line x1="120" y1="206" x2="66.33" y2="132.00"/>
-    <line x1="120" y1="206" x2="66.33" y2="108.00"/><line x1="120" y1="206" x2="120.00" y2="96.00"/>
-  </g>
-  <!-- 中脊高光 -->
-  <line x1="120" y1="46" x2="120" y2="206" stroke="#e8ecff" stroke-width="1.4" opacity=".6"/>
-</svg>
+  </defs><polygon points="120,46 120,96 173.6935750346352,108" fill="#a4b3ff" opacity=".95"></polygon><polygon points="120,206 173.6935750346352,108 120,96" fill="#4a42a8" opacity=".95"></polygon><polygon points="120,46 173.6935750346352,108 173.69357503463522,132" fill="#7f76e8" opacity=".95"></polygon><polygon points="120,206 173.69357503463522,132 173.6935750346352,108" fill="#2e2470" opacity=".95"></polygon><polygon points="120,46 173.69357503463522,132 120,144" fill="#c0a6ff" opacity=".95"></polygon><polygon points="120,206 120,144 173.69357503463522,132" fill="#4a42a8" opacity=".95"></polygon><polygon points="120,46 120,144 66.30642496536481,132" fill="#6d64e4" opacity=".95"></polygon><polygon points="120,206 66.30642496536481,132 120,144" fill="#332a7e" opacity=".95"></polygon><polygon points="120,46 66.30642496536481,132 66.30642496536478,108.00000000000001" fill="#8f9dff" opacity=".95"></polygon><polygon points="120,206 66.30642496536478,108.00000000000001 66.30642496536481,132" fill="#463da0" opacity=".95"></polygon><polygon points="120,46 66.30642496536478,108.00000000000001 120,96" fill="#5b56d4" opacity=".95"></polygon><polygon points="120,206 120,96 66.30642496536478,108.00000000000001" fill="#2a2166" opacity=".95"></polygon><g stroke="url(#ga-edges)" stroke-width="0.9" opacity=".8"><line x1="120" y1="46" x2="120" y2="96"></line><line x1="120" y1="206" x2="120" y2="96"></line><line x1="120" y1="46" x2="173.6935750346352" y2="108"></line><line x1="120" y1="206" x2="173.6935750346352" y2="108"></line><line x1="120" y1="46" x2="173.69357503463522" y2="132"></line><line x1="120" y1="206" x2="173.69357503463522" y2="132"></line><line x1="120" y1="46" x2="120" y2="144"></line><line x1="120" y1="206" x2="120" y2="144"></line><line x1="120" y1="46" x2="66.30642496536481" y2="132"></line><line x1="120" y1="206" x2="66.30642496536481" y2="132"></line><line x1="120" y1="46" x2="66.30642496536478" y2="108.00000000000001"></line><line x1="120" y1="206" x2="66.30642496536478" y2="108.00000000000001"></line></g><line x1="120" y1="46" x2="120" y2="206" stroke="#e8ecff" stroke-width="1.4" opacity=".6"></line></svg>
