@@ -247,4 +247,6 @@ function close(): void { emit('close'); }
 }
 /* 删除按钮贴弹窗左下角（取消/保存仍右对齐） */
 .modal-actions .btn-delete { margin-right: auto; }
+/* 保存按钮与 删除/取消 同高（全局 .btn-primary 为 36px，此处收敛到 32px） */
+.modal-actions .btn-primary { height: var(--h-control); }
 </style>
