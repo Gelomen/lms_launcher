@@ -30,15 +30,19 @@ function emitLog(line: string, stream: StreamName): void {
   if (win) win.webContents.send("log-line", { line, stream });
 }
 
+// ---------- 应用图标 ----------
+// I-1：打包态 icon 经 electron-builder extraResources 拷到 asar 外 resources/icon.ico；
+// 开发态在 src-main/icon.ico（__dirname = dist-main → ../src-main）。窗口标题栏与托盘共用。
+function appIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'icon.ico')
+    : join(__dirname, '..', 'src-main', 'icon.ico');
+}
+
 // ---------- 托盘（§4.6） ----------
 let tray: Tray | null = null;
 function createTray(): void {
-  // I-1 修复：打包态 icon 通过 electron-builder extraResources 拷到 asar 外 resources/；
-  // 开发态仍在 src-main/icon.ico（__dirname = dist-main → ../src-main）。
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, 'icon.ico')
-    : join(__dirname, '..', 'src-main', 'icon.ico');
-  const icon = nativeImage.createFromPath(iconPath);
+  const icon = nativeImage.createFromPath(appIconPath());
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   const menu = Menu.buildFromTemplate([
     { label: '启动 lms_launcher', click: () => {
@@ -58,6 +62,7 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
 function createWindow(): void {
   const win = new BrowserWindow({
     title: 'lms_launcher',
+    icon: appIconPath(),
     width: 980, height: 720, minWidth: 760, minHeight: 540,
     webPreferences: {
       preload: require.resolve('./preload.js'),
