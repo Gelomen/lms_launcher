@@ -53,7 +53,7 @@ viewBox 240×240，中心 (120,120)，坐标系与比例如下：
 
 ## 光栅化方案（实现阶段细节留给 writing-plans）
 
-- 一次性构建脚本（放 .temp/）：SVG → PNG（256px，sharp 等工具）→ 各尺寸缩放 → 打包 ICO；
+- 一次性构建脚本（放 .temp/，复用前次换图标时的 .tmp-icons 工具链经验）：SVG → 256px PNG（GDI+ 渲染 / canvas 光栅化均可）→ 各尺寸缩放 → 按 MS ICO 规范打包；
 - main.ts **零改动**：appIconPath() 已处理窗口 / 托盘取图路径；
 - electron-builder --win portable 重建后，dist-release 下 exe / resources/icon.ico 与 src-main/icon.ico sha256 一致。
 
