@@ -82,6 +82,20 @@ describe('TemplateModal', () => {
   });
 });
 
+// ---- 关闭契约：点击遮罩以外区域不关闭窗口（仅「取消」/保存/删除可关）----
+describe('TemplateModal close', () => {
+  it('overlay_click_does_not_close', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    const overlay = document.querySelector('.modal-overlay') as HTMLElement;
+    overlay.click(); // 直接点遮罩（非 modal-box）
+    await flush();
+    expect(w.emitted('close')).toBeUndefined();
+    expect(document.querySelector('.modal-overlay')).toBeDefined(); // 弹窗仍在
+    w.unmount();
+  });
+});
+
 // ---- 删除契约（2026-08-24 挪入弹窗）----
 // 编辑模式挂载：id='qwen38'（isEdit 成立），返回 wrapper 供 emitted() 断言
 function mountEdit(): ReturnType<typeof mount> {

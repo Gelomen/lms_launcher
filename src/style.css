@@ -176,7 +176,10 @@ body {
 
 /* ---- #13 自定义下拉弹层（卡片风格 + max-height 116px ≈3 行可滚动；#12 滚动条自动生效）---- */
 .dropdown { position: relative; width: 100%; }
-.select-trigger { width: 100%; text-align: left; height: var(--h-control); }
+.select-trigger { width: 100%; text-align: left; height: var(--h-control); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.select-trigger .select-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ▼ 指示符：固定贴按钮最右侧；颜色取下拉/输入框边框公共灰 --control-border，与线条统一 */
+.select-caret { flex: none; font-size: 11px; line-height: 1; color: var(--control-border); padding-right: 2px; }
 .dropdown-panel {
   position: absolute; top: calc(var(--h-control) + 2px); left: 0; right: 0; z-index: 20;
   margin: 0; padding: 4px; list-style: none;

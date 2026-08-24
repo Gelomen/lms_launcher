@@ -148,7 +148,7 @@ function close(): void { emit('close'); }
 </script>
 <template>
   <Teleport to="body">
-    <div v-if="open" class="modal-overlay" @click.self="close()">
+    <div v-if="open" class="modal-overlay">
       <div class="card modal-box">
         <h3>{{ isEdit ? '编辑模板' : '新建模板' }}</h3>
         <p v-if="saveError" class="error-text">{{ saveError }}</p>

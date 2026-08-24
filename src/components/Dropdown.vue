@@ -22,7 +22,8 @@ onMounted(() => {
 <template>
   <div class="dropdown">
     <button class="btn select-trigger" :disabled="props.disabled" @click.stop="open = !open">
-      {{ props.options.find((o) => o.value === props.value)?.label ?? (props.options.length > 0 ? props.options[0].label : props.placeholder) }} ▾
+      <span class="select-label">{{ props.options.find((o) => o.value === props.value)?.label ?? (props.options.length > 0 ? props.options[0].label : props.placeholder) }}</span>
+      <span class="select-caret">▼</span>
     </button>
     <ul v-if="open" class="dropdown-panel">
       <li v-for="o in props.options" :key="o.value"
