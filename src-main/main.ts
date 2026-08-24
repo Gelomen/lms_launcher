@@ -6,6 +6,18 @@ import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize } from './build';
 import { ProcessState } from './process';
 
+// ---------- 单实例锁：禁止多开 ----------
+// requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
+// 已在运行实例收到 'second-instance' 事件 → 把主窗口从托盘唤回前台。
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const win = mainWin();
+    if (win) { win.show(); win.focus(); }
+  });
+}
+
 // ---------- AppState ----------
 const ps = new ProcessState();
 
@@ -164,6 +176,8 @@ ipcMain.handle('exit_app', async (): Promise<void> => {
 });
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
+  // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
+  Menu.setApplicationMenu(null);
   createWindow();
   createTray();
   app.on('activate', () => {

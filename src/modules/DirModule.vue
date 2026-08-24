@@ -65,7 +65,7 @@ onMounted(load);
     <h2 style="margin: 0; line-height: var(--h-control);">llama.cpp 安装目录</h2>
     <p v-if="error" class="error-text">{{ error }}</p>
     <div style="display: flex; gap: 8px;">
-      <input class="input" v-model="dir" :placeholder="'C:' + String.fromCharCode(92) + 'llama.cpp' + String.fromCharCode(92) + 'build-cpu-avx2'" @change="status = null" />
+      <input class="input" v-model="dir" @change="status = null" />
       <button class="btn btn-secondary" title="选择 llama.cpp 安装目录" @click="pickDir">…</button>
     </div>
     <!-- 下方恒定槽位：预留校验结果行（单行，与「保存中…」共用；避免校验前后卡片高度抖动） -->
