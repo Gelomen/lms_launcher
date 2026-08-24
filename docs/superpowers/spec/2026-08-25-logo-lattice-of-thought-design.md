@@ -59,6 +59,7 @@ viewBox 240×240，中心 (120,120)，坐标系与比例如下：
 
 ## 测试与验收
 
+- **保真核对**：光栅化完成后，先把 256 / 64 / 32 / 16px 预览 PNG 直接贴进对话，用户目检确认与头脑风暴定稿屏幕一致后才允许构建 ICO（预览即装进 ICO 的像素本身）；
 - npm test 全绿（基线 38/38）；
 - npx tsc -p tsconfig.main.json 通过；
 - electron-builder --win portable 构建成功，且上述 GDI+ / ExtractAssociatedIcon 验证全部通过。
