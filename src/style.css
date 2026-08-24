@@ -54,11 +54,6 @@ body {
   padding: var(--card-gap);
   gap: var(--card-gap);
 }
-.app-title {
-  font-size: var(--fs-title);
-  margin: 0 0 2px;
-  font-weight: 600;
-}
 .grid {
   display: grid;
   /* 三卡片绝对固定宽度 = 默认列宽 × 2/3（左 424→280、右 520→350）；靠左排布，右侧留白 */

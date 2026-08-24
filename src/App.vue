@@ -80,7 +80,6 @@ function onTemplateChanged(): void {
 </script>
 <template>
   <main class="layout">
-    <h1 class="app-title">lms_launcher</h1>
     <section class="grid">
       <div class="stack">
         <div class="card"><DirModule /></div>
