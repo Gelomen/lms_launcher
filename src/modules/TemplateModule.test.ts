@@ -75,13 +75,47 @@ describe('TemplateModule', () => {
     expect(wrapper.text()).not.toContain('删除');
 
     // 点「编辑」→ teleport 到 body 的弹窗 modal-actions 最左出现删除按钮
-    const editBtn = wrapper.findAll('button').find((b) => b.text() === '编辑')!;
+    const editBtn = wrapper.findAll("button").find(
+      (b) => b.attributes("data-tooltip") === "编辑",
+    )!;
     await editBtn.trigger('click');
     await flush();
     const del = [...document.querySelectorAll('.modal-actions button')].find(
       (b) => (b.textContent ?? '').includes('删除'),
     );
     expect(del).toBeDefined();
+    wrapper.unmount();
+  });
+
+  it("top_button_is_plus_icon_with_tooltip_opens_new_modal", async () => {
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === "get_configs") return Promise.resolve(CONFIGS);
+        if (cmd === "get_params") return Promise.resolve(defaultParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+
+    // 顶部图标按钮：+ 号 SVG + data-tooltip/aria-label=新建模板
+    const addBtn = wrapper.findAll("button").find(
+      (b) => b.attributes("data-tooltip") === "新建模板",
+    )!;
+    expect(addBtn).toBeDefined();
+    expect(addBtn.attributes("aria-label")).toBe("新建模板");
+
+    // 卡片内（不含 teleport 弹窗）不再出现可点击文字「新建模板」「编辑」
+    expect(wrapper.text()).not.toContain("新建模板");
+    expect(wrapper.text()).not.toContain("编辑");
+
+    await addBtn.trigger("click");
+    await flush();
+    const h3 = document.querySelector(".modal-box h3");
+    expect(h3?.textContent).toBe("新建模板");
     wrapper.unmount();
   });
 });

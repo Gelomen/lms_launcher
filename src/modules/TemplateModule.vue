@@ -56,7 +56,12 @@ onMounted(reload);
   <section class="module module-template">
     <h2>启动参数模板</h2>
     <div style="display: flex; justify-content: flex-end;">
-      <button class="btn btn-secondary" @click="openNew">新建模板</button>
+      <button class="icon-btn" data-tooltip="新建模板" aria-label="新建模板"
+        @click="openNew">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
     </div>
     <div class="template-list">
       <p v-if="missing && error" class="label">目前没有模板配置</p>
@@ -67,7 +72,15 @@ onMounted(reload);
           <tr style="border-top: 1px solid var(--border);">
             <td style="padding: 4px 8px 4px 0; font-weight: 600;">{{ id }}</td>
             <td style="text-align: right; white-space: nowrap;">
-              <button class="btn btn-secondary" style="height: 24px;" @click="openEdit(id)">编辑</button>
+              <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
+                @click="openEdit(id)">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M2 12.5L9.5 5l2 2L4 14.5H2v-2z"
+                    stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                  <path d="M10.8 3.7l1.4-1.4a1.6 1.6 0 0 1 2.3 0l1.2 1.2a1.6 1.6 0 0 1 0 2.3L14 8"
+                    stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                </svg>
+              </button>
             </td>
           </tr>
         </template>
