@@ -81,7 +81,6 @@ body {
   padding: var(--card-pad);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); /* 极浅阴影 */
 }
-
 /* ---- 按钮 ---- */
 .btn {
   border-radius: var(--radius-btn);
@@ -213,9 +212,12 @@ body {
 }
 .dir-status .error-text, .dir-status .ok-text { margin-top: 0; } /* 槽位已含间距，内部不再叠加 margin */
 
-/* ---- 模板列表固定高度（方案 B）：≈6 行占位、超出内部滚动、卡片高度恒定 ---- */
+/* ---- 模板列表固定高度（任务 11 方案 B 同架构；2026-08-26 高度 192 → 161）：
+   右卡 = 左列两卡叠加等高 —— 固定 161px + h2 块 34 + padding 32 + border 2 = 卡 229–237（= .stack 实测 237），
+   消除「模板少时右卡比左列高」的底部留白；多模板超出 161px → 列表内部滚动条（行卡 44px/条），
+   不足留白。 */
 .template-list {
-  height: 192px; /* ≈6 行模板（30px/行），不足留白、不收缩 */
+  height: 161px;
   margin-top: 8px;
   overflow-y: auto;
 }
