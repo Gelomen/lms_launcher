@@ -3,9 +3,10 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { invoke, errMsg, isMissing } from '../ipc';
 import Dropdown from '../components/Dropdown.vue';
 
-// 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 双按钮可点击态着色（[启动] 绿 / [停止] 红；:disabled = 置灰）。
+// 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 单一切换按钮——未运行 = 绿 [启动]，
+// 运行中 = 红 [停止]（stopping 时红 + 「停止中…」禁用），启动失败自动恢复绿 [启动]；:disabled = 置灰。
 const props = defineProps<{
-  state: { running: boolean; stopping: boolean; configId: string | null };
+  state: { running: boolean; stopping: boolean; configId: string | null; starting?: boolean };
   statusText: string;
   configsReloadKey: number; // App bump（TemplateModule 保存/删除后）→ 重新 load()
 }>();
@@ -44,10 +45,15 @@ async function load(): Promise<void> {
   }
 }
 
-const canStart = computed((): boolean => !props.state.running && !props.state.stopping && selected.value.length > 0);
+// [启动]（绿）：无运行进程 + 有选中配置 + start_server 不在途（starting）——单按钮期间防重复点击
+const canStart = computed((): boolean => props.state.running === false && props.state.stopping === false && props.state.starting !== true && selected.value.length > 0);
+// [停止]（红）：运行中可点；stopping 中显示「停止中…」并禁用
+const canStop = computed((): boolean => props.state.running && !props.state.stopping);
 
-function onStart(): void { emit('start', selected.value); }
-function onStop(): void { emit('stop'); }
+function onToggle(): void {
+  if (props.state.running) emit('stop');
+  else emit('start', selected.value);
+}
 
 onMounted(load);
 
@@ -66,8 +72,13 @@ watch((): number => props.configsReloadKey, () => { void load(); });
               :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
               @update:value="(v: string) => { selected = v; }" />
     <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-      <button class="btn btn-launch" :disabled="!canStart" @click="onStart">启动</button>
-      <button class="btn btn-danger" :disabled="!state.running || state.stopping" @click="onStop">{{ state.stopping ? '停止中…' : '停止' }}</button>
+      <!-- 单一切换按钮：未运行 = 绿 [启动]；运行中 = 红 [停止]（stopping → 「停止中…」禁用）；
+           启动失败 / 进程退出 → state 回落 ready → 自动恢复绿 [启动] -->
+      <button
+        :class="state.running ? 'btn btn-danger' : 'btn btn-launch'"
+        :disabled="state.running ? !canStop : !canStart"
+        @click="onToggle"
+      >{{ state.stopping ? '停止中…' : (state.running ? '停止' : '启动') }}</button>
     </div>
     <p class="label" style="margin-top: 8px;">{{ statusText }}</p>
   </section>

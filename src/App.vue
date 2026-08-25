@@ -7,7 +7,7 @@ import LaunchBar from './modules/LaunchBar.vue';
 import LogPanel from './modules/LogPanel.vue';
 
 // 全局状态（任务 8）：App 持有 logLines / state，下发给模块 3/4；启动/停止由 LaunchBar emit → App 调 invoke。
-interface ServerState { running: boolean; stopping: boolean; configId: string | null }
+interface ServerState { running: boolean; stopping: boolean; configId: string | null; starting?: boolean }
 interface LogEntry { line: string; stream: 'sys' | 'out' | 'err' }
 
 const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重复实现
@@ -36,21 +36,43 @@ const statusText = computed((): string => {
 
 // LaunchBar emit → App：start_server，catch 一律 errMsg + isMissing/isValidation 分类
 async function doStart(configId: string): Promise<void> {
+  state.value = { ...state.value, starting: true }; // start_server 在途：单按钮（绿[启动]）禁用防重复点击
   try {
     await invoke('start_server', configId); // sys 行「启动配置 · …」由主进程发
+    // 本地 state 跟上：running 置 true + 持有 configId——否则单按钮切红 [停止] 的判据缺失，
+    // 且下拉锁定逻辑拿不到运行中配置
+    state.value = { ...state.value, running: true, stopping: false, starting: false, configId };
   } catch (e) {
     const msg = errMsg(e);
     appendSys(isMissing(msg) ? '启动失败（配置缺失）· ' + msg
       : isValidation(msg) ? '启动失败（校验未过）· ' + msg
       : '启动失败 · ' + msg);
+    // 启动失败自动恢复绿 [启动]：进程侧已回落 ready，但「启动成功」的分支没跑过 get_state，
+    // 此处按主进程权威状态刷新（若启动后进程已即刻退出——端口占用等——也会落到 ready）
+    try {
+      const s = await invoke<ServerState>('get_state');
+      state.value = { running: s.running, stopping: s.stopping, configId: s.configId };
+    } catch { /* 主进程不可达时维持原状态 */ }
   }
 }
 
 async function doStop(): Promise<void> {
+  // 先置 stopping——单按钮随即变红「停止中…」并禁用（防重复点击）；
+  // process-exit 落地时 running/stopping 一并复位
+  state.value = { ...state.value, stopping: true };
   try {
     await invoke('stop_server'); // sys 行「停止指令已发送」由主进程发；3s 后强杀
+    // stopGraceful 返回即视为服务确实停止：立即恢复绿 [启动]。
+    // 强杀路径下 process-exit 事件可能稍晚落地（其复位幂等），不能干等它。
+    state.value = { running: false, stopping: false, configId: state.value.configId };
   } catch (e) {
     appendSys('停止失败 · ' + errMsg(e));
+    state.value = { ...state.value, stopping: false }; // 失败回落，不卡在「停止中…」
+    // 主进程状态可能已自行回落 ready（stopGraceful 幂等）→ 按权威状态恢复绿 [启动]
+    try {
+      const s = await invoke<ServerState>('get_state');
+      state.value = { running: s.running, stopping: s.stopping, configId: s.configId };
+    } catch { /* 主进程不可达时维持原状态 */ }
   }
 }
 
