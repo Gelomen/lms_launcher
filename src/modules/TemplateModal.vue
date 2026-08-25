@@ -108,12 +108,16 @@ const emptyRequired = computed((): string[] => {
   return bad;
 });
 
+// desc（描述）必填——新建 / 编辑均要求非空
+const descError = computed((): string | null => {
+  return (formDesc.value ?? '').trim().length === 0 ? '必填' : null;
+});
 // ---------- 保存 ----------
 async function save(): Promise<void> {
   attemptedSave.value = true; // 保存失败不重置；关闭经 fill() 重置（步骤 1）
   saveError.value = null;
   // id / 必填项 校验失败 → 保存被拒（计划 task-4 步骤 4「保存被拒」）；红框与「必填项未填写」文案由模板 attemptedSave 门控展示
-  if (idError.value !== null || emptyRequired.value.length > 0) return;
+  if (idError.value !== null || descError.value !== null || emptyRequired.value.length > 0) return;
   // 空值（含编辑时清掉的字段）→ 不写入，保持 yaml 干净；#9D：boolean false 也不写入，yaml 只保留 true flags
   const boolKeys: string[] = props.paramsMeta.params_boolean ?? [];
   const values: Record<string, string> = {};
@@ -163,8 +167,9 @@ function close(): void { emit('close'); }
         />
         <p v-if="attemptedSave && idError" class="error-text">{{ idError }}</p>
 
-        <label class="label" style="display: block; margin-top: 8px;">desc（说明）</label>
-        <input class="input" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
+        <label class="label" style="display: block; margin-top: 8px;">描述</label>
+        <input class="input" :class="{ error: attemptedSave && descError !== null }" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
+        <p v-if="attemptedSave && descError" class="error-text">{{ descError }}</p>
 
         <div class="flag-grid">
           <template v-for="row in rows" :key="row.key">

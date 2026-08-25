@@ -59,15 +59,70 @@ describe('TemplateModal', () => {
     expect(document.querySelector('.modal-box')?.textContent).toContain('必填项未填写');
   });
 
-  it('saves_when_id_and_required_m_filled', async () => {
+// desc（描述）必填契约：desc 留空 → 保存被拒 + 红框与「必填」文案；标签文字为「描述」。
+const descIn = (): HTMLInputElement => {
+  const label = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
+  return label.nextElementSibling as HTMLInputElement; // desc label 的下一兄弟节点即其 input
+};
+
+it('save_rejected_when_desc_empty', async () => {
     calls = []; mockLms(); mountModal(); await flush();
 
     const inputs = [...document.querySelectorAll('.modal-box input')];
     const idIn = inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))!;
     const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    setter.call(idIn, 'qwen3'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
+    setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+
+    // 标签文字应为「描述」（不再是 desc（说明））
+    const labels = [...document.querySelectorAll('.modal-box label.label')].map((l) => l.textContent?.trim());
+    expect(labels).toContain('描述');
+
+    const saveBtn = [...document.querySelectorAll('.modal-actions button')].find((b) => b.textContent?.includes('保存'))!;
+    saveBtn.click();
+    await flush();
+
+    // desc 留空 → 不发出 save_config，desc 输入框红框 + 「必填」文案
+    expect(calls.filter((c) => c.cmd === 'save_config')).toHaveLength(0);
+    expect(descIn().classList.contains('error')).toBe(true);
+    expect(document.querySelector('.modal-box')?.textContent).toContain('必填');
+  });
+
+  it('saves_when_desc_filled', async () => {
+    calls = []; mockLms(); mountModal(); await flush();
+
+    const inputs = [...document.querySelectorAll('.modal-box input')];
+    const idIn = inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))!;
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    setter.call(idIn, 'qwen4'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
+    setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    setter.call(descIn(), '日常推理'); descIn().dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+
+    const saveBtn = [...document.querySelectorAll('.modal-actions button')].find((b) => b.textContent?.includes('保存'))!;
+    saveBtn.click();
+    await flush();
+
+    const saved = calls.find((c) => c.cmd === 'save_config');
+    expect(saved).toBeDefined();
+    const [id, desc] = saved!.args as [string, string | null];
+    expect(id).toBe('qwen4');
+    expect(desc).toBe('日常推理');
+  });
+
+it('saves_when_id_and_required_m_filled', async () => {
+    calls = []; mockLms(); mountModal(); await flush();
+
+    const inputs = [...document.querySelectorAll('.modal-box input')];
+    const idIn = inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))!;
+const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
     setter.call(idIn, 'qwen2'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
     setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    setter.call(descIn(), '日常'); descIn().dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
     const saveBtn = [...document.querySelectorAll('.modal-actions button')].find((b) => b.textContent?.includes('保存'))!;
