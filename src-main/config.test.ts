@@ -76,7 +76,7 @@ describe('config.ts', () => {
 
   it('default_params_covers_run_bat_common', () => {
     const pf = defaultParams();
-    const keys = ['m','mmproj','spec_type','ngl','fa','load_mode','np','c','b','ub','t','tb','ctk','ctv','jinja','chat_template_file','reasoning_format','reasoning_effort','spec_draft_n_max','temp','top_p','top_k','min_p','presence_penalty','repeat_penalty','port'];
+    const keys = ['m','mmproj','spec_type','ngl','fa','load_mode','np','c','b','ub','t','tb','ctk','ctv','jinja','chat_template_file','reasoning_format','reasoning_effort','spec_draft_n_max','temp','top_p','top_k','min_p','presence_penalty','repeat_penalty','port','alias'];
     for (const k of keys) expect(pf.params[k], k).toBeDefined();
     expect(pf.required).toEqual(['m']);
   });
@@ -88,7 +88,7 @@ describe('config.ts', () => {
     paramsLoad(p);
     // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
     const pf2 = paramsLoad(p);
-    expect(Object.keys(pf2.params)).toHaveLength(33);
+    expect(Object.keys(pf2.params)).toHaveLength(34);
     expect(pf2.params['spec_type']).toBe('--spec-type');
     expect(pf2.params['presence_penalty']).toBe('--presence_penalty');
     rm(p);
@@ -135,7 +135,8 @@ params_file:
     expect(pf.params['fit_ctx']).toBe('--fit-ctx');
     expect(pf.params['fit_target']).toBe('--fit-target');
     expect(pf.params['metrics']).toBe('--metrics');
-    expect(Object.keys(pf.params)).toHaveLength(33); // 既有 26 + v1.1 新增 7（reasoning*2 + #14 五参数）
+    expect(Object.keys(pf.params)).toHaveLength(34); // 既有 26 + v1.1 新增 7（reasoning*2 + #14 五参数）+ alias
+    expect(pf.params['alias']).toBe('--alias');
     expect(pf.params_options?.spec_type).toEqual(['none','draft-mtp','draft-simple','draft-eagle3','draft-dflash','draft-dspark','ngram-cache','ngram-simple','ngram-map-k','ngram-map-k4v','ngram-mod']);
     expect(pf.params_options?.load_mode).toEqual(['none','auto','mmap','mlock','mmap+mlock','dio']);
     expect(pf.params_options?.reasoning).toEqual(['auto','on','off']);
