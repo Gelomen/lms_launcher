@@ -25,3 +25,4 @@
 | 任务 | 状态 | 提交区间 | 审查 |
 |---|---|---|---|
 | 11 模板列表固定高度+内部滚动（方案 B：192px 恒定占位、超出出定制滚动条；A/B 两案用户已批 B） | done | e93de37..本提交 | ✅ RED（容器缺失 +0→1）→ GREEN（TemplateModule div 包裹 + .template-list CSS + Firefox scrollbar 追加）。vitest 38/38 PASS、npm run build EXIT=0。目检待 GUI：≥7 条模板出滚动条且卡片不撑高 |
+| 12 [启动]/[停止]按钮可点击态着色（[启动]绿/[停止]红/不可点击置灰） | done | aa1e052 | ✅ 纯 CSS+模板清理，用户对话批准设计（复用 --ok #16A34A）。vitest 52/52 PASS、build EXIT=0。目检由用户在 dev 窗口自验（方案 B）。注：删除 .btn-launch.running 误导红（running 时按钮本就禁用，旧规则只制造"红色却点不动"误读） |
