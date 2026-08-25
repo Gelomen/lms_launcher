@@ -8,11 +8,12 @@ const props = defineProps<{ lines: Array<{ line: string; stream: 'sys' | 'out' |
 const autoScroll = ref(true);
 const view = ref<HTMLElement | null>(null);
 
-// sys 行蓝灰（[lms_launcher]）；stream=err 或 error/fatal → log-error；ready/listening → log-ok
+// sys 行蓝灰（[lms_launcher]）；stream=err 或 error/fatal → log-error；warn/warning → log-warn；ready/listening → log-ok
 function cls(e: { line: string; stream: 'sys' | 'out' | 'err' }): string {
   if (e.stream === 'sys') return 'ln-dim';
   const low = e.line.toLowerCase();
   if (e.stream === 'err' || low.includes('error') || low.includes('fatal')) return 'ln-err';
+  if (low.includes('warn')) return 'ln-warn'; // warning/warn 均含该子串
   if (low.includes('server ready') || low.includes('listening')) return 'ln-ok';
   return '';
 }
