@@ -105,7 +105,8 @@ export function validateParamKey(key: string): boolean {
 // params_options / params_boolean / params_file
 export function defaultParams(): ParamsFile {
   const items: Array<[string, string]> = [
-    ['m', '-m'], ['mmproj', '--mmproj'], ['alias', '--alias'], ['ngl', '-ngl'],
+    ['m', '-m'], ['mmproj', '--mmproj'], ['image_min_tokens', '--image-min-tokens'],
+    ['alias', '--alias'], ['ngl', '-ngl'],
     ['fa', '-fa'], ['n_cpu_moe', '--n-cpu-moe'], ['load_mode', '--load-mode'],
     ['np', '-np'], ['c', '-c'], ['b', '-b'], ['ub', '-ub'], ['t', '-t'], ['tb', '-tb'],
     ['ctk', '-ctk'], ['ctv', '-ctv'], ['spec_type', '--spec-type'], ['spec_draft_n_max', '--spec-draft-n-max'],

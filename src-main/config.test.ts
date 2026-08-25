@@ -88,7 +88,7 @@ describe('config.ts', () => {
     paramsLoad(p);
     // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
     const pf2 = paramsLoad(p);
-    expect(Object.keys(pf2.params)).toHaveLength(34);
+    expect(Object.keys(pf2.params)).toHaveLength(35);
     expect(pf2.params['spec_type']).toBe('--spec-type');
     expect(pf2.params['presence_penalty']).toBe('--presence_penalty');
     rm(p);
@@ -135,8 +135,12 @@ params_file:
     expect(pf.params['fit_ctx']).toBe('--fit-ctx');
     expect(pf.params['fit_target']).toBe('--fit-target');
     expect(pf.params['metrics']).toBe('--metrics');
-    expect(Object.keys(pf.params)).toHaveLength(34); // 既有 26 + v1.1 新增 7（reasoning*2 + #14 五参数）+ alias
+    expect(Object.keys(pf.params)).toHaveLength(35); // 既有 26 + v1.1 新增 7 + alias + #15 image_min_tokens
     expect(pf.params['alias']).toBe('--alias');
+    // #15：image_min_tokens 紧随 mmproj 之后，--mmproj 有值时可启用
+    expect(pf.params['image_min_tokens']).toBe('--image-min-tokens');
+    const pk = Object.keys(pf.params);
+    expect(pk[pk.indexOf('mmproj') + 1]).toBe('image_min_tokens');
     // spec_type 与 config.ts defaultParams 对齐（收敛为 4 项）
     expect(pf.params_options?.spec_type).toEqual(['none','draft-mtp','draft-dflash','draft-dspark']);
     expect(pf.params_options?.load_mode).toEqual(['none','auto','mmap','mlock','mmap+mlock','dio']);
