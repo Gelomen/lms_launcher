@@ -264,4 +264,13 @@ body {
   opacity: 0;
 }
 .icon-btn:hover::after { opacity: 1; }
+/* 行内 tooltip（向左）：上方放会越过 .template-list 顶部被 overflow-y:auto 裁剪（滚动后任何顶部行都中招，
+   z-index 不解决空间裁剪）→ 改为按钮左侧垂直居中；该方向不出列表边界，无裁剪风险（+ 按钮沿用基类朝上）。 */
+.template-list tr .icon-btn::after {
+  left: auto;                  /* 基类 left:50% 会让 right 失效（LTR 下 left 优先）→ 必须清除 */
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  right: calc(100% + 6px);
+}
 
