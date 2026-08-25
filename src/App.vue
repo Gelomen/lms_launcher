@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest } from './ipc';
 import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
@@ -27,12 +27,6 @@ function appendLine(e: LogEntry): void {
 function appendSys(line: string): void {
   appendLine({ line: line.startsWith('[lms_launcher]') ? line : '[lms_launcher] ' + line, stream: 'sys' });
 }
-
-const statusText = computed((): string => {
-  if (state.value.stopping) return '停止中…';
-  if (state.value.running) return state.value.configId !== null ? state.value.configId + ' · 运行中' : '运行中';
-  return '就绪';
-});
 
 // LaunchBar emit → App：start_server，catch 一律 errMsg + isMissing/isValidation 分类
 async function doStart(configId: string): Promise<void> {
@@ -106,7 +100,7 @@ function onTemplateChanged(): void {
       <div class="stack">
         <div class="card"><DirModule /></div>
         <div class="card">
-          <LaunchBar :state="state" :status-text="statusText" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
+          <LaunchBar :state="state" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
         </div>
       </div>
       <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>

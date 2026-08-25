@@ -43,11 +43,11 @@ function mountApp(initial: object = RUNNING): { w: import('@vue/test-utils').Vue
   return { w, stop, start };
 }
 
-// the single toggle button: locate by its label (启动/停止/停止中…) — the dropdown's "…" button has a different text
+// the single toggle button: locate by its label (启动/停止/停止中) — the dropdown's "…" button has a different text
 function btn(w: import('@vue/test-utils').VueWrapper<any>): any {
   const all = w.findAll('.module-launch .btn');
   expect(all.length).toBe(2); // toggle + dropdown …
-  return all.find((b) => /^(\u542f\u52a8|\u505c\u6b62|\u505c\u6b62\u4e2d\u2026)$/.test(b.text().trim()));
+  return all.find((b) => /^(\u542f\u52a8|\u505c\u6b62|\u505c\u6b62\u4e2d)$/.test(b.text().trim()));
 }
 
 describe('App stop flow', () => {
@@ -65,13 +65,13 @@ describe('App stop flow', () => {
 
     const after = btn(w);
     expect(after.attributes('disabled')).toBeDefined();
-    expect(after.text()).toBe('\u505c\u6b62\u4e2d\u2026');
+    expect(after.text()).toBe('\u505c\u6b62\u4e2d');
 
     // service truly stopped: invoke resolves and the process is gone (main state -> ready)
     stop.resolve(undefined);
     await flush();
     const final = btn(w);
-    expect(final.text()).not.toBe('\u505c\u6b62\u4e2d\u2026');
+    expect(final.text()).not.toBe('\u505c\u6b62\u4e2d');
     // back to green [启动] immediately (no need to wait for the process-exit event)
     expect(final.text()).toBe('\u542f\u52a8');
     expect(final.classes().join(' ')).toContain('btn-launch');
@@ -88,7 +88,7 @@ describe('App stop flow', () => {
     // within the pending window stopping must be visible - otherwise the state is unreachable
     const mid = btn(w);
     expect(mid.attributes('disabled')).toBeDefined();
-    expect(mid.text()).toBe('\u505c\u6b62\u4e2d\u2026');
+    expect(mid.text()).toBe('\u505c\u6b62\u4e2d');
 
     // stop_server rejects -> catch resets; button must not get stuck on stopping.
     // (main still reports RUNNING: state unchanged, red [停止] clickable)

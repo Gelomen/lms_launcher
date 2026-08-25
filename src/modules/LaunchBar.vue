@@ -4,10 +4,9 @@ import { invoke, errMsg, isMissing } from '../ipc';
 import Dropdown from '../components/Dropdown.vue';
 
 // 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 单一切换按钮——未运行 = 绿 [启动]，
-// 运行中 = 红 [停止]（stopping 时红 + 「停止中…」禁用），启动失败自动恢复绿 [启动]；:disabled = 置灰。
+// 运行中 = 红 [停止]（stopping 时红 + 「停止中」禁用），启动失败自动恢复绿 [启动]；:disabled = 置灰。
 const props = defineProps<{
   state: { running: boolean; stopping: boolean; configId: string | null; starting?: boolean };
-  statusText: string;
   configsReloadKey: number; // App bump（TemplateModule 保存/删除后）→ 重新 load()
 }>();
 
@@ -47,7 +46,7 @@ async function load(): Promise<void> {
 
 // [启动]（绿）：无运行进程 + 有选中配置 + start_server 不在途（starting）——单按钮期间防重复点击
 const canStart = computed((): boolean => props.state.running === false && props.state.stopping === false && props.state.starting !== true && selected.value.length > 0);
-// [停止]（红）：运行中可点；stopping 中显示「停止中…」并禁用
+// [停止]（红）：运行中可点；stopping 中显示「停止中」并禁用
 const canStop = computed((): boolean => props.state.running && !props.state.stopping);
 
 function onToggle(): void {
@@ -65,21 +64,23 @@ watch((): number => props.configsReloadKey, () => { void load(); });
 <template>
   <section class="module module-launch">
     <h2 style="margin: 0; line-height: var(--h-control);">启动控制</h2>
-    <label class="label">配置</label>
-    <Dropdown :disabled="state.running"
-              :value="selected"
-              :options="configs ? Object.keys(configs).map((id) => ({ value: id, label: id })) : []"
-              :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
-              @update:value="(v: string) => { selected = v; }" />
-    <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-      <!-- 单一切换按钮：未运行 = 绿 [启动]；运行中 = 红 [停止]（stopping → 「停止中…」禁用）；
-           启动失败 / 进程退出 → state 回落 ready → 自动恢复绿 [启动] -->
+    <!-- 配置下拉 + 单一切换按钮同行排布（与「llama.cpp 安装目录」卡片一致：控件占满宽度、按钮贴右）：
+         未运行 = 绿 [启动]；运行中 = 红 [停止]（stopping → 「停止中」禁用）；
+         启动失败 / 进程退出 → state 回落 ready → 自动恢复绿 [启动] -->
+    <div style="display: flex; gap: 8px;">
+      <!-- 下拉 flex 拉伸（.dropdown--stretch 覆盖 width:100%）+ 状态按钮防压缩（.btn-noshrink），
+           窄卡片下 [启动]/[停止] 不被挤成竖排单字 -->
+      <Dropdown class="dropdown--stretch" :disabled="state.running"
+                :value="selected"
+                :options="configs ? Object.keys(configs).map((id) => ({ value: id, label: id })) : []"
+                :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
+                @update:value="(v: string) => { selected = v; }" />
       <button
+        class="btn-noshrink"
         :class="state.running ? 'btn btn-danger' : 'btn btn-launch'"
         :disabled="state.running ? !canStop : !canStart"
         @click="onToggle"
-      >{{ state.stopping ? '停止中…' : (state.running ? '停止' : '启动') }}</button>
+      >{{ state.stopping ? '停止中' : (state.running ? '停止' : '启动') }}</button>
     </div>
-    <p class="label" style="margin-top: 8px;">{{ statusText }}</p>
   </section>
 </template>
