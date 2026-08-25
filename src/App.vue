@@ -51,7 +51,7 @@ async function doStart(configId: string): Promise<void> {
 }
 
 async function doStop(): Promise<void> {
-  // 先置 stopping——单按钮随即变红「停止中…」并禁用（防重复点击）；
+  // 先置 stopping——单按钮随即变红「...」并禁用（防重复点击）；
   // process-exit 落地时 running/stopping 一并复位
   state.value = { ...state.value, stopping: true };
   try {
@@ -61,7 +61,7 @@ async function doStop(): Promise<void> {
     state.value = { running: false, stopping: false, configId: state.value.configId };
   } catch (e) {
     appendSys('停止失败 · ' + errMsg(e));
-    state.value = { ...state.value, stopping: false }; // 失败回落，不卡在「停止中…」
+    state.value = { ...state.value, stopping: false }; // 失败回落，不卡在「...」
     // 主进程状态可能已自行回落 ready（stopGraceful 幂等）→ 按权威状态恢复绿 [启动]
     try {
       const s = await invoke<ServerState>('get_state');
