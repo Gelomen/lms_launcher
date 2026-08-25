@@ -66,26 +66,22 @@ onMounted(reload);
     <div class="template-list">
       <p v-if="missing && error" class="label">目前没有模板配置</p>
       <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
-      <table v-if="configs" style="border-collapse: collapse; margin-top: 8px;">
-      <tbody>
-        <template v-for="id in Object.keys(configs)" :key="id">
-          <tr style="border-top: 1px solid var(--border);">
-            <td style="padding: 4px 8px 4px 0; font-weight: 600;">{{ id }}</td>
-            <td style="text-align: right; white-space: nowrap;">
-              <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
-                @click="openEdit(id)">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M2 12.5L9.5 5l2 2L4 14.5H2v-2z"
-                    stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                  <path d="M10.8 3.7l1.4-1.4a1.6 1.6 0 0 1 2.3 0l1.2 1.2a1.6 1.6 0 0 1 0 2.3L14 8"
-                    stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                </svg>
-              </button>
-            </td>
-          </tr>
-        </template>
-      </tbody>
-    </table>
+      <!-- 行卡片化（2026-08-26 spec）：每配置一个 .tpl-row —— 灰边框圆角独立卡片，
+           flex 两端对齐（id 左 / 编辑右），行间 gap 留白替代原 tr border-top 分隔线 -->
+      <div v-if="configs" class="tpl-rows">
+        <div v-for="id in Object.keys(configs)" :key="id" class="tpl-row">
+          <span class="tpl-row__id">{{ id }}</span>
+          <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
+            @click="openEdit(id)">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M2 12.5L9.5 5l2 2L4 14.5H2v-2z"
+                stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M10.8 3.7l1.4-1.4a1.6 1.6 0 0 1 2.3 0l1.2 1.2a1.6 1.6 0 0 1 0 2.3L14 8"
+                stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
       <p v-if="configs && Object.keys(configs).length === 0" class="label">暂无配置</p>
     </div>
 

@@ -26,14 +26,20 @@ describe('TemplateModule', () => {
     const wrapper = mount(TemplateModule);
     await flush();
 
-    // 配置行必须渲染：仅 id + 操作按钮；表头整行已移除，desc/参数预览不再显示
+    // 配置行必须渲染：仅 id + 操作按钮；表头整行已移除，desc/参数预览不再显示。
+    // 2026-08-26 行卡片化：每配置 = 一个 .tpl-row（灰边框圆角行卡片），列表不再是 table。
     expect(wrapper.text()).toContain('c1');
     expect(wrapper.text()).not.toContain('id'); // 表头 id 列标签已移除
     expect(wrapper.text()).not.toContain('日常');
     expect(wrapper.text()).not.toContain('-m x.gguf');
     expect(wrapper.text()).not.toContain('desc');
     expect(wrapper.text()).not.toContain('参数预览');
-    expect(wrapper.findAll('.module-template table').length).toBe(1);
+    expect(wrapper.findAll('.module-template table').length).toBe(0); // table 已移除
+    const row = wrapper.findAll('.module-template .tpl-row');
+    expect(row.length).toBe(1);
+    expect(row[0].text()).toContain('c1');
+    // 行卡片内含编辑按钮
+    expect(row[0].findAll("button[data-tooltip='编辑']").length).toBe(1);
     wrapper.unmount();
   });
 
@@ -51,9 +57,9 @@ describe('TemplateModule', () => {
     const wrapper = mount(TemplateModule);
     await flush();
 
-    // 方案 B：模板列表（含 table）必须包在 .template-list 固定高度容器内——卡片高度恒定、超出内部滚动
+    // 方案 B：模板列表（含行卡片）必须包在 .template-list 固定高度容器内——卡片高度恒定、超出内部滚动
     expect(wrapper.findAll('.module-template .template-list').length).toBe(1);
-    expect(wrapper.findAll('.module-template .template-list table').length).toBe(1);
+    expect(wrapper.findAll('.module-template .template-list .tpl-row').length).toBe(1);
     wrapper.unmount();
   });
 

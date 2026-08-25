@@ -223,6 +223,18 @@ body {
    缩掉 gutter 宽即消除溢出，视觉仍撑满（2026-08-25 hscroll spec）。 */
 .template-list table { width: calc(100% - var(--sb-w)); }
 
+/* ---- 模板行卡片化（2026-08-26 spec）：每配置一个独立圆角灰边框卡片，行间留白替代横向分隔线 ----
+   公共灰 --border(#E2E5E9) 与 .card / 下拉面板 / 日志面板同色；圆角复用 --radius-btn(8px)。
+   高度 ≈44px（14px×1.5 文字行 + 上下 8px padding + 2px border）＞原 30px/行，满足「增高」。 */
+.tpl-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.tpl-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  padding: 8px 10px;
+}
+.tpl-row__id { font-weight: 600; min-width: 0; word-break: break-all; }
+
 /* ---- #12 滚动条美化（Solarized 面板底色 + border 色 thumb；主要滚动区：modal-box / log-view）---- */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
@@ -266,7 +278,7 @@ body {
 .icon-btn:hover::after { opacity: 1; }
 /* 行内 tooltip（向左）：上方放会越过 .template-list 顶部被 overflow-y:auto 裁剪（滚动后任何顶部行都中招，
    z-index 不解决空间裁剪）→ 改为按钮左侧垂直居中；该方向不出列表边界，无裁剪风险（+ 按钮沿用基类朝上）。 */
-.template-list tr .icon-btn::after {
+.template-list .tpl-row .icon-btn::after {
   left: auto;                  /* 基类 left:50% 会让 right 失效（LTR 下 left 优先）→ 必须清除 */
   bottom: auto;
   top: 50%;
