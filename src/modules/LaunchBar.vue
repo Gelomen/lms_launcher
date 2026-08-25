@@ -72,7 +72,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
            窄卡片下 [启动]/[停止] 不被挤成竖排单字 -->
       <Dropdown class="dropdown--stretch" :disabled="state.running"
                 :value="selected"
-                :options="configs ? Object.keys(configs).map((id) => ({ value: id, label: id })) : []"
+                :options="configs ? Object.keys(configs).map((id) => ({ value: id, label: configs[id].desc || id })) : []"
                 :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
                 @update:value="(v: string) => { selected = v; }" />
       <button

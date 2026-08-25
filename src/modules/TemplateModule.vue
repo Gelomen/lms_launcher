@@ -70,7 +70,7 @@ onMounted(reload);
            flex 两端对齐（id 左 / 编辑右），行间 gap 留白替代原 tr border-top 分隔线 -->
       <div v-if="configs" class="tpl-rows">
         <div v-for="id in Object.keys(configs)" :key="id" class="tpl-row">
-          <span class="tpl-row__id">{{ id }}</span>
+          <span class="tpl-row__id">{{ configs[id].desc || id }}</span>
           <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
             @click="openEdit(id)">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
