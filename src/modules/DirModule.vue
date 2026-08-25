@@ -62,7 +62,7 @@ onMounted(load);
 </script>
 <template>
   <section class="module module-dir">
-    <h2 style="margin: 0; line-height: var(--h-control);">llama.cpp 安装目录</h2>
+    <h2>llama.cpp 安装目录</h2>
     <p v-if="error" class="error-text">{{ error }}</p>
     <div style="display: flex; gap: 8px;">
       <input class="input" v-model="dir" @change="status = null" />

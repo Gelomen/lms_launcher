@@ -54,8 +54,8 @@ onMounted(reload);
 </script>
 <template>
   <section class="module module-template">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h2 style="margin: 0; line-height: var(--h-control);">启动参数模板</h2>
+    <h2>启动参数模板</h2>
+    <div style="display: flex; justify-content: flex-end;">
       <button class="btn btn-secondary" @click="openNew">新建模板</button>
     </div>
     <div class="template-list">
