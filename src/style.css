@@ -117,6 +117,12 @@ body {
   cursor: not-allowed;
 }
 
+/* 「llama.cpp 安装目录」[…]: 与「启动控制」静息态 [启动]/[停止] 绿/红按钮同尺寸——
+   CJK 全角字宽 = 1em，两字 = 2em；+ 左右 padding 2×14px + 边框 2px = [启动] 盒子整体。
+   必须与 .btn-noshrink（flex-shrink:0）配合：否则同行 input 的 width:100% 会让 flex
+   把本按钮挤压变窄（LaunchBar 的状态按钮正是靠 btn-noshrink 保持定宽）。 */
+.btn-dirpick { width: calc(2em + 30px); }
+
 /* ---- 输入框 / 下拉 ---- */
 .input, .select {
   width: 100%;

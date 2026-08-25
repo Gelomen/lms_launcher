@@ -66,7 +66,9 @@ onMounted(load);
     <p v-if="error" class="error-text">{{ error }}</p>
     <div style="display: flex; gap: 8px;">
       <input class="input" v-model="dir" @change="status = null" />
-      <button class="btn btn-secondary" title="选择 llama.cpp 安装目录" @click="pickDir">…</button>
+      <!-- 与「启动控制」状态按钮同款保护：flex-shrink:0 防止窄卡片下被 input(width:100%) 挤压 ——
+           宽度固定 = [启动]/[停止] 的盒子（2 CJK 字 + padding + 边框），两个按钮尺寸一致 -->
+      <button class="btn btn-secondary btn-dirpick btn-noshrink" title="选择 llama.cpp 安装目录" @click="pickDir">…</button>
     </div>
     <!-- 下方恒定槽位：预留校验结果行（单行，与「保存中…」共用；避免校验前后卡片高度抖动） -->
     <div class="dir-status">
