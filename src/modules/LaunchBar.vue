@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { invoke, errMsg, isMissing } from '../ipc';
 import Dropdown from '../components/Dropdown.vue';
 
-// 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 三态按钮（.btn-launch 空闲 / .running / :disabled）。
+// 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 双按钮可点击态着色（[启动] 绿 / [停止] 红；:disabled = 置灰）。
 const props = defineProps<{
   state: { running: boolean; stopping: boolean; configId: string | null };
   statusText: string;
@@ -66,7 +66,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
               :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
               @update:value="(v: string) => { selected = v; }" />
     <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
-      <button class="btn btn-launch" :class="{ running: state.running }" :disabled="!canStart" @click="onStart">启动</button>
+      <button class="btn btn-launch" :disabled="!canStart" @click="onStart">启动</button>
       <button class="btn btn-danger" :disabled="!state.running || state.stopping" @click="onStop">{{ state.stopping ? '停止中…' : '停止' }}</button>
     </div>
     <p class="label" style="margin-top: 8px;">{{ statusText }}</p>
