@@ -264,6 +264,4 @@ body {
   opacity: 0;
 }
 .icon-btn:hover::after { opacity: 1; }
-/* 第一行编辑按钮：tooltip 朝上会超出 .template-list 顶部被 overflow-y:auto 裁掉（2026-08-25 实测 ≈21px）→ 第一行改朝下 */
-.template-list tr:first-child .icon-btn::after { bottom: auto; top: calc(100% + 6px); }
 
