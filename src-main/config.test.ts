@@ -137,11 +137,15 @@ params_file:
     expect(pf.params['metrics']).toBe('--metrics');
     expect(Object.keys(pf.params)).toHaveLength(34); // 既有 26 + v1.1 新增 7（reasoning*2 + #14 五参数）+ alias
     expect(pf.params['alias']).toBe('--alias');
-    expect(pf.params_options?.spec_type).toEqual(['none','draft-mtp','draft-simple','draft-eagle3','draft-dflash','draft-dspark','ngram-cache','ngram-simple','ngram-map-k','ngram-map-k4v','ngram-mod']);
+    // spec_type 与 config.ts defaultParams 对齐（收敛为 4 项）
+    expect(pf.params_options?.spec_type).toEqual(['none','draft-mtp','draft-dflash','draft-dspark']);
     expect(pf.params_options?.load_mode).toEqual(['none','auto','mmap','mlock','mmap+mlock','dio']);
     expect(pf.params_options?.reasoning).toEqual(['auto','on','off']);
     expect(pf.params_options?.reasoning_format).toEqual(['none','hide','deepseek']);
     expect(pf.params_options?.reasoning_effort).toEqual(['none','low','medium','high','xhigh','max']);
+    // ctk/ctv：KV cache dtype 下拉（精度从低到高，q4_0 为默认首项）
+    expect(pf.params_options?.ctk).toEqual(['q4_0','q5_0','q8_0','f16']);
+    expect(pf.params_options?.ctv).toEqual(['q4_0','q5_0','q8_0','f16']);
     expect(pf.params_boolean).toEqual(['jinja','reasoning_preserve','metrics']); // #14：metrics 声明为 boolean
 
     expect(pf.params_file).toEqual(['m','mmproj','chat_template_file']);

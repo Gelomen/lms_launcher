@@ -108,7 +108,7 @@ export function defaultParams(): ParamsFile {
     ['m', '-m'], ['mmproj', '--mmproj'], ['alias', '--alias'], ['ngl', '-ngl'],
     ['fa', '-fa'], ['n_cpu_moe', '--n-cpu-moe'], ['load_mode', '--load-mode'],
     ['np', '-np'], ['c', '-c'], ['b', '-b'], ['ub', '-ub'], ['t', '-t'], ['tb', '-tb'],
-    ['ctk', '-ctk'], ['ctv', '--ctv'], ['spec_type', '--spec-type'], ['spec_draft_n_max', '--spec-draft-n-max'],
+    ['ctk', '-ctk'], ['ctv', '-ctv'], ['spec_type', '--spec-type'], ['spec_draft_n_max', '--spec-draft-n-max'],
     ['temp', '--temp'], ['top_p', '--top-p'], ['top_k', '--top-k'], ['min_p', '--min-p'],
     ['presence_penalty', '--presence_penalty'], ['repeat_penalty', '--repeat_penalty'],
     ['jinja', '--jinja'], ['chat_template_file', '--chat-template-file'],
@@ -122,6 +122,8 @@ export function defaultParams(): ParamsFile {
     params,
     required: ['m'],
     params_options: {
+      ctk: ['q4_0', 'q5_0', 'q8_0', 'f16'], // KV cache dtype（ctk/ctv 同表），精度从低到高，q4_0 为默认
+      ctv: ['q4_0', 'q5_0', 'q8_0', 'f16'],
       spec_type: ['none', 'draft-mtp', 'draft-dflash', 'draft-dspark'],
       load_mode: ['none', 'auto', 'mmap', 'mlock', 'mmap+mlock', 'dio'],
       reasoning: ['auto', 'on', 'off'],
