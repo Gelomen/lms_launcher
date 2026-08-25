@@ -232,3 +232,32 @@ body {
   scrollbar-width: thin;            /* Firefox */
   scrollbar-color: #CDD3D8 transparent;
 }
+
+
+/* ---- 图标按钮 + tooltip（2026-08-25）：「新建模板」+ / 行内「编辑」铅笔 ---- */
+.icon-btn {
+  width: var(--h-control); height: var(--h-control);   /* 32x32，与输入框/下拉等高 */
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-btn);
+  color: var(--muted);           /* 图标色随文字色（stroke=currentColor） */
+  cursor: pointer;
+  padding: 0;
+}
+.icon-btn:hover { background: #F6F7F8; color: var(--text); }  /* 与 .btn:hover 同语言 */
+.icon-btn--sm { width: 24px; height: 24px; }                 /* 行内编辑按钮（替代原 height:24px） */
+/* tooltip：hover 立即显示，按钮上方居中；深灰底白字；pointer-events:none 不挡点击 */
+.icon-btn { position: relative; }
+.icon-btn::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.4; white-space: nowrap;
+  padding: 2px 8px; border-radius: 6px;
+  z-index: 30;                    /* 高于 .dropdown-panel(20)，避免被下拉遮 */
+  pointer-events: none;
+  opacity: 0;
+}
+.icon-btn:hover::after { opacity: 1; }
+
