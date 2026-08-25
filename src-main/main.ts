@@ -154,7 +154,7 @@ ipcMain.handle('open_dir_dialog', async (): Promise<string | null> => {
   const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
   return res.canceled ? null : res.filePaths[0];
 });
-// params_file 行的文件选择器（规格 #7B）：m/mmproj → gguf 过滤；其余任意文件。canceled / 无窗口 → null
+// params_file 行的文件选择器（规格 #7B）：m/mmproj → gguf 过滤；chat_template_file → jinja 过滤。canceled / 无窗口 → null
 ipcMain.handle('open_file_dialog', async (_e, key: string): Promise<string | null> => {
   const { dialog } = await import('electron');
   const win = mainWin();
@@ -162,6 +162,8 @@ ipcMain.handle('open_file_dialog', async (_e, key: string): Promise<string | nul
   const options: Electron.OpenDialogOptions = {};
   if (key === 'm' || key === 'mmproj') {
     options.filters = [{ name: 'Model files', extensions: ['gguf'] }];
+  } else if (key === 'chat_template_file') {
+    options.filters = [{ name: 'Jinja template files', extensions: ['jinja'] }];
   }
   const res = await dialog.showOpenDialog(win, options);
   return res.canceled ? null : res.filePaths[0];
