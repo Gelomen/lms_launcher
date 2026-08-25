@@ -54,8 +54,8 @@ onMounted(reload);
 </script>
 <template>
   <section class="module module-template">
-    <h2>启动参数模板</h2>
-    <div style="display: flex; justify-content: flex-end;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h2>启动参数模板</h2>
       <button class="icon-btn" data-tooltip="新建模板" aria-label="新建模板"
         @click="openNew">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
