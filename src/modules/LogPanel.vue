@@ -8,12 +8,18 @@ const props = defineProps<{ lines: Array<{ line: string; stream: 'sys' | 'out' |
 const autoScroll = ref(true);
 const view = ref<HTMLElement | null>(null);
 
-// sys 行蓝灰（[lms_launcher]）；stream=err 或 error/fatal → log-error；warn/warning → log-warn；ready/listening → log-ok
+// §4.4 五档着色（纯内容启发式，stream 不作颜色依据）：
+// llama-server 在 Windows 把 I/W/E 各级日志全写进 stderr（glog），
+// 仅靠 stream='err' 判红会把每行都涂红——必须识别 glog 级别前缀 <sec.usec> I|W|E：
+// error/fatal 关键字或 glog E → ln-err；warn 关键字或 glog W → ln-warn；
+// server ready/listening → ln-ok；sys 行 → ln-dim；其余（含 glog I）默认。
 function cls(e: { line: string; stream: 'sys' | 'out' | 'err' }): string {
   if (e.stream === 'sys') return 'ln-dim';
   const low = e.line.toLowerCase();
-  if (e.stream === 'err' || low.includes('error') || low.includes('fatal')) return 'ln-err';
-  if (low.includes('warn')) return 'ln-warn'; // warning/warn 均含该子串
+  // glog 前缀：0.02.489.298 I srv（数字 + ≥2 组点分小数 + 空格 + 单字母级别）
+  const lvl = low.match(/^\s*\d+(?:[.:]\d+){2,}\s+([iwe])\b/)?.[1] ?? null;
+  if (lvl === 'e' || low.includes('error') || low.includes('fatal')) return 'ln-err';
+  if (lvl === 'w' || low.includes('warn')) return 'ln-warn'; // warning/warn 均含该子串
   if (low.includes('server ready') || low.includes('listening')) return 'ln-ok';
   return '';
 }
