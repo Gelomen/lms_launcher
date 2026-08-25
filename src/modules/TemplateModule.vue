@@ -66,7 +66,7 @@ onMounted(reload);
     <div class="template-list">
       <p v-if="missing && error" class="label">目前没有模板配置</p>
       <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
-      <table v-if="configs" style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+      <table v-if="configs" style="border-collapse: collapse; margin-top: 8px;">
       <tbody>
         <template v-for="id in Object.keys(configs)" :key="id">
           <tr style="border-top: 1px solid var(--border);">

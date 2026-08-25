@@ -31,6 +31,7 @@
   --fs-label: 12px;         /* 标签/辅助 */
   --h-control: 32px;        /* 输入框/下拉高 */
   --h-primary: 36px;        /* 主按钮高 */
+  --sb-w: 7px;               /* Windows Chromium 传统滚动条宽（.template-list 横向溢出修正用） */
   --card-gap: 12px;         /* 卡片间距 */
   --card-pad: 16px;         /* 卡片内边距 */
 }
@@ -218,6 +219,9 @@ body {
   margin-top: 8px;
   overflow-y: auto;
 }
+/* 横向溢出修正：Chromium content-box 下 table width:100% 含滚动条 gutter（≈--sb-w）→ 横向滚动条；
+   缩掉 gutter 宽即消除溢出，视觉仍撑满（2026-08-25 hscroll spec）。 */
+.template-list table { width: calc(100% - var(--sb-w)); }
 
 /* ---- #12 滚动条美化（Solarized 面板底色 + border 色 thumb；主要滚动区：modal-box / log-view）---- */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
