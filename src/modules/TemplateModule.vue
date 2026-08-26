@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faPenToSquare } from '@fortawesome/free-solid-svg-icons';
+import { faPenToSquare } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
 import TemplateModal from './TemplateModal.vue';
 
-// FontAwesome：按需注册 pen-to-square（列表行「编辑」按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
+// FontAwesome：按需注册 pen-to-square regular 款（列表行「编辑」按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
 config.autoGenerateCss = true;
 library.add(faPenToSquare);
 const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare } };

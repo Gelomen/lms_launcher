@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faFolderOpen } from '@fortawesome/free-solid-svg-icons';
+import { faFolderOpen } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 
-// FontAwesome：按需注册 folder-open（选择目录按钮原「…」三点），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
+// FontAwesome：按需注册 folder-open regular 款（选择目录按钮原「…」三点），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
 config.autoGenerateCss = true;
 library.add(faFolderOpen);
 const byPrefixAndName = { fat: { 'folder-open': faFolderOpen } };

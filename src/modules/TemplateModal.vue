@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faFloppyDisk, faFolderOpen, faTrashCan, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faFloppyDisk, faFolderOpen, faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 
 import Dropdown from '../components/Dropdown.vue';
 
-// FontAwesome：按需注册 floppy-disk（保存按钮）/ folder-open（选择文件按钮），tree-shakeable 用法；fas 前缀图标经 library.add 进入本地库
+// FontAwesome：按需注册 regular 款——floppy-disk（保存）/ folder-open（选择文件）/ trash-can（删除），
+// xmark（关闭 ×）无 regular 款，保留 free-solid；均经 library.add 进入本地库
 config.autoGenerateCss = true;
 library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen);
 // byPrefixAndName：按「前缀 → { iconName: IconDefinition }」组织，模板侧 <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" /> 直接取图标定义
