@@ -43,9 +43,9 @@ function openEdit(id: string): void {
   modalOpen.value = true;
 }
 
-// 列表名截断（2026-08-26 spec）：>25 字 → 前 25 字 + …(U+2026)，hover 弹自绘 tooltip 显示完整名字；
+// 列表名截断（2026-08-26 spec + 当日收紧）：>10 字 → 前 10 字 + …(U+2026)，hover 弹自绘 tooltip 显示完整名字；
 // 短名完整显示、无 tooltip。data-tooltip 仅长名携带，与「编辑」按钮 tooltip 同视觉语言。
-const TRUNC_AT = 25;
+const TRUNC_AT = 10;
 function nameOf(id: string): string {
   const c = configs.value?.[id];
   return (c?.desc ?? '') || id;
