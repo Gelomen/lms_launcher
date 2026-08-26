@@ -347,7 +347,11 @@ function close(): void { emit('close'); }
 }
 .row-cell { display: flex; gap: 8px; min-width: 0; }
 .row-cell .input { flex: 1; }
-.file-btn { width: 72px; flex-shrink: 0; height: var(--h-control); padding: 0 6px; font-size: var(--fs-label); }
+.file-btn {
+    /* 与「启动控制」[启动](rocket) 按钮同尺寸：.btn 基础盒（padding 0 14px + --h-control 高）+ 居中图标；不再用旧的 width:72px/padding 0 6px */
+    flex-shrink: 0; height: var(--h-control); display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 14px; font-size: var(--fs-label);
+  }
 /* 按钮栏固定底部：删除（编辑模式）+ 保存 */
 /* 底部栏高 = 顶部栏（.modal-head height:32px + 分隔线）：显式 32px（box-sizing:border-box），
    不再靠内容撑起——新建模式栏内唯一按钮 .modal-save 是绝对定位，无流内内容时旧值塌成细缝 */
