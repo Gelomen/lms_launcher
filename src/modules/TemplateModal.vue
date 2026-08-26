@@ -199,11 +199,8 @@ function close(): void { emit('close'); }
         <div class="modal-body">
           <p v-if="saveError" class="error-text">{{ saveError }}</p>
 
-          <!-- id 全自动：新建 = 完全静默（无标签、无提示，保存时由主进程生成唯一 yaml-safe id）；编辑 = 只读展示（.id-view 静态文本，无输入框、不可修改） -->
-          <template v-if="isEdit">
-            <label class="label" style="display: block;">id</label>
-            <p class="id-view">{{ props.id }}</p>
-          </template>
+          <!-- id 全自动：新建 = 完全静默（保存时由主进程生成唯一 yaml-safe id）；编辑 = 只读单行展示「id: xxx」（.id-view 静态文本，无输入框、不可修改） -->
+          <p v-if="isEdit" class="id-view">id: {{ props.id }}</p>
 
           <label class="label" style="display: block; margin-top: 8px;">描述</label>
           <input class="input" :class="{ error: attemptedSave && descError !== null }" v-model="formDesc" placeholder="如：qwen27b 日常推理" />

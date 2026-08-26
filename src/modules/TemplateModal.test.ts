@@ -411,10 +411,10 @@ describe('TemplateModal auto id', () => {
     calls = []; mockLms();
     const w = mountEdit(); await flush();
 
-    // 只读 id 文本：.id-view 显示 props.id，无输入框、不可编辑
+    // 只读 id 文本：.id-view 单行显示「id: xxx」，无输入框、不可编辑
     const view = document.querySelector('.id-view');
     expect(view).not.toBeNull();
-    expect(view!.textContent?.trim()).toBe('qwen38');
+    expect(view!.textContent?.trim()).toBe('id: qwen38'); // 格式「id: xxx」（2026-09 用户定）
     // .id-view 不是 input——是静态文本节点（内容不可修改）
     expect(view!.tagName.toLowerCase()).not.toBe('input');
     w.unmount();
