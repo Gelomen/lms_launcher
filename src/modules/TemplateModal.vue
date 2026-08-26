@@ -270,7 +270,7 @@ function close(): void { emit('close'); }
   flex: none;
   display: flex;
   align-items: center;
-  height: 48px;
+  height: 32px;              /* 48 → 32：顶部栏高减 1/3 */
   padding: 0 16px;
   background: var(--card);          /* 白底盖住滚动内容（.card 圆角下顶部留白不穿帮） */
   border-bottom: 1px solid var(--border);
@@ -281,14 +281,14 @@ function close(): void { emit('close'); }
   font-size: var(--fs-title);
   font-weight: 600;
 }
-/* [x] 关闭按钮：标题栏最右侧 */
+/* [x] 关闭按钮：标题栏最右侧（32px 栏内缩到 24px 与栏同高线） */
 .modal-close {
   position: absolute;
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -326,12 +326,13 @@ function close(): void { emit('close'); }
 .row-cell .input { flex: 1; }
 .file-btn { width: 72px; flex-shrink: 0; height: var(--h-control); padding: 0 6px; font-size: var(--fs-label); }
 /* 按钮栏固定底部：删除（编辑模式）+ 保存 */
+/* 底部栏高减 1/3：原 12+32+12=56 → 2.5+32+2.5=37 ≈ ×2/3（按钮高不动，只收上下留白） */
 .modal-actions {
   flex: none;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 2.5px 16px;
   border-top: 1px solid var(--border);
 }
 /* 删除按钮贴弹窗左下角（保存仍右对齐） */
