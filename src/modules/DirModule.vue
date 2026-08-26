@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { library, config } from '@fortawesome/fontawesome-svg-core';
+import { faFolderOpen } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
+
+// FontAwesome：按需注册 folder-open（选择目录按钮原「…」三点），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
+config.autoGenerateCss = true;
+library.add(faFolderOpen);
+const byPrefixAndName = { fat: { 'folder-open': faFolderOpen } };
 
 // 模块 1 · llama.cpp 安装目录（规格 §4.1）
 const dir = ref('');
@@ -68,7 +76,9 @@ onMounted(load);
       <input class="input" v-model="dir" @change="status = null" />
       <!-- 与「启动控制」状态按钮同款保护：flex-shrink:0 防止窄卡片下被 input(width:100%) 挤压 ——
            宽度固定 = [启动]/[停止] 的盒子（2 CJK 字 + padding + 边框），两个按钮尺寸一致 -->
-      <button class="btn btn-secondary btn-dirpick btn-noshrink" title="选择 llama.cpp 安装目录" @click="pickDir">…</button>
+      <button class="btn btn-secondary btn-dirpick btn-noshrink" title="选择 llama.cpp 安装目录" @click="pickDir">
+        <FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 16px;" />
+      </button>
     </div>
     <!-- 下方恒定槽位：预留校验结果行（单行，与「保存中…」共用；避免校验前后卡片高度抖动） -->
     <div class="dir-status">
