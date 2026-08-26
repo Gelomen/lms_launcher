@@ -55,8 +55,8 @@ describe('TemplateModule', () => {
     wrapper.unmount();
   });
 
-  it('row_label_truncates_beyond_10_chars_and_tooltips_full_name', async () => {
-    const longDesc = '这是一个非常非常长的模板描述文案用来验证截断与省略号行为'; // 29 字 > 10
+  it('row_label_truncates_beyond_15_chars_and_tooltips_full_name', async () => {
+    const longDesc = '这是一个非常非常长的模板描述文案用来验证截断与省略号行为'; // 29 字 > 15
     const CONFIGS_LONG = { c_long: { desc: longDesc, values: {} } };
     (window as any).lms = {
       invoke: (cmd: string) => {
@@ -73,17 +73,17 @@ describe('TemplateModule', () => {
 
     const label = wrapper.findAll('.module-template .tpl-row__id')[0];
     expect(label.exists()).toBe(true);
-    // 截断：前 10 字 + …（U+2026），完整文案不直接渲染进列表
+    // 截断：前 15 字 + …（U+2026），完整文案不直接渲染进列表
     expect(label.text().endsWith('…')).toBe(true);
     const t = label.text();
-    expect(t.length).toBe(11); // 10 + 省略号
-    expect(t.slice(0, 10)).toBe(longDesc.slice(0, 10));
+    expect(t.length).toBe(16); // 15 + 省略号
+    expect(t.slice(0, 15)).toBe(longDesc.slice(0, 15));
     // tooltip：与编辑按钮同款机制（data-tooltip 属性），内容为完整名字
     expect(label.attributes('data-tooltip')).toBe(longDesc);
     wrapper.unmount();
   });
 
-  it('row_label_short_than_10_chars_shows_full_name_without_tooltip_attr', async () => {
+  it('row_label_short_than_15_chars_shows_full_name_without_tooltip_attr', async () => {
     const CONFIGS_SHORT = { c_short: { desc: '日常', values: {} } };
     (window as any).lms = {
       invoke: (cmd: string) => {

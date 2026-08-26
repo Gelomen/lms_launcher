@@ -1,6 +1,6 @@
 # 模板行名截断 + 完整名 tooltip —— 设计规格
 
-日期: 2026-08-26 · 状态: 已批准（用户对话原需求拆解即本方案；当日复报：**列表行名最大字符 25 → 10**）· 前置: 行卡片化（tpl-row）、desc 展示（c0c1ecf）、编辑按钮自绘 tooltip
+日期: 2026-08-26 · 状态: 已批准（用户对话原需求拆解即本方案；当日复报：列表行名最大字符 **25 → 10 → 最终定 15**）· 前置: 行卡片化（tpl-row）、desc 展示（c0c1ecf）、编辑按钮自绘 tooltip
 
 ## 需求（用户原文拆解）
 
@@ -11,7 +11,7 @@
 
 ## 方案（已批准 = 用户原拆解直接落地）
 
-- **截断在 JS**：rowName(id) = desc||id；len>25 → 前 25 字 + …(U+2026)；否则原文。
+- **截断在 JS**：rowName(id) = desc||id；len>15（TRUNC_AT=15，当日定稿）→ 前 15 字 + …(U+2026)；否则原文。
   纯 CSS ellipsis（max-width + text-overflow）在 happy-dom/组件测试无法验证，JS 截断可直接断言。
 - **tooltip 同款视觉**：深灰 #374151 底白字、12px(--fs-label)、行高 1.4、padding 2px 8px、圆角 6px、z-index 30、pointer-events:none —— 全部取自 .icon-btn::after。
 - **tooltip 位置机制差异（必要）**：编辑按钮用 absolute ::after（按钮左侧，避开 .template-list overflow 上裁剪）。
