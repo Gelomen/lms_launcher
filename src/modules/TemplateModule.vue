@@ -101,7 +101,7 @@ onMounted(reload);
       </button>
     </div>
     <div class="template-list">
-      <p v-if="missing && error" class="label">目前没有模板配置</p>
+      <p v-if="missing && error" class="label">暂无模板配置</p>
       <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
       <!-- 行卡片化（2026-08-26 spec）：每配置一个 .tpl-row —— 灰边框圆角独立卡片，
            flex 两端对齐（id 左 / 编辑右），行间 gap 留白替代原 tr border-top 分隔线 -->

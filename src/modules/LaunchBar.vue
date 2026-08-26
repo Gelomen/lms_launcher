@@ -112,7 +112,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
       <Dropdown class="dropdown--stretch" :disabled="state.running"
                 :value="selected"
                 :options="options ?? []" :tip="triggerTip"
-                :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
+                :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '暂无模板配置' : '选择配置…'"
                 @update:value="(v: string) => { selected = v; }" />
       <button
         class="btn-noshrink"

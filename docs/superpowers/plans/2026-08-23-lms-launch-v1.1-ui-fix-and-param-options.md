@@ -24,7 +24,7 @@
 | src-main/main.ts、src/ipc.ts、src/modules/TemplateModule.vue | IPC open_file_dialog 面 | 2 |
 | src/modules/TemplateModal.vue | rows 三分支 + 「选择文件」按钮 + flag-grid 自适应 + modal-box 防护 | 3 |
 | src/modules/TemplateModal.vue | attemptedSave 门控 + 去 * 号 + id「必填」文案 | 4 |
-| src/modules/TemplateModule.vue、LaunchBar.vue | 无配置文案：深色「目前没有模板配置」/ 移除提示行 + 下拉占位文案规则 | 5 |
+| src/modules/TemplateModule.vue、LaunchBar.vue | 无配置文案：深色「暂无模板配置」/ 移除提示行 + 下拉占位文案规则 | 5 |
 | src/modules/DirModule.vue | 「…」（title=选择 llama.cpp 安装目录） | 6 |
 | src/style.css | webkit/Firefox 滚动条美化 | 7 |
 | （任务 8 目检后可能：TemplateModal.vue / LaunchBar.vue + style.css） | 全局下拉限高 3 行 + 圆角风格一致 | 8 |
@@ -554,7 +554,7 @@ git commit -m "feat: modal validation only after save attempt; drop required ast
 
 ---
 
-### 任务 5：无配置文案——TemplateModule 深色「目前没有模板配置」+ LaunchBar 移除提示行、下拉占位规则（#2/#6）
+### 任务 5：无配置文案——TemplateModule 深色「暂无模板配置」+ LaunchBar 移除提示行、下拉占位规则（#2/#6）
 
 **文件：**
 - 修改：`src/modules/TemplateModule.vue`、`src/modules/LaunchBar.vue`
@@ -564,7 +564,7 @@ git commit -m "feat: modal validation only after save attempt; drop required ast
 模板第 79–80 行替换：
 
 ```html
-<p v-if="missing && error" class="label">目前没有模板配置</p>
+<p v-if="missing && error" class="label">暂无模板配置</p>
 <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
 ```
 
@@ -579,17 +579,17 @@ git commit -m "feat: modal validation only after save attempt; drop required ast
 ```html
 <select class="select" v-model="selected" :disabled="state.running">
   <option value="" disabled>
-    {{ missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…' }}
+    {{ missing || (configs !== null && Object.keys(configs).length === 0) ? '暂无模板配置' : '选择配置…' }}
   </option>
   <option v-for="id in configs ? Object.keys(configs) : []" :key="id" :value="id">{{ id }}</option>
 </select>
 ```
 
-规则：未选择 → 「选择配置…」；MISSING/空 → 「（目前没有模板配置）」（不可选占位项）；选中后只显示 id 名（去掉「— desc」后缀）。启动按钮 disabled 逻辑不变。
+规则：未选择 → 「选择配置…」；MISSING/空 → 「暂无模板配置」（不可选占位项）；选中后只显示 id 名（去掉「— desc」后缀）。启动按钮 disabled 逻辑不变。
 
 - [ ] **步骤 3：dev 手动检查**
 
-全新态（llama_launch_configs.yaml 不存在）：模板模块一行深色「目前没有模板配置」、启动控制模块无任何提示行、下拉占位「（目前没有模板配置）」；删光配置后占位同文案；有 ≥1 配置时占位恢复「选择配置…」且选中项只显示 id。
+全新态（llama_launch_configs.yaml 不存在）：模板模块一行深色「暂无模板配置」、启动控制模块无任何提示行、下拉占位「暂无模板配置」；删光配置后占位同文案；有 ≥1 配置时占位恢复「选择配置…」且选中项只显示 id。
 
 - [ ] **步骤 4：Commit**
 
@@ -766,7 +766,7 @@ git commit -m "feat: global dropdown cap-height (3 rows) with scroll, card-style
 
 - [ ] **步骤 3：前端验收清单（规格 §四，dev 窗口逐项过）**
 
-1. 全新态：模板模块深色「目前没有模板配置」；启动控制无任何提示行、下拉占位「（目前没有模板配置）」——无红字。
+1. 全新态：模板模块深色「暂无模板配置」；启动控制无任何提示行、下拉占位「暂无模板配置」——无红字。
 2. 弹窗打开即时无红框/红字；空表单点保存 → id 下「必填」+ -m 红框 + 汇总行。
 3. spec_type/load_mode/reasoning* 为下拉且默认首个选项；jinja/reasoning_preserve/**metrics** 为 false|true 下拉默认 false；保存后 yaml：boolean true 写入 'true'、false 不写入，options 写入所选值；日志区启动命令摘要出现 `--jinja` / `--metrics`（true）/不拼（false）。#14 新参数：n_cpu_moe / fit / fit_ctx / fit_target 为普通文本输入行，填值后摘要出现对应 flag+值对。
 4. m/mmproj「选择文件」按钮出 gguf 过滤对话框；chat_template_file 任意文件；选定回填。

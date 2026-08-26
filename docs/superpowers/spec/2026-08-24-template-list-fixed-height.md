@@ -11,7 +11,7 @@ App 布局为上区三卡片 grid + 下区日志区（`.layout` 高 `100vh`，�
 ## 需求（#1）
 
 1. **固定容器**：TemplateModule 内新增 `.template-list` 容器 div，包裹全部列表态内容：
-   - 「目前没有模板配置」（missing）、错误文案（error）、模板 table、「暂无配置」（空表）——四种状态同处一个固定高度区域，任何状态下卡片高度一致。
+   - 「暂无模板配置」（missing）、错误文案（error）、模板 table、「暂无配置」（空表）——四种状态同处一个固定高度区域，任何状态下卡片高度一致。
 2. **尺寸**：`height: 192px`（≈6 行模板，行高 ~30px：4+4 padding + 14px×1.5 line-height）；`margin-top: 8px`（承接原 table 的 margin-top，视觉不漂移）。
 3. **滚动**：`overflow-y: auto`；超出 6 行时列表内部出滚动条，不改变卡片高度。
 4. **滚动条样式**：复用已落地的 #12 全局滚动条美化（webkit `*::-webkit-scrollbar` 自动覆盖）；Firefox 三件套选择器 `.log-view, .modal-box` → 追加 `.template-list`。
