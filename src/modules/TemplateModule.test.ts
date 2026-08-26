@@ -158,15 +158,13 @@ describe('TemplateModule', () => {
     // 列表行不再渲染删除按钮（新建模板 / 编辑除外，均不出现「删除」字样）
     expect(wrapper.text()).not.toContain('删除');
 
-    // 点「编辑」→ teleport 到 body 的弹窗 modal-actions 最左出现删除按钮
+    // 点「编辑」→ teleport 到 body 的弹窗 modal-actions 最左出现删除按钮（FontAwesome trash 图标，无文字 → 按类名定位）
     const editBtn = wrapper.findAll("button").find(
       (b) => b.attributes("data-tooltip") === "编辑",
     )!;
     await editBtn.trigger('click');
     await flush();
-    const del = [...document.querySelectorAll('.modal-actions button')].find(
-      (b) => (b.textContent ?? '').includes('删除'),
-    );
+    const del = document.querySelector('.modal-actions .btn-delete');
     expect(del).toBeDefined();
     wrapper.unmount();
   });

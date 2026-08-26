@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { library, config } from '@fortawesome/fontawesome-svg-core';
+import { faFloppyDisk, faTrashCan, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
+
 import Dropdown from '../components/Dropdown.vue';
+
+// FontAwesome：按需注册 floppy-disk（保存按钮），tree-shakeable 用法；fas 前缀图标经 library.add 进入本地库
+config.autoGenerateCss = true;
+library.add(faFloppyDisk, faTrashCan, faXmark);
+// byPrefixAndName：按「前缀 → { iconName: IconDefinition }」组织，模板侧 <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" /> 直接取图标定义
+const byPrefixAndName = { fat: { 'floppy-disk': faFloppyDisk, xmark: faXmark, 'trash-can': faTrashCan } };
 
 // 模板弹窗（新建 / 编辑共用，规格 §4.2）：
 // flag-form 参数表单 + id 唯一性红框 + 必填(-m)红框不保存；其余空值不写入 yaml。
@@ -179,7 +189,10 @@ function close(): void { emit('close'); }
         <!-- 标题栏：固定不滚动（sticky），文字居中，[x] 关闭按钮贴最右 -->
         <header class="modal-head">
           <span class="modal-title">{{ isEdit ? '编辑模板' : '新建模板' }}</span>
-          <button type="button" class="modal-close" aria-label="关闭弹窗" @click="close">×</button>
+          <!-- [x] 关闭按钮：文字 ×（2026-08）→ FontAwesome xmark 图标（.modal-close font-size:16px 经 FA 继承定尺寸） -->
+          <button type="button" class="modal-close" aria-label="关闭弹窗" @click="close">
+            <FontAwesomeIcon :icon="byPrefixAndName.fat['xmark']" />
+          </button>
         </header>
         <!-- 表单区：独立滚动容器，标题栏外 -->
         <div class="modal-body">
@@ -232,9 +245,14 @@ function close(): void { emit('close'); }
 
         <!-- 底部按钮区固定不滚动：取消功能已挪到标题栏 [x]，仅保留 删除 + 保存 -->
         <footer class="modal-actions">
-          <button v-if="isEdit" class="btn btn-secondary btn-delete" @click="onDelete">删除</button>
-          <button class="btn btn-primary" :disabled="saving" @click="save">
-            {{ saving ? '保存中…' : '保存' }}
+          <!-- [删除]：参考 [保存] 角形按钮——左下角形，上下占满底部栏全高、左缘贴卡片左缘（.modal-actions padding:0 16px 让位于绝对定位）；
+               文字「删除」（2026-08）→ FontAwesome trash-can 图标 + a11y label（仅编辑模式渲染，行为不变） -->
+          <button v-if="isEdit" class="btn-delete" aria-label="删除" @click="onDelete">
+            <FontAwesomeIcon :icon="byPrefixAndName.fat['trash-can']" />
+          </button>
+          <!-- 软盘图标 = 保存（2026-08-27 角形按钮；2026-09：手写 SVG → FontAwesome floppy-disk） -->
+          <button class="modal-save" :disabled="saving" aria-label="保存" @click="save">
+            <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" style="font-size: 18px;" />
           </button>
         </footer>
       </div>
@@ -281,26 +299,27 @@ function close(): void { emit('close'); }
   font-size: var(--fs-title);
   font-weight: 600;
 }
-/* [x] 关闭按钮：标题栏最右侧（32px 栏内缩到 24px 与栏同高线） */
+/* [x] 关闭按钮：参考应用窗口（Windows 标题栏）关闭键样式——右上角角形：
+   上下占满标题栏全高、右缘贴卡片右缘（不再 inset/悬浮小方块）；
+   右上圆角随卡片 12px 走形避免白角穿帮；hover = 系统关闭键红底白字。 */
 .modal-close {
   position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
+  top: 0;
+  right: 0;
+  width: 36px;
+  height: 100%;           /* 上下占满标题栏边缘 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: var(--card);
   color: var(--muted);
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-btn);
+  border: none;
+  border-top-right-radius: var(--radius-card); /* 与卡片右上角圆角一致 */
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
 }
-.modal-close:hover { background: #F6F7F8; color: var(--text); }
+.modal-close:hover { background: var(--danger); color: #fff; } /* Windows 关闭键 hover：红底白字 */
 /* 表单区：唯一的滚动容器 */
 .modal-body {
   flex: 1;
@@ -326,17 +345,58 @@ function close(): void { emit('close'); }
 .row-cell .input { flex: 1; }
 .file-btn { width: 72px; flex-shrink: 0; height: var(--h-control); padding: 0 6px; font-size: var(--fs-label); }
 /* 按钮栏固定底部：删除（编辑模式）+ 保存 */
-/* 底部栏高减 1/3：原 12+32+12=56 → 2.5+32+2.5=37 ≈ ×2/3（按钮高不动，只收上下留白） */
+/* 底部栏高 = 顶部栏（.modal-head height:32px + 分隔线）：显式 32px（box-sizing:border-box），
+   不再靠内容撑起——新建模式栏内唯一按钮 .modal-save 是绝对定位，无流内内容时旧值塌成细缝 */
 .modal-actions {
   flex: none;
+  position: relative;          /* .modal-save 绝对定位的包含块（同 .modal-head） */
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
-  padding: 2.5px 16px;
+  height: 32px;
+  padding: 0 16px;
   border-top: 1px solid var(--border);
 }
-/* 删除按钮贴弹窗左下角（保存仍右对齐） */
-.modal-actions .btn-delete { margin-right: auto; }
-/* 保存按钮与 删除 同高（全局 .btn-primary 为 36px，此处收敛到 32px） */
-.modal-actions .btn-primary { height: var(--h-control); }
+/* [删除]：与 [保存]/[×] 同一角形语言——左下角形，上下占满底部栏全高、左缘贴卡片左缘；
+   左下圆角随卡片 12px 走形避免白角穿帮；危险操作语义 = 关闭键红底（默认卡片色，hover 红底白字） */
+.btn-delete {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 36px;
+  height: 100%;          /* 上下占满底部栏边缘（同 .modal-save） */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  color: var(--muted);
+  border: none;
+  border-bottom-left-radius: var(--radius-card); /* 与卡片左下角圆角一致 */
+  cursor: pointer;
+}
+.btn-delete:hover { background: var(--danger); color: #fff; }
+/* [保存] 软盘按钮：同 [×] 的角形语言——右下角形，上下占满底部栏全高、右缘贴卡片右缘；
+   右下圆角随卡片 12px 走形避免白角穿帮；颜色 = 主色蓝（.btn-primary 语义），hover 加深一档。 */
+.modal-save {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 36px;
+  height: 100%;          /* 上下占满底部栏边缘 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-bottom-right-radius: var(--radius-card);
+  cursor: pointer;
+}
+.modal-save:hover { background: var(--accent-hover); }
+.modal-save:disabled, .modal-save[disabled='true'] {
+  background: var(--disabled-bg);
+  color: var(--muted);
+  cursor: not-allowed;
+}
 </style>

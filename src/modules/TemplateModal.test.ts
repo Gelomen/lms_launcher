@@ -50,7 +50,8 @@ describe('TemplateModal', () => {
     setter.call(idIn, 'qwen1'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
-    const saveBtn = [...document.querySelectorAll('.modal-actions button')].find((b) => b.textContent?.includes('保存'))!;
+    // [保存] 按钮已改为右下角软盘图标角形按钮（2026-08-27）：.modal-save 无文字，按类名定位
+const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     saveBtn.click();
     await flush();
 
@@ -80,7 +81,8 @@ it('save_rejected_when_desc_empty', async () => {
     const labels = [...document.querySelectorAll('.modal-box label.label')].map((l) => l.textContent?.trim());
     expect(labels).toContain('描述');
 
-    const saveBtn = [...document.querySelectorAll('.modal-actions button')].find((b) => b.textContent?.includes('保存'))!;
+    // [保存] 按钮已改为右下角软盘图标角形按钮（2026-08-27）：.modal-save 无文字，按类名定位
+const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     saveBtn.click();
     await flush();
 
@@ -102,7 +104,8 @@ it('save_rejected_when_desc_empty', async () => {
     setter.call(descIn(), '日常推理'); descIn().dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
-    const saveBtn = [...document.querySelectorAll('.modal-actions button')].find((b) => b.textContent?.includes('保存'))!;
+    // [保存] 按钮已改为右下角软盘图标角形按钮（2026-08-27）：.modal-save 无文字，按类名定位
+const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     saveBtn.click();
     await flush();
 
@@ -125,7 +128,8 @@ const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as H
     setter.call(descIn(), '日常'); descIn().dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
-    const saveBtn = [...document.querySelectorAll('.modal-actions button')].find((b) => b.textContent?.includes('保存'))!;
+    // [保存] 按钮已改为右下角软盘图标角形按钮（2026-08-27）：.modal-save 无文字，按类名定位
+const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     saveBtn.click();
     await flush();
 
@@ -206,7 +210,8 @@ describe('TemplateModal options truncation', () => {
     mIn.dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
-    [...document.querySelectorAll('.modal-actions button')].find((b) => (b.textContent ?? '').includes('保存'))!.click();
+    // [保存] 按钮已是右下角软盘图标角形按钮（无文字），按 .modal-save 类名定位
+(document.querySelector('.modal-save') as HTMLButtonElement).click();
     await flush();
     const save = calls.find((c) => c.cmd === 'save_config');
     expect(save).toBeDefined();
@@ -225,10 +230,11 @@ function mountEdit(): ReturnType<typeof mount> {
   });
 }
 
+// [删除] 按钮已改为 FontAwesome trash 图标（无文字，2026-09）：按 .btn-delete 类名定位；
+// querySelector 未命中返回 null → 归一化为 undefined（既有 toBeUndefined 断言契约）
 function findDeleteBtn(): HTMLButtonElement | undefined {
-  return [...document.querySelectorAll('.modal-actions button')].find(
-    (b) => (b.textContent ?? '').includes('删除'),
-  ) as HTMLButtonElement | undefined;
+  const el = document.querySelector('.modal-actions .btn-delete');
+  return (el ?? undefined) as HTMLButtonElement | undefined;
 }
 
 describe('TemplateModal delete', () => {
@@ -279,6 +285,36 @@ describe('TemplateModal delete', () => {
   });
 });
 
+// ---- [x] 关闭按钮 FontAwesome xmark 契约（2026-09）：文字 × → fa xmark 图标；
+//     .modal-close font-size:16px 经 FA 继承定尺寸，hover 红底白字样式不变；a11y label 保留 ----
+describe('TemplateModal close button', () => {
+  it('close_button_is_fa_xmark_without_text', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    const b = document.querySelector('.modal-head .modal-close') as HTMLButtonElement;
+    expect(b).toBeDefined();
+    expect(b.textContent?.trim().length).toBe(0);             // 「×」文字已移除
+    expect(b.querySelector('svg')).not.toBeNull();            // FontAwesome xmark（svg 渲染）
+    expect(b.getAttribute('aria-label')).toBe('关闭弹窗');      // a11y label 保留
+    w.unmount();
+  });
+});
+
+// ---- [保存] 软盘图标角形按钮契约（2026-08-27）：右下角形按钮 = 应用窗口标题栏关闭键同款语言；
+//     「保存」二字 → 软盘 SVG，a11y label 保留；disabled=saving 沿用原契约 ----
+describe('TemplateModal save button', () => {
+  it('save_is_floppy_icon_corner_button_without_text', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    const b = document.querySelector('.modal-save') as HTMLButtonElement;
+    expect(b).toBeDefined();                                   // 右下角形按钮存在
+    expect(b.textContent?.trim().length).toBe(0);              // 「保存」文字已移除
+    expect(b.querySelector('svg')).not.toBeNull();             // 软盘图标（svg）
+    expect(b.getAttribute('aria-label')).toBe('保存');          // a11y label 保留
+    w.unmount();
+  });
+});
+
 // ---- 标题栏契约（2026-08-27）：文字「新建模板」/「编辑模板」居中，[x] 在最右侧，点击 [x] emit close；底部取消按钮删除 ----
 describe('TemplateModal titlebar', () => {
   it('new_mode_title_is_new_template_and_x_closes', async () => {
@@ -287,7 +323,10 @@ describe('TemplateModal titlebar', () => {
     expect(document.querySelector('.modal-head .modal-title')?.textContent).toBe('新建模板');
     const xBtn = document.querySelector('.modal-head .modal-close') as HTMLButtonElement;
     expect(xBtn).toBeDefined();
-    expect(xBtn.textContent).toBe('×');
+    // [x] 关闭按钮文字 ×（2026-08）→ FontAwesome xmark 图标：无文字、含 svg；a11y label 保留
+    expect(xBtn.textContent?.trim().length).toBe(0);
+    expect(xBtn.querySelector('svg')).not.toBeNull();
+    expect(xBtn.getAttribute('aria-label')).toBe('关闭弹窗');
     xBtn.click();
     await flush();
     expect(w.emitted('close')).toHaveLength(1);
