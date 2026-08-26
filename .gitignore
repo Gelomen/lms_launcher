@@ -4,10 +4,8 @@ dist-release/
 node_modules/
 .npm-cache/
 .superpowers/
-
-
 .dsh-watch/
-
 .repro/
 .temp/
 .tmp-*
+logs/
