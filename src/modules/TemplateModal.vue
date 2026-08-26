@@ -99,6 +99,28 @@ async function pickFile(key: string): Promise<void> {
   if (picked !== null) formValues.value[key] = picked; // null（取消）不动
 }
 
+// 选项截断（2026-08-26 spec，与启动控制下拉同机制、阈值 10）：>10 字 → 前 10 字 + …(U+2026)；
+// tooltip（.dd-tip 悬浮层）显示完整值；value 仍是原始长串，保存契约不变。短选项无省略号/tooltip。
+const TRUNC_AT = 10;
+function truncOpt(o: string): { label: string; tip?: string } {
+  const full = o ?? '';
+  if (full.length <= TRUNC_AT) return { label: full };
+  return { label: full.slice(0, TRUNC_AT) + '…', tip: full };
+}
+// options 行的 Dropdown 选项表：截断 label + 完整值 tooltip；trigger tooltip = 当前选中项的 tip。
+const optionRows = computed<Record<string, Array<{ value: string; label: string; tip?: string }>>>(() => {
+  const opts = props.paramsMeta.params_options ?? {};
+  const out: Record<string, Array<{ value: string; label: string; tip?: string }>> = {};
+  for (const [k, v] of Object.entries(opts)) out[k] = (v ?? []).map((o) => ({ ...truncOpt(o), value: o }));
+  return out;
+});
+function triggerTip(k: string): string | undefined {
+  const rows = optionRows.value[k];
+  if (!rows) return undefined;
+  const cur = formValues.value[k];
+  return (rows.find((r) => r.value === cur) ?? null)?.tip;
+}
+
 // 必填项（required 列表）留空 → 红框 + 不保存
 const emptyRequired = computed((): string[] => {
   const bad: string[] = [];
@@ -190,8 +212,10 @@ function close(): void { emit('close'); }
                         @update:value="(v: string) => { formValues[row.key] = v; }" />
             </div>
             <div v-else class="dropdown">
+              <!-- options 选项 >10 字截断为前 10 字+…（truncOpt），hover tooltip=完整值；value 仍为原始串 -->
               <Dropdown :value="formValues[row.key]"
-                        :options="row.opts.map((o) => ({ value: o, label: o }))"
+                        :options="optionRows[row.key] ?? []"
+                        :tip="triggerTip(row.key)"
                         @update:value="(v: string) => { formValues[row.key] = v; }" />
             </div>
           </template>

@@ -151,6 +151,71 @@ describe('TemplateModal close', () => {
   });
 });
 
+// ---- options 行选项截断（2026-08-26：>10 字 → 前 10 字+…，tooltip 完整名，与启动控制下拉同机制）----
+const LONG_OPT = '这是一个非常长的选项值用来验证模板弹窗内下拉选项的截断与省略号行为'; // 30 字 >10
+describe('TemplateModal options truncation', () => {
+  // 长名放首位 → fill() 默认选中它（options 恒默认首个），trigger 即带截断 label + tooltip
+  const metaLong: typeof paramsMeta = { ...paramsMeta, params_options: { ctk: [LONG_OPT, 'q4_0'] } };
+
+  it('option_label_truncates_beyond_10_chars_and_tooltips_full_value', async () => {
+    calls = []; mockLms();
+    const w = mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: '', values: {}, paramsMeta: metaLong, existingIds: [] },
+    });
+    await flush();
+
+    // ctk 行（flag-label '-ctk' 的兄弟 .dropdown）：trigger 标签截断 + tooltip 全值
+    const dd = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === '-ctk')!.nextElementSibling as Element;
+    expect((dd as Element).querySelector('.select-label')!.textContent).toBe(LONG_OPT.slice(0, 10) + '…');
+    expect(((dd as Element).querySelector('.select-trigger') as HTMLElement).dataset.tooltip).toBe(LONG_OPT);
+
+    // 展开面板：li[0] 截断 + data-tooltip=完整值；li[1] 短选项不截断、无 tooltip
+    ((dd as Element).querySelector('.select-trigger') as HTMLElement).click();
+    await flush();
+    const lis = [...document.querySelectorAll('.dropdown-panel li')] as HTMLElement[];
+    expect(lis.length).toBe(2);
+    expect(lis[0].textContent).toBe(LONG_OPT.slice(0, 10) + '…');
+    expect(lis[0].dataset.tooltip).toBe(LONG_OPT);
+    expect(lis[1].textContent).toBe('q4_0');
+    expect(lis[1].dataset.tooltip).toBeUndefined();
+    w.unmount();
+  });
+
+  it('save_submits_full_value_not_truncated_label', async () => {
+    calls = []; mockLms();
+    const w = mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: '', values: {}, paramsMeta: metaLong, existingIds: [] },
+    });
+    await flush();
+
+    // 长选项即默认选中（fill opts[0]）：id + desc + -m 必填填齐后保存——yaml 值必须是完整长串，不是截断 label
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    const idIn = [...document.querySelectorAll('.modal-box input')].find((i) => (i.placeholder ?? '').includes('小写字母'))!;
+    setter.call(idIn, 'qwen1');
+    idIn.dispatchEvent(new Event('input', { bubbles: true }));
+    // desc 必填（留空会拒保存）
+    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
+    const descIn = descLb.nextElementSibling as HTMLInputElement;
+    setter.call(descIn, 'd');
+    descIn.dispatchEvent(new Event('input', { bubbles: true }));
+    // -m 为 params 表第一个文本行（.row-cell input[0]）
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    setter.call(mIn, 'x.gguf');
+    mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+
+    [...document.querySelectorAll('.modal-actions button')].find((b) => (b.textContent ?? '').includes('保存'))!.click();
+    await flush();
+    const save = calls.find((c) => c.cmd === 'save_config');
+    expect(save).toBeDefined();
+    const values = (save!.args as unknown[][])[2] as Record<string, string>;
+    expect(values['ctk']).toBe(LONG_OPT); // 完整值入 yaml，截断仅展示层
+    w.unmount();
+  });
+});
+
 // ---- 删除契约（2026-08-24 挪入弹窗）----
 // 编辑模式挂载：id='qwen38'（isEdit 成立），返回 wrapper 供 emitted() 断言
 function mountEdit(): ReturnType<typeof mount> {
