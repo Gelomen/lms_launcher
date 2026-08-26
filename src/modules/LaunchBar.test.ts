@@ -26,8 +26,8 @@ describe('LaunchBar config dropdown truncation', () => {
     const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
     await flush();
 
-    // 触发按钮标签：前 10 字 + …（与模板行名同机制，阈值 10）
-    expect(w.find('.select-label').text()).toBe(LONG.slice(0, 10) + '…');
+    // 触发按钮标签：前 8 字 + …（与模板行名同机制，阈值 8——窄容器 10 字仍换行撑高）
+    expect(w.find('.select-label').text()).toBe(LONG.slice(0, 8) + '…');
     // tooltip（样式同「编辑」按钮）：trigger 携带 data-tooltip=完整名字
     expect(w.find('.select-trigger').attributes('data-tooltip')).toBe(LONG);
 
@@ -35,7 +35,7 @@ describe('LaunchBar config dropdown truncation', () => {
     await w.find('.select-trigger').trigger('click');
     await flush();
     const li = w.findAll('.dropdown-panel li')[0];
-    expect(li.text()).toBe(LONG.slice(0, 10) + '…');
+    expect(li.text()).toBe(LONG.slice(0, 8) + '…');
     expect(li.attributes('data-tooltip')).toBe(LONG);
     w.unmount();
   });

@@ -99,9 +99,9 @@ async function pickFile(key: string): Promise<void> {
   if (picked !== null) formValues.value[key] = picked; // null（取消）不动
 }
 
-// 选项截断（2026-08-26 spec，与启动控制下拉同机制、阈值 10）：>10 字 → 前 10 字 + …(U+2026)；
+// 选项截断（2026-08-26 spec + 当日再收紧，与启动控制下拉同机制、阈值 8——窄容器 10 字仍换行撑高）：>8 字 → 前 8 字 + …(U+2026)；
 // tooltip（.dd-tip 悬浮层）显示完整值；value 仍是原始长串，保存契约不变。短选项无省略号/tooltip。
-const TRUNC_AT = 10;
+const TRUNC_AT = 8;
 function truncOpt(o: string): { label: string; tip?: string } {
   const full = o ?? '';
   if (full.length <= TRUNC_AT) return { label: full };

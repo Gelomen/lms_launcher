@@ -56,9 +56,9 @@ function onToggle(): void {
 
 onMounted(load);
 
-// 配置下拉截断（2026-08-26 spec，同模板行名机制、阈值 10）：>10 字 → 前 10 字 + …(U+2026)；
+// 配置下拉截断（2026-08-26 spec + 当日再收紧）：同模板行名机制、阈值 8——窄容器下 10 字仍换行撑高选项，减为 8；>8 字 → 前 8 字 + …(U+2026)；
 // tooltip（.dd-tip 悬浮层 + trigger data-tooltip）显示完整名字。下拉面板仅截断不撑宽（max-height 116px）。
-const TRUNC_AT = 10;
+const TRUNC_AT = 8;
 function full(id: string): string {
   const c = configs.value?.[id];
   return (c?.desc ?? '') || id;

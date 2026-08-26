@@ -167,7 +167,7 @@ describe('TemplateModal options truncation', () => {
 
     // ctk 行（flag-label '-ctk' 的兄弟 .dropdown）：trigger 标签截断 + tooltip 全值
     const dd = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === '-ctk')!.nextElementSibling as Element;
-    expect((dd as Element).querySelector('.select-label')!.textContent).toBe(LONG_OPT.slice(0, 10) + '…');
+    expect((dd as Element).querySelector('.select-label')!.textContent).toBe(LONG_OPT.slice(0, 8) + '…');
     expect(((dd as Element).querySelector('.select-trigger') as HTMLElement).dataset.tooltip).toBe(LONG_OPT);
 
     // 展开面板：li[0] 截断 + data-tooltip=完整值；li[1] 短选项不截断、无 tooltip
@@ -175,7 +175,7 @@ describe('TemplateModal options truncation', () => {
     await flush();
     const lis = [...document.querySelectorAll('.dropdown-panel li')] as HTMLElement[];
     expect(lis.length).toBe(2);
-    expect(lis[0].textContent).toBe(LONG_OPT.slice(0, 10) + '…');
+    expect(lis[0].textContent).toBe(LONG_OPT.slice(0, 8) + '…');
     expect(lis[0].dataset.tooltip).toBe(LONG_OPT);
     expect(lis[1].textContent).toBe('q4_0');
     expect(lis[1].dataset.tooltip).toBeUndefined();
