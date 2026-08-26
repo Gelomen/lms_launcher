@@ -25,9 +25,12 @@ const paramsMeta = defaultParams();
 function mountModal() {
   return mount(TemplateModal, {
     attachTo: document.body,
-    props: { open: true, id: '', values: {}, paramsMeta, existingIds: [] },
+    props: { open: true, id: '', values: {}, paramsMeta },
   });
 }
+
+// id 自动生成契约的 mock 返回——主进程生成的唯一 id（小写字母+数字，yaml 安全）
+const SUGGEST_ID = 'tpl9f0k2m4x';
 
 function setInput(sel: string, v: string): Promise<void> {
   const el = document.querySelector(sel) as HTMLInputElement;
@@ -41,13 +44,9 @@ describe('TemplateModal', () => {
   it('save_rejected_when_required_m_empty', async () => {
     calls = []; mockLms(); mountModal(); await flush();
 
-    // id 填了，-m（flag-grid 第一个文本行）留空 → 点保存必须被拒
-    const inputs = [...document.querySelectorAll('.modal-box input')];
-    const idIn = inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))!;
+    // -m（flag-grid 第一个文本行）留空 → 点保存必须被拒（id 不再由用户填写，无输入框可填）
     const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
     expect(mIn.parentElement?.previousElementSibling.textContent).toBe('-m'); // 确认目标是 -m 行
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
-    setter.call(idIn, 'qwen1'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
     // [保存] 按钮已改为右下角软盘图标角形按钮（2026-08-27）：.modal-save 无文字，按类名定位
@@ -69,11 +68,8 @@ const descIn = (): HTMLInputElement => {
 it('save_rejected_when_desc_empty', async () => {
     calls = []; mockLms(); mountModal(); await flush();
 
-    const inputs = [...document.querySelectorAll('.modal-box input')];
-    const idIn = inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))!;
     const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
-    setter.call(idIn, 'qwen3'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
     setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
@@ -93,13 +89,16 @@ const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
   });
 
   it('saves_when_desc_filled', async () => {
-    calls = []; mockLms(); mountModal(); await flush();
+    calls = [];
+    // suggest_config_id → 主进程生成的唯一 id（新建保存契约的核心一环）
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => { calls.push({ cmd, args }); if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID); return Promise.resolve(null); },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+    mountModal(); await flush();
 
-    const inputs = [...document.querySelectorAll('.modal-box input')];
-    const idIn = inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))!;
     const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
-    setter.call(idIn, 'qwen4'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
     setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
     setter.call(descIn(), '日常推理'); descIn().dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
@@ -112,18 +111,21 @@ const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     const saved = calls.find((c) => c.cmd === 'save_config');
     expect(saved).toBeDefined();
     const [id, desc] = saved!.args as [string, string | null];
-    expect(id).toBe('qwen4');
+    expect(id).toBe(SUGGEST_ID); // id 来自 suggest_config_id，非用户输入
     expect(desc).toBe('日常推理');
   });
 
-it('saves_when_id_and_required_m_filled', async () => {
-    calls = []; mockLms(); mountModal(); await flush();
+it('saves_when_required_m_filled_without_id_input', async () => {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => { calls.push({ cmd, args }); if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID); return Promise.resolve(null); },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+    mountModal(); await flush();
 
-    const inputs = [...document.querySelectorAll('.modal-box input')];
-    const idIn = inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))!;
+    // id 自动生成：只需 -m（必填）+ desc，不再有 id 输入框
 const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
-    setter.call(idIn, 'qwen2'); idIn.dispatchEvent(new Event('input', { bubbles: true }));
     setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
     setter.call(descIn(), '日常'); descIn().dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
@@ -136,7 +138,7 @@ const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     const saved = calls.find((c) => c.cmd === 'save_config');
     expect(saved).toBeDefined();
     const [id, , values] = saved!.args as [string, unknown, Record<string, string>];
-    expect(id).toBe('qwen2');
+    expect(id).toBe(SUGGEST_ID);
     expect(values['m']).toBe('D:/models/qwen.gguf');
   });
 });
@@ -165,7 +167,7 @@ describe('TemplateModal options truncation', () => {
     calls = []; mockLms();
     const w = mount(TemplateModal, {
       attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta: metaLong, existingIds: [] },
+      props: { open: true, id: '', values: {}, paramsMeta: metaLong },
     });
     await flush();
 
@@ -193,7 +195,7 @@ describe('TemplateModal options truncation', () => {
     const metaLong: typeof paramsMeta = { ...paramsMeta, params_options: { ctk: [LATIN_OPT, 'q4_0'] } };
     const w = mount(TemplateModal, {
       attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta: metaLong, existingIds: [] },
+      props: { open: true, id: '', values: {}, paramsMeta: metaLong },
     });
     await flush();
     const dd = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === '-ctk')!.nextElementSibling as Element;
@@ -203,18 +205,19 @@ describe('TemplateModal options truncation', () => {
   });
 
   it('save_submits_full_value_not_truncated_label', async () => {
-    calls = []; mockLms();
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => { calls.push({ cmd, args }); if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID); return Promise.resolve(null); },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
     const w = mount(TemplateModal, {
       attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta: metaLong, existingIds: [] },
+      props: { open: true, id: '', values: {}, paramsMeta: metaLong },
     });
     await flush();
 
-    // 长选项即默认选中（fill opts[0]）：id + desc + -m 必填填齐后保存——yaml 值必须是完整长串，不是截断 label
+    // 长选项即默认选中（fill opts[0)）：desc + -m 必填填齐后保存（id 自动生成，无输入框）——yaml 值必须是完整长串，不是截断 label
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
-    const idIn = [...document.querySelectorAll('.modal-box input')].find((i) => (i.placeholder ?? '').includes('小写字母'))!;
-    setter.call(idIn, 'qwen1');
-    idIn.dispatchEvent(new Event('input', { bubbles: true }));
     // desc 必填（留空会拒保存）
     const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
     const descIn = descLb.nextElementSibling as HTMLInputElement;
@@ -242,7 +245,7 @@ describe('TemplateModal options truncation', () => {
 function mountEdit(): ReturnType<typeof mount> {
   return mount(TemplateModal, {
     attachTo: document.body,
-    props: { open: true, id: 'qwen38', values: {}, paramsMeta, existingIds: ['qwen38'] },
+    props: { open: true, id: 'qwen38', values: {}, paramsMeta },
   });
 }
 
@@ -365,6 +368,123 @@ describe('TemplateModal titlebar', () => {
     const w = mountModal(); await flush();
     const btns = [...document.querySelectorAll('.modal-actions button')].map((b) => b.textContent?.trim());
     expect(btns).not.toContain('取消'); // 关闭功能挪到标题栏 [x]，底部不再渲染「取消」
+    w.unmount();
+  });
+});
+
+// ---- id 自动生成契约（v1.2 增量）：新建模板不再让用户填 id——无输入框；保存时先 invoke suggest_config_id
+//      取主进程生成的唯一 id 再 save_config；编辑模式显示只读 id 文本（.id-view），无输入框、不可修改 ----
+
+describe('TemplateModal auto id', () => {
+  function mountNew() {
+    return mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: '', values: {}, paramsMeta },
+    });
+  }
+
+  it('new_mode_has_no_id_input_only_hint_or_value', async () => {
+    calls = []; mockLms();
+    const w = mountNew(); await flush();
+
+    // 不再有 id 输入框：placeholder「小写字母与数字」的 input 不存在
+    const inputs = [...document.querySelectorAll('.modal-box input')];
+    expect(inputs.find((i) => (i.placeholder ?? '').includes('小写字母'))).toBeUndefined();
+    // 无 .id-input（旧的 v-model id 输入框）
+    expect(document.querySelector('.id-input')).toBeNull();
+    w.unmount();
+  });
+
+  it('edit_mode_shows_readonly_id_without_input', async () => {
+    calls = []; mockLms();
+    const w = mountEdit(); await flush();
+
+    // 只读 id 文本：.id-view 显示 props.id，无输入框、不可编辑
+    const view = document.querySelector('.id-view');
+    expect(view).not.toBeNull();
+    expect(view!.textContent?.trim()).toBe('qwen38');
+    // .id-view 不是 input——是静态文本节点（内容不可修改）
+    expect(view!.tagName.toLowerCase()).not.toBe('input');
+    w.unmount();
+  });
+
+  it('new_mode_save_requests_suggested_id_then_saves_with_it', async () => {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        calls.push({ cmd, args });
+        if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID);
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const w = mountNew(); await flush();
+
+    // desc + -m 必填填齐后保存（无 id 输入框，不需要填 id）
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
+    const descEl = descLb.nextElementSibling as HTMLInputElement;
+    setter.call(descEl, '日常推理'); descEl.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+
+    (document.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+
+    // 先 suggest_config_id，后 save_config（携带返回的 id）
+    const sIdx = calls.findIndex((c) => c.cmd === 'suggest_config_id');
+    const save = calls.find((c) => c.cmd === 'save_config');
+    expect(sIdx).toBeGreaterThanOrEqual(0);
+    expect(save).toBeDefined();
+    expect(calls.indexOf(save!)).toBeGreaterThan(sIdx);
+    expect((save!.args as unknown[])[0]).toBe(SUGGEST_ID);
+    w.unmount();
+  });
+
+  it('edit_mode_save_does_not_suggest_and_uses_existing_id', async () => {
+    calls = []; mockLms();
+    const w = mountEdit(); await flush();
+
+    (document.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+
+    // 编辑模式：不请求新 id，save_config 沿用 props.id（desc 必填——留空时保存被拒，这里只断言无 suggest）
+    expect(calls.find((c) => c.cmd === 'suggest_config_id')).toBeUndefined();
+    w.unmount();
+  });
+
+  it('suggest_error_shown_in_modal_without_save', async () => {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        calls.push({ cmd, args });
+        if (cmd === 'suggest_config_id') return Promise.reject(new Error('VALIDATION: id 生成失败'));
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const w = mountNew(); await flush();
+
+    // 必填填齐后保存（desc + -m）
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    setter.call(mIn, 'x.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
+    const descEl = descLb.nextElementSibling as HTMLInputElement;
+    setter.call(descEl, 'd'); descEl.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+
+    (document.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+
+    // suggest 失败 → 错误进 saveError 区展示，不发 save_config
+    expect(calls.find((c) => c.cmd === 'save_config')).toBeUndefined();
+    expect(document.querySelector('.modal-box')?.textContent).toContain('VALIDATION: id 生成失败');
     w.unmount();
   });
 });

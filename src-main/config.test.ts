@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId } from './config';
 import { tmpPath, rm, writeText, jp } from './test-utils';
 
 describe('config.ts', () => {
@@ -63,6 +63,19 @@ describe('config.ts', () => {
     expect(validateParamKey('-m')).toBe(false);
     expect(validateParamKey('a b')).toBe(false);
     expect(validateParamKey('A')).toBe(false);
+  });
+
+  it('suggest_config_id_is_unique_and_yaml_safe', () => {
+    // id 将作为 yaml key 保存：必须符合 validateConfigId（小写字母开头 [a-z0-9] ≤32），且与现有条目不重名
+    const existing = ['tplabc1', 'qwen'];
+    const id = suggestConfigId(existing);
+    expect(id).not.toBe('tplabc1');
+    expect(id).not.toBe('qwen');
+    expect(validateConfigId(id)).toBe(true);
+    // 连取 50 个也不碰撞（随机尾巴）
+    const batch: string[] = [];
+    for (let i = 0; i < 50; i++) batch.push(suggestConfigId([...batch]));
+    expect(new Set(batch).size).toBe(50);
   });
 
   it('config_id_rules', () => {

@@ -129,7 +129,6 @@ onMounted(reload);
       :values="configs && editingId ? configs[editingId]?.values ?? {} : {}"
       :desc="configs && editingId ? configs[editingId]?.desc ?? undefined : undefined"
       :params-meta="paramsMeta"
-      :existing-ids="configs ? Object.keys(configs) : []"
       @saved="onSaved"
       @deleted="onDeleted"
       @close="modalOpen = false"

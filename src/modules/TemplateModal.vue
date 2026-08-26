@@ -30,7 +30,6 @@ const props = withDefaults(defineProps<{
     params_boolean?: string[];
     params_file?: string[];
   };
-  existingIds: string[];
 }>(), { desc: '' });
 
 const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void; (e: 'deleted', id: string): void }>();
@@ -38,7 +37,8 @@ const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void; (e: 'deleted'
 const isEdit = computed(() => props.id.length > 0);
 
 // ---------- 表单状态 ----------
-const formId = ref('');
+// id 不再由用户填写：新建模式保存时向主进程请求唯一 id（yaml 安全：小写字母+数字）；
+// 编辑模式显示只读 id（.id-view 静态文本），既无输入框也不可修改。
 const formDesc = ref('');
 const formValues = ref<Record<string, string>>({});
 const saveError = ref<string | null>(null);
@@ -49,7 +49,6 @@ const attemptedSave = ref(false);
 
 function fill(): void {
   attemptedSave.value = false; // 打开弹窗重置（步骤 1）
-  formId.value = props.id;
   formDesc.value = props.desc ?? '';
   const opts = props.paramsMeta.params_options ?? {};
   const bools: string[] = props.paramsMeta.params_boolean ?? [];
@@ -72,17 +71,6 @@ function fill(): void {
   formValues.value = init;
   saveError.value = null;
 }
-
-// ---------- 校验（对齐 config.ts validateConfigId）----------
-const idError = computed((): string | null => {
-  const v = formId.value.trim();
-  if (v.length === 0) return '必填';
-  // 与主进程 validateConfigId（config.ts:87-91）完全一致：小写字母开头、仅 [a-z0-9]、≤32
-  if (!/^[a-z][a-z0-9]*$/.test(v)) return '须为小写字母开头的字母数字串（不含下划线 / 空格 / 大写）';
-  if (v.length > 32) return '最长 32 位';
-  if (props.existingIds.includes(formId.value) && !isEdit.value) return 'id 已被使用';
-  return null;
-});
 
 type RowType = 'text' | 'options' | 'boolean';
 type Row = { key: string; flag: string; required: boolean; type: RowType; opts: string[] };
@@ -153,8 +141,16 @@ const descError = computed((): string | null => {
 async function save(): Promise<void> {
   attemptedSave.value = true; // 保存失败不重置；关闭经 fill() 重置（步骤 1）
   saveError.value = null;
-  // id / 必填项 校验失败 → 保存被拒（计划 task-4 步骤 4「保存被拒」）；红框与「必填项未填写」文案由模板 attemptedSave 门控展示
-  if (idError.value !== null || descError.value !== null || emptyRequired.value.length > 0) return;
+  // 必填项校验失败 → 保存被拒（计划 task-4 步骤 4「保存被拒」）；红框与「必填项未填写」文案由模板 attemptedSave 门控展示
+  if (descError.value !== null || emptyRequired.value.length > 0) return;
+  // id：新建 → 向主进程请求唯一 id（yaml 安全）；编辑 → 沿用 props.id，不重新生成
+  let id: string;
+  try {
+    id = isEdit.value ? props.id : await invoke<string>('suggest_config_id');
+  } catch (e) {
+    saveError.value = errMsg(e); // VALIDATION 等错误原样展示（suggest_config_id 失败）
+    return;
+  }
   // 空值（含编辑时清掉的字段）→ 不写入，保持 yaml 干净；#9D：boolean false 也不写入，yaml 只保留 true flags
   const boolKeys: string[] = props.paramsMeta.params_boolean ?? [];
   const values: Record<string, string> = {};
@@ -165,7 +161,7 @@ async function save(): Promise<void> {
   }
   saving.value = true;
   try {
-    await invoke('save_config', formId.value, formDesc.value.trim() === '' ? null : formDesc.value.trim(), values);
+    await invoke('save_config', id, formDesc.value.trim() === '' ? null : formDesc.value.trim(), values);
     emit('saved');
   } catch (e) {
     saveError.value = errMsg(e); // VALIDATION（id 规则 / 必填）与 IO 错误原样展示
@@ -203,15 +199,10 @@ function close(): void { emit('close'); }
         <div class="modal-body">
           <p v-if="saveError" class="error-text">{{ saveError }}</p>
 
+          <!-- id：不再让用户填写——新建 = 保存时由主进程生成唯一 id（yaml 安全）；编辑 = 只读展示（.id-view 静态文本，无输入框、不可修改） -->
           <label class="label" style="display: block;">id</label>
-          <input
-            class="input"
-            :class="{ error: attemptedSave && idError !== null }"
-            v-model="formId"
-            :disabled="isEdit"
-            placeholder="小写字母与数字，如 qwendaily"
-          />
-          <p v-if="attemptedSave && idError" class="error-text">{{ idError }}</p>
+          <p v-if="isEdit" class="id-view">{{ props.id }}</p>
+          <p v-else class="id-hint">保存时自动生成</p>
 
           <label class="label" style="display: block; margin-top: 8px;">描述</label>
           <input class="input" :class="{ error: attemptedSave && descError !== null }" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
@@ -346,6 +337,18 @@ function close(): void { emit('close'); }
   text-align: right;
   font-family: var(--font-mono);
   white-space: nowrap;               /* #8：去掉 overflow/ellipsis，保留 nowrap */
+}
+/* id 展示行：编辑 = 只读文本（等宽字体 + 弱化色，明示不可编辑）；新建 = 灰字提示「保存时自动生成」 */
+.id-view {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin: 0;
+}
+.id-hint {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  margin: 0;
 }
 .row-cell { display: flex; gap: 8px; min-width: 0; }
 .row-cell .input { flex: 1; }

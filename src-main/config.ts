@@ -69,6 +69,17 @@ export function configsLoad(path: string): ConfigsMap {
   return parseYaml(path, s, 'llama_launch_configs.yaml') as ConfigsMap;
 }
 
+// suggest：自动生成唯一配置 id——保存后写入 yaml key，故必须符合 validateConfigId（小写字母开头、[a-z0-9]、≤32）且与现有条目不重名。
+// 碰撞概率低（时间戳+随机尾巴），但渲染端可能连续两次秒级保存同一时间戳 → 循环重试直至唯一
+export function suggestConfigId(existing: string[]): string {
+  const rand = (): string => Math.floor(Math.random() * 10000).toString(16).padStart(4, '0');
+  for (let i = 0; i < 100; i++) {
+    const candidate = 'tpl' + Date.now().toString(36) + rand();
+    if (validateConfigId(candidate) && !existing.includes(candidate)) return candidate;
+  }
+  throw new Error('VALIDATION: id 生成失败（无法产生唯一值）');
+}
+
 // save：坏 id → VALIDATION；值 trim 后空串丢弃；文件不存在则首次创建
 export function saveConfigEntry(path: string, id: string, desc: string | undefined, values: Record<string, string>): void {
   if (!validateConfigId(id)) throw new Error('VALIDATION: id 须为小写字母开头的字母数字串（不含空格/大写），最长 32 位');
