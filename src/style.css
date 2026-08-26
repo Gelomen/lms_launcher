@@ -241,16 +241,20 @@ body {
 /* 长名 tooltip：与 .icon-btn::after 同视觉语言（深灰底白字/12px/圆角/z-30），
    position:fixed 浮于视口——.template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题） */
 /* .dd-tip：Dropdown（启动控制配置下拉 / TemplateModal）长名 tooltip —— 与 .tpl-tip / .icon-btn::after 同视觉语言
-   （深灰底白字/12px/圆角/z-30），position:fixed 浮于视口避开 .dropdown-panel overflow 裁剪 */
+   （深灰底白字/12px/圆角/z-30），position:fixed 浮于视口避开 .dropdown-panel overflow 裁剪。
+   2026-08-26 挪位：上方居中会被应用窗口/卡片裁剪 → 改挂元素右侧垂直居中（JS top = 元素垂直中心）；
+   右侧估宽放不下视口时 .dd-tip--flip：translateX(-100%) 右缘贴锚点、改挂元素左缘内侧。 */
 .dd-tip {
   position: fixed;
-  transform: translateX(-50%) translateY(-100%);
+  transform: translateY(-50%);
   background: #374151; color: #fff;
   font-size: var(--fs-label); line-height: 1.4; white-space: nowrap;
   padding: 2px 8px; border-radius: 6px;
   z-index: 30;
   pointer-events: none;
 }
+/* flip：右侧放不下 → tooltip 右缘贴元素左缘内侧（JS left = r.left - 8px），不出窗口 */
+.dd-tip--flip { transform: translateX(-100%) translateY(-50%); }
 .tpl-tip {
   position: fixed;
   transform: translateX(-50%) translateY(-100%);

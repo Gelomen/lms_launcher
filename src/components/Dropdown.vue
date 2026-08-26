@@ -18,14 +18,24 @@ const emit = defineEmits<{ (e: 'update:value', v: string): void }>();
 const open = ref(false);
 function pick(v: string): void { if (props.disabled) return; emit('update:value', v); open.value = false; tip.value = null; }
 
-// 长名 tooltip（2026-08-26 spec）：trigger / li 的 tip 存在时 hover 弹 .dd-tip（position:fixed 浮于视口——
-// .dropdown-panel max-height+overflow:auto 会裁剪行内 absolute 浮层，fixed 不受裁剪且跟随视口）。
-// 触发按钮与面板选项共用同一悬浮层；移出 / 关面板即清。
-const tip = ref<{ text: string; x: number; y: number } | null>(null);
+// 长名 tooltip（2026-08-26 spec + 当日挪位）：trigger / li 的 tip 存在时 hover 弹 .dd-tip
+// （position:fixed 浮于视口——.dropdown-panel max-height+overflow:auto 会裁剪行内 absolute 浮层，
+// fixed 不受裁剪且跟随视口）。触发按钮与面板选项共用同一悬浮层；移出 / 关面板即清。
+// 挪位：上方居中会被应用窗口/卡片裁剪（启动控制卡尤其明显）→ 默认挂元素右侧垂直居中
+// （left = 右缘 + 8px，top = 垂直中心，CSS translateY(-50%) 居中）；右侧估宽放不下视口
+// （估算宽 > innerWidth - right - gap）时翻转 .dd-tip--flip：左缘内侧（left = 左缘 - 8px，
+// CSS translateX(-100%) 右对齐锚点），不出窗口。
+const tip = ref<{ text: string; x: number; y: number; flip: boolean } | null>(null);
+/** tooltip 估算宽：CJK 12px/字 × 字数 + padding 2×8 + 余量（ASCII 窄，取保守上限避免误 flip）。 */
+function estWidth(text: string): number { return text.length * 12 + 36; }
 function showTip(e: MouseEvent, text: string): void {
   if (!text) return;
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  tip.value = { text, x: r.left + r.width / 2, y: r.top };
+  const y = r.top + r.height / 2; // 垂直中心（CSS translateY(-50%) 居中）
+  // 右侧放不下（right + gap + 估宽 > 视口宽 - 右侧 8px 安全边距）→ flip 到左缘内侧
+  const w = estWidth(text);
+  const fitsRight = r.right + 8 + w <= (window.innerWidth ?? 0) - 8;
+  tip.value = { text, x: fitsRight ? r.right + 8 : r.left - 8, y, flip: !fitsRight };
 }
 function hideTip(): void { tip.value = null; }
 onMounted(() => {
@@ -56,8 +66,9 @@ onMounted(() => {
           @mouseleave="hideTip"
           @click="pick(o.value)">{{ o.label }}</li>
     </ul>
-    <!-- 长名 tooltip：position:fixed 悬浮层（样式同「编辑」按钮 tooltip / .tpl-tip），显示完整名 -->
-    <div v-if="tip" class="dd-tip"
+    <!-- 长名 tooltip：position:fixed 悬浮层（样式同「编辑」按钮 tooltip / .tpl-tip），显示完整名；
+         默认挂元素右侧垂直居中，右侧放不下时 flip 到左缘内侧（.dd-tip--flip） -->
+    <div v-if="tip" class="dd-tip" :class="{ 'dd-tip--flip': tip.flip }"
       :style="{ left: tip.x + 'px', top: tip.y + 'px' }">{{ tip.text }}</div>
   </div>
 </template>
