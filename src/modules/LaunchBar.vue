@@ -56,6 +56,32 @@ function onToggle(): void {
 
 onMounted(load);
 
+// 配置下拉截断（2026-08-26 spec，同模板行名机制、阈值 10）：>10 字 → 前 10 字 + …(U+2026)；
+// tooltip（.dd-tip 悬浮层 + trigger data-tooltip）显示完整名字。下拉面板仅截断不撑宽（max-height 116px）。
+const TRUNC_AT = 10;
+function full(id: string): string {
+  const c = configs.value?.[id];
+  return (c?.desc ?? '') || id;
+}
+function display(id: string): string {
+  const n = full(id);
+  return n.length > TRUNC_AT ? n.slice(0, TRUNC_AT) + '…' : n;
+}
+const options = computed<{
+  value: string; label: string; tip?: string;
+}[] | undefined>(() => configs.value
+  ? Object.keys(configs.value).map((id): { value: string; label: string; tip?: string } => {
+      const fullN = full(id);
+      return { value: id, label: display(id), tip: fullN.length > TRUNC_AT ? fullN : undefined };
+    })
+  : undefined);
+// trigger tooltip：选中项长名携带完整名字（hover 即出，样式同「编辑」按钮）
+const triggerTip = computed<string | undefined>(() => {
+  if (!options.value) return undefined;
+  const sel = options.value.find((o) => o.value === selected.value);
+  return sel ? sel.tip : undefined;
+});
+
 // App bump configsReloadKey（TemplateModule 保存/删除配置后）→ 重新 load()，
 // running 时锁定当前 configId 不受影响（load 内部已处理）
 watch((): number => props.configsReloadKey, () => { void load(); });
@@ -72,7 +98,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
            窄卡片下 [启动]/[停止] 不被挤成竖排单字 -->
       <Dropdown class="dropdown--stretch" :disabled="state.running"
                 :value="selected"
-                :options="configs ? Object.keys(configs).map((id) => ({ value: id, label: configs[id].desc || id })) : []"
+                :options="options ?? []" :tip="triggerTip"
                 :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '（目前没有模板配置）' : '选择配置…'"
                 @update:value="(v: string) => { selected = v; }" />
       <button
