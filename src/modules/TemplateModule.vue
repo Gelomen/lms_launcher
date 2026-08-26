@@ -2,15 +2,16 @@
 import { onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faPenToSquare } from '@fortawesome/free-regular-svg-icons';
+import { faFileCirclePlus } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
 import { truncateByWidth, visualWidth } from '../util/truncate';
 import TemplateModal from './TemplateModal.vue';
 
-// FontAwesome：按需注册 pen-to-square regular 款（列表行「编辑」按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
+// FontAwesome：按需注册 pen-to-square regular 款（列表行「编辑」）+ file-circle-plus solid 款（新建模板按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
 config.autoGenerateCss = true;
-library.add(faPenToSquare);
-const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare } };
+library.add(faPenToSquare, faFileCirclePlus);
+const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare, 'file-circle-plus': faFileCirclePlus } };
 
 // 模块 2 · 启动参数模板管理（规格 §4.2）
 interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[] }
@@ -91,13 +92,11 @@ onMounted(reload);
 </script>
 <template>
   <section class="module module-template">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h2>启动参数模板</h2>
-      <button class="icon-btn" data-tooltip="新建模板" aria-label="新建模板"
+    <div style="display: flex; justify-content: flex-start; align-items: center; gap: 2px;">
+      <h2 style="margin-bottom: 0;">启动参数模板</h2>
+      <button class="icon-btn icon-btn--sm" data-tooltip="新建模板" aria-label="新建模板"
         @click="openNew">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
+        <FontAwesomeIcon :icon="byPrefixAndName.fat['file-circle-plus']" />
       </button>
     </div>
     <div class="template-list">
