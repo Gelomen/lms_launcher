@@ -4,6 +4,15 @@
      label 截断（LaunchBar >10 字 + …）由父级负责。 -->
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { library, config } from '@fortawesome/fontawesome-svg-core';
+import { faList } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+
+// FontAwesome：按需注册 list（下拉按钮 ▼ 指示符），tree-shakeable 用法；与 TemplateModal 同模式。
+config.autoGenerateCss = true;
+library.add(faList);
+// byPrefixAndName：按「前缀 → { iconName: IconDefinition }」组织，模板侧直接取图标定义
+const byPrefixAndName = { fat: { list: faList } };
 const props = withDefaults(defineProps<{
   value: string;
   options: Array<{ value: string; label: string; tip?: string }>;
@@ -55,7 +64,7 @@ onMounted(() => {
             @mouseleave="hideTip"
             @click.stop="open = !open">
       <span class="select-label">{{ props.options.find((o) => o.value === props.value)?.label ?? (props.options.length > 0 ? props.options[0].label : props.placeholder) }}</span>
-      <span class="select-caret">▼</span>
+      <span class="select-caret"><FontAwesomeIcon :icon="byPrefixAndName.fat['list']" /></span>
     </button>
     <ul v-if="open" class="dropdown-panel">
       <!-- 选项：长名截断（父级 label），li 携带完整名 tooltip + hover 弹 .dd-tip -->
