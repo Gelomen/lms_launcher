@@ -235,7 +235,20 @@ body {
   border-radius: var(--radius-btn);
   padding: 8px 10px;
 }
-.tpl-row__id { font-weight: 600; min-width: 0; word-break: break-all; }
+/* 行名单行（2026-08-26 spec）：JS 已把 >25 字截断为前 25 字+…，CSS 再保证不换行——
+   原 word-break:break-all 让长 desc 换行撑高行卡片（用户嫌丑的根因），现改 nowrap+hidden 双保险 */
+.tpl-row__id { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; }
+/* 长名 tooltip：与 .icon-btn::after 同视觉语言（深灰底白字/12px/圆角/z-30），
+   position:fixed 浮于视口——.template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题） */
+.tpl-tip {
+  position: fixed;
+  transform: translateX(-50%) translateY(-100%);
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.4; white-space: nowrap;
+  padding: 2px 8px; border-radius: 6px;
+  z-index: 30;
+  pointer-events: none;
+}
 
 /* ---- #12 滚动条美化（两态透明度：idle 隐形 / 容器 hover 浮现 ≈5%；
      覆盖 .dropdown-panel(下拉) / .template-list(模板列表) / .log-view(日志)）---- */

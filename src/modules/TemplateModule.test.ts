@@ -4,8 +4,18 @@
 // （TypeError: Cannot read properties of undefined (reading 'm') @ preview()）。
 import { describe, it, expect } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
+import fs from 'fs';
+import path from 'path';
 import TemplateModule from './TemplateModule.vue';
 import { defaultParams } from '../../src-main/config';
+
+// 注入真实 style.css —— 组件测试不挂载 App,全局样式不会自动进入 DOM;CSS 契约断言(getComputedStyle)需要它
+// 注入真实 style.css —— 组件测试不挂载 App,全局样式不会自动进入 DOM;CSS 契约断言(getComputedStyle)需要它
+// 注入真实 style.css —— 组件测试不挂载 App,全局样式不会自动进入 DOM;CSS 契约断言(getComputedStyle)需要它。
+// (vitest 下 import.meta.url 非 file://,故用进程工作目录 = 项目根) 
+// 注入真实 style.css —— 组件测试不挂载 App,全局样式不会自动进入 DOM;CSS 契约断言(getComputedStyle)需要它。
+// (vitest 下 import.meta.url 非 file://,故用进程工作目录 = 项目根) 
+const CSS = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
 
 const CONFIGS = {
   c1: { desc: '日常', values: { m: 'x.gguf', port: '9931' } },
@@ -26,21 +36,89 @@ describe('TemplateModule', () => {
     const wrapper = mount(TemplateModule);
     await flush();
 
-    // 配置行必须渲染：仅 id + 操作按钮；表头整行已移除，desc/参数预览不再显示。
+    // 配置行必须渲染：仅 desc（c0c1ecf 起列表显示 desc，id 仍为数据 key 不直接展示）+ 操作按钮。
     // 2026-08-26 行卡片化：每配置 = 一个 .tpl-row（灰边框圆角行卡片），列表不再是 table。
-    expect(wrapper.text()).toContain('c1');
+    expect(wrapper.text()).toContain('日常');
+    expect(wrapper.text()).not.toContain('c1'); // 裸 id 不直接展示
     expect(wrapper.text()).not.toContain('id'); // 表头 id 列标签已移除
-    expect(wrapper.text()).not.toContain('日常');
     expect(wrapper.text()).not.toContain('-m x.gguf');
     expect(wrapper.text()).not.toContain('desc');
     expect(wrapper.text()).not.toContain('参数预览');
     expect(wrapper.findAll('.module-template table').length).toBe(0); // table 已移除
     const row = wrapper.findAll('.module-template .tpl-row');
     expect(row.length).toBe(1);
-    expect(row[0].text()).toContain('c1');
+    // 行内显示的是 desc（日常），裸 id（c1）不出现——与上方整卡断言一致
+    expect(row[0].text()).toContain('日常');
+    expect(row[0].text()).not.toContain('c1');
     // 行卡片内含编辑按钮
     expect(row[0].findAll("button[data-tooltip='编辑']").length).toBe(1);
     wrapper.unmount();
+  });
+
+  it('row_label_truncates_beyond_25_chars_and_tooltips_full_name', async () => {
+    const longDesc = '这是一个非常非常长的模板描述文案用来验证截断与省略号行为'; // 29 字 > 25
+    const CONFIGS_LONG = { c_long: { desc: longDesc, values: {} } };
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LONG);
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+
+    const label = wrapper.findAll('.module-template .tpl-row__id')[0];
+    expect(label.exists()).toBe(true);
+    // 截断：前 25 字 + …（U+2026），完整文案不直接渲染进列表
+    expect(label.text().endsWith('…')).toBe(true);
+    const t = label.text();
+    expect(t.length).toBe(26); // 25 + 省略号
+    expect(t.slice(0, 25)).toBe(longDesc.slice(0, 25));
+    // tooltip：与编辑按钮同款机制（data-tooltip 属性），内容为完整名字
+    expect(label.attributes('data-tooltip')).toBe(longDesc);
+    wrapper.unmount();
+  });
+
+  it('row_label_short_than_25_chars_shows_full_name_without_tooltip_attr', async () => {
+    const CONFIGS_SHORT = { c_short: { desc: '日常', values: {} } };
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS_SHORT);
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+
+    // 短名字完整显示、单行无省略号，且无需 tooltip（属性缺失）
+    const label = wrapper.findAll('.module-template .tpl-row__id')[0];
+    expect(label.text()).toBe('日常');
+    expect(label.attributes('data-tooltip')).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it('row_label_css_keeps_single_line_(no_wrap)()', async () => {
+    if (!document.getElementById('__global-css__')) {
+      const st = document.createElement('style');
+      st.id = '__global-css__';
+      st.textContent = CSS;
+      document.head.appendChild(st);
+    }
+    const el = document.createElement('div');
+    el.className = 'tpl-row__id';
+    document.body.appendChild(el);
+    // 换行曾把行卡片撑高——CSS 契约: nowrap + overflow:hidden(与 JS 25 字截断双保险)
+    expect(getComputedStyle(el).whiteSpace).toBe('nowrap');
+    expect(getComputedStyle(el).overflow).toBe('hidden');
+    el.remove();
   });
 
   it('list_wrapped_in_fixed_height_container', async () => {

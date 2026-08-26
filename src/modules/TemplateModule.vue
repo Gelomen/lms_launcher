@@ -43,6 +43,33 @@ function openEdit(id: string): void {
   modalOpen.value = true;
 }
 
+// 列表名截断（2026-08-26 spec）：>25 字 → 前 25 字 + …(U+2026)，hover 弹自绘 tooltip 显示完整名字；
+// 短名完整显示、无 tooltip。data-tooltip 仅长名携带，与「编辑」按钮 tooltip 同视觉语言。
+const TRUNC_AT = 25;
+function nameOf(id: string): string {
+  const c = configs.value?.[id];
+  return (c?.desc ?? '') || id;
+}
+function rowName(id: string): string {
+  const n = nameOf(id);
+  return n.length > TRUNC_AT ? n.slice(0, TRUNC_AT) + '…' : n;
+}
+function tipFor(id: string): string | undefined {
+  const n = nameOf(id);
+  return n.length > TRUNC_AT ? n : undefined;
+}
+// tooltip：position:fixed 浮于视口 —— .template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题）
+const tip = ref<{ text: string; x: number; y: number } | null>(null);
+function onLabelEnter(e: MouseEvent, id: string): void {
+  const el = e.currentTarget as HTMLElement;
+  if (el.dataset.tooltip === undefined) return;
+  const r = el.getBoundingClientRect();
+  tip.value = { text: nameOf(id), x: r.left + r.width / 2, y: r.top };
+}
+function onLabelLeave(): void {
+  tip.value = null;
+}
+
 const emit = defineEmits<{ (e: 'changed'): void }>(); // TemplateModule 保存/删除后通知 App bump LaunchBar configs-reload-key
 
 // 删除已挪入弹窗左下角（TemplateModal.onDelete）；成功后由它 emit('deleted') → 关窗 + 刷新
@@ -68,9 +95,16 @@ onMounted(reload);
       <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
       <!-- 行卡片化（2026-08-26 spec）：每配置一个 .tpl-row —— 灰边框圆角独立卡片，
            flex 两端对齐（id 左 / 编辑右），行间 gap 留白替代原 tr border-top 分隔线 -->
+      <!-- 长名 tooltip（.tpl-tip）：position:fixed 浮于视口，避开 .template-list overflow-y:auto 的行内裁剪；样式同「编辑」按钮 tooltip -->
+      <div v-if="tip" class="tpl-tip"
+        :style="{ left: tip.x + 'px', top: tip.y + 'px' }">{{ tip.text }}</div>
       <div v-if="configs" class="tpl-rows">
         <div v-for="id in Object.keys(configs)" :key="id" class="tpl-row">
-          <span class="tpl-row__id">{{ configs[id].desc || id }}</span>
+          <!-- 行名：>25 字截断为前 25 字+…（rowName），长名携带 data-tooltip + hover 弹自绘 .tpl-tip 显示完整名字 -->
+          <span class="tpl-row__id"
+            :data-tooltip="tipFor(id)"
+            @mouseenter="(e) => onLabelEnter(e as MouseEvent, id)"
+            @mouseleave="onLabelLeave"> {{ rowName(id) }} </span>
           <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
             @click="openEdit(id)">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
