@@ -20,8 +20,9 @@ vi.mock('./ipc', () => ({
 
 const RUNNING = { running: true, stopping: false, configId: 'c1' };
 const READY = { running: false, stopping: false, configId: null };
-function cfg(): Record<string, { desc?: string | null; values: Record<string, string> }> {
-  return { c1: { desc: null, values: {} } };
+// 数据 key：desc → name（2026-09，main 返回 ConfigEntry.name）
+function cfg(): Record<string, { name?: string | null; values: Record<string, string> }> {
+  return { c1: { name: null, values: {} } };
 }
 
 // mount App with a given get_state snapshot; start/stop hung on controllable promises (real lifecycle takes seconds).

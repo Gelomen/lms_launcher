@@ -18,7 +18,8 @@ import { defaultParams } from '../../src-main/config';
 const CSS = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
 
 const CONFIGS = {
-  c1: { desc: '日常', values: { m: 'x.gguf', port: '9931' } },
+  // 数据 key：desc → name（2026-09，main 返回 ConfigEntry.name）
+  c1: { name: '日常', values: { m: 'x.gguf', port: '9931' } },
 };
 
 describe('TemplateModule', () => {
@@ -57,7 +58,7 @@ describe('TemplateModule', () => {
 
   it('row_label_truncates_beyond_15_chars_and_tooltips_full_name', async () => {
     const longDesc = '这是一个非常非常长的模板描述文案用来验证截断与省略号行为'; // 29 字 > 15
-    const CONFIGS_LONG = { c_long: { desc: longDesc, values: {} } };
+    const CONFIGS_LONG = { c_long: { name: longDesc, values: {} } };
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LONG);
@@ -84,7 +85,7 @@ describe('TemplateModule', () => {
   });
 
   it('row_label_short_than_15_chars_shows_full_name_without_tooltip_attr', async () => {
-    const CONFIGS_SHORT = { c_short: { desc: '日常', values: {} } };
+    const CONFIGS_SHORT = { c_short: { name: '日常', values: {} } };
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_SHORT);
@@ -108,7 +109,7 @@ describe('TemplateModule', () => {
   // 宽度预算（2026-08-26 spec）：拉丁宽=1、预算 30——英文名比旧按字符阈值显示更多。
   it('latin_row_name_truncates_by_width_30_with_tooltip', async () => {
     const latinName = 'llama-cpp-large-model-quant-config'; // 33 latin → width 33 > 30
-    const CONFIGS_LATIN = { c_latin: { desc: latinName, values: {} } };
+    const CONFIGS_LATIN = { c_latin: { name: latinName, values: {} } };
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LATIN);
@@ -130,7 +131,7 @@ describe('TemplateModule', () => {
 
   it('latin_row_name_exactly_30_chars_shows_full_no_tooltip', async () => {
     const latinName = 'abcdefghij1234567890abcdefghij'; // exactly 30 latin → width 30
-    const CONFIGS_LATIN = { c_latin: { desc: latinName, values: {} } };
+    const CONFIGS_LATIN = { c_latin: { name: latinName, values: {} } };
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LATIN);

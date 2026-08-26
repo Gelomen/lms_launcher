@@ -31,6 +31,29 @@ describe('config.ts', () => {
     expect(() => configsLoad(p)).toThrow(/^MISSING:/);
   });
 
+  it('config_entry_uses_name_key_not_desc', () => {
+    // 字段 key 由 desc → name（2026-09）：保存后 yaml 条目带 name，不再出现 desc
+    const p = tmpPath('cfg_name.yaml');
+    rm(p);
+    saveConfigEntry(p, 'c1', '日常推理', { m: 'x.gguf' });
+    const map = configsLoad(p);
+    expect(map.c1.name).toBe('日常推理');
+    expect((map.c1 as Record<string, unknown>).desc).toBeUndefined();
+    rm(p);
+  });
+
+  it('legacy_desc_key_normalized_to_name_on_load', () => {
+    // 存量 llama_launch_configs.yaml（desc: 键）读取时归一为 name，后续保存即以 name 持久化
+    const p = tmpPath('cfg_legacy_name.yaml');
+    rm(p);
+    writeText(p, ['c1:', '  desc: 日常', "  values: { m: x.gguf }", ''].join(String.fromCharCode(10)));
+    const map = configsLoad(p);
+    expect(map.c1.name).toBe('日常');
+    saveConfigEntry(p, 'c2', '新', {}); // 任意一次保存后，legacy 条目也以 name 落盘
+    expect((configsLoad(p).c1 as Record<string, unknown>).name ?? (configsLoad(p).c1 as Record<string, unknown>).desc).toBe('日常');
+    rm(p);
+  });
+
   it('save_and_delete_config_entry', () => {
     const p = tmpPath('cfg2.yaml');
     rm(p);

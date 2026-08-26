@@ -59,10 +59,10 @@ const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     expect(document.querySelector('.modal-box')?.textContent).toContain('必填项未填写');
   });
 
-// desc（描述）必填契约：desc 留空 → 保存被拒 + 红框与「必填」文案；标签文字为「描述」。
+// desc（名字）必填契约：desc 留空 → 保存被拒 + 红框与「必填」文案；标签文字为「名字」（2026-09 由「描述」改名，数据 key 仍为 desc）。
 const descIn = (): HTMLInputElement => {
-  const label = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
-  return label.nextElementSibling as HTMLInputElement; // desc label 的下一兄弟节点即其 input
+  const label = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('名字'))!;
+  return label.nextElementSibling as HTMLInputElement; // name label 的下一兄弟节点即其 input
 };
 
 it('save_rejected_when_desc_empty', async () => {
@@ -73,9 +73,9 @@ it('save_rejected_when_desc_empty', async () => {
     setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
 
-    // 标签文字应为「描述」（不再是 desc（说明））
+    // 标签文字应为「名字」（2026-09 由「描述」改名；数据 key 仍为 desc）
     const labels = [...document.querySelectorAll('.modal-box label.label')].map((l) => l.textContent?.trim());
-    expect(labels).toContain('描述');
+    expect(labels).toContain('名字');
 
     // [保存] 按钮已改为右下角软盘图标角形按钮（2026-08-27）：.modal-save 无文字，按类名定位
 const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
@@ -218,8 +218,8 @@ describe('TemplateModal options truncation', () => {
 
     // 长选项即默认选中（fill opts[0)）：desc + -m 必填填齐后保存（id 自动生成，无输入框）——yaml 值必须是完整长串，不是截断 label
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
-    // desc 必填（留空会拒保存）
-    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
+    // desc（名字）必填（留空会拒保存）
+    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('名字'))!;
     const descIn = descLb.nextElementSibling as HTMLInputElement;
     setter.call(descIn, 'd');
     descIn.dispatchEvent(new Event('input', { bubbles: true }));
@@ -434,11 +434,11 @@ describe('TemplateModal auto id', () => {
     };
     const w = mountNew(); await flush();
 
-    // desc + -m 必填填齐后保存（无 id 输入框，不需要填 id）
+    // desc（名字）+ -m 必填填齐后保存（无 id 输入框，不需要填 id）
     const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
     setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
-    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
+    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('名字'))!;
     const descEl = descLb.nextElementSibling as HTMLInputElement;
     setter.call(descEl, '日常推理'); descEl.dispatchEvent(new Event('input', { bubbles: true }));
     await flush();
@@ -486,7 +486,7 @@ describe('TemplateModal auto id', () => {
     const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
     setter.call(mIn, 'x.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
-    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('描述'))!;
+    const descLb = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('名字'))!;
     const descEl = descLb.nextElementSibling as HTMLInputElement;
     setter.call(descEl, 'd'); descEl.dispatchEvent(new Event('input', { bubbles: true }));
     await flush();

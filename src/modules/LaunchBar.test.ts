@@ -8,7 +8,8 @@ import LaunchBar from './LaunchBar.vue';
 const LONG = '这是一个非常长的配置描述名称用来验证启动控制下拉的截断与省略号行为'; // 29 字 >10
 const READY = { running: false, stopping: false, configId: null };
 
-function mockLms(map: Record<string, { desc?: string; values: Record<string, string> }>): void {
+// 数据 key：desc → name（2026-09，main 返回 ConfigEntry.name）
+function mockLms(map: Record<string, { name?: string; values: Record<string, string> }>): void {
   (window as any).lms = {
     invoke: (cmd: string) => {
       if (cmd === 'get_configs') return Promise.resolve(map);
@@ -22,7 +23,7 @@ function mockLms(map: Record<string, { desc?: string; values: Record<string, str
 
 describe('LaunchBar config dropdown truncation', () => {
   it('trigger_label_truncates_beyond_10_chars_and_tooltips_full_name', async () => {
-    mockLms({ long_cfg: { desc: LONG, values: {} } });
+    mockLms({ long_cfg: { name: LONG, values: {} } });
     const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
     await flush();
 
@@ -41,7 +42,7 @@ describe('LaunchBar config dropdown truncation', () => {
   });
 
   it('short_name_shows_full_without_tooltip', async () => {
-    mockLms({ short_cfg: { desc: '日常', values: {} } });
+    mockLms({ short_cfg: { name: '日常', values: {} } });
     const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
     await flush();
 
@@ -54,7 +55,7 @@ describe('LaunchBar config dropdown truncation', () => {
   // 宽度预算（2026-08-26 spec）：拉丁字符宽=1，预算 16——同一英文名下比旧的按 8 字符截断显示更多。
   const LATIN = 'qwen-27b-instruct-fp16'; // 22 latin → width 22 > 16
   it('latin_name_truncates_by_width_not_char_count', async () => {
-    mockLms({ lat: { desc: LATIN, values: {} } });
+    mockLms({ lat: { name: LATIN, values: {} } });
     const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
     await flush();
     // 默认 grace=2：LATIN(22)>16+2 → 手动前 16 字符 + …（旧按字符阈值是 slice(0,8)）
@@ -69,7 +70,7 @@ describe('LaunchBar config dropdown truncation', () => {
   });
 
   it('latin_name_exactly_16_chars_shows_full_no_tooltip', async () => {
-    mockLms({ lat: { desc: 'abcdefghij-klmno', values: {} } }); // exactly 16 latin → width 16
+    mockLms({ lat: { name: 'abcdefghij-klmno', values: {} } }); // exactly 16 latin → width 16
     const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
     await flush();
     expect(w.find('.select-label').text()).toBe('abcdefghij-klmno');
@@ -80,7 +81,7 @@ describe('LaunchBar config dropdown truncation', () => {
   // grace=2（第二轮）：只超预算 1~2 宽度 → 不手动 +…，交 CSS text-overflow。
   it('latin_name_over_budget_by_grace_shows_full_no_manual_ellipsis_no_tooltip', async () => {
     const name = 'Qwen3.8-27B-Ridge'; // width 17 > 16, ≤ 18 → untouched
-    mockLms({ lat: { desc: name, values: {} } });
+    mockLms({ lat: { name, values: {} } });
     const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
     await flush();
     expect(w.find('.select-label').text()).toBe(name); // no manual …, full render (CSS may auto-ellipsis visually)

@@ -9,8 +9,15 @@ export interface ParamsFile {
   params_boolean?: string[];
   params_file?: string[];
 }
-export interface ConfigEntry { desc?: string; values: Record<string, string> }
+// 字段 key：desc → name（2026-09）；存量 yaml 的 desc 键由 configsLoad 归一，任意一次保存后即以 name 持久化
+export interface ConfigEntry { name?: string; values: Record<string, string> }
 export type ConfigsMap = Record<string, ConfigEntry>
+
+// legacy desc → name 归一（2026-09 key 改名）：存量 yaml 条目若带 desc 键则搬进 name
+function normalizeEntry(entry: { desc?: string; name?: string; values: Record<string, string> }): ConfigEntry {
+  if (entry.name !== undefined) return entry;
+  return entry.desc !== undefined ? { name: entry.desc, values: entry.values } : { values: entry.values };
+}
 
 const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '' };
 
@@ -66,7 +73,11 @@ export function configsLoad(path: string): ConfigsMap {
   if (!existsSync(path)) throw new Error('MISSING: llama_launch_configs.yaml 不存在（新建第一个模板后自动生成）');
   const s = readFileSync(path, 'utf8');
   if (s.trim().length === 0) return {};
-  return parseYaml(path, s, 'llama_launch_configs.yaml') as ConfigsMap;
+  const map = parseYaml(path, s, 'llama_launch_configs.yaml') as Record<string, { desc?: string; name?: string; values: Record<string, string> }>;
+  // legacy desc → name（2026-09 key 改名）：读取时归一，任意一次保存后 yaml 即只含 name
+  const out: ConfigsMap = {};
+  for (const [id, e] of Object.entries(map)) out[id] = normalizeEntry(e);
+  return out;
 }
 
 // 现有条目 id 列表：文件缺失（首个模板尚未创建）→ []；空文件 → []。
@@ -90,16 +101,16 @@ export function suggestConfigId(existing: string[]): string {
 }
 
 // save：坏 id → VALIDATION；值 trim 后空串丢弃；文件不存在则首次创建
-export function saveConfigEntry(path: string, id: string, desc: string | undefined, values: Record<string, string>): void {
+export function saveConfigEntry(path: string, id: string, name: string | undefined, values: Record<string, string>): void {
   if (!validateConfigId(id)) throw new Error('VALIDATION: id 须为小写字母开头的字母数字串（不含空格/大写），最长 32 位');
   let map: ConfigsMap = {};
-  if (existsSync(path)) map = configsLoad(path);
+  if (existsSync(path)) map = configsLoad(path); // legacy desc → name 归一（任意一次保存后即固化）
   const clean: Record<string, string> = {};
   for (const [k, v] of Object.entries(values)) {
     const t = v.trim();
     if (t.length > 0) clean[k] = t;
   }
-  map[id] = desc ? { desc, values: clean } : { values: clean };
+  map[id] = name ? { name, values: clean } : { values: clean }; // 字段 key：desc → name（2026-09）
   writeFileSync(path, dump(map));
 }
 

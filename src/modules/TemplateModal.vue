@@ -22,7 +22,8 @@ const props = withDefaults(defineProps<{
   open: boolean;
   id: string;
   values: Record<string, string>;
-  desc?: string;
+  // 数据 key：desc → name（2026-09）；local formDesc 状态仍用 desc 命名仅因历史，prop 契约为 name
+  name?: string;
   paramsMeta: {
     params: Record<string, string>;
     required: string[];
@@ -30,7 +31,7 @@ const props = withDefaults(defineProps<{
     params_boolean?: string[];
     params_file?: string[];
   };
-}>(), { desc: '' });
+}>(), { name: '' });
 
 const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void; (e: 'deleted', id: string): void }>();
 
@@ -49,7 +50,7 @@ const attemptedSave = ref(false);
 
 function fill(): void {
   attemptedSave.value = false; // 打开弹窗重置（步骤 1）
-  formDesc.value = props.desc ?? '';
+  formDesc.value = props.name ?? '';
   const opts = props.paramsMeta.params_options ?? {};
   const bools: string[] = props.paramsMeta.params_boolean ?? [];
   const init: Record<string, string> = {};
@@ -133,7 +134,7 @@ const emptyRequired = computed((): string[] => {
   return bad;
 });
 
-// desc（描述）必填——新建 / 编辑均要求非空
+// desc（名字，2026-09 label 由「描述」改名；数据 key 仍为 desc）必填——新建 / 编辑均要求非空
 const descError = computed((): string | null => {
   return (formDesc.value ?? '').trim().length === 0 ? '必填' : null;
 });
@@ -202,7 +203,8 @@ function close(): void { emit('close'); }
           <!-- id 全自动：新建 = 完全静默（保存时由主进程生成唯一 yaml-safe id）；编辑 = 只读单行展示「id: xxx」（.id-view 静态文本，无输入框、不可修改） -->
           <p v-if="isEdit" class="id-view">id: {{ props.id }}</p>
 
-          <label class="label" style="display: block; margin-top: 8px;">描述</label>
+          <!-- 字段 label「描述」→「名字」（2026-09）；数据契约不变，yaml key 仍为 desc -->
+          <label class="label" style="display: block; margin-top: 8px;">名字</label>
           <input class="input" :class="{ error: attemptedSave && descError !== null }" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
           <p v-if="attemptedSave && descError" class="error-text">{{ descError }}</p>
 

@@ -15,7 +15,8 @@ const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare, 'file-circle-pl
 
 // 模块 2 · 启动参数模板管理（规格 §4.2）
 interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[] }
-type ConfigMap = Record<string, { desc?: string; values: Record<string, string> }>;
+// 数据 key：desc → name（2026-09）；legacy desc 由 main configsLoad 归一
+type ConfigMap = Record<string, { name?: string; values: Record<string, string> }>;
 
 const configs = ref<ConfigMap | null>(null);
 const paramsMeta = ref<ParamMeta>({ params: {}, required: [] });
@@ -59,7 +60,7 @@ function openEdit(id: string): void {
 const BUDGET = 30;
 function nameOf(id: string): string {
   const c = configs.value?.[id];
-  return (c?.desc ?? '') || id;
+  return (c?.name ?? '') || id;
 }
 function rowName(id: string): string {
   return truncateByWidth(nameOf(id), BUDGET);
@@ -127,7 +128,7 @@ onMounted(reload);
       :open="modalOpen"
       :id="editingId ?? ''"
       :values="configs && editingId ? configs[editingId]?.values ?? {} : {}"
-      :desc="configs && editingId ? configs[editingId]?.desc ?? undefined : undefined"
+      :name="configs && editingId ? configs[editingId]?.name ?? undefined : undefined"
       :params-meta="paramsMeta"
       @saved="onSaved"
       @deleted="onDeleted"

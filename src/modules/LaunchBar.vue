@@ -23,7 +23,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: 'start', configId: string): void; (e: 'stop'): void }>();
 
-type ConfigMap = Record<string, { desc?: string; values: Record<string, string> }>;
+// 数据 key：desc → name（2026-09）；legacy desc 由 main configsLoad 归一
+type ConfigMap = Record<string, { name?: string; values: Record<string, string> }>;
 const configs = ref<ConfigMap | null>(null);
 const missing = ref(false);
 const selected = ref('');
@@ -73,7 +74,7 @@ onMounted(load);
 const BUDGET = 16;
 function full(id: string): string {
   const c = configs.value?.[id];
-  return (c?.desc ?? '') || id;
+  return (c?.name ?? '') || id;
 }
 function display(id: string): string {
   return truncateByWidth(full(id), BUDGET);
