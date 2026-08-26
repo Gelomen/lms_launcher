@@ -5,6 +5,7 @@ import { faXmark } from '@fortawesome/free-solid-svg-icons';
 import { faFloppyDisk, faFolderOpen, faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
+import { truncateByWidth, visualWidth } from '../util/truncate';
 
 import Dropdown from '../components/Dropdown.vue';
 
@@ -111,13 +112,14 @@ async function pickFile(key: string): Promise<void> {
   if (picked !== null) formValues.value[key] = picked; // null（取消）不动
 }
 
-// 选项截断（2026-08-26 spec + 当日再收紧，与启动控制下拉同机制、阈值 8——窄容器 10 字仍换行撑高）：>8 字 → 前 8 字 + …(U+2026)；
+// 选项截断（2026-08-26 spec-truncate-by-visual-width，与启动控制下拉同机制）：按视觉宽度预算 16——CJK=2 / 拉丁=1；
+// 中文 ≤8 字不截断（与旧 TRUNC_AT=8 契约一致），英文可显示约 15~16 字符再 + …(U+2026)；
 // tooltip（.dd-tip 悬浮层）显示完整值；value 仍是原始长串，保存契约不变。短选项无省略号/tooltip。
-const TRUNC_AT = 8;
+const BUDGET = 16;
 function truncOpt(o: string): { label: string; tip?: string } {
   const full = o ?? '';
-  if (full.length <= TRUNC_AT) return { label: full };
-  return { label: full.slice(0, TRUNC_AT) + '…', tip: full };
+  if (visualWidth(full) <= BUDGET) return { label: full };
+  return { label: truncateByWidth(full, BUDGET), tip: full };
 }
 // options 行的 Dropdown 选项表：截断 label + 完整值 tooltip；trigger tooltip = 当前选中项的 tip。
 const optionRows = computed<Record<string, Array<{ value: string; label: string; tip?: string }>>>(() => {

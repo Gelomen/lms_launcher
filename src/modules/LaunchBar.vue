@@ -5,6 +5,7 @@ import { faRocket } from '@fortawesome/free-solid-svg-icons';
 import { faSquare } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing } from '../ipc';
+import { truncateByWidth, visualWidth } from '../util/truncate';
 import Dropdown from '../components/Dropdown.vue';
 
 // FontAwesome：按需注册 rocket（[启动] 按钮）/ square（[停止] 按钮，FA7 无专门 stop 图标，实心方块即 stop 语义）。
@@ -66,23 +67,23 @@ function onToggle(): void {
 
 onMounted(load);
 
-// 配置下拉截断（2026-08-26 spec + 当日再收紧）：同模板行名机制、阈值 8——窄容器下 10 字仍换行撑高选项，减为 8；>8 字 → 前 8 字 + …(U+2026)；
+// 配置下拉截断（2026-08-26 spec-truncate-by-visual-width）：按视觉宽度预算 16——CJK=2 / 拉丁=1；
+// 中文 ≤8 字不截断（与旧 TRUNC_AT=8 契约一致），英文/拉丁可显示约 15~16 字符再 + …(U+2026)；
 // tooltip（.dd-tip 悬浮层 + trigger data-tooltip）显示完整名字。下拉面板仅截断不撑宽（max-height 116px）。
-const TRUNC_AT = 8;
+const BUDGET = 16;
 function full(id: string): string {
   const c = configs.value?.[id];
   return (c?.desc ?? '') || id;
 }
 function display(id: string): string {
-  const n = full(id);
-  return n.length > TRUNC_AT ? n.slice(0, TRUNC_AT) + '…' : n;
+  return truncateByWidth(full(id), BUDGET);
 }
 const options = computed<{
   value: string; label: string; tip?: string;
 }[] | undefined>(() => configs.value
   ? Object.keys(configs.value).map((id): { value: string; label: string; tip?: string } => {
       const fullN = full(id);
-      return { value: id, label: display(id), tip: fullN.length > TRUNC_AT ? fullN : undefined };
+      return { value: id, label: display(id), tip: visualWidth(fullN) > BUDGET ? fullN : undefined };
     })
   : undefined);
 // trigger tooltip：选中项长名携带完整名字（hover 即出，样式同「编辑」按钮）

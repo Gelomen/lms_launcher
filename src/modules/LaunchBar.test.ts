@@ -50,4 +50,30 @@ describe('LaunchBar config dropdown truncation', () => {
     expect(w.find('.select-trigger').attributes('data-tooltip')).toBeUndefined();
     w.unmount();
   });
+
+  // 宽度预算（2026-08-26 spec）：拉丁字符宽=1，预算 16——同一英文名下比旧的按 8 字符截断显示更多。
+  const LATIN = 'qwen-27b-instruct-fp16'; // 22 latin → width 22 > 16
+  it('latin_name_truncates_by_width_not_char_count', async () => {
+    mockLms({ lat: { desc: LATIN, values: {} } });
+    const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+    await flush();
+    // 前 16 字符 + …（旧按字符阈值是 slice(0,8)）
+    expect(w.find('.select-label').text()).toBe(LATIN.slice(0, 16) + '…');
+    expect(w.find('.select-trigger').attributes('data-tooltip')).toBe(LATIN);
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+    const li = w.findAll('.dropdown-panel li')[0];
+    expect(li.text()).toBe(LATIN.slice(0, 16) + '…');
+    expect(li.attributes('data-tooltip')).toBe(LATIN);
+    w.unmount();
+  });
+
+  it('latin_name_exactly_16_chars_shows_full_no_tooltip', async () => {
+    mockLms({ lat: { desc: 'abcdefghij-klmno', values: {} } }); // exactly 16 latin → width 16
+    const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+    await flush();
+    expect(w.find('.select-label').text()).toBe('abcdefghij-klmno');
+    expect(w.find('.select-trigger').attributes('data-tooltip')).toBeUndefined();
+    w.unmount();
+  });
 });

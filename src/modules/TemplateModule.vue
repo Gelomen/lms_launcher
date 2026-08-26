@@ -4,6 +4,7 @@ import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faPenToSquare } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
+import { truncateByWidth, visualWidth } from '../util/truncate';
 import TemplateModal from './TemplateModal.vue';
 
 // FontAwesome：按需注册 pen-to-square regular 款（列表行「编辑」按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
@@ -51,20 +52,20 @@ function openEdit(id: string): void {
   modalOpen.value = true;
 }
 
-// 列表名截断（2026-08-26 spec + 当日再调）：>15 字 → 前 15 字 + …(U+2026)，hover 弹自绘 tooltip 显示完整名字；
+// 列表名截断（2026-08-26 spec-truncate-by-visual-width）：按视觉宽度预算 30——CJK=2 / 拉丁=1；
+// 中文 ≤15 字不截断（与旧 TRUNC_AT=15 契约一致），英文可显示约 29~30 字符再 + …(U+2026)；hover 弹自绘 tooltip 显示完整名字；
 // 短名完整显示、无 tooltip。data-tooltip 仅长名携带，与「编辑」按钮 tooltip 同视觉语言。
-const TRUNC_AT = 15;
+const BUDGET = 30;
 function nameOf(id: string): string {
   const c = configs.value?.[id];
   return (c?.desc ?? '') || id;
 }
 function rowName(id: string): string {
-  const n = nameOf(id);
-  return n.length > TRUNC_AT ? n.slice(0, TRUNC_AT) + '…' : n;
+  return truncateByWidth(nameOf(id), BUDGET);
 }
 function tipFor(id: string): string | undefined {
   const n = nameOf(id);
-  return n.length > TRUNC_AT ? n : undefined;
+  return visualWidth(n) > BUDGET ? n : undefined;
 }
 // tooltip：position:fixed 浮于视口 —— .template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题）
 const tip = ref<{ text: string; x: number; y: number } | null>(null);

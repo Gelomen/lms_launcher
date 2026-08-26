@@ -105,6 +105,50 @@ describe('TemplateModule', () => {
     wrapper.unmount();
   });
 
+  // 宽度预算（2026-08-26 spec）：拉丁宽=1、预算 30——英文名比旧按字符阈值显示更多。
+  it('latin_row_name_truncates_by_width_30_with_tooltip', async () => {
+    const latinName = 'llama-cpp-large-model-quant-config'; // 33 latin → width 33 > 30
+    const CONFIGS_LATIN = { c_latin: { desc: latinName, values: {} } };
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LATIN);
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+    const label = wrapper.findAll('.module-template .tpl-row__id')[0];
+    // 前 30 字符 + …（旧按字符阈值是 slice(0,15)）
+    expect(label.text()).toBe(latinName.slice(0, 30) + '…');
+    expect(label.attributes('data-tooltip')).toBe(latinName);
+    wrapper.unmount();
+  });
+
+  it('latin_row_name_exactly_30_chars_shows_full_no_tooltip', async () => {
+    const latinName = 'abcdefghij1234567890abcdefghij'; // exactly 30 latin → width 30
+    const CONFIGS_LATIN = { c_latin: { desc: latinName, values: {} } };
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LATIN);
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+    const label = wrapper.findAll('.module-template .tpl-row__id')[0];
+    expect(label.text()).toBe(latinName);
+    expect(label.attributes('data-tooltip')).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it('row_label_css_keeps_single_line_(no_wrap)()', async () => {
     if (!document.getElementById('__global-css__')) {
       const st = document.createElement('style');

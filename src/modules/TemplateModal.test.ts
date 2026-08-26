@@ -186,6 +186,21 @@ describe('TemplateModal options truncation', () => {
     w.unmount();
   });
 
+  // 宽度预算（2026-08-26 spec）：拉丁宽=1、预算 16——英文选项比旧按字符阈值显示更多。
+  const LATIN_OPT = 'qwen3-32b-instruct-model'; // 24 latin → width 24 > 16
+  it('latin_option_truncates_by_width_16', async () => {
+    calls = []; mockLms();
+    const metaLong: typeof paramsMeta = { ...paramsMeta, params_options: { ctk: [LATIN_OPT, 'q4_0'] } };
+    const w = mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: '', values: {}, paramsMeta: metaLong, existingIds: [] },
+    });
+    await flush();
+    const dd = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === '-ctk')!.nextElementSibling as Element;
+    expect((dd as Element).querySelector('.select-label')!.textContent).toBe(LATIN_OPT.slice(0, 16) + '…');
+    w.unmount();
+  });
+
   it('save_submits_full_value_not_truncated_label', async () => {
     calls = []; mockLms();
     const w = mount(TemplateModal, {
