@@ -200,7 +200,7 @@ body {
   max-height: 116px;              /* ≈3 行（28px/行 + padding） */
   overflow-y: auto;
 }
-.dropdown-panel .option { padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+.dropdown-panel .option { padding: 5px 8px; border-radius: 4px; cursor: pointer; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* JS 仅超预算+2 才手动 +…；余量交给 CSS 自动省略，nowrap 防换行撑高（任务 19 根因不回退） */
 .dropdown-panel .option:hover { background: #F6F7F8; }   /* 与 btn:hover 一致 */
 .dropdown-panel .option.selected { color: var(--accent); font-weight: 600; }
 

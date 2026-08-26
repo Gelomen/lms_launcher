@@ -64,8 +64,9 @@ function rowName(id: string): string {
   return truncateByWidth(nameOf(id), BUDGET);
 }
 function tipFor(id: string): string | undefined {
+  // 与 truncateByWidth grace=2 对齐：仅「手动截断」(width > BUDGET+2) 才有 tooltip；grace 内全量渲染 → 无 …、无 tooltip
   const n = nameOf(id);
-  return visualWidth(n) > BUDGET ? n : undefined;
+  return visualWidth(n) > BUDGET + 2 ? n : undefined;
 }
 // tooltip：position:fixed 浮于视口 —— .template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题）
 const tip = ref<{ text: string; x: number; y: number } | null>(null);

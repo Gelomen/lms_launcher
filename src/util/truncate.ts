@@ -16,10 +16,12 @@ export function visualWidth(s: string): number {
 }
 
 /**
- * 取"宽度 ≤ budget 的最长前缀"：整个串宽度 ≤ budget → 原样返回（含恰好等于，保证中文旧契约不变）；
- * 否则截到第一个使累计超 budget 的字符之前 + …(U+2026)。
+ * 取"宽度 ≤ budget 的最长前缀"：整个串宽度 ≤ budget+grace → 原样返回
+ * （grace=2 默认：只超 1~2 宽度不手动 +…，交给 CSS text-overflow 按实际像素自动省略；
+ * 中文旧契约不变——8 字恰 16 不截）。否则手动截到第一个使累计超 budget 的字符之前 + …(U+2026)。
  */
-export function truncateByWidth(s: string, budget: number): string {
+export function truncateByWidth(s: string, budget: number, grace = 2): string {
+  if (visualWidth(s) <= budget + grace) return s;
   let w = 0;
   let kept = 0;
   for (const c of s) {

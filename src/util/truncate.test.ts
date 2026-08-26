@@ -26,16 +26,33 @@ describe('truncateByWidth', () => {
     expect(truncateByWidth('中文中文中文中文', 16)).toBe('中文中文中文中文'); // exactly 16 → untouched (Chinese parity)
     expect(truncateByWidth('qwen-model-name', 16)).toBe('qwen-model-name'); // 15 latin ≤ 16
   });
-  it('one_char_over_budget_truncates_prefix_plus_ellipsis', () => {
-    const s = '中文中文中文中文a'; // width 17 → cut to first 8 CJK + …
-    expect(truncateByWidth(s, 16)).toBe('中文中文中文中文…');
+  it('one_char_over_budget_truncates_prefix_plus_ellipsis_(strict_grace0)', () => {
+    const s = '中文中文中文中文a'; // width 17 → 默认 grace=2 下不手动截（交 CSS）；grace=0 严格模式 → first 8 CJK + …
+    expect(truncateByWidth(s, 16)).toBe(s); // grace=2 default
+    expect(truncateByWidth(s, 16, 0)).toBe('中文中文中文中文…');
     const latin = 'Qwen3.8-27B-Ridge-2'; // width 19 > 16 → prefix of 16 latin chars + …
     expect(truncateByWidth(latin, 16)).toBe(latin.slice(0, 16) + '…');
   });
   it('mixed_width_budget_cuts_on_real_width', () => {
-    // 2 CJK (w=4) + 13 拉丁 = 宽 17 > 16 → 截到恰好 16（2 CJK + 12 拉丁）+ …
+    // 2 CJK (w=4) + 13 拉丁 = 宽 17 > 16；默认 grace=2 → 全量（交 CSS）；grace=0 严格 → 恰好 16（2 CJK + 12 拉丁）+ …
     const s = '中文' + 'a'.repeat(13);
-    expect(truncateByWidth(s, 16)).toBe('中文' + 'a'.repeat(12) + '…');
+    expect(truncateByWidth(s, 16)).toBe(s);
+    expect(truncateByWidth(s, 16, 0)).toBe('中文' + 'a'.repeat(12) + '…');
+  });
+  it('over_budget_by_at_most_grace_returns_full_no_manual_ellipsis', () => {
+    // 用户复报：Qwen3.8-27B-Ridge（宽 17）只超 1 宽度 → 全量渲染、不手动 +…；
+    // 是否出 … 交给 CSS text-overflow（按实际像素，余量比估算预算大）
+    const s = 'Qwen3.8-27B-Ridge'; // width 17 > 16, ≤ 16+2
+    expect(visualWidth(s)).toBe(17);
+    expect(truncateByWidth(s, 16)).toBe(s); // grace=2 default: untouched, no …
+  });
+  it('over_budget_more_than_grace_still_truncates_manually', () => {
+    const s = 'Qwen3.8-27B-Ridge-instruct'; // width 24 > 16+2 → manual prefix + …
+    expect(truncateByWidth(s, 16)).toBe(s.slice(0, 16) + '…');
+  });
+  it('grace_0_restores_strict_budget', () => {
+    const s = 'Qwen3.8-27B-Ridge'; // width 17 > 16 → strict: cut now
+    expect(truncateByWidth(s, 16, 0)).toBe('Qwen3.8-27B-Ridg…');
   });
   it('short_string_untouched', () => {
     expect(truncateByWidth('日常', 16)).toBe('日常');

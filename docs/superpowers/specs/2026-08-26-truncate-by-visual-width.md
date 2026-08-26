@@ -35,5 +35,12 @@
    - LaunchBar：LONG（29 中文字）→ 前 8 字+…（原契约不变，中文无感）；新增 17 字符英文 → 前 16 字符+…（原为 8）。
    - TemplateModal：同 LaunchBar 契约。
    - TemplateModule：29 中文字行 → 前 15 字+…（不变）；新增 31 字符英文 → 前 30 字符+…。
+## 追加（当日第二轮）：超预算 ≤2 宽度 → 不手动加 …，交给 CSS 自动省略
+
+用户复报：Qwen3.8-27B-Ridge（宽 17）只超预算 1 宽度，却手动砍成 Qwen3.8-27B-Ridg…；CSS text-overflow 按实际像素算、余量更大，视觉上行内还能再放 1 字符。
+
+规则修订：width ≤ budget → 原样（不变）；budget < width ≤ budget+GRACE（GRACE=2）→ **全量渲染、不手动 +…**，是否出 … 交给 CSS 自动省略（.select-trigger .select-label / .tpl-row__id 已有 overflow:hidden + text-overflow:ellipsis + nowrap 双保险，不会换行撑高——任务 19 的老问题不回退）；width > budget+GRACE → 手动预算截断 + …（不变）。
+
+实现：truncateByWidth(s, budget, grace=2) —— width ≤ b+g 原样返回，否则按 b 手动截断。中文显示不变（8 字恰 16 不截；9 字起全部交 CSS，与现状一致）。验收追加：17 宽英文 → 全量无省略号、无 tooltip；更宽长串仍手动截断。npx vitest run + build EXIT=0。
 3. npx vitest run 全绿 + vite build EXIT=0。
 4. GUI 目检：中文选项/行与之前视觉一致；英文下拉行 Qwen3.8-27B-Ridge 显示前 ~15~16 字符 + …，不再过早省略；hover tooltip 完整名。

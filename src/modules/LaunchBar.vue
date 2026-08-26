@@ -83,7 +83,8 @@ const options = computed<{
 }[] | undefined>(() => configs.value
   ? Object.keys(configs.value).map((id): { value: string; label: string; tip?: string } => {
       const fullN = full(id);
-      return { value: id, label: display(id), tip: visualWidth(fullN) > BUDGET ? fullN : undefined };
+      // 与 truncateByWidth grace=2 对齐：仅「手动截断」(width > BUDGET+2) 才带完整名 tooltip；grace 内全量渲染 → 无 …、无 tooltip
+      return { value: id, label: display(id), tip: visualWidth(fullN) > BUDGET + 2 ? fullN : undefined };
     })
   : undefined);
 // trigger tooltip：选中项长名携带完整名字（hover 即出，样式同「编辑」按钮）

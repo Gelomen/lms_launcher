@@ -197,6 +197,7 @@ describe('TemplateModal options truncation', () => {
     });
     await flush();
     const dd = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === '-ctk')!.nextElementSibling as Element;
+    // LATIN_OPT = 'qwen3-32b-instruct-model' width 24 > 16+2 → 手动前 16 + …（旧按字符阈值 8）
     expect((dd as Element).querySelector('.select-label')!.textContent).toBe(LATIN_OPT.slice(0, 16) + '…');
     w.unmount();
   });

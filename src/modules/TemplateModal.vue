@@ -117,8 +117,9 @@ async function pickFile(key: string): Promise<void> {
 // tooltip（.dd-tip 悬浮层）显示完整值；value 仍是原始长串，保存契约不变。短选项无省略号/tooltip。
 const BUDGET = 16;
 function truncOpt(o: string): { label: string; tip?: string } {
+  // grace=2：width ≤ BUDGET+2 → 全量渲染、不手动 +…（交 CSS）；超出才手动截断 + 完整值 tooltip
   const full = o ?? '';
-  if (visualWidth(full) <= BUDGET) return { label: full };
+  if (visualWidth(full) <= BUDGET + 2) return { label: full };
   return { label: truncateByWidth(full, BUDGET), tip: full };
 }
 // options 行的 Dropdown 选项表：截断 label + 完整值 tooltip；trigger tooltip = 当前选中项的 tip。

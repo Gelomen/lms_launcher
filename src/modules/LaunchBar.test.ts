@@ -57,7 +57,7 @@ describe('LaunchBar config dropdown truncation', () => {
     mockLms({ lat: { desc: LATIN, values: {} } });
     const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
     await flush();
-    // 前 16 字符 + …（旧按字符阈值是 slice(0,8)）
+    // 默认 grace=2：LATIN(22)>16+2 → 手动前 16 字符 + …（旧按字符阈值是 slice(0,8)）
     expect(w.find('.select-label').text()).toBe(LATIN.slice(0, 16) + '…');
     expect(w.find('.select-trigger').attributes('data-tooltip')).toBe(LATIN);
     await w.find('.select-trigger').trigger('click');
@@ -74,6 +74,17 @@ describe('LaunchBar config dropdown truncation', () => {
     await flush();
     expect(w.find('.select-label').text()).toBe('abcdefghij-klmno');
     expect(w.find('.select-trigger').attributes('data-tooltip')).toBeUndefined();
+    w.unmount();
+  });
+
+  // grace=2（第二轮）：只超预算 1~2 宽度 → 不手动 +…，交 CSS text-overflow。
+  it('latin_name_over_budget_by_grace_shows_full_no_manual_ellipsis_no_tooltip', async () => {
+    const name = 'Qwen3.8-27B-Ridge'; // width 17 > 16, ≤ 18 → untouched
+    mockLms({ lat: { desc: name, values: {} } });
+    const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+    await flush();
+    expect(w.find('.select-label').text()).toBe(name); // no manual …, full render (CSS may auto-ellipsis visually)
+    expect(w.find('.select-trigger').attributes('data-tooltip')).toBeUndefined(); // not manually truncated → no tooltip
     w.unmount();
   });
 });
