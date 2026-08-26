@@ -395,6 +395,18 @@ describe('TemplateModal auto id', () => {
     w.unmount();
   });
 
+  it('new_mode_shows_no_id_label_or_auto_hint', async () => {
+    calls = []; mockLms();
+    const w = mountNew(); await flush();
+
+    // 新建模式：不显示「id」标签、也不显示「保存时自动生成」提示（id 完全静默自动）
+    expect(document.querySelector('.id-hint')).toBeNull();
+    expect(document.querySelector('.id-view')).toBeNull(); // 只读 id 仅编辑模式
+    const labels = [...document.querySelectorAll('.modal-box label.label')].map((l) => l.textContent?.trim());
+    expect(labels).not.toContain('id');
+    w.unmount();
+  });
+
   it('edit_mode_shows_readonly_id_without_input', async () => {
     calls = []; mockLms();
     const w = mountEdit(); await flush();

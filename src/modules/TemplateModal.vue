@@ -199,10 +199,11 @@ function close(): void { emit('close'); }
         <div class="modal-body">
           <p v-if="saveError" class="error-text">{{ saveError }}</p>
 
-          <!-- id：不再让用户填写——新建 = 保存时由主进程生成唯一 id（yaml 安全）；编辑 = 只读展示（.id-view 静态文本，无输入框、不可修改） -->
-          <label class="label" style="display: block;">id</label>
-          <p v-if="isEdit" class="id-view">{{ props.id }}</p>
-          <p v-else class="id-hint">保存时自动生成</p>
+          <!-- id 全自动：新建 = 完全静默（无标签、无提示，保存时由主进程生成唯一 yaml-safe id）；编辑 = 只读展示（.id-view 静态文本，无输入框、不可修改） -->
+          <template v-if="isEdit">
+            <label class="label" style="display: block;">id</label>
+            <p class="id-view">{{ props.id }}</p>
+          </template>
 
           <label class="label" style="display: block; margin-top: 8px;">描述</label>
           <input class="input" :class="{ error: attemptedSave && descError !== null }" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
@@ -338,16 +339,11 @@ function close(): void { emit('close'); }
   font-family: var(--font-mono);
   white-space: nowrap;               /* #8：去掉 overflow/ellipsis，保留 nowrap */
 }
-/* id 展示行：编辑 = 只读文本（等宽字体 + 弱化色，明示不可编辑）；新建 = 灰字提示「保存时自动生成」 */
+/* id 展示行：编辑 = 只读文本（等宽字体 + 弱化色，明示不可编辑）；新建模式完全不显示 */
 .id-view {
   font-family: var(--font-mono);
   font-size: var(--fs-label);
   color: var(--muted);
-  margin: 0;
-}
-.id-hint {
-  color: var(--muted);
-  font-size: var(--fs-label);
   margin: 0;
 }
 .row-cell { display: flex; gap: 8px; min-width: 0; }
