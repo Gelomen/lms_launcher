@@ -59,7 +59,8 @@ describe('App stop flow', () => {
     const stopBtn = btn(w);
     expect(stopBtn.classes().join(' ')).toContain('btn-danger');
     expect(stopBtn.attributes('disabled')).toBeUndefined();
-    expect(stopBtn.text()).toBe('\u505c\u6b62');
+        // square 图标（运行中、未 stopping 时渲染 <FontAwesomeIcon>）
+    expect(stopBtn.find('svg').exists()).toBe(true);
 
     await stopBtn.trigger('click');
     await flush(); // stop_server still unresolved (window while waiting for process exit)
@@ -97,7 +98,8 @@ describe('App stop flow', () => {
     await flush();
     const after = btn(w);
     expect(after.attributes('disabled')).toBeUndefined(); // running=true, stopping=false -> enabled
-    expect(after.text()).toBe('\u505c\u6b62');
+        // square 图标（stop_server 失败回落，仍是运行中可点）
+    expect(after.find('svg').exists()).toBe(true);
   });
 });
 
@@ -119,7 +121,8 @@ describe('App start flow', () => {
     const stopBtn = btn(w);
     expect(stopBtn.classes().join(' ')).toContain('btn-danger');
     expect(stopBtn.attributes('disabled')).toBeUndefined();
-    expect(stopBtn.text()).toBe('\u505c\u6b62');
+        // square 图标（运行中、未 stopping 时渲染 <FontAwesomeIcon>）
+    expect(stopBtn.find('svg').exists()).toBe(true);
   });
 
   it('start_server failure automatically restores green [启动] (main state authoritative)', async () => {

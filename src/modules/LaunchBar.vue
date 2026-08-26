@@ -2,15 +2,16 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faRocket } from '@fortawesome/free-solid-svg-icons';
+import { faSquare } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing } from '../ipc';
 import Dropdown from '../components/Dropdown.vue';
 
-// FontAwesome：按需注册 rocket（[启动] 按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
-// rocket 无 regular 款，保留 solid；[停止] 态沿用文字（用户选择）。
+// FontAwesome：按需注册 rocket（[启动] 按钮）/ square（[停止] 按钮，FA7 无专门 stop 图标，实心方块即 stop 语义）。
+// rocket 无 regular 款保留 solid；square 用 regular 款（用户定 regular 优先原则）；stopping 态仍显「...」禁用。
 config.autoGenerateCss = true;
-library.add(faRocket);
-const byPrefixAndName = { fat: { rocket: faRocket } };
+library.add(faRocket, faSquare);
+const byPrefixAndName = { fat: { rocket: faRocket, square: faSquare } };
 
 // 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 单一切换按钮——未运行 = 绿 [启动]，
 // 运行中 = 红 [停止]（stopping 时红 + 「...」禁用），启动失败自动恢复绿 [启动]；:disabled = 置灰。
@@ -116,7 +117,8 @@ watch((): number => props.configsReloadKey, () => { void load(); });
         :disabled="state.running ? !canStop : !canStart"
         @click="onToggle"
       ><template v-if="!state.running"><FontAwesomeIcon :icon="byPrefixAndName.fat['rocket']" style="font-size: 16px;" /></template>
-         <span v-else>{{ state.stopping ? '...' : '停止' }}</span>
+         <span v-else-if="state.stopping">...</span>
+         <FontAwesomeIcon v-else :icon="byPrefixAndName.fat['square']" style="font-size: 14px;" />
       </button>
     </div>
   </section>
