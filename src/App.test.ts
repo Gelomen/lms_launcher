@@ -43,11 +43,12 @@ function mountApp(initial: object = RUNNING): { w: import('@vue/test-utils').Vue
   return { w, stop, start };
 }
 
-// the single toggle button: locate by its label (启动/停止/...) — the dropdown's "…" button has a different text
+// the single toggle button: locate by its state class (btn-launch / btn-danger) — the dropdown's
+// "…" button is btn-secondary, so these two classes uniquely identify the toggle.
 function btn(w: import('@vue/test-utils').VueWrapper<any>): any {
   const all = w.findAll('.module-launch .btn');
   expect(all.length).toBe(2); // toggle + dropdown …
-  return all.find((b) => /^(\u542f\u52a8|\u505c\u6b62|\.\.\.)$/.test(b.text().trim()));
+  return all.find((b) => b.classes().includes('btn-launch') || b.classes().includes('btn-danger'));
 }
 
 describe('App stop flow', () => {
@@ -73,7 +74,7 @@ describe('App stop flow', () => {
     const final = btn(w);
     expect(final.text()).not.toBe('...');
     // back to green [启动] immediately (no need to wait for the process-exit event)
-    expect(final.text()).toBe('\u542f\u52a8');
+    expect(final.find('svg').exists()).toBe(true); // rocket 图标
     expect(final.classes().join(' ')).toContain('btn-launch');
   });
 
@@ -107,7 +108,7 @@ describe('App start flow', () => {
 
     const launchBtn = btn(w);
     expect(launchBtn.classes().join(' ')).toContain('btn-launch');
-    expect(launchBtn.text()).toBe('\u542f\u52a8');
+    expect(launchBtn.find('svg').exists()).toBe(true); // rocket 图标
     expect(launchBtn.attributes('disabled')).toBeUndefined();
 
     await launchBtn.trigger('click');
@@ -126,7 +127,7 @@ describe('App start flow', () => {
     await flush();
 
     const launchBtn = btn(w);
-    expect(launchBtn.text()).toBe('\u542f\u52a8');
+    expect(launchBtn.find('svg').exists()).toBe(true); // rocket 图标
     await launchBtn.trigger('click');
     // while start_server is in flight the green [启动] button must be disabled (no double-click)
     const pending = btn(w);
@@ -138,7 +139,7 @@ describe('App start flow', () => {
     // failure -> green [启动] restored and clickable again
     const after = btn(w);
     expect(after.classes().join(' ')).toContain('btn-launch');
-    expect(after.text()).toBe('\u542f\u52a8');
+    expect(after.find('svg').exists()).toBe(true); // rocket 图标
     expect(after.attributes('disabled')).toBeUndefined(); // can retry
   });
 });
