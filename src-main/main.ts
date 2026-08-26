@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize } from './build';
 import { ProcessState } from './process';
@@ -111,8 +111,8 @@ ipcMain.handle('get_configs', (): ConfigsMap => {
 // suggest_config_id：新建模板保存前请求唯一 id（yaml 安全，与现有条目不重名）
 ipcMain.handle('suggest_config_id', (): string => {
   const [, , p] = yamlPaths();
-  const existing = configsLoad(p) ? Object.keys(configsLoad(p)) : [];
-  return suggestConfigId(existing);
+  // 首个模板保存前 yaml 不存在——existingConfigIds 缺失 → []，不抛 MISSING
+  return suggestConfigId(existingConfigIds(p));
 });
 ipcMain.handle('save_config', (_e, id: string, desc: string | null, values: Record<string, string>): void => {
   const [, , p] = yamlPaths();

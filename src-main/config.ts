@@ -69,6 +69,15 @@ export function configsLoad(path: string): ConfigsMap {
   return parseYaml(path, s, 'llama_launch_configs.yaml') as ConfigsMap;
 }
 
+// 现有条目 id 列表：文件缺失（首个模板尚未创建）→ []；空文件 → []。
+// suggest 需要它做防重——不能直接用 configsLoad，其 MISSING 异常是给「加载配置」语义的，不该挡在保存前
+export function existingConfigIds(path: string): string[] {
+  if (!existsSync(path)) return [];
+  const s = readFileSync(path, 'utf8');
+  if (s.trim().length === 0) return [];
+  return Object.keys(configsLoad(path));
+}
+
 // suggest：自动生成唯一配置 id——保存后写入 yaml key，故必须符合 validateConfigId（小写字母开头、[a-z0-9]、≤32）且与现有条目不重名。
 // 碰撞概率低（时间戳+随机尾巴），但渲染端可能连续两次秒级保存同一时间戳 → 循环重试直至唯一
 export function suggestConfigId(existing: string[]): string {

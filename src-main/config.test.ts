@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds } from './config';
 import { tmpPath, rm, writeText, jp } from './test-utils';
 
 describe('config.ts', () => {
@@ -63,6 +63,20 @@ describe('config.ts', () => {
     expect(validateParamKey('-m')).toBe(false);
     expect(validateParamKey('a b')).toBe(false);
     expect(validateParamKey('A')).toBe(false);
+  });
+
+  it('existing_config_ids_empty_when_file_missing', () => {
+    // 首个模板保存前 llama_launch_configs.yaml 不存在——suggest 拿现有 id 列表必须得 []，不能抛 MISSING
+    const p = tmpPath('cfg_suggest_missing.yaml');
+    rm(p);
+    expect(existingConfigIds(p)).toEqual([]);
+    rm(p);
+    // 已有条目 → 正常返回 key 列表；空文件 → []
+    saveConfigEntry(p, 'c1', 'x', { m: 'x.gguf' });
+    expect(existingConfigIds(p)).toEqual(['c1']);
+    writeText(p, '');
+    expect(existingConfigIds(p)).toEqual([]);
+    rm(p);
   });
 
   it('suggest_config_id_is_unique_and_yaml_safe', () => {
