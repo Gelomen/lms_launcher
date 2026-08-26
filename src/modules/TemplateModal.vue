@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faFloppyDisk, faTrashCan, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faFloppyDisk, faFolderOpen, faTrashCan, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 
 import Dropdown from '../components/Dropdown.vue';
 
-// FontAwesome：按需注册 floppy-disk（保存按钮），tree-shakeable 用法；fas 前缀图标经 library.add 进入本地库
+// FontAwesome：按需注册 floppy-disk（保存按钮）/ folder-open（选择文件按钮），tree-shakeable 用法；fas 前缀图标经 library.add 进入本地库
 config.autoGenerateCss = true;
-library.add(faFloppyDisk, faTrashCan, faXmark);
+library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen);
 // byPrefixAndName：按「前缀 → { iconName: IconDefinition }」组织，模板侧 <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" /> 直接取图标定义
-const byPrefixAndName = { fat: { 'floppy-disk': faFloppyDisk, xmark: faXmark, 'trash-can': faTrashCan } };
+const byPrefixAndName = { fat: { 'floppy-disk': faFloppyDisk, xmark: faXmark, 'trash-can': faTrashCan, 'folder-open': faFolderOpen } };
 
 // 模板弹窗（新建 / 编辑共用，规格 §4.2）：
 // flag-form 参数表单 + id 唯一性红框 + 必填(-m)红框不保存；其余空值不写入 yaml。
@@ -223,7 +223,8 @@ function close(): void { emit('close'); }
                   :value="formValues[row.key]"
                   @input="(ev: Event) => { formValues[row.key] = (ev.target as HTMLInputElement).value; }"
                 />
-                <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn" @click="pickFile(row.key)">选择文件</button>
+                <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn" title="选择文件" aria-label="选择文件"
+                  @click="pickFile(row.key)"><FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 14px;" /></button>
               </div>
               <div v-else-if="row.type === 'boolean'" class="dropdown">
                 <Dropdown :value="formValues[row.key]"
