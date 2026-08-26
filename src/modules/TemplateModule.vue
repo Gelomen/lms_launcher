@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { library, config } from '@fortawesome/fontawesome-svg-core';
+import { faPenToSquare } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
 import TemplateModal from './TemplateModal.vue';
+
+// FontAwesome：按需注册 pen-to-square（列表行「编辑」按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
+config.autoGenerateCss = true;
+library.add(faPenToSquare);
+const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare } };
 
 // 模块 2 · 启动参数模板管理（规格 §4.2）
 interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[] }
@@ -107,12 +115,7 @@ onMounted(reload);
             @mouseleave="onLabelLeave"> {{ rowName(id) }} </span>
           <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
             @click="openEdit(id)">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M2 12.5L9.5 5l2 2L4 14.5H2v-2z"
-                stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-              <path d="M10.8 3.7l1.4-1.4a1.6 1.6 0 0 1 2.3 0l1.2 1.2a1.6 1.6 0 0 1 0 2.3L14 8"
-                stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-            </svg>
+            <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
           </button>
         </div>
       </div>
