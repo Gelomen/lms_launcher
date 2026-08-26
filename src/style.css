@@ -274,15 +274,16 @@ body {
   border-radius: 5px;
   border: 2px solid var(--card);    /* 与容器留白，视觉悬浮 */
 }
-.log-view:hover, .template-list:hover, .dropdown-panel:hover {
+.modal-body:hover, .log-view:hover, .template-list:hover, .dropdown-panel:hover {
   --sb-thumb: rgba(0, 0, 0, 0.05);
   scrollbar-color: rgba(0, 0, 0, .05) transparent; /* Firefox hover：≈5% */
 }
-.log-view, .template-list, .dropdown-panel {
+.modal-body, .log-view, .template-list, .dropdown-panel {
   --sb-thumb: transparent;
   scrollbar-color: transparent transparent;         /* Firefox idle：隐形 */
 }
 /* Chromium：hover 容器时 thumb 用变量上色 */
+.modal-body::-webkit-scrollbar-thumb,
 .log-view::-webkit-scrollbar-thumb,
 .template-list::-webkit-scrollbar-thumb,
 .dropdown-panel::-webkit-scrollbar-thumb { background: var(--sb-thumb); }

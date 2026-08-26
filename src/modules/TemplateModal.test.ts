@@ -278,3 +278,38 @@ describe('TemplateModal delete', () => {
     document.body.innerHTML = '';
   });
 });
+
+// ---- 标题栏契约（2026-08-27）：文字「新建模板」/「编辑模板」居中，[x] 在最右侧，点击 [x] emit close；底部取消按钮删除 ----
+describe('TemplateModal titlebar', () => {
+  it('new_mode_title_is_new_template_and_x_closes', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    expect(document.querySelector('.modal-head .modal-title')?.textContent).toBe('新建模板');
+    const xBtn = document.querySelector('.modal-head .modal-close') as HTMLButtonElement;
+    expect(xBtn).toBeDefined();
+    expect(xBtn.textContent).toBe('×');
+    xBtn.click();
+    await flush();
+    expect(w.emitted('close')).toHaveLength(1);
+    w.unmount();
+  });
+
+  it('edit_mode_title_is_edit_template', async () => {
+    calls = []; mockLms();
+    const w = mountEdit(); await flush();
+    expect(document.querySelector('.modal-head .modal-title')?.textContent).toBe('编辑模板');
+    const xBtn = document.querySelector('.modal-head .modal-close') as HTMLButtonElement;
+    xBtn.click();
+    await flush();
+    expect(w.emitted('close')).toHaveLength(1);
+    w.unmount();
+  });
+
+  it('cancel_button_removed_from_actions', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    const btns = [...document.querySelectorAll('.modal-actions button')].map((b) => b.textContent?.trim());
+    expect(btns).not.toContain('取消'); // 关闭功能挪到标题栏 [x]，底部不再渲染「取消」
+    w.unmount();
+  });
+});

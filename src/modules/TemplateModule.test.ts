@@ -198,8 +198,8 @@ describe('TemplateModule', () => {
 
     await addBtn.trigger("click");
     await flush();
-    const h3 = document.querySelector(".modal-box h3");
-    expect(h3?.textContent).toBe("新建模板");
+    const title = document.querySelector(".modal-head .modal-title");
+    expect(title?.textContent).toBe("新建模板");
     wrapper.unmount();
   });
 });
