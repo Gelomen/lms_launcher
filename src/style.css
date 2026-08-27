@@ -206,6 +206,7 @@ body {
 .log-pane {
   display: flex; flex-direction: column; flex: 1; min-height: 0;
   margin-top: -1px;                              /* 与页签条共边（消 1px 缝隙） */
+  margin-left: -1px;                             /* 左缘对齐页签边框左缘（首 tab 左边线 +1px） */
   padding: 8px;
   background: var(--card);
   border: 1px solid var(--border); border-top: none;
