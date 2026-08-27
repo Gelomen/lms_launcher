@@ -43,8 +43,7 @@ function onScroll(): void {
 </script>
 <template>
   <section class="log-panel">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h3>日志</h3>
+    <div style="display: flex; justify-content: flex-end; align-items: center;">
       <label style="display: flex; gap: 4px; align-items: center;" class="label">
         <input type="checkbox" v-model="autoScroll" style="margin: 0;" />
         <span>自动滚动</span>

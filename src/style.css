@@ -170,6 +170,9 @@ body {
 .log-view {
   flex: 1;
   overflow-y: auto;
+  border: 1px solid var(--border); /* 公共灰外框：与 .card / 下拉面板同色 */
+  border-radius: var(--radius-btn);
+  padding: 8px;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
