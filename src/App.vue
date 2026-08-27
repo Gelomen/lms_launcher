@@ -23,13 +23,13 @@ const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重�
 const logLines = ref<LogEntry[]>([]);
 const state = ref<ServerState>({ running: false, stopping: false, configId: null });
 const configsReloadKey = ref(0); // TemplateModule 保存/删除后 bump（ref，Vue 响应式追踪）
-const exitConfirm = ref(false);
+const exitConfirm = ref(false); // §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认），替代系统 window.confirm
 
 // frameless winbar 状态与 handler
 const maximized = ref(false);
 function onWinMinimize(): void { invoke('win_minimize'); }
 function onWinToggleMax(): void { invoke('win_maximize'); }
-function onWinClose(): void { invoke('win_close'); } // §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认），替代系统 window.confirm
+function onWinClose(): void { invoke('win_close'); } // 隐藏到托盘，不退出
 
 function appendLine(e: LogEntry): void {
   logLines.value.push(e);
