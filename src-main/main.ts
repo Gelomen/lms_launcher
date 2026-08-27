@@ -13,8 +13,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    const win = mainWin();
-    if (win) { win.show(); win.focus(); }
+    restoreWindow();
   });
 }
 
@@ -35,6 +34,12 @@ function yamlPaths(): [string, string, string] {
 function mainWin(): BrowserWindow | null {
   const ws = BrowserWindow.getAllWindows();
   return ws.length > 0 ? ws[0] : null;
+}
+// 唤回主窗口：restore() 先解除最小化，再 show + focus；窗口不存在（仅 window-all-closed 边缘态）→ 重建
+function restoreWindow(): void {
+  const win = mainWin();
+  if (win) { win.restore(); win.show(); win.focus(); }
+  else { createWindow(); }
 }
 type StreamName = 'sys' | 'out' | 'err';
 function emitLog(line: string, stream: StreamName): void {
@@ -58,8 +63,7 @@ function createTray(): void {
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   const menu = Menu.buildFromTemplate([
     { label: '启动 lms_launcher', click: () => {
-      const win = mainWin();
-      if (win) { win.show(); win.focus(); }
+      restoreWindow();
     } },
     { label: '退出', click: () => {
       const win = mainWin();
@@ -72,6 +76,10 @@ function createTray(): void {
     } },
   ]);
   tray.setContextMenu(menu);
+  // 双击托盘图标 = 唤回窗口（方案 A：单击无反应，右键维持菜单）
+  tray.on('double-click', () => {
+    restoreWindow();
+  });
 }
 
 // ---------- 窗口 ----------
