@@ -222,4 +222,23 @@ describe('window controls (frameless winbar)', () => {
     const maxBtn = w.find('.winbar').findAll('.winbtn')[1];
     expect(maxBtn.attributes('aria-label')).toBe('还原');
   });
+
+  it('winbar is a top-level node OUTSIDE .layout (full-width, close key at window edge)', async () => {
+    const { w } = mountApp();
+    await flush();
+    // 结构契约：header.winbar 不再是 .layout 的子节点（贴边修复——.layout 有横向 padding）
+    expect(w.element.querySelector('.winbar')).not.toBeNull();
+    expect(w.element.querySelector('.layout .winbar')).toBeNull();
+  });
+
+  it('maximize/restore icons use the window-* series (fa-window-maximize / fa-window-restore)', async () => {
+    const { w } = mountApp();
+    await flush();
+    // App.vue 必须把两枚窗口系列图标注册进 FontAwesome（未注册时渲染为 [object Object]，无 svg）
+    const maxBtn = w.find('.winbar').findAll('.winbtn')[1];
+    expect(maxBtn.find('svg').exists()).toBe(true);
+    winMaxHandlers.forEach(fn => fn({ maximized: true }));
+    await flush();
+    expect(w.find('.winbar').findAll('.winbtn')[1].find('svg').exists()).toBe(true);
+  });
 });

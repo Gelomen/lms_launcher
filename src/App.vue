@@ -9,10 +9,11 @@ import ConfirmDialog from './components/ConfirmDialog.vue';
 
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faMinus, faMaximize, faMinimize, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faWindowMinimize, faWindowMaximize, faWindowRestore, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 config.autoGenerateCss = true;
-library.add(faMinus, faMaximize, faMinimize, faXmark);
+library.add(faWindowMinimize, faWindowMaximize, faWindowRestore, faXmark);
+const byPrefixAndName = { fat: { 'window-minimize': faWindowMinimize, 'window-maximize': faWindowMaximize, 'window-restore': faWindowRestore } };
 
 // 全局状态（任务 8）：App 持有 logLines / state，下发给模块 3/4；启动/停止由 LaunchBar emit → App 调 invoke。
 interface ServerState { running: boolean; stopping: boolean; configId: string | null; starting?: boolean }
@@ -116,15 +117,16 @@ function onExitConfirmed(): void {
 }
 </script>
 <template>
-  <main class="layout">
+  <!-- winbar = App 第二根节点（.layout 之外，fragment 双根）：满宽贴窗口边缘，关闭键贴右缘；整条为拖动区（app-region） -->
     <header class="winbar">
       <span class="winbar__title">lms_launcher</span>
       <div class="winbar__controls">
-        <button class="winbtn" aria-label="最小化" title="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="['fas','minus']" /></button>
-        <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" :title="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? ['fas','minimize'] : ['fas','maximize']" /></button>
+        <button class="winbtn" aria-label="最小化" title="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
+        <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" :title="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
         <button class="winbtn winbtn--close" aria-label="关闭" title="关闭" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
       </div>
-    </header>
+  </header>
+  <main class="layout">
     <section class="grid">
       <div class="stack">
         <div class="card"><DirModule /></div>

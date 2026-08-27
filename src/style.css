@@ -51,8 +51,8 @@ body {
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  padding: 0 var(--card-gap) var(--card-gap);
+  height: calc(100vh - 36px); /* winbar(36px) = App 第二根节点（.layout 之外），顶部高度让位 */
+  padding: var(--card-gap);
   gap: var(--card-gap);
 }
 .grid {
@@ -329,10 +329,10 @@ body {
 }
 
 /* ---- frameless winbar：自绘窗口控制条（替代系统标题栏；背景 = --bg 无缝）---- */
-.winbar { height: 36px; display: flex; align-items: center; background: var(--bg); flex: none; }
+.winbar { height: 36px; display: flex; align-items: center; background: var(--bg); flex: none; -webkit-app-region: drag; /* 整条为窗口拖动区（frameless 后无系统标题栏） */ }
 .winbar__title { flex: 1; text-align: center; font-size: var(--fs-label); color: var(--muted); pointer-events: none; }
 .winbar__controls { display: flex; height: 100%; }
-.winbtn { width: 46px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text); cursor: pointer; padding: 0; font-size: 13px; }
+.winbtn { width: 46px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text); cursor: pointer; padding: 0; font-size: 13px; -webkit-app-region: no-drag; /* 三键恢复可点击（父 .winbar = drag） */ }
 .winbtn:hover { background: #EBEDEF; }
 .winbtn--close:hover { background: var(--danger); color: #fff; }
 
