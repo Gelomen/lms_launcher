@@ -170,9 +170,6 @@ body {
 .log-view {
   flex: 1;
   overflow-y: auto;
-  border: 1px solid var(--border); /* 公共灰外框：与 .card / 下拉面板同色 */
-  border-radius: var(--radius-btn);
-  padding: 8px;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
@@ -204,7 +201,16 @@ body {
   color: var(--accent); font-weight: 600;
 }
 /* pane 高度链：.log-panel flex column → .log-pane(flex:1) → .log-view(flex:1)，中间层必须 min-height:0 */
-.log-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* 外框挂在 pane（整页签 + 内容共一个身体）：左右下边框 + 下圆角，顶边敞开——
+   激活页签白底直接压进这条开口；内边距 8px 随框一起从 .log-view 迁来。 */
+.log-pane {
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
+  margin-top: -1px;                              /* 与页签条共边（消 1px 缝隙） */
+  padding: 8px;
+  background: var(--card);
+  border: 1px solid var(--border); border-top: none;
+  border-radius: 0 0 var(--radius-btn) var(--radius-btn);
+}
 
 /* ---- #13 自定义下拉弹层（卡片风格 + max-height 116px ≈3 行可滚动；#12 滚动条自动生效）---- */
 .dropdown { position: relative; width: 100%; }
