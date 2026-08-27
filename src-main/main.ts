@@ -79,6 +79,7 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:1420';
 function createWindow(): void {
   const win = new BrowserWindow({
     title: 'lms_launcher',
+    frame: false, // 去系统标题栏；窗口仍可边缘拖动/缩放（DWM 边框保留）
     icon: appIconPath(),
     width: 980, height: 720, minWidth: 760, minHeight: 540,
     webPreferences: {
@@ -91,6 +92,8 @@ function createWindow(): void {
   else win.loadFile(join(__dirname, '..', 'dist', 'index.html'));
   // §4.6：关闭 = 隐藏到托盘，不退出；真正退出走 tray-exit-request → exit_app（任务 5）
   win.on('close', (e) => { e.preventDefault(); win.hide(); });
+  win.on('maximize', () => { win.webContents.send('win-max-changed', { maximized: true }); });
+  win.on('unmaximize', () => { win.webContents.send('win-max-changed', { maximized: false }); });
 }
 
 // ---------- IPC 命令（11 个） ----------
@@ -187,6 +190,13 @@ ipcMain.handle('exit_app', async (): Promise<void> => {
   await ps.stopGraceful(3);
   app.exit(0);
 });
+// frameless winbar 窗口控制（渲染端自绘三键 → 主进程执行）
+ipcMain.handle('win_minimize', () => { mainWin()?.minimize(); });
+ipcMain.handle('win_maximize', () => {
+  const w = mainWin(); if (!w) return;
+  if (w.isMaximized()) w.unmaximize(); else w.maximize();
+});
+ipcMain.handle('win_close', () => { mainWin()?.hide(); }); // 隐藏到托盘，不退出（真退出仍走 exit_app）
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）

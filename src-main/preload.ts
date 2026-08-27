@@ -17,4 +17,9 @@ contextBridge.exposeInMainWorld('lms', {
     ipcRenderer.on('tray-exit-request', listener);
     return () => ipcRenderer.removeListener('tray-exit-request', listener);
   },
+  onWinMaxChanged: (cb: (e: { maximized: boolean }) => void) => {
+    const listener = (_e: unknown, payload: { maximized: boolean }) => cb(payload);
+    ipcRenderer.on('win-max-changed', listener);
+    return () => ipcRenderer.removeListener('win-max-changed', listener);
+  },
 });
