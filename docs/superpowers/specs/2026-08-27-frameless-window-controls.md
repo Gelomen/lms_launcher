@@ -33,7 +33,7 @@
   <span class="winbar__title">lms_launcher</span>
   <div class="winbar__controls">
     <button class="winbtn" aria-label="最小化" @click="onWinMinimize"><i class="fa fa-window-minimize" /></button>
-    <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><i class="fa fa-square / fa-compress…" /></button>
+    <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><i class="fa" :class="maximized ? 'fa-minimize' : 'fa-maximize'" /></button>
     <button class="winbtn winbtn--close" aria-label="关闭" @click="onWinClose"><i class="fa fa-xmark" /></button>
   </div>
 </header>
