@@ -77,4 +77,7 @@ function onClose(): void { emit('close'); }
 .confirm-title { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
 .confirm-sub { font-size: 13px; color: var(--muted); margin: 0; word-break: break-all; } /* 兜底：变量长词不撑破卡片（调用方已按视觉宽度截断） */
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* [确认]/[取消] 同尺寸：.btn-primary 自带 --h-primary(36px) 会比 .btn 的 --h-control(32px) 大一档，
+   此处两者统一压到 --h-control，只保留颜色语义差异（蓝/红） */
+.confirm-cancel, .confirm-ok { height: var(--h-control); }
 </style>
