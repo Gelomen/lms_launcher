@@ -186,15 +186,23 @@ body {
 .log-view .ln-ok { color: var(--log-ok); }
 .log-view .ln-dim { color: var(--log-dim); }
 
-/* ---- 日志 tab 条（文件夹/浏览器式；激活高亮 = 主色蓝文字 + 加粗，hover 与下拉选项同灰）---- */
-.tab-bar { display: flex; gap: 4px; padding-bottom: 6px; }
+/* ---- 日志 tab 条（文件夹/浏览器式：相邻共边、左上右上圆角、激活无下边框并与下方白内容区融为一体）---- */
+.tab-bar { display: flex; padding-bottom: 0; align-self: stretch; }
 .log-tab {
-  height: 26px; padding: 0 12px; font-size: var(--fs-label); color: var(--muted);
-  background: transparent; border: 1px solid var(--border); border-radius: var(--radius-btn);
+  position: relative; margin-left: -1px;
+  height: 26px; padding: 0 14px; font-size: var(--fs-label); color: var(--muted);
+  background: #F6F7F8;                              /* 未激活 = 浅灰（合上的文件夹页签） */
+  border: 1px solid var(--border); border-bottom: none;
+  border-radius: 8px 0 0 0;
   cursor: pointer; font-family: var(--font-ui);
 }
-.log-tab:hover { background: #F6F7F8; }   /* 与 .dropdown-panel .option:hover / btn:hover 一致 */
-.log-tab.active { color: var(--accent); font-weight: 600; border-color: var(--control-border); }
+.log-tab + .log-tab { margin-left: -1px; }          /* 共边：后一个页签叠上前一个的右边 */
+.log-tab:hover { background: #ECEEF0; color: var(--text); }   /* hover 加深一档灰（与 btn hover 同向） */
+.log-tab.active {
+  z-index: 1;                                       /* 前层：压住相邻页签的共享边（Chrome 式） */
+  background: var(--card);                          /* 激活 = 白底，与下方 .log-pane/.log-view 白区融合 */
+  color: var(--accent); font-weight: 600;
+}
 /* pane 高度链：.log-panel flex column → .log-pane(flex:1) → .log-view(flex:1)，中间层必须 min-height:0 */
 .log-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
