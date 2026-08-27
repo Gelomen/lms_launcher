@@ -186,6 +186,18 @@ body {
 .log-view .ln-ok { color: var(--log-ok); }
 .log-view .ln-dim { color: var(--log-dim); }
 
+/* ---- 日志 tab 条（文件夹/浏览器式；激活高亮 = 主色蓝文字 + 加粗，hover 与下拉选项同灰）---- */
+.tab-bar { display: flex; gap: 4px; padding-bottom: 6px; }
+.log-tab {
+  height: 26px; padding: 0 12px; font-size: var(--fs-label); color: var(--muted);
+  background: transparent; border: 1px solid var(--border); border-radius: var(--radius-btn);
+  cursor: pointer; font-family: var(--font-ui);
+}
+.log-tab:hover { background: #F6F7F8; }   /* 与 .dropdown-panel .option:hover / btn:hover 一致 */
+.log-tab.active { color: var(--accent); font-weight: 600; border-color: var(--control-border); }
+/* pane 高度链：.log-panel flex column → .log-pane(flex:1) → .log-view(flex:1)，中间层必须 min-height:0 */
+.log-pane { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
 /* ---- #13 自定义下拉弹层（卡片风格 + max-height 116px ≈3 行可滚动；#12 滚动条自动生效）---- */
 .dropdown { position: relative; width: 100%; }
 /* 「启动控制」卡片内下拉 + 状态按钮同行排布（与「llama.cpp 安装目录」一致）：
