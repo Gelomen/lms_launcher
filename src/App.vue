@@ -5,6 +5,7 @@ import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
 import LaunchBar from './modules/LaunchBar.vue';
 import LogPanel from './modules/LogPanel.vue';
+import ConfirmDialog from './components/ConfirmDialog.vue';
 
 // 全局状态（任务 8）：App 持有 logLines / state，下发给模块 3/4；启动/停止由 LaunchBar emit → App 调 invoke。
 interface ServerState { running: boolean; stopping: boolean; configId: string | null; starting?: boolean }
@@ -15,6 +16,7 @@ const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重�
 const logLines = ref<LogEntry[]>([]);
 const state = ref<ServerState>({ running: false, stopping: false, configId: null });
 const configsReloadKey = ref(0); // TemplateModule 保存/删除后 bump（ref，Vue 响应式追踪）
+const exitConfirm = ref(false); // §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认），替代系统 window.confirm
 
 function appendLine(e: LogEntry): void {
   logLines.value.push(e);
@@ -74,9 +76,9 @@ const unsubs: Array<() => void> = [];
 onMounted(async () => {
   // 事件：日志流 / 进程退出（桥 onLogLine/onProcessExit）
   unsubs.push(onLogLine((e) => appendLine(e)));
-  // §4.6：托盘「退出」→ 确认后 stopGraceful + app.exit(0)（主进程 exit_app，任务 5）
+  // §4.6：托盘「退出」→ ConfirmDialog（tone=primary）；用户点[确认]才 exit_app（主进程 stopGraceful + app.exit(0)，任务 5）
   unsubs.push(onTrayExitRequest(() => {
-    if (window.confirm('将停止 llama-server 并退出，确认？')) void invoke('exit_app');
+    exitConfirm.value = true; // 主题化对话框；取消/遮罩/ESC 由 @close 复位
   }));
   unsubs.push(onProcessExit((e) => {
     state.value = { ...state.value, running: false, stopping: false };
@@ -93,6 +95,11 @@ onUnmounted(() => { for (const u of unsubs) u(); });
 function onTemplateChanged(): void {
   configsReloadKey.value += 1; // bump → LaunchBar watch 重新 load()
 }
+
+// §4.6：ConfirmDialog @confirm → exit_app；finally 复位对话框（主进程 app.exit 后窗口即销毁，此复位是防御性）
+function onExitConfirmed(): void {
+  invoke('exit_app').finally(() => { exitConfirm.value = false; });
+}
 </script>
 <template>
   <main class="layout">
@@ -108,5 +115,8 @@ function onTemplateChanged(): void {
     <section class="log-area">
       <LogPanel :lines="logLines" />
     </section>
+    <!-- §4.6：托盘「退出」二次确认（方案 B：LM Studio 式紧凑对话框；tone=primary 蓝） -->
+    <ConfirmDialog :open="exitConfirm" title="退出程序" message="将停止 llama-server 并退出，是否确认？" tone="primary"
+      @confirm="onExitConfirmed" @close="() => (exitConfirm = false)" />
   </main>
 </template>

@@ -8,6 +8,8 @@ import { mount, flushPromises as flush } from '@vue/test-utils';
 import App from './App.vue';
 
 const invoke = vi.fn();
+// §4.6：托盘「退出」→ 确认对话框（ConfirmDialog）。测试捕获最新注册的回调以模拟托盘事件。
+const trayHandlers: Array<() => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
@@ -15,7 +17,7 @@ vi.mock('./ipc', () => ({
   isValidation: (m: string): boolean => m.includes('VALIDATION:'),
   onLogLine: () => () => {},
   onProcessExit: () => () => {},
-  onTrayExitRequest: () => () => {},
+  onTrayExitRequest: (fn: () => void) => { trayHandlers.push(fn); return () => {}; },
 }));
 
 const RUNNING = { running: true, stopping: false, configId: 'c1' };
@@ -145,5 +147,32 @@ describe('App start flow', () => {
     expect(after.classes().join(' ')).toContain('btn-launch');
     expect(after.find('svg').exists()).toBe(true); // rocket 图标
     expect(after.attributes('disabled')).toBeUndefined(); // can retry
+  });
+});
+
+// §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认）。点[确认]才 invoke('exit_app')；[取消]不 invoke。
+describe('App tray exit', () => {
+  it('tray exit opens confirm dialog; [确认] invokes exit_app', async () => {
+    const { w } = mountApp();
+    await flush(); // get_state lands (running) — App registers tray handler
+    invoke.mockClear();
+    trayHandlers.at(-1)(); await flush(); // fire latest tray-exit handler -> dialog visible
+    const ok = document.querySelector('.confirm-box .confirm-ok') as HTMLButtonElement;
+    expect(ok).not.toBeNull(); // 主题化对话框出现（不再是系统 window.confirm）
+    ok.click();
+    await flush();
+    expect(invoke.mock.calls.find((c) => c[0] === 'exit_app')).toBeDefined();
+    w.unmount();
+  });
+
+  it('tray exit [取消] does not invoke exit_app', async () => {
+    const { w } = mountApp();
+    await flush();
+    invoke.mockClear();
+    trayHandlers.at(-1)(); await flush();
+    (document.querySelector('.confirm-box .confirm-cancel') as HTMLButtonElement).click();
+    await flush();
+    expect(invoke.mock.calls.find((c) => c[0] === 'exit_app')).toBeUndefined();
+    w.unmount();
   });
 });
