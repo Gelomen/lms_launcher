@@ -12,12 +12,14 @@ const invoke = vi.fn();
 const trayHandlers: Array<() => void> = [];
 // §frameless：win-max-changed 推送（最大化状态）。测试捕获最新注册的回调以模拟主进程推送。
 const winMaxHandlers: Array<(e: { maximized: boolean }) => void> = [];
+// 任务 2：onLogLine 改为捕获回调（原为 no-op），测试通过 logHandlers 驱动日志行进入分桶路由。
+const logHandlers: Array<(e: { line: string; stream: 'sys' | 'out' | 'err' }) => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
   isMissing: (m: string): boolean => m.includes('MISSING:'),
   isValidation: (m: string): boolean => m.includes('VALIDATION:'),
-  onLogLine: () => () => {},
+  onLogLine: (fn: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void) => { logHandlers.push(fn); return () => {} },
   onProcessExit: () => () => {},
   onTrayExitRequest: (fn: () => void) => { trayHandlers.push(fn); return () => {} },
   onWinMaxChanged: (fn: (e: { maximized: boolean }) => void) => { winMaxHandlers.push(fn); return () => {}; },
@@ -240,5 +242,36 @@ describe('window controls (frameless winbar)', () => {
     winMaxHandlers.forEach(fn => fn({ maximized: true }));
     await flush();
     expect(w.find('.winbar').findAll('.winbtn')[1].find('svg').exists()).toBe(true);
+  });
+});
+
+describe('log routing to tabs', () => {
+  it('sys line lands in the launcher tab, out/err land in the llama-server tab', async () => {
+    const { w } = mountApp();
+    await flush(); // get_state + onLogLine handler registered
+    logHandlers.at(-1)!({ line: '[lms_launcher] 启动配置 · c1', stream: 'sys' });
+    logHandlers.at(-1)!({ line: '0.02.5 I srv  llama_server: hello', stream: 'err' });
+    await flush();
+    const launcher = w.find('.log-pane[data-tab-id="launcher"]').text();
+    const server = w.find('.log-pane[data-tab-id="llama-server"]').text();
+    expect(launcher).toContain('[lms_launcher] 启动配置 · c1');
+    expect(launcher).not.toContain('llama_server: hello');
+    expect(server).toContain('llama_server: hello');
+    expect(server).not.toContain('启动配置');
+  });
+
+  it('each tab trims to 500 lines independently (no cross-bucket squeezing)', async () => {
+    const { w } = mountApp();
+    await flush();
+    const h = logHandlers.at(-1)!;
+    for (let i = 0; i < 501; i++) { h({ line: 'sys' + i, stream: 'sys' }); h({ line: 'out' + i, stream: 'out' }); }
+    await flush();
+    const launcherLines = w.find('.log-pane[data-tab-id="launcher"]').findAll('p');
+    const serverLines = w.find('.log-pane[data-tab-id="llama-server"]').findAll('p');
+    expect(launcherLines.length).toBe(500);
+    expect(serverLines.length).toBe(500);
+    // 各自保留最新 500：第 1 行是 index=1（index=0 被裁掉）
+    expect(launcherLines[0].text()).toBe('sys1');
+    expect(serverLines[0].text()).toBe('out1');
   });
 });

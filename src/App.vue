@@ -5,6 +5,7 @@ import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
 import LaunchBar from './modules/LaunchBar.vue';
 import LogPanel from './modules/LogPanel.vue';
+import { LOG_TABS, type LogTabId } from './modules/log-tabs';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
@@ -24,8 +25,8 @@ interface ServerState { running: boolean; stopping: boolean; configId: string | 
 interface LogEntry { line: string; stream: 'sys' | 'out' | 'err' }
 
 const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重复实现
-
-const logLines = ref<LogEntry[]>([]);
+// 日志按 tab 分桶（stream 判据路由：sys → launcher；out/err → llama-server）。每桶独立裁剪，互不挤占。
+const logBuckets = ref<Record<LogTabId, LogEntry[]>>({ launcher: [], 'llama-server': [] });
 const state = ref<ServerState>({ running: false, stopping: false, configId: null });
 const configsReloadKey = ref(0); // TemplateModule 保存/删除后 bump（ref，Vue 响应式追踪）
 const exitConfirm = ref(false); // §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认），替代系统 window.confirm
@@ -36,14 +37,19 @@ function onWinMinimize(): void { invoke('win_minimize'); }
 function onWinToggleMax(): void { invoke('win_maximize'); }
 function onWinClose(): void { invoke('win_close'); } // 隐藏到托盘，不退出
 
+function bucketOf(stream: LogEntry['stream']): LogTabId {
+  return stream === 'sys' ? 'launcher' : 'llama-server';
+}
+
 function appendLine(e: LogEntry): void {
-  logLines.value.push(e);
-  if (logLines.value.length > MAX_LINES) {
-    logLines.value.splice(0, logLines.value.length - MAX_LINES); // 裁最旧
+  const id = bucketOf(e.stream);
+  logBuckets.value[id].push(e);
+  if (logBuckets.value[id].length > MAX_LINES) {
+    logBuckets.value[id].splice(0, logBuckets.value[id].length - MAX_LINES); // 裁最旧，仅本桶
   }
 }
 
-// sys 行统一 [lms_launcher] 前缀（主进程已发的不重复加）
+// sys 行统一 [lms_launcher] 前缀（主进程已发的不重复加）→ launcher 桶
 function appendSys(line: string): void {
   appendLine({ line: line.startsWith('[lms_launcher]') ? line : '[lms_launcher] ' + line, stream: 'sys' });
 }
@@ -144,7 +150,7 @@ function onExitConfirmed(): void {
       <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>
     </section>
     <section class="log-area">
-      <LogPanel :lines="logLines" />
+      <LogPanel :buckets="logBuckets" />
     </section>
     <!-- §4.6：托盘「退出」二次确认（方案 B：LM Studio 式紧凑对话框；tone=primary 蓝） -->
     <ConfirmDialog :open="exitConfirm" title="退出程序" message="将停止 llama-server 并退出，是否确认？" tone="primary"

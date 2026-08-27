@@ -14,7 +14,8 @@ import LogPanel from './LogPanel.vue';
 interface E { line: string; stream: 'sys' | 'out' | 'err' }
 
 function rowClass(lines: E[]): string[] {
-  const wrapper = mount(LogPanel, { props: { lines } });
+  // 任务 2 临时适配：props 改为 buckets，着色断言仍经 llama-server 桶触达（任务 3 迁 pane 选择器）
+  const wrapper = mount(LogPanel, { props: { buckets: { launcher: [], 'llama-server': lines } } });
   const cls = wrapper.findAll('.log-view p').map((p) => p.classes().join(' '));
   wrapper.unmount();
   return cls;

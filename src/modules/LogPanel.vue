@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 // 模块 4 · 日志区（§4.4）：白底 Solarized Light、等宽 13px、自动滚动可关、500 行上限由 App 维持。
-const props = defineProps<{ lines: Array<{ line: string; stream: 'sys' | 'out' | 'err' }> }>();
+const props = defineProps<{ buckets: Record<'launcher' | 'llama-server', Array<{ line: string; stream: 'sys' | 'out' | 'err' }>> }>();
+// TODO(任务3): 替换为 log-tabs 类型与 LogTabView 结构
+// 渲染仅读 llama-server 桶（task-3 重构时由 LogTabView 按 tab 分 pane）。
+const lines = computed(() => props.buckets['llama-server'] ?? []);
 
 // 自动滚动：默认开；用户滚离底部暂停，滚回底部恢复
 const autoScroll = ref(true);
@@ -25,7 +28,7 @@ function cls(e: { line: string; stream: 'sys' | 'out' | 'err' }): string {
 }
 
 // 仅当用户在底部附近才滚，避免读日志时跳回；nextTick 等 DOM 更新后再读 scrollHeight
-watch((): number => props.lines.length, () => {
+watch((): number => lines.value.length, () => {
   if (!autoScroll.value) return;
   void nextTick(() => {
     const el = view.value;
