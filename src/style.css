@@ -334,7 +334,7 @@ body {
 .winbar__brand { display: flex; align-items: center; gap: 8px; padding-left: 12px; pointer-events: none; }
 .winbar__logo { width: 20px; height: 20px; object-fit: contain; }
 .winbar__name { font-size: var(--fs-label); color: var(--text); white-space: nowrap; }
-.winbar__controls { display: flex; height: 100%; }
+.winbar__controls { display: flex; height: 100%; margin-left: auto; /* 三键贴窗口右缘（brand 不占 flex，原靠 .winbar__title flex:1 推右） */ }
 .winbtn { width: 46px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text); cursor: pointer; padding: 0; font-size: 13px; -webkit-app-region: no-drag; /* 三键恢复可点击（父 .winbar = drag） */ }
 .winbtn:hover { background: #EBEDEF; }
 .winbtn--close:hover { background: var(--danger); color: #fff; }
