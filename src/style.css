@@ -190,7 +190,7 @@ body {
   height: 26px; padding: 0 14px; font-size: var(--fs-label); color: var(--muted);
   background: #F6F7F8;                              /* 未激活 = 浅灰（合上的文件夹页签） */
   border: 1px solid var(--border); border-bottom: none;
-  border-radius: 8px 0 0 0;
+  border-radius: 0 8px 0 0;   /* 左上直角 / 右上圆角（用户指定） */
   cursor: pointer; font-family: var(--font-ui);
 }
 .log-tab + .log-tab { margin-left: -1px; }          /* 共边：后一个页签叠上前一个的右边 */
