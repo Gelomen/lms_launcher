@@ -8,6 +8,7 @@ import { invoke, errMsg } from '../ipc';
 import { truncateByWidth, visualWidth } from '../util/truncate';
 
 import Dropdown from '../components/Dropdown.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 
 // FontAwesome：按需注册 regular 款——floppy-disk（保存）/ folder-open（选择文件）/ trash-can（删除），
 // xmark（关闭 ×）无 regular 款，保留 free-solid；均经 library.add 进入本地库
@@ -171,14 +172,19 @@ async function save(): Promise<void> {
   }
 }
 
-// 删除（规格 2026-08-24 挪入弹窗）：仅编辑模式渲染；confirm 文案沿用列表行原句；失败进 saveError 区展示，不关窗
-async function onDelete(): Promise<void> {
-  if (!confirm('删除配置「' + props.id + '」？将从 llama_launch_configs.yaml 移除。')) return;
+// 删除（规格 2026-08-24 挪入弹窗；2026-08-27 二次确认主题化）：仅编辑模式渲染；
+// [删除] → ConfirmDialog(danger)，点[确认]才 doDelete()；失败进 saveError 区展示，不关窗。
+const confirmDeleteOpen = ref(false); // 删除二次确认对话框开关
+function onDelete(): void {
+  confirmDeleteOpen.value = true; // 弹主题化对话框（tone=danger）
+}
+async function doDelete(): Promise<void> {
   try {
     await invoke('delete_config', props.id);
     emit('deleted', props.id);
+    confirmDeleteOpen.value = false; // 成功关窗
   } catch (e) {
-    saveError.value = errMsg(e); // VALIDATION / IO / MISSING 前缀原样展示
+    saveError.value = errMsg(e); // VALIDATION / IO / MISSING 前缀原样展示（失败保持开，回表单区看报错）
   }
 }
 
@@ -254,6 +260,10 @@ function close(): void { emit('close'); }
         </footer>
       </div>
     </div>
+    <!-- 删除二次确认（方案 B：tone=danger 红色；[确认]才 delete_config，失败回 saveError 区） -->
+    <ConfirmDialog :open="confirmDeleteOpen" title="删除模板"
+      :message="'删除配置「' + props.id + '」？将从 llama_launch_configs.yaml 移除。'"
+      tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
   </Teleport>
 </template>
 

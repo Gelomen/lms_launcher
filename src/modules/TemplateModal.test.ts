@@ -256,6 +256,9 @@ function findDeleteBtn(): HTMLButtonElement | undefined {
   return (el ?? undefined) as HTMLButtonElement | undefined;
 }
 
+// ---- 删除契约（2026-08-24 挪入弹窗；2026-08-27 二次确认主题化：confirm() → ConfirmDialog）----
+// [删除] 不再直接调系统 confirm，而是弹主题化对话框（tone=danger）；
+// 点对话框[确认]才 invoke('delete_config') + emit('deleted')；[取消]/遮罩 不产生副作用。
 describe('TemplateModal delete', () => {
   it('delete_button_only_when_editing', async () => {
     calls = []; mockLms();
@@ -268,18 +271,36 @@ describe('TemplateModal delete', () => {
     wEdit.unmount();
   });
 
-  it('deletes_when_confirmed', async () => {
+  it('clicking delete opens themed confirm dialog (tone=danger)', async () => {
     calls = []; mockLms(); const w = mountEdit(); await flush();
-    vi.stubGlobal('confirm', () => true);
-    try {
-      findDeleteBtn()!.click();
-      await flush();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    findDeleteBtn()!.click();
+    await flush();
+    const box = document.querySelector('.confirm-box') as HTMLElement;
+    expect(box).not.toBeNull(); // 主题化对话框出现（不再是系统 confirm）
+    expect(box.textContent).toContain('删除模板'); // 标题
+    expect(box.textContent).toContain('qwen38');   // 说明含配置 id
+    expect(document.querySelector('.confirm-ok')!.className).toContain('btn-danger'); // 危险色
+    w.unmount();
+  });
+
+  it('dialog [确认] deletes: invokes delete_config and emits deleted', async () => {
+    calls = []; mockLms(); const w = mountEdit(); await flush();
+    findDeleteBtn()!.click(); await flush();
+    (document.querySelector('.confirm-box .confirm-ok') as HTMLButtonElement).click();
+    await flush();
     expect(calls.find((c) => c.cmd === 'delete_config')).toEqual({ cmd: 'delete_config', args: ['qwen38'] });
     expect(w.emitted('deleted')?.[0]).toEqual(['qwen38']);
-    document.body.innerHTML = '';
+    w.unmount();
+  });
+
+  it('dialog [取消] does not delete', async () => {
+    calls = []; mockLms(); const w = mountEdit(); await flush();
+    findDeleteBtn()!.click(); await flush();
+    (document.querySelector('.confirm-box .confirm-cancel') as HTMLButtonElement).click();
+    await flush();
+    expect(calls.find((c) => c.cmd === 'delete_config')).toBeUndefined(); // 取消不 invoke
+    expect(w.emitted('deleted')).toBeUndefined();
+    w.unmount();
   });
 
   it('delete_error_shown_in_modal_without_deleted_emit', async () => {
@@ -291,16 +312,12 @@ describe('TemplateModal delete', () => {
       onTrayExitRequest: () => () => {},
     };
     const w = mountEdit(); await flush();
-    vi.stubGlobal('confirm', () => true);
-    try {
-      findDeleteBtn()!.click();
-      await flush();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    findDeleteBtn()!.click(); await flush();
+    (document.querySelector('.confirm-box .confirm-ok') as HTMLButtonElement).click(); // 点[确认]
+    await flush();
     expect(w.emitted('deleted')).toBeUndefined(); // 失败不 emit、不关窗
     expect(document.querySelector('.modal-box')?.textContent).toContain('VALIDATION: 配置不存在');
-    document.body.innerHTML = '';
+    w.unmount();
   });
 });
 
