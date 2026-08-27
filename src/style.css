@@ -52,7 +52,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: var(--card-gap);
+  padding: 0 var(--card-gap) var(--card-gap);
   gap: var(--card-gap);
 }
 .grid {
@@ -327,4 +327,12 @@ body {
   transform: translateY(-50%);
   right: calc(100% + 6px);
 }
+
+/* ---- frameless winbar：自绘窗口控制条（替代系统标题栏；背景 = --bg 无缝）---- */
+.winbar { height: 36px; display: flex; align-items: center; background: var(--bg); flex: none; }
+.winbar__title { flex: 1; text-align: center; font-size: var(--fs-label); color: var(--muted); pointer-events: none; }
+.winbar__controls { display: flex; height: 100%; }
+.winbtn { width: 46px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text); cursor: pointer; padding: 0; font-size: 13px; }
+.winbtn:hover { background: #EBEDEF; }
+.winbtn--close:hover { background: var(--danger); color: #fff; }
 

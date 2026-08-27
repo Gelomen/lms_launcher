@@ -6,6 +6,7 @@ declare global {
       onLogLine: (cb: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void) => () => void;
       onProcessExit: (cb: (e: { code: number }) => void) => () => void;
       onTrayExitRequest: (cb: () => void) => () => void;
+      onWinMaxChanged: (cb: (e: { maximized: boolean }) => void) => () => void;
     };
   }
 }
@@ -24,6 +25,10 @@ export function onProcessExit(cb: (e: { code: number }) => void): () => void {
 
 export function onTrayExitRequest(cb: () => void): () => void {
   return window.lms.onTrayExitRequest(cb);
+}
+
+export function onWinMaxChanged(cb: (e: { maximized: boolean }) => void): () => void {
+  return window.lms.onWinMaxChanged(cb);
 }
 
 /**
