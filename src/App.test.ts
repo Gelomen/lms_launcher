@@ -10,6 +10,8 @@ import App from './App.vue';
 const invoke = vi.fn();
 // §4.6：托盘「退出」→ 确认对话框（ConfirmDialog）。测试捕获最新注册的回调以模拟托盘事件。
 const trayHandlers: Array<() => void> = [];
+// §frameless：win-max-changed 推送（最大化状态）。测试捕获最新注册的回调以模拟主进程推送。
+const winMaxHandlers: Array<(e: { maximized: boolean }) => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
@@ -17,7 +19,8 @@ vi.mock('./ipc', () => ({
   isValidation: (m: string): boolean => m.includes('VALIDATION:'),
   onLogLine: () => () => {},
   onProcessExit: () => () => {},
-  onTrayExitRequest: (fn: () => void) => { trayHandlers.push(fn); return () => {}; },
+  onTrayExitRequest: (fn: () => void) => { trayHandlers.push(fn); return () => {} },
+  onWinMaxChanged: (fn: (e: { maximized: boolean }) => void) => { winMaxHandlers.push(fn); return () => {}; },
 }));
 
 const RUNNING = { running: true, stopping: false, configId: 'c1' };
@@ -174,5 +177,49 @@ describe('App tray exit', () => {
     await flush();
     expect(invoke.mock.calls.find((c) => c[0] === 'exit_app')).toBeUndefined();
     w.unmount();
+  });
+});
+
+describe('window controls (frameless winbar)', () => {
+  it('renders winbar with three controls: minimize / maximize / close', async () => {
+    const { w } = mountApp();
+    await flush();
+    const bar = w.find('.winbar');
+    expect(bar.exists()).toBe(true);
+    const btns = bar.findAll('.winbtn');
+    expect(btns.length).toBe(3);
+    expect(btns[0].attributes('aria-label')).toBe('最小化');
+    expect(btns[1].attributes('aria-label')).toBe('最大化'); // 初始非最大化 → 最大化
+    expect(btns[2].attributes('aria-label')).toBe('关闭');
+  });
+
+  it('clicking the three controls invokes win_minimize / win_maximize / win_close', async () => {
+    const { w } = mountApp();
+    await flush();
+    const btns = w.find('.winbar').findAll('.winbtn');
+    await btns[0].trigger('click');
+    expect(invoke).toHaveBeenCalledWith('win_minimize');
+    await btns[1].trigger('click');
+    expect(invoke).toHaveBeenCalledWith('win_maximize');
+    await btns[2].trigger('click');
+    expect(invoke).toHaveBeenCalledWith('win_close');
+  });
+
+  it('close invokes win_close but NOT exit_app (tray-exit stays the only real quit)', async () => {
+    const { w } = mountApp();
+    await flush();
+    const closeBtn = w.find('.winbar').findAll('.winbtn')[2];
+    await closeBtn.trigger('click');
+    expect(invoke).toHaveBeenCalledWith('win_close');
+    expect(invoke).not.toHaveBeenCalledWith('exit_app');
+  });
+
+  it('maximized push switches the toggle label 最大化 → 还原', async () => {
+    const { w } = mountApp();
+    await flush();
+    winMaxHandlers.forEach(fn => fn({ maximized: true })); // 模拟主进程推送
+    await flush();
+    const maxBtn = w.find('.winbar').findAll('.winbtn')[1];
+    expect(maxBtn.attributes('aria-label')).toBe('还原');
   });
 });
