@@ -63,7 +63,12 @@ function createTray(): void {
     } },
     { label: '退出', click: () => {
       const win = mainWin();
-      if (win) win.webContents.send('tray-exit-request', {});
+      if (win) {
+        // 先唤回窗口：关闭=隐藏到托盘（main.ts §4.6），确认对话框开在渲染进程窗口内——
+        // 窗口还藏着时 send 过去用户看不到任何弹窗。show+focus 后 ConfirmDialog 才可见。
+        win.show(); win.focus();
+        win.webContents.send('tray-exit-request', {});
+      }
     } },
   ]);
   tray.setContextMenu(menu);
