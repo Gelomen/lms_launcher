@@ -9,9 +9,11 @@ import ConfirmDialog from './components/ConfirmDialog.vue';
 
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faWindowMinimize, faWindowMaximize, faWindowRestore, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faWindowMinimize, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faWindowMaximize, faWindowRestore } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 config.autoGenerateCss = true;
+// 用户偏好 regular 优先：最大化/还原用 regular（fr）；最小化/关闭保留 solid（LaunchBar 同原则）
 library.add(faWindowMinimize, faWindowMaximize, faWindowRestore, faXmark);
 const byPrefixAndName = { fat: { 'window-minimize': faWindowMinimize, 'window-maximize': faWindowMaximize, 'window-restore': faWindowRestore } };
 
