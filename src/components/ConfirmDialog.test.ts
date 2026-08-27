@@ -41,6 +41,14 @@ describe('ConfirmDialog', () => {
     w.unmount();
   });
 
+  it('renders message full-text title attr when provided', async () => {
+    const w = mountDlg({ open: true, title: 'T', message: '确定删除配置「abcdefg」吗？', tip: '确定删除配置「abcdefgabcdefgabcdefgabcdefgabcdefg」吗？' });
+    await tick();
+    expect((document.querySelector('.confirm-msg') as HTMLElement).getAttribute('title'))
+      .toBe('确定删除配置「abcdefgabcdefgabcdefgabcdefgabcdefg」吗？'); // title=完整值
+    w.unmount();
+  });
+
   it('danger tone → ok button red; primary (default) → blue', async () => {
     const wD = mountDlg({ open: true, title: 'T', message: 'M', tone: 'danger' });
     await tick();

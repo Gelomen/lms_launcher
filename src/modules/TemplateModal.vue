@@ -5,6 +5,7 @@ import { faXmark } from '@fortawesome/free-solid-svg-icons';
 import { faFloppyDisk, faFolderOpen, faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
+// truncate：选项行用（flag-form）；删除确认对话框的 name 同样按视觉宽度截断（truncDeleteName）
 import { truncateByWidth, visualWidth } from '../util/truncate';
 
 import Dropdown from '../components/Dropdown.vue';
@@ -178,6 +179,19 @@ const confirmDeleteOpen = ref(false); // 删除二次确认对话框开关
 function onDelete(): void {
   confirmDeleteOpen.value = true; // 弹主题化对话框（tone=danger）
 }
+
+// 删除确认文案：配置名与 options 行同一截断口径（truncOpt）——BUDGET=16（视觉宽，CJK=2/拉丁=1）
+// + grace=2：中文 ≤8 字不截、英文 ~15-16 字再 + …(U+2026)；超出才手动截断 + 完整值 tooltip。
+const NAME_BUDGET = 16; // 与 options BUDGET 一致
+function truncDeleteName(n: string): string {
+  const full = n ?? '';
+  if (visualWidth(full) <= NAME_BUDGET + 2) return full; // grace：只超 1~2 不手动 +…（交 CSS ellipsis）
+  return truncateByWidth(full, NAME_BUDGET);
+}
+const deleteMsgName = computed(() => truncDeleteName(props.name ?? ''));
+// message：截断后 + …；仅截断时传完整文案 tip（ConfirmDialog hover title 显示）
+const deleteFullMsg = '确定删除配置「' + (props.name || '') + '」吗？'; // 静态拼接（props.name 编辑模式不变，无需 computed）
+const deleteShortMsg = () => '确定删除配置「' + deleteMsgName.value + '」吗？';
 async function doDelete(): Promise<void> {
   try {
     await invoke('delete_config', props.id);
@@ -261,9 +275,10 @@ function close(): void { emit('close'); }
       </div>
     </div>
     <!-- 删除二次确认（方案 B：tone=danger 红色；[确认]才 delete_config，失败回 saveError 区） -->
-    <!-- 文案（2026-08-27 优化）：引用配置名字（name prop，即 desc 字段），而非 id -->
+    <!-- 文案（2026-08-27 优化）：引用配置名字（name prop，即 desc 字段），而非 id；
+         超长名截断 + …（视觉宽度预算 8），hover title=完整值 -->
     <ConfirmDialog :open="confirmDeleteOpen" title="删除模板"
-      :message="'确定删除配置「' + (props.name || '') + '」吗？'"
+      :message="deleteShortMsg()" :tip="visualWidth(props.name || '') > NAME_BUDGET + 2 ? deleteFullMsg : undefined"
       tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
   </Teleport>
 </template>

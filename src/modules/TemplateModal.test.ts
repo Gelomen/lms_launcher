@@ -5,6 +5,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import TemplateModal from './TemplateModal.vue';
 import { defaultParams } from '../../src-main/config';
+// 视觉宽度（截断 util 口径）：CJK=2/拉丁=1——删除确认对话框的 name 预算契约用
+import { visualWidth } from '../util/truncate';
 
 type Calls = Array<{ cmd: string; args: unknown[] }>;
 let calls: Calls = [];
@@ -281,6 +283,24 @@ describe('TemplateModal delete', () => {
     expect(box.textContent).toContain('删除模板'); // 标题
     expect(box.textContent).toContain('确定删除配置「qwen27b 日常推理」吗？'); // 文案含配置名字
     expect(document.querySelector('.confirm-ok')!.className).toContain('btn-danger'); // 危险色
+    w.unmount();
+  });
+
+  it('long config name is truncated in delete dialog (visual width budget)', async () => {
+    calls = []; mockLms();
+    const LONG_NAME = 'abcdefgabcdefgabcdefgabcdefgabcdefg'; // 30 拉丁（视觉宽 30）
+    const w = mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: 'qwen38', values: {}, paramsMeta, name: LONG_NAME }, // 超长配置名
+    });
+    await flush();
+    findDeleteBtn()!.click(); await flush();
+    const box = document.querySelector('.confirm-box') as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(box.textContent).not.toContain(LONG_NAME); // 完整长名不出现（截断了）
+    const msg = document.querySelector('.confirm-msg') as HTMLElement;
+    expect(msg.textContent).toContain('abcdefgabcdefgab…」吗？'); // 前 16 字 + …，后接固定后缀
+    expect(msg.getAttribute('title')).toContain(LONG_NAME); // hover title=完整值
     w.unmount();
   });
 
