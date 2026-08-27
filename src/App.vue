@@ -12,6 +12,8 @@ import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faWindowMinimize, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { faWindowMaximize, faWindowRestore } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+// logo：单一真源 src-main/icon.ico（用户已验收的像素，与任务栏图标同源；vite 输出为静态资源）
+import logoUrl from '../src-main/icon.ico?url';
 config.autoGenerateCss = true;
 // 用户偏好 regular 优先：最大化/还原用 regular（fr）；最小化/关闭保留 solid（LaunchBar 同原则）
 library.add(faWindowMinimize, faWindowMaximize, faWindowRestore, faXmark);
@@ -121,7 +123,10 @@ function onExitConfirmed(): void {
 <template>
   <!-- winbar = App 第二根节点（.layout 之外，fragment 双根）：满宽贴窗口边缘，关闭键贴右缘；整条为拖动区（app-region） -->
     <header class="winbar">
-      <span class="winbar__title">lms_launcher</span>
+      <div class="winbar__brand">
+        <img class="winbar__logo" :src="logoUrl" alt="" draggable="false" />
+        <span class="winbar__name">LMS 启动器</span>
+      </div>
       <div class="winbar__controls">
         <button class="winbtn" aria-label="最小化" title="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
         <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" :title="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
