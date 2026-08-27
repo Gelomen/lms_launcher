@@ -242,10 +242,11 @@ describe('TemplateModal options truncation', () => {
 
 // ---- 删除契约（2026-08-24 挪入弹窗）----
 // 编辑模式挂载：id='qwen38'（isEdit 成立），返回 wrapper 供 emitted() 断言
+// name = 配置名字（desc 字段，2026-09 label 改名后数据 key 仍 desc；prop 契约为 name）——删除文案引用它
 function mountEdit(): ReturnType<typeof mount> {
   return mount(TemplateModal, {
     attachTo: document.body,
-    props: { open: true, id: 'qwen38', values: {}, paramsMeta },
+    props: { open: true, id: 'qwen38', values: {}, paramsMeta, name: 'qwen27b 日常推理' },
   });
 }
 
@@ -278,7 +279,7 @@ describe('TemplateModal delete', () => {
     const box = document.querySelector('.confirm-box') as HTMLElement;
     expect(box).not.toBeNull(); // 主题化对话框出现（不再是系统 confirm）
     expect(box.textContent).toContain('删除模板'); // 标题
-    expect(box.textContent).toContain('qwen38');   // 说明含配置 id
+    expect(box.textContent).toContain('确定删除配置「qwen27b 日常推理」吗？'); // 文案含配置名字
     expect(document.querySelector('.confirm-ok')!.className).toContain('btn-danger'); // 危险色
     w.unmount();
   });

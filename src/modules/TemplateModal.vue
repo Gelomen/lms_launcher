@@ -261,8 +261,9 @@ function close(): void { emit('close'); }
       </div>
     </div>
     <!-- 删除二次确认（方案 B：tone=danger 红色；[确认]才 delete_config，失败回 saveError 区） -->
+    <!-- 文案（2026-08-27 优化）：引用配置名字（name prop，即 desc 字段），而非 id -->
     <ConfirmDialog :open="confirmDeleteOpen" title="删除模板"
-      :message="'删除配置「' + props.id + '」？将从 llama_launch_configs.yaml 移除。'"
+      :message="'确定删除配置「' + (props.name || '') + '」吗？'"
       tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
   </Teleport>
 </template>
