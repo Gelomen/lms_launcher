@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildArgVector, prepareLaunch, summarize } from './build';
+import { buildArgVector, prepareLaunch, summarize, commandLine } from './build';
 import type { ParamsFile, ConfigEntry } from './config';
 import { tmpPath, rm, writeText, mkDir, jp } from './test-utils';
 
@@ -105,5 +105,15 @@ describe('build.ts', () => {
     expect(buildArgVector('llama-server.exe', pfV11, on)).toEqual(['llama-server.exe', '-m', 'x.gguf', '--metrics']);
     const off = entry([['m', 'x.gguf'], ['metrics', 'false']]);
     expect(buildArgVector('llama-server.exe', pfV11, off)).toEqual(['llama-server.exe', '-m', 'x.gguf']);
+  });
+
+  it('command_line_joins_full_vector_with_single_spaces', () => {
+    // launcher 日志行：exe 全路径 + 完整参数向量（含 quoted 值）
+    const e = entry([['m', 'x.gguf'], ['port', '9931'], ['jinja', 'true']]);
+    const args = buildArgVector('llama-server.exe', pfV11, e);
+    expect(commandLine(args)).toBe('llama-server.exe -m x.gguf --port 9931 --jinja');
+    const e2 = entry([['m', 'my model.gguf']]);
+    const args2 = buildArgVector('llama-server.exe', pf, e2);
+    expect(commandLine(args2)).toBe('llama-server.exe -m "my model.gguf"');
   });
 });

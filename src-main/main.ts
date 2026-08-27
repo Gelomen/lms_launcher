@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
-import { prepareLaunch, summarize } from './build';
+import { prepareLaunch, summarize, commandLine } from './build';
 import { ProcessState } from './process';
 
 // ---------- 单实例锁：禁止多开 ----------
@@ -144,7 +144,8 @@ ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => 
   const args = prepareLaunch(appCfg.llama_dir.trim(), pf, configs, configId); // MISSING: / VALIDATION: 透传
   const summary = summarize(configs[configId], pf);
   await ps.launch(args[0], args.slice(1), configId);
-  emitLog("[lms_launcher] 启动配置 · " + summary, "sys");
+  // launcher 日志：完整启动命令行（exe 全路径 + 参数向量）——start_server 的返回值仍是 summary
+  emitLog("[lms_launcher] 启动命令 · " + commandLine(args), "sys");
   const { stdout, stderr } = ps.takePipes();
   stdout.on('data', (chunk: Buffer) => {
     chunk.toString().split("\n").filter((l) => l.length > 0).forEach((l) => emitLog(l, "out"));

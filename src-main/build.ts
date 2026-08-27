@@ -41,6 +41,11 @@ export function prepareLaunch(dir: string, pf: ParamsFile, configs: ConfigsMap, 
   return buildArgVector(exe, pf, entry);
 }
 
+// launcher 日志行用的完整启动命令：exe 全路径 + 参数向量单空格拼接（值沿用 quoted 形式，肉眼可读）
+export function commandLine(args: string[]): string {
+  return args.join(' ');
+}
+
 // 日志/列表用的 flag 形式摘要，如 -m "D:\x.gguf" --port 9931
 export function summarize(e: ConfigEntry, pf: ParamsFile): string {
   const boolKeys = pf.params_boolean ?? [];
