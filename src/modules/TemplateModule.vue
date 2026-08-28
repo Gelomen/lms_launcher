@@ -7,6 +7,7 @@ import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
 import { truncateByWidth, visualWidth } from '../util/truncate';
 import TemplateModal from './TemplateModal.vue';
+import VramDialog from './VramDialog.vue';
 
 // FontAwesome：按需注册 pen-to-square regular 款（列表行「编辑」）+ file-circle-plus solid 款（新建模板按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
 config.autoGenerateCss = true;
@@ -17,6 +18,23 @@ const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare, 'file-circle-pl
 interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[] }
 // 数据 key：desc → name（2026-09）；legacy desc 由 main configsLoad 归一
 type ConfigMap = Record<string, { name?: string; values: Record<string, string> }>;
+
+// 显卡显存总量(GB)：卡片右上角 VRAM 按钮(紫底白字,未配置显 VRAM / 已配置显 24GB)；
+// 数据源 = lms_launcher.yaml 的 vram_total_gb(经 get_app_config 读,save_vram_total 写)。
+const vramTotal = ref<number | undefined>(undefined);
+const vramDialogOpen = ref(false);
+async function loadVramTotal(): Promise<void> {
+  try {
+    const cfg = await invoke<{ llama_dir: string; vram_total_gb?: number }>('get_app_config');
+    vramTotal.value = cfg.vram_total_gb;
+  } catch {
+    vramTotal.value = undefined;
+  }
+}
+function onVramSaved(): void {
+  vramDialogOpen.value = false;
+  void loadVramTotal();
+}
 
 const configs = ref<ConfigMap | null>(null);
 const paramsMeta = ref<ParamMeta>({ params: {}, required: [] });
@@ -89,10 +107,10 @@ function onDeleted(): void { modalOpen.value = false; void (async () => { await 
 
 function onSaved(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
 
-onMounted(reload);
+onMounted(() => { void reload(); void loadVramTotal(); });
 </script>
 <template>
-  <section class="module module-template">
+  <section class="module module-template" style="position: relative;">
     <div style="display: flex; justify-content: flex-start; align-items: center; gap: 2px;">
       <h2 style="margin-bottom: 0;">启动参数模板</h2>
       <button class="icon-btn icon-btn--sm" data-tooltip="新建模板" aria-label="新建模板"
@@ -100,6 +118,11 @@ onMounted(reload);
         <FontAwesomeIcon :icon="byPrefixAndName.fat['file-circle-plus']" />
       </button>
     </div>
+    <!-- VRAM 按钮:卡片右上角,紫底白字 14px;未配置显 VRAM / 已配置显 24GB(规格 §5) -->
+    <button class="vram-badge" :title="'显卡显存: ' + (vramTotal !== undefined ? vramTotal + ' GB' : '未配置(点击设置)')"
+      aria-label="显卡显存设置" @click="vramDialogOpen = true">
+      {{ vramTotal !== undefined ? vramTotal + 'GB' : 'VRAM' }}
+    </button>
     <div class="template-list">
       <p v-if="missing && error" class="label">暂无模板配置</p>
       <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
@@ -130,9 +153,24 @@ onMounted(reload);
       :values="configs && editingId ? configs[editingId]?.values ?? {} : {}"
       :name="configs && editingId ? configs[editingId]?.name ?? undefined : undefined"
       :params-meta="paramsMeta"
+      :vram-total-gb="vramTotal"
       @saved="onSaved"
       @deleted="onDeleted"
       @close="modalOpen = false"
     />
+    <VramDialog :open="vramDialogOpen" :vram-total-gb="vramTotal"
+      @saved="onVramSaved" @close="vramDialogOpen = false" />
   </section>
 </template>
+<style scoped>
+/* VRAM 按钮:紧贴卡片右上圆角;紫底白字 14px;hover 加深一档 */
+.vram-badge {
+  position: absolute; top: 0; right: 0;
+  height: 26px; padding: 0 12px;
+  border: none; cursor: pointer;
+  border-top-right-radius: var(--radius-card);
+  font-size: 14px; font-weight: 600;
+  background: var(--vram-purple); color: #fff;
+}
+.vram-badge:hover { background: #7C3AED; }
+</style>

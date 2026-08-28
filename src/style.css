@@ -30,6 +30,10 @@
   --fs-body: 14px;          /* 正文/输入 */
   --fs-label: 12px;         /* 标签/辅助 */
   --h-control: 32px;        /* 输入框/下拉高 */
+  --vram-orange: #F59E0B;       /* VRAM 指示橙色（余量 ≥1GB 且 <2GB） */
+  --vram-purple: #8B5CF6;       /* VRAM 按钮紫底（白字） */
+  --vram-orange: #F59E0B;       /* VRAM 指示橙色（余量 ≥1GB 且 <2GB） */
+  --vram-purple: #8B5CF6;       /* VRAM 按钮紫底（白字） */
   --h-primary: 36px;        /* 主按钮高 */
   --sb-w: 7px;               /* Windows Chromium 传统滚动条宽（.template-list 横向溢出修正用） */
   --card-gap: 12px;         /* 卡片间距 */
