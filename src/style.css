@@ -260,7 +260,7 @@ body {
 }
 .dropdown-panel .option { padding: 5px 8px; border-radius: 4px; cursor: pointer; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* JS 仅超预算+2 才手动 +…；余量交给 CSS 自动省略，nowrap 防换行撑高（任务 19 根因不回退） */
 .dropdown-panel .option:hover { background: #F6F7F8; }   /* 与 btn:hover 一致 */
-.dropdown-panel .option.selected { color: var(--accent); font-weight: 600; }
+.dropdown-panel .option.selected { color: var(--vram-purple); font-weight: 600; }   /* 选中项文字紫，与重要操作色统一（2026-08-29） */
 
 /* ---- 「llama.cpp 安装目录」卡片下方恒定槽位：预留校验结果 1 行（与「保存中…」共用），
      避免校验前后卡片高度抖动 —— 校验后卡片不再把下方「启动控制」往下挤 ---- */
