@@ -348,17 +348,8 @@ function close(): void { emit('close'); }
 </template>
 
 <style scoped>
-/* §4.2 模板弹窗遮罩——style.css 无此语义类，故组件内自给（不污染全局） */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(16, 24, 40, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-}
 /* 弹窗卡片 = flex 纵向三段：标题栏 / 表单区（滚动）/ 按钮栏，各自固定不随滚动 */
+/* .modal-overlay 遮罩已抽至全局 style.css（与 VramDialog 共用） */
 .modal-box {
   width: 90%;
   max-width: 520px;

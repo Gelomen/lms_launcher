@@ -32,12 +32,22 @@
   --h-control: 32px;        /* 输入框/下拉高 */
   --vram-orange: #F59E0B;       /* VRAM 指示橙色（余量 ≥1GB 且 <2GB） */
   --vram-purple: #8B5CF6;       /* VRAM 按钮紫底（白字） */
-  --vram-orange: #F59E0B;       /* VRAM 指示橙色（余量 ≥1GB 且 <2GB） */
-  --vram-purple: #8B5CF6;       /* VRAM 按钮紫底（白字） */
   --h-primary: 36px;        /* 主按钮高 */
   --sb-w: 7px;               /* Windows Chromium 传统滚动条宽（.template-list 横向溢出修正用） */
   --card-gap: 12px;         /* 卡片间距 */
   --card-pad: 16px;         /* 卡片内边距 */
+}
+
+/* 弹窗遮罩（全局共享：TemplateModal 与 VramDialog 均用 .modal-overlay；
+   原为 TemplateModal scoped 自给，抽出后两个弹窗组件共用） */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
 }
 
 /* ---- reset ---- */
