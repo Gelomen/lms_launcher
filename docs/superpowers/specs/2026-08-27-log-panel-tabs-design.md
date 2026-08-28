@@ -13,7 +13,7 @@
 
 ## 基线状态说明
 
-本规格基于工作区中用户手动编辑的现行版本：LogPanel 已去掉「日志」标题（仅保留右侧"自动滚动"勾选框），.log-view 已加公共灰外框（border + border-radius + 8px padding）。实现不得回退这两处。
+本规格基于工作区中用户手动编辑的现行版本：LogPanel 已去掉「日志」标题（仅保留"自动滚动"勾选框，位于视图左上方），.log-view 已加公共灰外框（border + border-radius + 8px padding）。实现不得回退这两处。
 
 ## 数据层（App.vue）
 
