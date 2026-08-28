@@ -7,9 +7,18 @@ const props = defineProps<{ id: string; lines: Array<{ line: string; stream: 'sy
 
 type Entry = { line: string; stream: 'sys' | 'out' | 'err' };
 
-// 自动滚动：默认开；勾选框直接驱动跟随（勾选 = 新日志到达即滚到最新位置）。
+// 自动滚动：默认开；勾选框直接驱动跟随（勾选 = 立即贴底 + 此后每批新日志持续贴底）。
 const autoScroll = ref(true);
 const view = ref<HTMLElement | null>(null);
+
+// 贴底：nextTick 等 DOM 更新后再读 scrollHeight（行高 1.6×13px，内容按批次增长）。
+function scrollToBottom(): void {
+  void nextTick(() => {
+    const el = view.value;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  });
+}
 
 // §4.4 五档着色（纯内容启发式，stream 不作颜色依据）——原 LogPanel cls() 原文迁移：
 function cls(e: Entry): string {
@@ -23,14 +32,22 @@ function cls(e: Entry): string {
   return '';
 }
 
-// 勾选时：每批新日志都把视图滚到最新位置。nextTick 等 DOM 更新后再读 scrollHeight
-watch((): number => props.lines.length, () => {
+// 勾选时：每批新日志都把视图滚到最新位置。
+// 信号源 1 —— 行数：常规增长（<500 行）时长度递增即触发。
+// 信号源 2 —— 桶内首行身份：满 500 行后 App 端 splice+push 保持长度恒定，
+//   长度 watch 永不触发 → 不再跟随；用首行对象引用作为"内容已变"的兜底信号。
+watch([
+  (): number => props.lines.length,
+  (): unknown => props.lines[0] ?? null,
+], () => {
   if (!autoScroll.value) return;
-  void nextTick(() => {
-    const el = view.value;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  });
+  scrollToBottom();
+});
+
+// 重新勾选立即贴底：用户在底部上方读历史时，勾选框是唯一恢复跟随的入口——
+// 若只依赖上面两条信号，勾选后视图要等下一条日志才跟（体验上"勾选没反应"）。
+watch(autoScroll, (on) => {
+  if (on) scrollToBottom();
 });
 // DOM 事件随组件销毁失效；无定时器 / IPC 订阅需清理。
 </script>
