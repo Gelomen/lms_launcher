@@ -14,7 +14,7 @@
   label 右侧。每个 tab 一个实例（LogTabView 每 tab 一个实例，天然 per-tab）。
 - **按钮形态**：无文字 + aria-label="清空日志" + data-tooltip="清空日志"
   （.icon-btn::after 的既有 tooltip 语言，与模板卡片 [新建] 按钮同款），
-  复用 style.css 既有 .icon-btn（32×32、白底 1px 边框、hover 浅灰）——零新增 CSS。
+  复用 style.css 既有 .icon-btn（32×32、hover 浅灰）+ 新增 --noborder 修饰类（去灰色外框，用户 2026-08-28 追加）。
 - **事件链**：LogTabView emit('clear') → LogPanel 透传 emit('clear', tabId)
   → App 处理。事件带 tab id，App 只清空该桶。
 - **App 端清空**：logBuckets.value[tabId].splice(0)（原地清空，保持引用身份；

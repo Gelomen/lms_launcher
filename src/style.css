@@ -345,6 +345,8 @@ body {
 }
 .icon-btn:hover { background: #F6F7F8; color: var(--text); }  /* 与 .btn:hover 同语言 */
 .icon-btn--sm { width: 24px; height: 24px; border: none; }     /* 行内编辑按钮（替代原 height:24px）：无外框，仅留 hover 底色 */
+/* 日志 [清空日志]（2026-08-28）：32×32 同高但无灰色外框（卡片白底上只留 hover 底色），其余沿用基类 */
+.icon-btn--noborder { border: none; }
 /* tooltip：hover 立即显示，按钮上方居中；深灰底白字；pointer-events:none 不挡点击 */
 .icon-btn { position: relative; }
 .icon-btn::after {
