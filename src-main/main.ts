@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
-import { existsSync, statSync, readFileSync } from 'node:fs';
+import { existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
@@ -209,10 +209,15 @@ ipcMain.handle('vram_estimate', async (_e, args: {
 }): Promise<{ ok: true; usedGb: number } | { ok: false; reason: string }> => {
   try {
     const modelBytes = statSync(args.m).size;
-    // GGUF KV 元数据在文件头部：读前 64KB 足够覆盖常规模型（KV 数 < 300 时）；
-    // 更大文件若 KV 超出范围，parseGgufHeader 会按「缺少 n_layer/n_embd」报告
-    const full = readFileSync(args.m);
-    const headerBuf = full.subarray(0, 65536);
+    // GGUF KV 元数据在文件头部：用 fd 限定读前 64KB（不整文件入内存——模型可达 16GB）；
+    // KV 超出范围时 parseGgufHeader 按「缺少 n_layer/n_embd」报告
+    const CHUNK = 65536;
+    const fd = openSync(args.m, 'r');
+    let headerBuf: Buffer;
+    try {
+      headerBuf = Buffer.alloc(Math.min(CHUNK, modelBytes));
+      readSync(fd, headerBuf, 0, headerBuf.length, 0);
+    } finally { closeSync(fd); }
     const { n_layer, n_embd } = parseGgufHeader(headerBuf);
     const mmprojBytes = args.mmproj?.trim() ? statSync(args.mmproj).size : 0;
     const res = estimateUsedBytes({
