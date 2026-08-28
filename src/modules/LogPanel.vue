@@ -8,6 +8,9 @@ const props = defineProps<{ buckets: Record<LogTabId, Array<{ line: string; stre
 
 // 默认激活第一个 tab（LMS Launcher）——用户指定顺序的第 1 位。
 const active = ref<LogTabId>(LOG_TABS[0].id);
+
+// [清空日志]（2026-08-28）：LogTabView emit('clear') → 携带本 tab id 透传 App，只清该桶。
+const emit = defineEmits<{ (e: 'clear', id: LogTabId): void }>();
 </script>
 <template>
   <section class="log-panel">
@@ -17,6 +20,6 @@ const active = ref<LogTabId>(LOG_TABS[0].id);
         :aria-selected="t.id === active ? 'true' : 'false'" @click="active = t.id">{{ t.label }}</button>
     </nav>
     <LogTabView v-for="t in LOG_TABS" :key="t.id" v-show="t.id === active"
-      :id="t.id" :lines="buckets[t.id]" />
+      :id="t.id" :lines="buckets[t.id]" @clear="emit('clear', t.id)" />
   </section>
 </template>

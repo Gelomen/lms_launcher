@@ -151,3 +151,27 @@ describe('LogPanel 自动滚动行为', () => {
     w.unmount();
   });
 });
+
+// 2026-08-28 清空日志按钮：每个 tab 面板内渲染一个无文字 icon 按钮（aria-label=清空日志）；
+// 点击 emit('clear') 且携带本 tab id —— App 只清空该桶，另一 tab 不受影响。
+describe('LogPanel 清空日志按钮', () => {
+  it('renders a clear-log button per tab (icon only, aria-labeled)', () => {
+    const w = mount(LogPanel, { props: { buckets: { launcher: [], 'llama-server': [] } } });
+    const btns = w.findAll('button[aria-label="清空日志"]');
+    expect(btns.length).toBe(2); // 每个 tab 一个
+    // 无可见文字（icon-only）：按钮内无文本节点
+    for (const b of btns) expect(b.text()).toBe('');
+    w.unmount();
+  });
+
+  it('clicking clear emits clear with the current tab id (per-tab scoping)', async () => {
+    const w = mount(LogPanel, { props: { buckets: { launcher: [], 'llama-server': [] } } });
+    const btns = w.findAll('button[aria-label="清空日志"]');
+    await btns[0].trigger('click'); // LMS Launcher（左）
+    expect(w.emitted('clear')).toEqual([['launcher']]);
+    await btns[1].trigger('click'); // llama-server（右）
+    expect(w.emitted('clear')).toEqual([['launcher'], ['llama-server']]);
+    w.unmount();
+  });
+});
+

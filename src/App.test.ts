@@ -274,4 +274,26 @@ describe('log routing to tabs', () => {
     expect(launcherLines[0].text()).toBe('sys1');
     expect(serverLines[0].text()).toBe('out1');
   });
+
+  it('clear-log button clears only the current tab bucket (per-tab scoping)', async () => {
+    const { w } = mountApp();
+    await flush();
+    const h = logHandlers.at(-1)!;
+    for (let i = 0; i < 3; i++) { h({ line: 'L' + i, stream: 'sys' }); h({ line: 'S' + i, stream: 'out' }); }
+    await flush();
+    // 点击 launcher tab 的清空按钮 → 只清 launcher 桶，llama-server 桶不动
+    const btn = w.find('.log-pane[data-tab-id="launcher"] button[aria-label="清空日志"]');
+    await btn.trigger('click');
+    await flush();
+    // 空桶渲染占位行「（暂无日志）」而非 0 个 p——日志行计数排除该占位
+    const launcherPane = w.find('.log-pane[data-tab-id="launcher"]');
+    const logLines = (el: any) => el.findAll('p').filter((p: any) => p.text() !== '（暂无日志）');
+    expect(logLines(launcherPane).length).toBe(0);
+    expect(logLines(w.find('.log-pane[data-tab-id="llama-server"]')).length).toBe(3);
+    // 清空后新日志正常追加（桶引用身份保持）
+    h({ line: 'S3', stream: 'out' });
+    await flush();
+    expect(w.find('.log-pane[data-tab-id="llama-server"]').findAll('p').length).toBe(4);
+    w.unmount();
+  });
 });

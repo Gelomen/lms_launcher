@@ -1,5 +1,14 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
+import { library } from '@fortawesome/fontawesome-svg-core';
+import { faTrashCan } from '@fortawesome/free-regular-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+
+// 清空日志（2026-08-28）：无文字 icon 按钮——复用编辑模板弹窗左下角的删除图标
+// （faTrashCan regular，TemplateModal .btn-delete 同源）；emit('clear')，App 只清本 tab 桶。
+library.add(faTrashCan);
+const emit = defineEmits<{ (e: 'clear'): void }>();
+function onClear(): void { emit('clear'); }
 
 // 单个 tab 的日志视图（§4.4）：白底 Solarized Light、等宽 13px、自动滚动可关。
 // 自动滚动状态由本组件自持——每个 tab 一个实例，切走再切回各自保留。
@@ -58,6 +67,11 @@ watch(autoScroll, (on) => {
         <input type="checkbox" v-model="autoScroll" style="margin: 0;" />
         <span>自动滚动</span>
       </label>
+      <!-- [清空日志]：icon-only（无文字）+ aria-label；icon 复用 TemplateModal 删除图标（trash-can regular）；
+           盒型 = style.css 既有 .icon-btn（32×32、hover 浅灰），hover tooltip 由 data-tooltip 提供 -->
+      <button type="button" class="icon-btn" aria-label="清空日志" data-tooltip="清空日志" @click="onClear">
+        <FontAwesomeIcon :icon="['far', 'trash-can']" />
+      </button>
     </div>
     <div ref="view" class="log-view">
       <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>

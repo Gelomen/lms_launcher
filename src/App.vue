@@ -49,6 +49,12 @@ function appendLine(e: LogEntry): void {
   }
 }
 
+// [清空日志]（2026-08-28）：LogPanel @clear 携带 tab id → 只清空该桶（splice(0) 原地清空，
+// 保持 ref 数组身份；另一桶不受影响）。日志仅存在于渲染端内存，无 IPC 需触碰。
+function onLogClear(tab: LogTabId): void {
+  logBuckets.value[tab].splice(0);
+}
+
 // sys 行统一 [lms_launcher] 前缀（主进程已发的不重复加）→ launcher 桶
 function appendSys(line: string): void {
   appendLine({ line: line.startsWith('[lms_launcher]') ? line : '[lms_launcher] ' + line, stream: 'sys' });
@@ -150,7 +156,7 @@ function onExitConfirmed(): void {
       <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>
     </section>
     <section class="log-area">
-      <LogPanel :buckets="logBuckets" />
+      <LogPanel :buckets="logBuckets" @clear="onLogClear" />
     </section>
     <!-- §4.6：托盘「退出」二次确认（方案 B：LM Studio 式紧凑对话框；tone=primary 蓝） -->
     <ConfirmDialog :open="exitConfirm" title="退出程序" message="将停止 llama-server 并退出，是否确认？" tone="primary"
