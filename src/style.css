@@ -117,13 +117,14 @@ body {
 .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-danger:hover { background: #DC2626; }
 
-/* 状态按钮（§4.3 联动）：可点击态着色 —— [启动] 绿 / [停止] 红；不可点击（:disabled）= 白置灰 */
+/* 状态按钮（§4.3 联动）：可点击态着色 —— [启动] 紫 / [停止] 红；不可点击（:disabled）= 白置灰
+   （2026-08-29：启动色由绿改紫，与 VRAM 按钮 --vram-purple 统一重要按钮色） */
 .btn-launch {
-  background: var(--ok);
+  background: var(--vram-purple);
   color: #fff;
-  border-color: var(--ok);          /* 可点击 = 绿底白字「启动」（复用 --ok，与日志/校验绿同色系） */
+  border-color: var(--vram-purple); /* 可点击 = 紫底白字「启动」 */
 }
-.btn-launch:hover { background: #15803D; } /* hover 加深一档（压过 .btn:hover 的浅灰） */
+.btn-launch:hover { background: #7C3AED; } /* hover 加深一档（与 .vram-badge:hover 同档，压过 .btn:hover 的浅灰） */
 .btn:disabled, .btn[disabled='true'] {
   background: var(--disabled-bg);
   color: var(--muted);
