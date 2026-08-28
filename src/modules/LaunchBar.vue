@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faRocket } from '@fortawesome/free-solid-svg-icons';
-import { faSquare } from '@fortawesome/free-regular-svg-icons';
+import { faRocket, faStop } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing } from '../ipc';
 import { truncateByWidth, visualWidth } from '../util/truncate';
 import Dropdown from '../components/Dropdown.vue';
 
-// FontAwesome：按需注册 rocket（[启动] 按钮）/ square（[停止] 按钮，FA7 无专门 stop 图标，实心方块即 stop 语义）。
-// rocket 无 regular 款保留 solid；square 用 regular 款（用户定 regular 优先原则）；stopping 态仍显「...」禁用。
+// FontAwesome：按需注册 rocket（[启动] 按钮）/ stop（[停止] 按钮，实心——用户定停止按钮用实心图标）。
+// rocket/stop 均为 solid（fas）；stopping 态仍显「...」禁用。
 config.autoGenerateCss = true;
-library.add(faRocket, faSquare);
-const byPrefixAndName = { fat: { rocket: faRocket, square: faSquare } };
+library.add(faRocket, faStop);
+const byPrefixAndName = { fat: { rocket: faRocket }, fas: { stop: faStop } };
 
 // 模块 3 · 启动控制与状态（§4.3）：配置下拉 + 单一切换按钮——未运行 = 绿 [启动]，
 // 运行中 = 红 [停止]（stopping 时红 + 「...」禁用），启动失败自动恢复绿 [启动]；:disabled = 置灰。
@@ -121,7 +120,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
         @click="onToggle"
       ><template v-if="!state.running"><FontAwesomeIcon :icon="byPrefixAndName.fat['rocket']" style="font-size: 16px;" /></template>
          <span v-else-if="state.stopping">...</span>
-         <FontAwesomeIcon v-else :icon="byPrefixAndName.fat['square']" style="font-size: 14px;" />
+         <FontAwesomeIcon v-else :icon="byPrefixAndName.fas['stop']" style="font-size: 14px;" />
       </button>
     </div>
   </section>
