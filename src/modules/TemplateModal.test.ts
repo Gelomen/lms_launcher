@@ -538,3 +538,92 @@ describe('TemplateModal auto id', () => {
     w.unmount();
   });
 });
+
+// ---- 底栏 VRAM 指示（规格 2026-08-29-vram-estimate-design §6）----
+// watch 9 参数键 + vramTotalGb，150ms 防抖 → invoke('vram_estimate')；
+// 格式「used / total GB」；显卡显存恒蓝；占用按余量 vram-indicator--green/orange/red/grey 四档。
+describe('TemplateModal vram indicator', () => {
+  const P = paramsMeta;
+  function mockVram(usedGb: number | null, reason?: string): void {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        calls.push({ cmd, args });
+        if (cmd === 'vram_estimate') return Promise.resolve(usedGb !== null ? { ok: true, usedGb } : { ok: false, reason: reason ?? 'fail' });
+        if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID);
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+  }
+  // 填入 -m 触发 VRAM_KEYS watch（m 在 VRAM_KEYS 中）→ 150ms 防抖后 invoke
+  async function fillModel(): Promise<void> {
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    setter.call(mIn, 'D:/models/qwen.gguf');
+    mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await new Promise((r) => setTimeout(r, 250)); // 超过 150ms 防抖
+    await flush();
+  }
+
+  it('renders_used_over_total_gb_format', async () => {
+    mockVram(22.0);
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    const el = document.querySelector('.vram-indicator') as HTMLElement;
+    expect(el).toBeDefined();
+    expect(el.textContent).toContain('22.0');
+    expect(el.textContent).toContain('24.0');
+    expect(el.textContent).toContain('GB');
+    // 显卡显存数字在 .vram-total span（蓝色由 CSS 兑现，class 断言）
+    expect(el.querySelector('.vram-total')?.textContent).toBe('24.0');
+    w.unmount();
+  });
+
+  it('tier_green_when_free_gte_2gb', async () => {
+    mockVram(20.0); // 24 - 20 = 4 ≥ 2
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    expect(document.querySelector('.vram-indicator')?.className).toContain('vram-indicator--green');
+    w.unmount();
+  });
+
+  it('tier_orange_when_free_lt_2gb', async () => {
+    mockVram(22.5); // 24 - 22.5 = 1.5
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    expect(document.querySelector('.vram-indicator')?.className).toContain('vram-indicator--orange');
+    w.unmount();
+  });
+
+  it('tier_red_when_free_lt_1gb', async () => {
+    mockVram(23.5); // 24 - 23.5 = 0.5
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    expect(document.querySelector('.vram-indicator')?.className).toContain('vram-indicator--red');
+    w.unmount();
+  });
+
+  it('grey_and_dash_when_vram_total_unconfigured', async () => {
+    mockVram(20.0);
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: undefined } });
+    await fillModel();
+    const el = document.querySelector('.vram-indicator') as HTMLElement;
+    expect(el.className).toContain('vram-indicator--grey');
+    expect(el.textContent).toContain('--');
+    w.unmount();
+  });
+
+  it('grey_dash_when_estimate_fails', async () => {
+    // 估算失败（如非 GGUF）→ grey 档 + -- 占位；hover tooltip（:title）文案在 dev 目视验证
+    mockVram(null, 'GGUF: 非 GGUF 文件（magic 不符）');
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    const el = document.querySelector('.vram-indicator') as HTMLElement;
+    expect(el.className).toContain('vram-indicator--grey');
+    expect(el.textContent).toContain('--');
+    w.unmount();
+  });
+});
+

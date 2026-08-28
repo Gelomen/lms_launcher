@@ -33,7 +33,9 @@ const props = withDefaults(defineProps<{
     params_boolean?: string[];
     params_file?: string[];
   };
-}>(), { name: '' });
+  // 显卡显存总量（GB）：卡片右上角 VRAM 按钮持久化值；未配置 = undefined
+  vramTotalGb?: number;
+}>(), { name: '', vramTotalGb: undefined });
 
 const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void; (e: 'deleted', id: string): void }>();
 
@@ -202,6 +204,59 @@ async function doDelete(): Promise<void> {
   }
 }
 
+// ---------- 底栏 VRAM 指示（规格 2026-08-29-vram-estimate-design §6）----------
+// watch 9 个显存参数键 + vramTotalGb,150ms 防抖 → invoke('vram_estimate')；
+// 显示「used / total GB」:total 恒蓝;used 按余量 ≥2GB 绿 / ≥1GB 橙 / <1GB 红;
+// 未配置总量或估算失败 → 灰 --,tooltip 给原因。
+const vramUsedGb = ref<number | null>(null);
+const vramOk = ref(true);
+const vramReason = ref<string | null>(null);
+const VRAM_KEYS = ['m', 'mmproj', 'ngl', 'c', 'ctk', 'ctv', 'b', 'ub', 'spec_draft_n_max'] as const;
+let vramTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleVramEstimate(): void {
+  if (vramTimer) clearTimeout(vramTimer);
+  vramTimer = setTimeout(() => {
+    const v = formValues.value;
+    const m = (v['m'] ?? '').trim();
+    if (m.length === 0) { vramUsedGb.value = null; vramOk.value = true; vramReason.value = null; return; } // 无模型 → 不估算,指示随 vramTotal 决定
+    const args: Record<string, string> = {};
+    for (const k of VRAM_KEYS) args[k] = (v[k] ?? '').trim();
+    invoke<{ ok: true; usedGb: number } | { ok: false; reason: string }>('vram_estimate', args)
+      .then((res) => {
+        if (res.ok) { vramUsedGb.value = res.usedGb; vramOk.value = true; vramReason.value = null; }
+        else { vramUsedGb.value = null; vramOk.value = false; vramReason.value = res.reason; }
+      })
+      .catch(() => { vramUsedGb.value = null; vramOk.value = false; vramReason.value = 'IPC 调用失败'; });
+  }, 150);
+}
+
+// 9 参数键任一变化 → 重估
+watch(
+  () => VRAM_KEYS.map((k) => (formValues.value[k] ?? '').trim()),
+  () => { scheduleVramEstimate(); },
+  { immediate: true }
+);
+watch(() => props.vramTotalGb, () => { scheduleVramEstimate(); });
+
+const vramFreeGb = computed(() =>
+  props.vramTotalGb !== undefined && vramUsedGb.value !== null
+    ? props.vramTotalGb - vramUsedGb.value
+    : null
+);
+const vramTier = computed((): 'green' | 'orange' | 'red' | 'grey' => {
+  if (props.vramTotalGb === undefined) return 'grey';
+  if (vramFreeGb.value === null) return 'grey';
+  if (vramFreeGb.value >= 2) return 'green';
+  if (vramFreeGb.value >= 1) return 'orange';
+  return 'red';
+});
+const vramTooltip = computed((): string | undefined => {
+  if (props.vramTotalGb === undefined) return '未配置显卡显存——点模板卡片右上角 VRAM 按钮设置';
+  if (vramUsedGb.value === null) return (vramOk.value ? '填写模型文件后自动估算' : (vramReason ?? '估算失败'));
+  return '余量 ' + vramFreeGb.value!.toFixed(1) + ' GB';
+});
+
 function close(): void { emit('close'); }
 </script>
 <template>
@@ -260,7 +315,8 @@ function close(): void { emit('close'); }
           <p v-if="attemptedSave && emptyRequired.length > 0" class="error-text">必填项未填写：{{ emptyRequired.map((k) => props.paramsMeta.params[k]).join('、') }}</p>
         </div>
 
-        <!-- 底部按钮区固定不滚动：取消功能已挪到标题栏 [x]，仅保留 删除 + 保存 -->
+        <!-- 底部按钮区固定不滚动：取消功能已挪到标题栏 [x]，仅保留 删除 + 保存；
+             正中 = VRAM 指示（used / total GB，按余量变色，规格 §6） -->
         <footer class="modal-actions">
           <!-- [删除]：参考 [保存] 角形按钮——左下角形，上下占满底部栏全高、左缘贴卡片左缘（.modal-actions padding:0 16px 让位于绝对定位）；
                文字「删除」（2026-08）→ FontAwesome trash-can 图标 + a11y label（仅编辑模式渲染，行为不变） -->
@@ -268,6 +324,14 @@ function close(): void { emit('close'); }
             <FontAwesomeIcon :icon="byPrefixAndName.fat['trash-can']" />
           </button>
           <!-- 软盘图标 = 保存（2026-08-27 角形按钮；2026-09：手写 SVG → FontAwesome floppy-disk） -->
+          <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰 -->
+          <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰。hover tooltip = :title（Vue SFC 下 :data-* 绑定不可靠，不另设 data 属性） -->
+          <div class="vram-indicator" :class="'vram-indicator--' + vramTier" :title="vramTooltip">
+            <span class="vram-used">{{ vramUsedGb !== null ? vramUsedGb.toFixed(1) : '--' }}</span>
+            <span class="vram-sep"> / </span>
+            <span class="vram-total">{{ props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
+            <span class="vram-unit"> GB</span>
+          </div>
           <button class="modal-save" :disabled="saving" aria-label="保存" @click="save">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" style="font-size: 18px;" />
           </button>
@@ -433,4 +497,21 @@ function close(): void { emit('close'); }
   color: var(--muted);
   cursor: not-allowed;
 }
+/* VRAM 指示（规格 2026-08-29-vram-estimate-design §6）：底栏正中（.modal-actions 已 position:relative）；
+   total 恒蓝（--accent-hover）；used 按 vramTier 上色；grey 档整块灰 + -- 占位 */
+.vram-indicator {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: baseline; white-space: nowrap;
+  font-family: var(--font-mono); font-size: var(--fs-body);
+}
+.vram-used { color: var(--text); }
+.vram-total { color: var(--accent-hover); }           /* 显卡显存恒蓝 */
+.vram-sep, .vram-unit { color: var(--muted); }
+.vram-indicator--green .vram-used { color: var(--ok); }
+.vram-indicator--orange .vram-used { color: var(--vram-orange); }
+.vram-indicator--red .vram-used { color: var(--danger); }
+.vram-indicator--grey .vram-used,
+.vram-indicator--grey .vram-total,
+.vram-indicator--grey .vram-sep,
+.vram-indicator--grey .vram-unit { color: var(--muted); }
 </style>
