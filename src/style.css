@@ -32,7 +32,7 @@
   --h-control: 32px;        /* 输入框/下拉高 */
   --vram-orange: #F59E0B;       /* VRAM 指示橙色（余量 ≥1GB 且 <2GB） */
   --primary: #8B5CF6;           /* 主操作色（紫）：VRAM/启动/保存/选中页签/选中项/自动滚动 */
-  --primary-hover: var(--primary-hover);    /* 主操作色 hover 加深一档 */
+  --primary-hover: #7C3AED;       /* 主操作色 hover 加深一档 */
   --h-primary: 36px;        /* 主按钮高 */
   --sb-w: 7px;               /* Windows Chromium 传统滚动条宽（.template-list 横向溢出修正用） */
   --card-gap: 12px;         /* 卡片间距 */
