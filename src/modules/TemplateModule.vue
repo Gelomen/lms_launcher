@@ -119,7 +119,7 @@ onMounted(() => { void reload(); void loadVramTotal(); });
       </button>
     </div>
     <!-- VRAM 按钮:卡片右上角,紫底白字 14px;未配置显 VRAM / 已配置显 24GB(规格 §5) -->
-    <button class="vram-badge tip-up" :data-tooltip="'显卡显存: ' + (vramTotal !== undefined ? vramTotal + ' GB' : '未配置(点击设置)')"
+    <button class="vram-badge tip-up" :data-tooltip="'显卡显存: ' + (vramTotal !== undefined ? vramTotal + ' GB' : '未配置')"
       aria-label="显卡显存设置" @click="vramDialogOpen = true">
       {{ vramTotal !== undefined ? vramTotal + 'GB' : 'VRAM' }}
     </button>
