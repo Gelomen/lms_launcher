@@ -25,6 +25,12 @@
 - **FontAwesome**：LogTabView 新增 import faTrashCan（free-regular）+
   library.add（与 TemplateModal/App 同口径：regular 优先）。
 
+## 后续追加（用户 2026-08-28）
+
+1. 按钮去灰色外框（.icon-btn--noborder）。
+2. 按钮 hover 不改变底色（.icon-btn--noborder:hover background: transparent）。
+3. 「自动滚动」label 文字不可被选择（user-select: none——UI chrome，区别于 .log-view 可选可复制的日志正文）。
+
 ## 测试契约（LogPanel.test.ts）
 
 1. 每个 tab 面板内渲染一个 aria-label=清空日志 的按钮（共 2 个）。

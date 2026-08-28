@@ -63,7 +63,7 @@ watch(autoScroll, (on) => {
 <template>
   <div class="log-pane" :data-tab-id="id">
     <div style="display: flex; justify-content: flex-start; align-items: center;">
-      <label style="display: flex; gap: 4px; align-items: center;" class="label">
+      <label style="display: flex; gap: 4px; align-items: center; user-select: none;" class="label">
         <input type="checkbox" v-model="autoScroll" style="margin: 0;" />
         <span>自动滚动</span>
       </label>
