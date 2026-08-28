@@ -69,7 +69,7 @@ ngl = 0 → r = 0 → 仅 mmprojBytes 与 batchBytes 中 r 相关项归零;模�
 ## 5. 显卡显存总量入口
 
 - 持久化:lms_launcher.yaml 新增字段 vram_total_gb(数字,未配置时字段不存在)。
-- UI:安装目录卡片(DirModule)右上角,边框紧贴卡片右上圆角:
+- UI:「启动参数模板」卡片(TemplateModule)右上角,边框紧贴卡片右上圆角:
   - 14px 文字,本身是可点击按钮;
   - 未配置显示 VRAM;已配置显示如 24GB;
   - 紫色底(与现有 icon 同色调)、白色字。
