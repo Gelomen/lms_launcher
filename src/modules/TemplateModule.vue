@@ -170,7 +170,7 @@ onMounted(() => { void reload(); void loadVramTotal(); });
   border: none; cursor: pointer;
   border-top-right-radius: var(--radius-card);
   font-size: 14px; font-weight: 600;
-  background: var(--vram-purple); color: #fff;
+  background: var(--primary); color: #fff;
 }
-.vram-badge:hover { background: #7C3AED; }
+.vram-badge:hover { background: var(--primary-hover); }
 </style>

@@ -466,7 +466,7 @@ function close(): void { emit('close'); }
 }
 .btn-delete:hover { background: var(--danger); color: #fff; }
 /* [保存] 软盘按钮：同 [×] 的角形语言——右下角形，上下占满底部栏全高、右缘贴卡片右缘；
-   右下圆角随卡片 12px 走形避免白角穿帮；颜色 = 紫（--vram-purple，与 VRAM 按钮/启动按钮统一），hover 加深一档。 */
+   右下圆角随卡片 12px 走形避免白角穿帮；颜色 = 紫（--primary，与 VRAM 按钮/启动按钮统一），hover 加深一档。 */
 .modal-save {
   position: absolute;
   right: 0;
@@ -476,13 +476,13 @@ function close(): void { emit('close'); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--vram-purple);
+  background: var(--primary);
   color: #fff;
   border: none;
   border-bottom-right-radius: var(--radius-card);
   cursor: pointer;
 }
-.modal-save:hover { background: #7C3AED; }
+.modal-save:hover { background: var(--primary-hover); }
 .modal-save:disabled, .modal-save[disabled='true'] {
   background: var(--disabled-bg);
   color: var(--muted);

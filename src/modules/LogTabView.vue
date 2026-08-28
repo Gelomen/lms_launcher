@@ -64,7 +64,7 @@ watch(autoScroll, (on) => {
   <div class="log-pane" :data-tab-id="id">
     <div style="display: flex; justify-content: flex-start; align-items: center;">
       <label style="display: flex; gap: 4px; align-items: center; user-select: none;" class="label">
-        <input type="checkbox" v-model="autoScroll" style="margin: 0; accent-color: var(--vram-purple);" />
+        <input type="checkbox" v-model="autoScroll" style="margin: 0; accent-color: var(--primary);" />
         <span>自动滚动</span>
       </label>
       <!-- [清空日志]：icon-only（无文字）+ aria-label；icon 复用 TemplateModal 删除图标（trash-can regular）；

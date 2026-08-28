@@ -31,7 +31,8 @@
   --fs-label: 12px;         /* 标签/辅助 */
   --h-control: 32px;        /* 输入框/下拉高 */
   --vram-orange: #F59E0B;       /* VRAM 指示橙色（余量 ≥1GB 且 <2GB） */
-  --vram-purple: #8B5CF6;       /* VRAM 按钮紫底（白字） */
+  --primary: #8B5CF6;           /* 主操作色（紫）：VRAM/启动/保存/选中页签/选中项/自动滚动 */
+  --primary-hover: var(--primary-hover);    /* 主操作色 hover 加深一档 */
   --h-primary: 36px;        /* 主按钮高 */
   --sb-w: 7px;               /* Windows Chromium 传统滚动条宽（.template-list 横向溢出修正用） */
   --card-gap: 12px;         /* 卡片间距 */
@@ -118,13 +119,13 @@ body {
 .btn-danger:hover { background: #DC2626; }
 
 /* 状态按钮（§4.3 联动）：可点击态着色 —— [启动] 紫 / [停止] 红；不可点击（:disabled）= 白置灰
-   （2026-08-29：启动色由绿改紫，与 VRAM 按钮 --vram-purple 统一重要按钮色） */
+   （2026-08-29：启动色由绿改紫，与 VRAM 按钮 --primary 统一重要按钮色） */
 .btn-launch {
-  background: var(--vram-purple);
+  background: var(--primary);
   color: #fff;
-  border-color: var(--vram-purple); /* 可点击 = 紫底白字「启动」 */
+  border-color: var(--primary); /* 可点击 = 紫底白字「启动」 */
 }
-.btn-launch:hover { background: #7C3AED; } /* hover 加深一档（与 .vram-badge:hover 同档，压过 .btn:hover 的浅灰） */
+.btn-launch:hover { background: var(--primary-hover); } /* hover 加深一档（与 .vram-badge:hover 同档，压过 .btn:hover 的浅灰） */
 .btn:disabled, .btn[disabled='true'] {
   background: var(--disabled-bg);
   color: var(--muted);
@@ -221,7 +222,7 @@ body {
   z-index: 1;                                       /* 前层：压住相邻页签的共享边（Chrome 式） */
   background: var(--card);                          /* 激活 = 白底，与下方 .log-pane 白区融合 */
   border-bottom-color: var(--card);                 /* 底边线涂白：激活页签切断横线（可见线从其右下角/右缘向右延伸） */
-  color: var(--vram-purple); font-weight: 600;   /* 选中文字紫，与重要按钮统一（2026-08-29） */
+  color: var(--primary); font-weight: 600;   /* 选中文字紫，与重要按钮统一（2026-08-29） */
 }
 /* 未选中页签 = 浅灰底(#F6F7F8) + 自身 1px 灰底边 —— 底边即横线段（穿过该页签）；
    选中页签白底白底线切断；页签条最右空段 + margin-right 延伸 = 线到面板右缘。 */
@@ -260,7 +261,7 @@ body {
 }
 .dropdown-panel .option { padding: 5px 8px; border-radius: 4px; cursor: pointer; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* JS 仅超预算+2 才手动 +…；余量交给 CSS 自动省略，nowrap 防换行撑高（任务 19 根因不回退） */
 .dropdown-panel .option:hover { background: #F6F7F8; }   /* 与 btn:hover 一致 */
-.dropdown-panel .option.selected { color: var(--vram-purple); font-weight: 600; }   /* 选中项文字紫，与重要操作色统一（2026-08-29） */
+.dropdown-panel .option.selected { color: var(--primary); font-weight: 600; }   /* 选中项文字紫，与重要操作色统一（2026-08-29） */
 
 /* ---- 「llama.cpp 安装目录」卡片下方恒定槽位：预留校验结果 1 行（与「保存中…」共用），
      避免校验前后卡片高度抖动 —— 校验后卡片不再把下方「启动控制」往下挤 ---- */
