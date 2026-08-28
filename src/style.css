@@ -363,6 +363,34 @@ body {
 .icon-btn--noborder { border: none; }
 .icon-btn--noborder:hover { background: transparent; }
 /* tooltip：hover 立即显示，按钮上方居中；深灰底白字；pointer-events:none 不挡点击 */
+/* 向上 tooltip 定位（与 .icon-btn::after 同视觉语言）：供非 .icon-btn 的按钮复用
+   （选择目录 / 选择文件 / VRAM 按钮）——hover 立即显示、按钮上方居中 */
+.tip-up { position: relative; }
+.tip-up::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.4; white-space: nowrap;
+  padding: 2px 8px; border-radius: 6px;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+}
+.tip-up:hover::after { opacity: 1; }
+/* 向上 tooltip 定位（与 .icon-btn::after 同视觉语言）：供非 .icon-btn 的按钮复用
+   （选择目录 / 选择文件 / VRAM 按钮）——hover 立即显示、按钮上方居中 */
+.tip-up { position: relative; }
+.tip-up::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.4; white-space: nowrap;
+  padding: 2px 8px; border-radius: 6px;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+}
+.tip-up:hover::after { opacity: 1; }
 .icon-btn { position: relative; }
 .icon-btn::after {
   content: attr(data-tooltip);

@@ -294,7 +294,7 @@ function close(): void { emit('close'); }
                   :value="formValues[row.key]"
                   @input="(ev: Event) => { formValues[row.key] = (ev.target as HTMLInputElement).value; }"
                 />
-                <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn" title="选择文件" aria-label="选择文件"
+                <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn tip-up" data-tooltip="选择文件" aria-label="选择文件"
                   @click="pickFile(row.key)"><FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 14px;" /></button>
               </div>
               <div v-else-if="row.type === 'boolean'" class="dropdown">

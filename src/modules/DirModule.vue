@@ -76,7 +76,7 @@ onMounted(load);
       <input class="input" v-model="dir" @change="status = null" />
       <!-- 与「启动控制」状态按钮同款保护：flex-shrink:0 防止窄卡片下被 input(width:100%) 挤压 ——
            宽度固定 = [启动]/[停止] 的盒子（2 CJK 字 + padding + 边框），两个按钮尺寸一致 -->
-      <button class="btn btn-secondary btn-dirpick btn-noshrink" title="选择 llama.cpp 安装目录" @click="pickDir">
+      <button class="btn btn-secondary btn-dirpick btn-noshrink tip-up" data-tooltip="选择 llama.cpp 安装目录" aria-label="选择 llama.cpp 安装目录" @click="pickDir">
         <FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 16px;" />
       </button>
     </div>
