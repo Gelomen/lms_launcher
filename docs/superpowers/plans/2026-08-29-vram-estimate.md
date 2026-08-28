@@ -50,28 +50,44 @@ import { describe, it, expect } from 'vitest';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
 
 // 构造合法 GGUF Buffer：magic + tensor 计数 + KV 元数据（n_layer / n_embd）
-function gguf(tensors: number, kv: Record<string, number>): Buffer {
-  const b = Buffer.alloc(64 + 8 * 3 + 8 * Object.keys(kv).length);
+// GGUF KV 类型码（llama.cpp gguf.h）：0=u8 1=u16 2=u32 3=u64 4=f32 5=f64 6=bool 7=string 8=array
+// 构造器默认写 u32（type 2）；kv 值可用 'str:xxx' 写 string（type 7，验证解析器正确跳过）
+function gguf(tensors: number, kv: Record<string, number | string>): Buffer {
+  const b = Buffer.alloc(1024);
   b.writeUInt32LE(0x46475547, 0); // magic "GGUF"
   b.writeBigUInt64LE(BigInt(tensors), 4);
   b.writeBigUInt64LE(BigInt(Object.keys(kv).length), 12); // array element count
   let off = 20;
-  const kvBytes: Array<[number, string | number]> = [];
-  void kvBytes;
   for (const [k, v] of Object.entries(kv)) {
     const kbuf = Buffer.from(k + '\x00');
     b.writeUInt32LE(kbuf.length, off); off += 4;
     b.write(kbuf, off); off += kbuf.length;
-    // type=0 → u32
-    b.writeUInt32LE(0, off); off += 4;
-    b.writeUInt32LE(v, off); off += 4;
+    if (typeof v === 'string') {
+      // type 7 = string：u32 len + bytes + 0x00
+      const s = v.startsWith('str:') ? v.slice(4) : v;
+      b.writeUInt32LE(7, off); off += 4;
+      const sb = Buffer.from(s + '\x00');
+      b.writeUInt32LE(sb.length, off); off += 4;
+      b.write(sb, off); off += sb.length;
+    } else {
+      // type 2 = u32
+      b.writeUInt32LE(2, off); off += 4;
+      b.writeUInt32LE(v, off); off += 4;
+    }
   }
-  return b;
+  return b.subarray(0, off);
 }
 
 describe('parseGgufHeader', () => {
   it('parses_n_layer_and_n_embd', () => {
     const buf = gguf(2, { n_layer: 48, n_embd: 5120 });
+    const h = parseGgufHeader(buf);
+    expect(h.n_layer).toBe(48);
+    expect(h.n_embd).toBe(5120);
+  });
+
+  it('skips_string_kv_between_values', () => {
+    const buf = gguf(2, { n_layer: 48, ggml_file_version: 'str:1.0', n_embd: 5120 });
     const h = parseGgufHeader(buf);
     expect(h.n_layer).toBe(48);
     expect(h.n_embd).toBe(5120);
@@ -165,23 +181,37 @@ const DTYPE_BYTES: Record<string, number> = {
 // GGUF 头解析：magic(4B "GGUF" 小端 0x46475547) + tensor count(u64) + array count(u64) + KV 对。
 // KV 对：key 长度(u32 LE) + key(bytes) + type(u32, 0=u32 / 12=f32 / 11=f64) + 数据。
 // 只提取 n_layer / n_embd，遇到未知 KV type 跳过其值。
+// KV 值类型码（llama.cpp gguf.h）：0=u8(1B) 1=u16(2B) 2=u32(4B) 3=u64(8B) 4=f32(4B) 5=f64(8B) 6=bool(1B)
+// 7=string(u32 len + bytes + 0x00) 8=array(u64 count + u32 elem_type + count×elem)。
 export function parseGgufHeader(buf: Buffer): GgufHeader {
   if (buf.length < 20) throw new Error('GGUF: 文件过小');
   if (buf.readUInt32LE(0) !== 0x46475547) throw new Error('GGUF: 非 GGUF 文件（magic 不符）');
-  const tensorCount = Number(buf.readBigUInt64LE(4));
   const kvCount = Number(buf.readBigUInt64LE(12));
   let off = 20;
   let nLayer = 0; let nEmbD = 0;
+  const fixedSizes: Record<number, number> = { 0: 1, 1: 2, 2: 4, 3: 8, 4: 4, 5: 8, 6: 1 };
   for (let i = 0; i < kvCount; i++) {
     if (off + 4 > buf.length) break;
     const keyLen = buf.readUInt32LE(off); off += 4;
     if (off + keyLen + 4 > buf.length) break;
     const key = buf.toString('utf8', off, off + keyLen); off += keyLen;
     const type = buf.readUInt32LE(off); off += 4;
-    const vSize = type === 0 ? 4 : type === 12 ? 4 : type === 11 ? 8 : type === 6 ? 4 : 0;
-    if (vSize === 0) break; // 未知类型：不继续解析
-    const v = type === 11 ? Number(buf.readBigUInt64LE(off)) : buf.readUInt32LE(off);
-    off += vSize;
+    let vSize = 0; let v = 0;
+    if (fixedSizes[type] !== undefined) {
+      vSize = fixedSizes[type];
+      v = type === 3 ? Number(buf.readBigUInt64LE(off)) : buf.readUInt32LE(off) & 0xffffffff;
+      off += vSize;
+    } else if (type === 7) { // string
+      const len = buf.readUInt32LE(off); off += 4;
+      off += len; // bytes + 1 字节 0x00（len 含终止符）
+    } else if (type === 8) { // array：count(u64) + elem_type(u32) + count × elem
+      const count = Number(buf.readBigUInt64LE(off)); off += 8;
+      const elemType = buf.readUInt32LE(off); off += 4;
+      const es = fixedSizes[elemType] ?? 4;
+      off += count * (es === 1 && elemType === 7 ? 0 : es); // elem type 7 罕见，按 fixed 兜底
+    } else {
+      break; // 未知类型：不再继续（避免错位）
+    }
     if (key === 'n_layer') nLayer = v;
     else if (key === 'n_embd') nEmbD = v;
   }
