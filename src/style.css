@@ -183,13 +183,20 @@ body {
 .log-view .ln-ok { color: var(--log-ok); }
 .log-view .ln-dim { color: var(--log-dim); }
 
-/* ---- 日志 tab 条（文件夹/浏览器式：相邻共边、左上右上圆角、激活无下边框并与下方白内容区融为一体）---- */
-.tab-bar { display: flex; padding-bottom: 0; align-self: stretch; }
+/* ---- 日志 tab 条（文件夹/浏览器式：相邻共边、左上右上圆角；
+    激活页签「切断」一条 1px 顶部横线——可见灰线从其右下角（右缘底点）出发延伸到面板右缘）---- */
+.tab-bar {
+  position: relative; z-index: 1;        /* 高于 .log-pane（pane 后绘制会盖住顶缘 1px 重叠区）：底部 1px 行与页签底边线压在上面 */
+  display: flex; align-self: stretch; width: 100%;
+  margin-right: -16px;   /* 抵消 .log-panel 右侧 --card-pad：灰线延伸到面板右缘而非仅 tab 区右缘 */
+  padding-bottom: 0;
+  background: linear-gradient(0deg, var(--border) 1px, transparent 1px);  /* 仅底部 1px 灰（最右无页签段） */
+}
 .log-tab {
   position: relative; margin-left: -1px;
   height: 26px; padding: 0 14px; font-size: var(--fs-label); color: var(--muted);
   background: #F6F7F8;                              /* 未激活 = 浅灰（合上的文件夹页签） */
-  border: 1px solid var(--border); border-bottom: none;
+  border: 1px solid var(--border);                  /* 下边线 = 灰线同色 1px，与 tab-bar 底色融合成连续横线 */
   border-radius: 0 8px 0 0;   /* 左上直角 / 右上圆角（用户指定） */
   cursor: pointer; font-family: var(--font-ui);
 }
@@ -197,9 +204,11 @@ body {
 .log-tab:hover { background: #ECEEF0; color: var(--text); }   /* hover 加深一档灰（与 btn hover 同向） */
 .log-tab.active {
   z-index: 1;                                       /* 前层：压住相邻页签的共享边（Chrome 式） */
-  background: var(--card);                          /* 激活 = 白底，与下方 .log-pane/.log-view 白区融合 */
+  background: var(--card);                          /* 激活 = 白底，与下方 .log-pane 白区融合 */
+  border-bottom-color: var(--card);                 /* 底边线涂白：激活页签切断横线（线从其右缘开始） */
   color: var(--accent); font-weight: 600;
 }
+.log-tab.pre { z-index: 2; background: var(--card); border-bottom-color: var(--card); }   /* 激活页签左侧的页签：白底 + 白底线 → 可见线仅从激活页签右缘向右延伸 */
 /* pane 高度链：.log-panel flex column → .log-pane(flex:1) → .log-view(flex:1)，中间层必须 min-height:0 */
 /* 外框挂在 pane（整页签 + 内容共一个身体）：左右下边框 + 下圆角，顶边敞开——
    激活页签白底直接压进这条开口；内边距 8px 随框一起从 .log-view 迁来。 */

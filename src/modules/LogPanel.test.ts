@@ -57,6 +57,28 @@ describe('LogPanel 行级着色', () => {
   });
 });
 
+describe('LogPanel 顶部横线起点', () => {
+  it('tabs left of the active tab get pre (masked), active tab cuts the line', async () => {
+    // 横线从激活页签右下角出发（spec 用户修复请求）：
+    // CSS 侧 .tab-bar 满宽灰线 + 每 tab 自身 1px 下边线；激活页签与它左侧的页签（.pre）
+    // 用白色底边线覆盖灰线 → 可见灰线恰好从激活页签右缘开始延伸到面板右缘。
+    const buckets: Record<string, E[]> = { launcher: [], 'llama-server': [] };
+    const w = mount(LogPanel, { props: { buckets } });
+    let tabs = w.findAll('.log-tab');
+    // 默认激活第 1 个（LMS Launcher）：无 pre
+    expect(tabs[0].classes()).toContain('active');
+    expect(tabs.some(t => t.classes().includes('pre'))).toBe(false);
+    // 点第 2 个 tab：llama-server 激活，LMS Launcher 变为 pre（其左侧段被白色覆盖）
+    await tabs[1].trigger('click');
+    tabs = w.findAll('.log-tab');
+    expect(tabs[1].classes()).toContain('active');
+    expect(tabs[1].classes()).not.toContain('pre');
+    expect(tabs[0].classes()).toContain('pre');
+    expect(tabs[0].classes()).not.toContain('active');
+    w.unmount();
+  });
+});
+
 describe('LogPanel tab 隔离', () => {
   it('autoScroll state is per-tab (pausing one tab does not affect the other)', async () => {
     const buckets: Record<string, E[]> = { launcher: [], 'llama-server': [] };
@@ -93,6 +115,61 @@ describe('LogPanel 自动滚动行为', () => {
     await nextTick(); // 组件内部 nextTick 后再读 DOM
     // 勾选自动滚动时，新日志到达应把视图滚到最新位置（底部 = scrollHeight）
     expect(el.scrollTop).toBe(2000);
+    w.unmount();
+  });
+
+  it('rechecking_autoScroll_pins_view_to_bottom_immediately', async () => {
+    // 用户在底部上方读历史 → 取消勾选 → 重新勾选：视图应立即贴底，
+    // 而不是等下一条日志才跟（勾选后"没反应"的体验问题）。
+    const buckets: Record<string, E[]> = { launcher: [], 'llama-server': [] };
+    const w = mount(LogPanel, { props: { buckets } });
+    const el = w.find('.log-pane[data-tab-id="llama-server"] .log-view').element as HTMLElement;
+    Object.defineProperty(el, 'scrollHeight', { value: 2000, writable: true });
+    Object.defineProperty(el, 'clientHeight', { value: 100, writable: true });
+    await w.setProps({ buckets: { launcher: [], 'llama-server': [
+      { line: '0.01.000.000 I srv  line', stream: 'err' },
+    ] } });
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(2000); // 跟随
+    const box = w.find('.log-pane[data-tab-id="llama-server"] input[type="checkbox"]');
+    await box.setChecked(false); // 取消勾选（模拟用户暂停读历史）
+    el.scrollTop = 0;            // 视图停在顶部
+    await box.setChecked(true);  // 重新勾选
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(2000); // 应立即贴底，无需等下一条日志
+    w.unmount();
+  });
+
+  it('autoScroll_keeps_following_after_500_line_trim', async () => {
+    // 满 500 行后 App 端 splice+push 保持长度恒定 → 仅靠 length watch 不再触发。
+    // 这里模拟 App 的裁剪行为（splice(0,1)+push），断言视图仍持续贴底。
+    const buckets: Record<string, E[]> = { launcher: [], 'llama-server': [] };
+    const w = mount(LogPanel, { props: { buckets } });
+    const el = w.find('.log-pane[data-tab-id="llama-server"] .log-view').element as HTMLElement;
+    Object.defineProperty(el, 'scrollHeight', { value: 2000, writable: true });
+    Object.defineProperty(el, 'clientHeight', { value: 100, writable: true });
+    const MAX_LINES = 500;
+    const bucket: E[] = [];
+    for (let i = 0; i < MAX_LINES; i++) {
+      bucket.push({ line: '0.01.000.' + String(i).padStart(3, '0') + ' I srv  init line', stream: 'err' });
+    }
+    await w.setProps({ buckets: { launcher: [], 'llama-server': [...bucket] } });
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(2000); // 填充阶段跟随
+    el.scrollTop = 0; // 视图停在上部
+    // 模拟两条新日志：splice 裁最旧 + push，长度恒为 500
+    const append = (n: number) => {
+      bucket.push({ line: '0.01.000.' + n + ' I srv  new line', stream: 'err' });
+      if (bucket.length > MAX_LINES) bucket.splice(0, bucket.length - MAX_LINES);
+    };
+    append(MAX_LINES + 1);
+    await w.setProps({ buckets: { launcher: [], 'llama-server': [...bucket] } });
+    await nextTick();
+    await nextTick();
+    expect(el.scrollTop).toBe(2000); // 长度未变，仍应贴底
     w.unmount();
   });
 });
