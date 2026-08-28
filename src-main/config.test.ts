@@ -204,4 +204,22 @@ params_file:
 
     expect(pf.params_file).toEqual(['m','mmproj','chat_template_file']);
   });
+
+  it('vram_total_gb_roundtrip', () => {
+    const p = tmpPath('app_vram.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: 'd:', vram_total_gb: 24 });
+    expect(appConfigLoad(p).vram_total_gb).toBe(24);
+    expect(appConfigLoad(p).llama_dir).toBe('d:');
+  });
+
+  it('vram_total_gb_absent_in_legacy_yaml', () => {
+    const p = tmpPath('app_vram_legacy.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: d:\\x\\\n');
+    const cfg = appConfigLoad(p);
+    expect(cfg.vram_total_gb).toBeUndefined();
+    expect(cfg.llama_dir).toBe('d:\\x\\');
+    rm(p);
+  });
 });
