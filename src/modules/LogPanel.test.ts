@@ -8,6 +8,7 @@
 // 规格 §4.4：着色只靠内容关键字启发式，stream 不是颜色依据；
 // glog 时间戳+级别前缀（0.02.572.005 W srv）是稳定信号：W→橙、E/F→红、I→默认。
 import { describe, it, expect } from 'vitest';
+import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import LogPanel from './LogPanel.vue';
 
@@ -68,6 +69,30 @@ describe('LogPanel tab 隔离', () => {
     // 再点恢复，仅本 tab 状态变化（互不串扰）
     await boxes[0].setChecked(true);
     expect(boxes[1].element.checked as boolean | undefined).toBe(true);
+    w.unmount();
+  });
+});
+
+describe('LogPanel 自动滚动行为', () => {
+  it('autoScroll_keeps_view_pinned_to_bottom_on_new_lines', async () => {
+    // RED 依据（用户反馈）：勾选 [自动滚动] 后新增日志行，视图不跟随滚到最新位置。
+    // 根因：watch 里「仅当用户已在底部附近才滚」——scrollTop 永远停在顶部，判定永远为假（死循环）。
+    const buckets: Record<string, E[]> = { launcher: [], 'llama-server': [] };
+    const w = mount(LogPanel, { props: { buckets } });
+    const view = w.find('.log-pane[data-tab-id="llama-server"] .log-view');
+    const el = view.element as HTMLElement;
+    // happy-dom 无真实布局：手工钉住滚动几何（内容 2000px，视口 100px）
+    Object.defineProperty(el, 'scrollHeight', { value: 2000, writable: true });
+    Object.defineProperty(el, 'clientHeight', { value: 100, writable: true });
+    el.scrollTop = 0; // bug 场景：视图停在上部
+    await w.setProps({ buckets: { launcher: [], 'llama-server': [
+      { line: '0.01.000.000 I srv  first line', stream: 'err' },
+      { line: '0.01.000.001 I srv  second line', stream: 'err' },
+    ] } });
+    await nextTick(); // Vue 渲染
+    await nextTick(); // 组件内部 nextTick 后再读 DOM
+    // 勾选自动滚动时，新日志到达应把视图滚到最新位置（底部 = scrollHeight）
+    expect(el.scrollTop).toBe(2000);
     w.unmount();
   });
 });

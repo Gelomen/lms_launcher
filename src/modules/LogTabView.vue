@@ -7,7 +7,7 @@ const props = defineProps<{ id: string; lines: Array<{ line: string; stream: 'sy
 
 type Entry = { line: string; stream: 'sys' | 'out' | 'err' };
 
-// 自动滚动：默认开；用户滚离底部暂停，滚回底部恢复
+// 自动滚动：默认开；勾选框直接驱动跟随（勾选 = 新日志到达即滚到最新位置）。
 const autoScroll = ref(true);
 const view = ref<HTMLElement | null>(null);
 
@@ -23,21 +23,15 @@ function cls(e: Entry): string {
   return '';
 }
 
-// 仅当用户在底部附近才滚，避免读日志时跳回；nextTick 等 DOM 更新后再读 scrollHeight
+// 勾选时：每批新日志都把视图滚到最新位置。nextTick 等 DOM 更新后再读 scrollHeight
 watch((): number => props.lines.length, () => {
   if (!autoScroll.value) return;
   void nextTick(() => {
     const el = view.value;
     if (!el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) el.scrollTop = el.scrollHeight;
+    el.scrollTop = el.scrollHeight;
   });
 });
-
-function onScroll(): void {
-  const el = view.value;
-  if (!el) return;
-  autoScroll.value = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
-}
 // DOM 事件随组件销毁失效；无定时器 / IPC 订阅需清理。
 </script>
 <template>
@@ -48,7 +42,7 @@ function onScroll(): void {
         <span>自动滚动</span>
       </label>
     </div>
-    <div ref="view" class="log-view" @scroll="onScroll">
+    <div ref="view" class="log-view">
       <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>
       <p v-for="(e, i) in lines" :key="i" :class="cls(e)" style="margin: 0;">{{ e.line }}</p>
     </div>
