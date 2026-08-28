@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
+import { parseGgufHeader, estimateUsedBytes } from './vram';
 import { ProcessState } from './process';
 
 // ---------- 单实例锁：禁止多开 ----------
@@ -198,6 +199,45 @@ ipcMain.handle('stop_server', async (): Promise<void> => {
 ipcMain.handle('exit_app', async (): Promise<void> => {
   await ps.stopGraceful(3);
   app.exit(0);
+});
+// vram_estimate：显存占用预测（规格 2026-08-29-vram-estimate-design §3/§4）。
+// 入参键名 = 渲染端表单键（m/mmproj/ngl/c/ctk/ctv/b/ub/spec_draft_n_max）。
+// 只读 -m 文件的 stat 与前 64KB GGUF 头；文件不存在 / 非 GGUF / 解析失败 → { ok:false, reason }，不抛错。
+ipcMain.handle('vram_estimate', async (_e, args: {
+  m: string; mmproj?: string; ngl?: string; c?: string; ctk?: string; ctv?: string;
+  b?: string; ub?: string; spec_draft_n_max?: string;
+}): Promise<{ ok: true; usedGb: number } | { ok: false; reason: string }> => {
+  try {
+    const modelBytes = statSync(args.m).size;
+    // GGUF KV 元数据在文件头部：读前 64KB 足够覆盖常规模型（KV 数 < 300 时）；
+    // 更大文件若 KV 超出范围，parseGgufHeader 会按「缺少 n_layer/n_embd」报告
+    const full = readFileSync(args.m);
+    const headerBuf = full.subarray(0, 65536);
+    const { n_layer, n_embd } = parseGgufHeader(headerBuf);
+    const mmprojBytes = args.mmproj?.trim() ? statSync(args.mmproj).size : 0;
+    const res = estimateUsedBytes({
+      nLayer: n_layer,
+      nEmbD: n_embd,
+      modelBytes,
+      mmprojBytes,
+      ngl: args.ngl ?? '',
+      nCtx: args.c ?? '',
+      ctk: args.ctk ?? '',
+      ctv: args.ctv ?? '',
+      b: args.b ?? '',
+      ub: args.ub ?? '',
+      specDraftNMax: args.spec_draft_n_max ?? '',
+    });
+    return { ok: true, usedGb: res.total / 1024 ** 3 };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+});
+// save_vram_total：持久化显卡显存总量（lms_launcher.yaml 的 vram_total_gb 字段）；gb ≤ 0 → 视为未配置（不写入）
+ipcMain.handle('save_vram_total', (_e, gb: number): void => {
+  const [p] = yamlPaths();
+  const cfg = appConfigLoad(p);
+  appConfigSave(p, { ...cfg, vram_total_gb: gb > 0 ? gb : undefined });
 });
 // frameless winbar 窗口控制（渲染端自绘三键 → 主进程执行）
 ipcMain.handle('win_minimize', () => { mainWin()?.minimize(); });
