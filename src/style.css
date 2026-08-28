@@ -205,10 +205,11 @@ body {
 .log-tab.active {
   z-index: 1;                                       /* 前层：压住相邻页签的共享边（Chrome 式） */
   background: var(--card);                          /* 激活 = 白底，与下方 .log-pane 白区融合 */
-  border-bottom-color: var(--card);                 /* 底边线涂白：激活页签切断横线（线从其右缘开始） */
+  border-bottom-color: var(--card);                 /* 底边线涂白：激活页签切断横线（可见线从其右下角/右缘向右延伸） */
   color: var(--accent); font-weight: 600;
 }
-.log-tab.pre { z-index: 2; background: var(--card); border-bottom-color: var(--card); }   /* 激活页签左侧的页签：白底 + 白底线 → 可见线仅从激活页签右缘向右延伸 */
+/* 未选中页签 = 浅灰底(#F6F7F8) + 自身 1px 灰底边 —— 底边即横线段（穿过该页签）；
+   选中页签白底白底线切断；页签条最右空段 + margin-right 延伸 = 线到面板右缘。 */
 /* pane 高度链：.log-panel flex column → .log-pane(flex:1) → .log-view(flex:1)，中间层必须 min-height:0 */
 /* 外框挂在 pane（整页签 + 内容共一个身体）：左右下边框 + 下圆角，顶边敞开——
    激活页签白底直接压进这条开口；内边距 8px 随框一起从 .log-view 迁来。 */

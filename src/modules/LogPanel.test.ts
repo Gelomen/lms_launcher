@@ -57,28 +57,6 @@ describe('LogPanel 行级着色', () => {
   });
 });
 
-describe('LogPanel 顶部横线起点', () => {
-  it('tabs left of the active tab get pre (masked), active tab cuts the line', async () => {
-    // 横线从激活页签右下角出发（spec 用户修复请求）：
-    // CSS 侧 .tab-bar 满宽灰线 + 每 tab 自身 1px 下边线；激活页签与它左侧的页签（.pre）
-    // 用白色底边线覆盖灰线 → 可见灰线恰好从激活页签右缘开始延伸到面板右缘。
-    const buckets: Record<string, E[]> = { launcher: [], 'llama-server': [] };
-    const w = mount(LogPanel, { props: { buckets } });
-    let tabs = w.findAll('.log-tab');
-    // 默认激活第 1 个（LMS Launcher）：无 pre
-    expect(tabs[0].classes()).toContain('active');
-    expect(tabs.some(t => t.classes().includes('pre'))).toBe(false);
-    // 点第 2 个 tab：llama-server 激活，LMS Launcher 变为 pre（其左侧段被白色覆盖）
-    await tabs[1].trigger('click');
-    tabs = w.findAll('.log-tab');
-    expect(tabs[1].classes()).toContain('active');
-    expect(tabs[1].classes()).not.toContain('pre');
-    expect(tabs[0].classes()).toContain('pre');
-    expect(tabs[0].classes()).not.toContain('active');
-    w.unmount();
-  });
-});
-
 describe('LogPanel tab 隔离', () => {
   it('autoScroll state is per-tab (pausing one tab does not affect the other)', async () => {
     const buckets: Record<string, E[]> = { launcher: [], 'llama-server': [] };
