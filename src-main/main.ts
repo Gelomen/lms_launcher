@@ -206,7 +206,7 @@ ipcMain.handle('exit_app', async (): Promise<void> => {
 ipcMain.handle('vram_estimate', async (_e, args: {
   m: string; mmproj?: string; ngl?: string; c?: string; ctk?: string; ctv?: string;
   b?: string; ub?: string; spec_draft_n_max?: string;
-}): Promise<{ ok: true; usedGb: number } | { ok: false; reason: string }> => {
+}): Promise<{ ok: true; usedGb: number; parts: { model: number; mmproj: number; kv: number; batch: number; draft: number; fixed: number } } | { ok: false; reason: string }> => {
   try {
     const modelBytes = statSync(args.m).size;
     // GGUF KV 元数据在文件头部：用 fd 限定读前 512KB（不整文件入内存——模型可达 16GB）；
@@ -238,7 +238,18 @@ ipcMain.handle('vram_estimate', async (_e, args: {
       ub: args.ub ?? '',
       specDraftNMax: args.spec_draft_n_max ?? '',
     });
-    return { ok: true, usedGb: res.total / 1024 ** 3 };
+    return {
+      ok: true,
+      usedGb: res.total / 1024 ** 3,
+      parts: { // 分项 GiB（= EstimateResult 各字段 ÷ 2³⁰）：渲染端明细弹窗逐行列出（0 项由渲染端隐藏）
+        model: res.modelBytes / 1024 ** 3,
+        mmproj: res.mmprojBytes / 1024 ** 3,
+        kv: res.kvBytes / 1024 ** 3,
+        batch: res.batchBytes / 1024 ** 3,
+        draft: res.draftBytes / 1024 ** 3,
+        fixed: res.fixedBytes / 1024 ** 3,
+      },
+    };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
