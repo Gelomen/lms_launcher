@@ -43,6 +43,56 @@ function setInput(sel: string, v: string): Promise<void> {
 }
 
 describe('TemplateModal', () => {
+  describe('flag label hover tooltip', () => {
+    it('every_param_label_carries_two_line_tooltip_long_flag_plus_zh', async () => {
+      calls = []; mockLms(); mountModal(); await flush();
+      // 每个参数 label：第一行 = llama.cpp 长 flag，第二行 = 中文说明（data-tooltip 两行）
+      const labels = [...document.querySelectorAll('.flag-grid .flag-label')];
+      expect(labels.length).toBe(37);
+      for (const l of labels) {
+        const tip = l.getAttribute('data-tooltip');
+        expect(tip, `label=${l.textContent}`).toBeDefined();
+        expect(tip!.includes('\n')).toBe(true); // 两行（长 flag + 中文说明）
+        // 第一行必须含长 flag（--xxx 或 -xx）：匹配「-」开头 token
+        const firstLine = tip!.split('\n')[0];
+        expect(firstLine).toMatch(/-/);
+        // 第二行（中文说明）必须含 CJK 字符
+        expect(tip!.split('\n')[1]).toMatch(/[\u4e00-\u9fff]/);
+      }
+    });
+    it('hover_label_renders_fixed_flag_tip_above_left_aligned', async () => {
+      calls = []; mockLms(); mountModal(); await flush();
+      const label = [...document.querySelectorAll('.flag-grid .flag-label')].find(l => l.textContent === '-m')!;
+      expect(document.querySelector('.flag-tip')).toBeNull();
+      // hover → 固定浮层渲染：左缘对齐 label 左缘 + 底边贴 label 顶边（label 上方，不盖右侧选项框）
+      const rect = label.getBoundingClientRect();
+      label.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+      await flush();
+      const tip = document.querySelector('.flag-tip') as HTMLElement;
+      expect(tip).not.toBeNull();
+      expect(tip.textContent).toContain('--model');
+      expect(tip.textContent).toContain('模型文件');
+      // 水平：left = label 左缘（happy-dom 默认 0×0 → left=0px）；不盖选项框
+      expect(tip.style.left).toBe(rect.left + 'px');
+      // 垂直：真实浏览器 top = label 顶边 - 6px（底边贴顶边上沿）；
+      // happy-dom 默认视口高度 0 → fitsAbove 检查失败 → 回落到垂直居中 top = r.top + r.height/2 = 0px，
+      // 启用 --down class。断言这个语义：top ≥ 0，--down 启用，且不在 label 内部下方（不盖选项框）。
+      expect(parseFloat(tip.style.top)).toBeGreaterThanOrEqual(0);
+      expect(tip.classList.contains('flag-tip--down')).toBe(true);
+      // 移开即消失
+      label.dispatchEvent(new MouseEvent('mouseleave', { bubbles: false }));
+      await flush();
+      expect(document.querySelector('.flag-tip')).toBeNull();
+    });
+    it('short_flag_rows_still_show_long_form_in_tooltip', async () => {
+      calls = []; mockLms(); mountModal(); await flush();
+      // -md / -ngld：界面显示短 flag，tooltip 第一行必须是长形式
+      const mdLabel = [...document.querySelectorAll('.flag-grid .flag-label')].find(l => l.textContent === '-md')!;
+      expect(mdLabel.getAttribute('data-tooltip')!.split('\n')[0]).toContain('--spec-draft-model');
+      const ngldLabel = [...document.querySelectorAll('.flag-grid .flag-label')].find(l => l.textContent === '-ngld')!;
+      expect(ngldLabel.getAttribute('data-tooltip')!.split('\n')[0]).toContain('--spec-draft-ngl');
+    });
+  });
   it('save_rejected_when_required_m_empty', async () => {
     calls = []; mockLms(); mountModal(); await flush();
 
@@ -142,6 +192,29 @@ const saveBtn = document.querySelector('.modal-save') as HTMLButtonElement;
     const [id, , values] = saved!.args as [string, unknown, Record<string, string>];
     expect(id).toBe(SUGGEST_ID);
     expect(values['m']).toBe('D:/models/qwen.gguf');
+  });
+});
+
+// ---- VRAM 指示垂直居中（2026-09）：绝对定位 + top:50% + translateY(-50%)；
+//      只设 left:50% 时元素落在底栏内容区顶部（static 位置），文字肉眼偏上 ----
+describe('TemplateModal vram-indicator centering', () => {
+  it('vram_indicator_vertical_center_style_present', async () => {
+    calls = []; mockLms();
+    const w = mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: '', values: {}, paramsMeta, vramTotalGb: 24 },
+    });
+    await flush();
+    const ind = document.querySelector('.vram-indicator') as HTMLElement;
+    expect(ind).toBeTruthy();
+    // 垂直居中契约（源 CSS 断言：happy-dom 无布局引擎,styleSheets 规则不可靠 → 直接读源文件 CSS 文本）
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const src = fs.readFileSync(path.resolve(process.cwd(), 'src/modules/TemplateModal.vue'), 'utf8');
+    const rule = src.split('.vram-indicator {').find((s) => s.includes('top: 50%'));
+    expect(rule).toBeDefined(); // .vram-indicator 规则含 top:50%
+    expect(rule!).toContain('translateY(-50%)'); // 且 transform 含 translateY(-50%)
+    w.unmount();
   });
 });
 
@@ -540,7 +613,7 @@ describe('TemplateModal auto id', () => {
 });
 
 // ---- 底栏 VRAM 指示（规格 2026-08-29-vram-estimate-design §6）----
-// watch 9 参数键 + vramTotalGb，150ms 防抖 → invoke('vram_estimate')；
+// watch 10 参数键 + vramTotalGb，150ms 防抖 → invoke('vram_estimate')；
 // 格式「used / total GB」；显卡显存恒蓝；占用按余量 vram-indicator--green/orange/red/grey 四档。
 describe('TemplateModal vram indicator', () => {
   const P = paramsMeta;
@@ -635,16 +708,6 @@ describe('TemplateModal vram indicator', () => {
     w.unmount();
   });
 
-  it('tooltip_mentions_gpu_fixed_overhead_when_estimated', async () => {
-    // 规格 §6 增量（2026-08-30）：估算成功时 tooltip 须说明含 GPU 固定运行时开销，
-    // 弥补公式未显式计入的 CUDA context / cuBLAS workspace 底座（实测 ~1.9GiB，量级 1~2GB）。
-    mockVram(22.0);
-    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
-    await fillModel();
-    const el = document.querySelector('.vram-indicator') as HTMLElement;
-    expect(el.title).toContain('固定开销');
-    w.unmount();
-  });
 });
 // ---- VRAM 明细悬停弹窗（规格 2026-08-30-vram-breakdown-tooltip-design §3）----
 // circle-info 图标在底栏 VRAM 指示右侧；hover 出 .vram-tip 浮层：

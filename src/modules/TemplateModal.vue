@@ -77,8 +77,49 @@ function fill(): void {
   saveError.value = null;
 }
 
+// 参数 label 的 hover tooltip 两行内容：第一行 = llama.cpp 官方长 flag（全称），第二行 = 一句中文说明。
+// flag 来自 D:\AI\llama-cpp\llama-server.exe --help（2026-09 核对）。未收录的 key 不弹 tooltip。
+const PARAM_TIPS: Record<string, string> = {
+  m: '-m, --model\n模型文件（gguf）',
+  mmproj: '-mm, --mmproj\n视觉投影文件（mmproj gguf）',
+  image_min_tokens: '--image-min-tokens\n每张图片消耗的 token 数（下限）',
+  alias: '-a, --alias\n模型服务别名',
+  ngl: '-ngl, --gpu-layers\n放到 GPU 的层数（N/auto/all）',
+  fa: '-fa, --flash-attn\nFlash Attention 开关（on/off/auto）',
+  n_cpu_moe: '-ncmoe, --n-cpu-moe\nMoE 专家权重保留在 CPU 的前 N 层',
+  load_mode: '-lm, --load-mode\n模型加载模式（auto/mmap/mlock/dio 等）',
+  np: '-np, --parallel\n并发请求数（slots）',
+  c: '-c, --context-size\n上下文长度（ctx 大小）',
+  b: '-b, --batch-size\n批处理大小（batch）',
+  ub: '-ub, --ubatch-size\n物理最大批大小（ubatch）',
+  t: '-t, --threads\nCPU 线程数',
+  tb: '-tb, --threads-batch\n批处理和提示词处理的线程数',
+  ctk: '-ctk, --cache-type-k\nKV 缓存 K 部分的量化类型',
+  ctv: '-ctv, --cache-type-v\nKV 缓存 V 部分的量化类型',
+  spec_type: '--spec-type\n投机解码类型（none/draft-mtp/draft-dflash/draft-dspark）',
+  spec_draft_n_max: '--spec-draft-n-max\n投机解码一次最多生成的 token 数（默认 3）',
+  md: '-md, --spec-draft-model\n投机解码草稿模型文件（gguf）',
+  ngld: '-ngld, --spec-draft-ngl\n草稿模型放到 GPU 的层数',
+  temp: '--temp\n采样温度',
+  top_p: '--top-p\nnucleus sampling 的 p 值',
+  top_k: '--top-k\n候选 token 数上限',
+  min_p: '--min-p\n最小概率阈值',
+  presence_penalty: '--presence_penalty\n出现惩罚',
+  repeat_penalty: '--repeat_penalty\n重复惩罚',
+  jinja: '--jinja\n是否用 jinja 解析模板（true/false）',
+  chat_template_file: '--chat-template-file\n自定义 jinja 模板文件',
+  reasoning: '-rea, --reasoning\n推理/思考模式开关（on/off/auto）',
+  reasoning_format: '--reasoning-format\n推理输出的格式（none/hide/deepseek）',
+  reasoning_effort: '--reasoning-effort\n推理强度档位（none~max）',
+  reasoning_preserve: '--reasoning-preserve\n保留历史推理块（true/false）',
+  port: '--port\n服务监听端口',
+  metrics: '--metrics\n开启 Prometheus 指标（true/false）',
+  fit: '-fit, --fit\n自动调整未设置参数以适配显存（on/off）',
+  fit_ctx: '-fitc, --fit-ctx\n--fit 可设置的最小 ctx 大小',
+  fit_target: '-fitt, --fit-target\n--fit 的目标显存（MiB0,MiB1,...）',
+};
 type RowType = 'text' | 'options' | 'boolean';
-type Row = { key: string; flag: string; required: boolean; type: RowType; opts: string[] };
+type Row = { key: string; flag: string; required: boolean; type: RowType; opts: string[]; tip: string };
 const rows = computed((): Row[] => {
   const opts = props.paramsMeta.params_options ?? {};
   const bools: string[] = props.paramsMeta.params_boolean ?? [];
@@ -88,7 +129,7 @@ const rows = computed((): Row[] => {
     let type: RowType = 'text';
     if (bools.includes(k)) type = 'boolean';
     else if (opts[k] !== undefined) type = 'options';
-    out.push({ key: k, flag, required: props.paramsMeta.required.includes(k), type, opts: opts[k] ?? [] });
+    out.push({ key: k, flag, required: props.paramsMeta.required.includes(k), type, opts: opts[k] ?? [], tip: PARAM_TIPS[k] ?? '' });
   }
   return out;
 });
@@ -205,13 +246,13 @@ async function doDelete(): Promise<void> {
 }
 
 // ---------- 底栏 VRAM 指示（规格 2026-08-29-vram-estimate-design §6）----------
-// watch 9 个显存参数键 + vramTotalGb,150ms 防抖 → invoke('vram_estimate')；
+// watch 12 个显存参数键 + vramTotalGb,150ms 防抖 → invoke('vram_estimate')；
 // 显示「used / total GB」:total 恒蓝;used 按余量 ≥2GB 绿 / ≥1GB 橙 / <1GB 红;
 // 未配置总量或估算失败 → 灰 --,tooltip 给原因。
 const vramUsedGb = ref<number | null>(null);
 const vramOk = ref(true);
 const vramReason = ref<string | null>(null);
-const VRAM_KEYS = ['m', 'mmproj', 'ngl', 'c', 'ctk', 'ctv', 'b', 'ub', 'spec_draft_n_max'] as const;
+const VRAM_KEYS = ['m', 'mmproj', 'ngl', 'c', 'ctk', 'ctv', 'b', 'ub', 'spec_type', 'spec_draft_n_max', 'md', 'ngld'] as const;
 let vramTimer: ReturnType<typeof setTimeout> | null = null;
 // -m 是否已填（决定指示是否计算/显示：未填 → 整块 --，不估算）
 const vramHasModel = computed((): boolean => (formValues.value['m'] ?? '').trim().length > 0);
@@ -233,7 +274,7 @@ function scheduleVramEstimate(): void {
   }, 150);
 }
 
-// 9 参数键任一变化 → 重估
+// 12 参数键任一变化 → 重估
 watch(
   () => VRAM_KEYS.map((k) => (formValues.value[k] ?? '').trim()),
   () => { scheduleVramEstimate(); },
@@ -254,22 +295,28 @@ const vramTier = computed((): 'green' | 'orange' | 'red' | 'grey' => {
   if (vramFreeGb.value >= 1) return 'orange';
   return 'red';
 });
-const vramTooltip = computed((): string | undefined => {
-  if (!vramHasModel.value) return '填写模型文件（-m）后自动估算显存占用';
-  if (props.vramTotalGb === undefined) return '未配置显卡显存，点击 VRAM 按钮设置';
-  if (vramUsedGb.value === null) return (vramOk.value ? '填写模型文件后自动估算' : (vramReason ?? '估算失败'));
-  // 规格 §6 增量（2026-08-30）：tooltip 须说明估算值含 GPU 固定运行时开销——
-  // CUDA context + cuBLAS/cuBLASLt workspace 等进程上 GPU 即占用的底座（实测 ~1.9GiB，取 2GiB 常量），
-  // 弥补公式只算数据量、漏掉运行时底座的盲区。
-  return '余量 ' + vramFreeGb.value!.toFixed(1) + ' GB（含约 2GB GPU 固定开销：CUDA context + cuBLAS workspace）';
-});
 
 // ---------- VRAM 明细悬停弹窗（规格 2026-08-30-vram-breakdown-tooltip-design §3）----------
 // .vram-info（circle-info span，纯 hover）→ .vram-tip 浮层：估算成功 = 5 数据项（0 项隐藏）
-// + 末行「GPU 固定开销约 2GB」；降级档 = 单行原因文案（与底栏 vramTooltip 同源）。
+// + 末行「GPU 固定开销约 2GB」；降级档 = 单行原因文案。
 const vramParts = ref<Record<string, number> | null>(null);
 // 浮层定位：图标 rect 坐标 + 顶部放不下（top < 150px ≈ 6 行高）翻转到图标下方
 const vramTip = ref<{ x: number; y: number; flip: boolean } | null>(null);
+// ---------- flag label hover tooltip（position:fixed，挂 label 上方，.modal-body overflow-y:auto 不裁剪）----------
+// 宽度随文字自由伸缩（CSS 无 min-width）：fixed 定位下 shrink-to-fit 基于内容，不受 label 窄栏约束。
+const flagTip = ref<{ text: string; x: number; y: number; above: boolean } | null>(null);
+function onFlagEnter(e: MouseEvent, tip: string): void {
+  if (!tip) return;
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  // 挂 label 右上角：tooltip 底边贴 label 顶边上沿 - 6px（不盖右侧选项框）；
+  // 顶部空间不足（首行被滚到视口上缘）时回落到垂直居中，不出窗。
+  const H = 48; // ≈ 两行 tooltip 高（2×1.5 行高 + padding）
+  const fitsAbove = r.top - 6 - H >= 8;
+  const y = fitsAbove ? r.top - 6 : r.top + r.height / 2;
+  // 水平：左缘对齐 label 左缘（宽度随文字伸缩，无需估算右移）
+  flagTip.value = { text: tip, x: r.left, y, above: fitsAbove };
+}
+function onFlagLeave(): void { flagTip.value = null; }
 function onInfoEnter(e: MouseEvent): void {
   const el = e.currentTarget as HTMLElement;
   const r = el.getBoundingClientRect();
@@ -285,7 +332,8 @@ const breakdown = computed((): Array<{ label: string; gb: number; note?: boolean
     { label: '视觉投影（--mmproj）', gb: p.mmproj ?? 0 },
     { label: 'KV 缓存（-c/-ctk/-ctv/-ngl）', gb: p.kv ?? 0 },
     { label: 'batch 缓冲（-b/-ub）', gb: p.batch ?? 0 },
-    { label: 'draft 缓存（--spec-draft-n-max）', gb: p.draft ?? 0 },
+    { label: 'draft 缓存（--spec-type + --spec-draft-n-max）', gb: p.draft ?? 0 },
+    { label: 'draft 模型（-md）', gb: p.draftModel ?? 0 },
   ].filter((r) => r.gb > 0); // 0 项隐藏（fixed 除外，恒显）
   rows.push({ label: 'GPU 固定开销约 2GB', gb: p.fixed ?? 0, note: true }); // 末行说明性文案（用户定稿，不拼数值）
   return rows;
@@ -325,7 +373,8 @@ function close(): void { emit('close'); }
 
           <div class="flag-grid">
             <template v-for="row in rows" :key="row.key">
-              <label class="label flag-label">{{ row.flag }}</label>
+              <label class="label flag-label" :data-tooltip="row.tip"
+                   @mouseenter="(e: MouseEvent) => onFlagEnter(e, row.tip)" @mouseleave="onFlagLeave">{{ row.flag }}</label>
               <!-- boolean / options → #13 共享 Dropdown 组件；text → input（params_file 行右侧加「选择文件」按钮） -->
               <div class="row-cell" v-if="row.type === 'text'">
                 <input
@@ -365,8 +414,8 @@ function close(): void { emit('close'); }
           </button>
           <!-- 软盘图标 = 保存（2026-08-27 角形按钮；2026-09：手写 SVG → FontAwesome floppy-disk） -->
           <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰 -->
-          <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰。hover tooltip = :title（Vue SFC 下 :data-* 绑定不可靠，不另设 data 属性） -->
-          <div class="vram-indicator" :class="'vram-indicator--' + vramTier" :title="vramTooltip">
+          <!-- hover 明细 = ⓘ 图标的 .vram-tip 浮层（原生 :title tooltip 已删，避免双浮层叠加） -->
+          <div class="vram-indicator" :class="'vram-indicator--' + vramTier">
             <!-- 未填 -m → 不计算，used 显示 --；total 照常显示已配置的显卡显存总量（如 -- / 24 GB） -->
             <span class="vram-used">{{ vramHasModel && vramUsedGb !== null ? vramUsedGb.toFixed(1) : '--' }}</span>
             <span class="vram-sep"> / </span>
@@ -398,6 +447,10 @@ function close(): void { emit('close'); }
       </template>
       <div v-else class="vram-tip__row">{{ breakdownFallback }}</div>
     </div>
+    <!-- flag label hover tooltip：position:fixed 浮于视口（.modal-body overflow-y:auto 不裁剪，同 .vram-tip/.dd-tip 方案）；
+         默认挂 label 右侧垂直居中，右侧放不下视口时 .flag-tip--flip 翻到左缘内侧 -->
+    <div v-if="flagTip" class="flag-tip" :class="{ 'flag-tip--down': !flagTip.above }"
+      :style="{ left: flagTip.x + 'px', top: flagTip.y + 'px' }">{{ flagTip.text }}</div>
     <ConfirmDialog :open="confirmDeleteOpen" title="删除模板"
       :message="deleteShortMsg()" :tip="visualWidth(props.name || '') > NAME_BUDGET + 2 ? deleteFullMsg : undefined"
       tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
@@ -546,9 +599,11 @@ function close(): void { emit('close'); }
   cursor: not-allowed;
 }
 /* VRAM 指示（规格 2026-08-29-vram-estimate-design §6）：底栏正中（.modal-actions 已 position:relative）；
-   total 恒蓝（--accent-hover）；used 按 vramTier 上色；grey 档整块灰 + -- 占位 */
+   total 恒蓝（--accent-hover）；used 按 vramTier 上色；grey 档整块灰 + -- 占位。
+   top:50% + translateY(-50%)：绝对定位未设 top 时落在静态位置（底栏内容区顶部），文字会偏上；补垂直居中 */
 .vram-indicator {
-  position: absolute; left: 50%; transform: translateX(-50%);
+  position: absolute; top: 50%; left: 50%;
+  transform: translateX(-50%) translateY(-50%);
   display: inline-flex; align-items: baseline; white-space: nowrap;
   font-family: var(--font-mono); font-size: var(--fs-body);
 }
