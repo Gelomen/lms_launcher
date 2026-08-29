@@ -168,6 +168,12 @@ describe('estimateUsedBytes', () => {
     expect(r.mmprojBytes).toBe(1024 ** 3);
   });
 
+  it('kv_dim_prefers_gguf_head_dim', () => {
+    const n = estimateUsedBytes({ ...base, nLayer: 65, nEmbD: 5120, nFullAttentionInterval: 4, nHeadCountKV: 4, nHeadCount: 24, ngl: '', ctk: 'q8_0', ctv: 'q8_0', nCtx: '180224', b: '', ub: '', specDraftNMax: '' });
+    const w = estimateUsedBytes({ ...base, nLayer: 65, nEmbD: 5120, nFullAttentionInterval: 4, nHeadCountKV: 4, nHeadCount: 24, nHeadDim: 256, ngl: '', ctk: 'q8_0', ctv: 'q8_0', nCtx: '180224', b: '', ub: '', specDraftNMax: '' });
+    expect(w.kvBytes / n.kvBytes).toBeCloseTo(256 / (5120 / 24), 5);
+  });
+
   it('hybrid_attention_kv_uses_attention_layers_only', () => {
     // 真实回归（Qwen3.8-27B：65 层 / full_attention_interval=4）：
     // -c 32000 时 KV 应按 ceil(65/4)=17 层算，而非全 65 层（旧公式 32.4GB 虚高）。

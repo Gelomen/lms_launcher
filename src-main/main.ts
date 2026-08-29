@@ -219,7 +219,7 @@ ipcMain.handle('vram_estimate', async (_e, args: {
       headerBuf = Buffer.alloc(Math.min(CHUNK, modelBytes));
       readSync(fd, headerBuf, 0, headerBuf.length, 0);
     } finally { closeSync(fd); }
-    const { n_layer, n_embd, full_attention_interval, head_count_kv, head_count } = parseGgufHeader(headerBuf);
+    const { n_layer, n_embd, full_attention_interval, head_count_kv, head_count, head_dim } = parseGgufHeader(headerBuf);
     const mmprojBytes = args.mmproj?.trim() ? statSync(args.mmproj).size : 0;
     const res = estimateUsedBytes({
       nLayer: n_layer,
@@ -227,6 +227,7 @@ ipcMain.handle('vram_estimate', async (_e, args: {
       nFullAttentionInterval: full_attention_interval,
       nHeadCountKV: head_count_kv,
       nHeadCount: head_count,
+      nHeadDim: head_dim,
       modelBytes,
       mmprojBytes,
       ngl: args.ngl ?? '',
