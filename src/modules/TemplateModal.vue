@@ -568,6 +568,7 @@ function close(): void { emit('close'); }
 .vram-info {
   margin-left: 4px;
   display: inline-flex; align-items: center;
+  align-self: center;       /* .vram-indicator 基线对齐：span 无文字基线（内容只有 svg）时基线落底边 → 图标偏高；改垂直居中 */
   color: var(--muted);
   font-size: 13px; line-height: 1;
   cursor: default;          /* 纯 hover 提示，非可点击 */
