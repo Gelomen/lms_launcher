@@ -118,6 +118,14 @@ export interface EstimateInput {
   specDraftNMax: string;
 }
 
+// 实测锚点（2026-08-29，Qwen3.8-27B-Ridge @ RTX4090，nvidia-smi 采集）：
+// llama.cpp 进程上 GPU 后恒定占用 ~1.9GiB——CUDA context + cuBLAS/cuBLASLt workspace +
+// 常驻 compute buffer + KV 块 scale/pad，与 -c / -b / -ctk 无关。旧公式只算数据量（五项），
+// 漏掉这项底座 → Ridge 预测 18.66GB vs 实测净占 ~20.5GiB。
+// 固定取 2 GiB（用户批注 2026-08-30：写死常量，覆盖 ~1.9GiB 实测底座并留余量；
+// 不随 dtype/batch/随机变化，估算结果可复现）。
+const GPU_FIXED_BYTES = 2 * 1024 ** 3;
+
 export interface EstimateResult {
   r: number;           // GPU 层占比（诊断用，测试断言）
   modelBytes: number;
@@ -125,7 +133,8 @@ export interface EstimateResult {
   kvBytes: number;
   batchBytes: number;
   draftBytes: number;
-  total: number;        // = modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes
+  fixedBytes: number;  // GPU 固定运行时开销（CUDA context + cuBLAS workspace），固定 2 GiB 计入
+  total: number;        // = modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes + fixedBytes
 }
 
 export function estimateUsedBytes(input: EstimateInput): EstimateResult {
@@ -161,9 +170,10 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   // buffer 随 max(b, ub) 线性增长（不乘 kvLayers——那是 KV cache 层的项，batch 是独立激活区）。
   const batchBytes = maxBatch > 0 ? maxBatch * input.nEmbD * 16 * r : 0;
   const nd = input.specDraftNMax.trim() === '' ? 0 : Number(input.specDraftNMax) || 0;
-  // draft-mtp：每步 nd 个 draft token 各占一份 KV 条目（每注意力层一份 K/V，维数 = kvDim，dtype 同 KV）；
-  // MTP 权重内嵌主模型（n_layer 已含），不另计。峰值 ≈ nd 个 token 的 KV。
-  const draftBytes = nd > 0 ? nd * kvLayers * kvDim * (kBytes + vBytes) * r : 0;
+  // draft-mtp：独立 MTP draft context——llama.cpp 按完整 n_ctx 预留 cell × 1 个 MTP 层 × kvDim，K/V 恒 f16
+  // （不跟 -ctk/-ctv）；--spec-draft-n-max（nd）只控制每步投机 token 数，不改变分配（nd 仅作启用开关）。
+  // 实测锚点（Qwen3.6-27B，llama.cpp PR #25465 日志）：n_ctx 190464 → CUDA0 KV buffer 744 MiB（1 layers, K+V f16）。
+  const draftBytes = nd > 0 ? nCtx * kvDim * 4 * r : 0;
   return {
     r,
     modelBytes,
@@ -171,6 +181,7 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
     kvBytes,
     batchBytes,
     draftBytes,
-    total: modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes,
+    fixedBytes: GPU_FIXED_BYTES,
+    total: modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes + GPU_FIXED_BYTES,
   };
 }

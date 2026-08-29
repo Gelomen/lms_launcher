@@ -123,6 +123,37 @@ describe('estimateUsedBytes', () => {
     expect(over.total).toBe(capped.total); // 超层数与封顶后一致
   });
 
+  it('gpu_fixed_overhead_is_constant_2gb_and_included', () => {
+    // 实测锚点（2026-08-29，Qwen3.8-27B-Ridge @ RTX4090，nvidia-smi）：llama.cpp 进程上 GPU 后
+    // 恒定占用 ~1.9GiB（CUDA context + cuBLAS/cuBLASLt workspace + 常驻 compute buffer），
+    // 与 -c / -b 无关。旧公式漏算该项 → Ridge 预测 18.66GB，实测净占 ~20.5GiB。
+    // 固定 2 GiB（用户批注 2026-08-30：覆盖 ~1.9GiB 底座并留余量），恒定计入 total。
+    const a = estimateUsedBytes({ ...base, ngl: '', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });
+    const b2 = estimateUsedBytes({ ...base, ngl: '', ctk: 'f16', ctv: 'f16', b: '4096', ub: '4096', specDraftNMax: '4' });
+    // 固定项：精确 = 2 GiB，且两次独立调用必须相等（不随 dtype/batch/随机变）
+    expect(a.fixedBytes).toBe(2 * 1024 ** 3);
+    expect(b2.fixedBytes).toBe(a.fixedBytes);
+    expect(a.total).toBe(a.modelBytes + a.mmprojBytes + a.kvBytes + a.batchBytes + a.draftBytes + a.fixedBytes);
+  });
+
+  it('ridge_real_config_total_close_to_measured', () => {
+    // 真实回归（Qwen3.8-27B-MTP-Ridge，65层/interval4/GQA kv4/head_dim256）：
+    // -m 12599187008B, mmproj 931145952B, ngl999, c184320, b1024, ub512, ctk=ctv=q8_0, nd4。
+    // 加入固定开销后 total 应落在 [18.6, 22.5] GiB——下界 = 旧 18.66GB，上界覆盖实测净占 20.5GiB。
+    const r = estimateUsedBytes({
+      nLayer: 65, nEmbD: 5120, nFullAttentionInterval: 4, nHeadCountKV: 4, nHeadCount: 24, nHeadDim: 256,
+      modelBytes: 12599187008, mmprojBytes: 931145952, ngl: '999', ctk: 'q8_0', ctv: 'q8_0',
+      b: '1024', ub: '512', nCtx: '184320', specDraftNMax: '4',
+    });
+    const totalGiB = r.total / 1024 ** 3;
+    // draft-mtp 修正后（2026-08-30）：draft context 按完整 n_ctx 分配（184320 × 1024 × 4B ≈ 0.71 GiB），
+    // total 由 18.66/20.66 上调至 ~21.3 GiB；断言窗口 [21.2, 21.5] 覆盖公式值与浮动。
+    expect(totalGiB).toBeGreaterThanOrEqual(21.2);
+    expect(totalGiB).toBeLessThanOrEqual(21.5);
+    // 固定项 = 恒定 2 GiB
+    expect(r.fixedBytes / 1024 ** 3).toBe(2);
+  });
+
   it('nctx_empty_uses_4096', () => {
     const a = estimateUsedBytes({ ...base, nCtx: '', ngl: '', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });
     const b2 = estimateUsedBytes({ ...base, nCtx: '4096', ngl: '', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });
@@ -157,11 +188,23 @@ describe('estimateUsedBytes', () => {
     expect(big.total - none.total).toBeGreaterThan(0);          // total 随 -b 变化（动态）
   });
 
-  it('draft_kv_scales_with_nd', () => {
+  it('draft_is_independent_mtp_context_kv_not_nd_entries', () => {
+    // llama.cpp MTP：独立 draft context 按完整 n_ctx 分配 cell × 1 个 MTP 层 × kvDim，K/V 恒 f16；
+    // --spec-draft-n-max（nd）只控制每步投机 token 数，不改变分配（nd 仅作启用开关）。
+    // 实测锚点（Qwen3.6-27B，PR #25465 日志）：n_ctx 190464 → CUDA0 KV buffer 744 MiB（1 layers, K+V f16）。
     const P65 = { ...base, nLayer: 65, nEmbD: 5120, nFullAttentionInterval: 4, nHeadCountKV: 4, nHeadCount: 24, nHeadDim: 256, ngl: '', ctk: 'q8_0', ctv: 'q8_0', b: '', ub: '' };
-    const a = estimateUsedBytes({ ...P65, specDraftNMax: '1' });
-    const b4 = estimateUsedBytes({ ...P65, specDraftNMax: '4' });
-    expect(b4.draftBytes).toBe(a.draftBytes * 4);
+    const nd1 = estimateUsedBytes({ ...P65, specDraftNMax: '1' });
+    const nd4 = estimateUsedBytes({ ...P65, specDraftNMax: '4' });
+    expect(nd4.draftBytes).toBe(nd1.draftBytes); // nd 不影响分配
+    // 公式：n_ctx(4096) × 1 层 × kvDim(1024) × (K+V f16 = 4B)
+    expect(nd4.draftBytes).toBe(4096 * 1024 * 4);
+  });
+
+  it('draft_kv_scales_with_nctx_linearly', () => {
+    const P65 = { ...base, nLayer: 65, nEmbD: 5120, nFullAttentionInterval: 4, nHeadCountKV: 4, nHeadCount: 24, nHeadDim: 256, ngl: '', ctk: 'q8_0', ctv: 'q8_0', b: '', ub: '' };
+    const a = estimateUsedBytes({ ...P65, nCtx: '4096', specDraftNMax: '4' });
+    const b4 = estimateUsedBytes({ ...P65, nCtx: '184320', specDraftNMax: '4' });
+    expect(b4.draftBytes / a.draftBytes).toBeCloseTo(184320 / 4096, 5); // 随 -c 线性（draft context 按完整上下文预留）
   });
 
   it('draft_zero_or_negative_is_0', () => {

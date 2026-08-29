@@ -32,13 +32,26 @@
 - n_layer、n_embd 来自 -m 模型文件的 GGUF 元数据头(只读 magic + tensor 计数 +
   KV 元数据,不读张量数据)。
 - dtypeBytes(ctk) = q4_0 → 0.5; q5_0 → 0.625; q8_0 → 1.0; f16 → 2.0(未配置按 2.0)。
-- modelBytes = modelFileBytes × r,其中 r = ngl ÷ n_layer;ngl 空(未填)或 ≥999 → r = 1。
+- modelBytes = modelFileBytes × r,其中 r = min(ngl ÷ n_layer, 1);ngl 空(未填)→ r = 1;ngl ≤ 0 → r = 0。
+  (ngl 超出实际层数按 100% 封顶,如 99/65 不得算 1.52。)
 - mmprojBytes = mmproj 文件字节数(未配置 → 0);全量计入,不乘 r。
-- kvBytes = 2 × nCtx × n_layer × n_embd × (dtypeBytes(ctk) + dtypeBytes(ctv)) ÷ 2 × r。
+- kvBytes = nCtx × kvLayers × kvDim × (dtypeBytes(ctk) + dtypeBytes(ctv))。
+  kvLayers = ceil(n_layer ÷ full_attention_interval) 若混合注意力(如 qwen3.8-27b: 65 层 / 4 ≈ 17 层),否则 = n_layer;
+  kvDim = (head_dim) × head_count_kv,其中 head_dim 优先读 GGUF attention.key_length(如 256),
+  无则退回 n_embd ÷ head_count;head_count_kv 为 GQA/MQA 的 KV 头数(如 4),无则按全部注意力头。
   (K 与 V 的 cache 分别按各自 dtype;ngl 占比同样作用于 KV 的 GPU 层部分。)
-- batchBytes = n_embd × n_layer × r × 16,max(b, ub) 为空则不计。
-- draftBytes = 2 × nDraftMax × n_layer × n_embd × dtypeBytes(ctk) × r,nDraftMax ≤ 0 不计。
-- usedBytes = modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes。
+- batchBytes = max(b, ub) × n_embd × 16 × r,max(b, ub) 为空则不计。(llama.cpp 'CUDA0 compute buffer' 量级)
+- draftBytes = nCtx × kvDim × 4 × r（nd > 0 即启用;nd ≤ 0 不计）。独立 MTP draft context：
+  llama.cpp 按完整 n_ctx 预留 cell × 1 个 MTP 层 × kvDim,K/V 恒 f16（不跟 -ctk/-ctv）；
+  --spec-draft-n-max（nd）只控制每步投机 token 数,不改变分配。实测锚点（Qwen3.6-27B,PR #25465 日志）：
+  n_ctx 190464 → CUDA0 KV buffer 744 MiB（1 layers, K+V f16）。
+- fixedBytes = GPU_FIXED_BYTES(= 2 GiB),恒定计入(不乘 r)。
+  实测锚点(Qwen3.8-27B-Ridge @ RTX4090,nvidia-smi):llama.cpp 进程上 GPU 后恒定占用
+  ~1.9GiB——CUDA context + cuBLAS/cuBLASLt workspace + 常驻 compute buffer + KV 块
+  scale/pad,与 -c / -b / -ctk 无关。旧五项公式漏算此底座 → Ridge 预测 18.66GB vs
+  实测净占 ~20.5GiB。取固定 2 GiB(用户批注 2026-08-30):覆盖底座并留余量,估算可复现。
+  tooltip 明示「含约 2GB GPU 固定开销」。
+- usedBytes = modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes + fixedBytes。
 - usedGb = usedBytes ÷ 2³⁰。
 
 ngl = 0 → r = 0 → 仅 mmprojBytes 与 batchBytes 中 r 相关项归零;模型/KV/draft 为 0。
@@ -90,6 +103,9 @@ TemplateModal 底部栏 .modal-actions 正中(左 [删除]、右 [保存] 之间
     tooltip 给出 reason(估算失败)或提示去配置显卡显存。
 - 动态更新:watch 表单 m / mmproj / ngl / c / ctk / ctv / b / ub / spec_draft_n_max
   九键 + vram_total_gb,150ms 防抖 → invoke vram_estimate → 更新数字与颜色。
+- tooltip(估算成功档):「余量 X GB(含约 2GB GPU 固定开销:CUDA context + cuBLAS workspace)」。
+  说明估算值已计入 GPU 固定运行时开销(§3 fixedBytes = 2 GiB 常量),提示用户实际占用
+  比「纯数据量」略高。其它档(未配置/估算失败/未填模型)沿用原 tooltip。
 
 ## 7. 测试
 
