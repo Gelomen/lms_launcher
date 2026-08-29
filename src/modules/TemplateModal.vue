@@ -335,7 +335,8 @@ function close(): void { emit('close'); }
             <span class="vram-used">{{ vramHasModel && vramUsedGb !== null ? vramUsedGb.toFixed(1) : '--' }}</span>
             <span class="vram-sep"> / </span>
             <span class="vram-total">{{ props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
-            <span class="vram-unit"> GB</span>
+            <!-- &nbsp;：flex item 内容的首空格会被 CSS 折叠（24.0 与 GB 贴死），用不换行空格兜底 -->
+            <span class="vram-unit">&nbsp;GB</span>
           </div>
           <button class="modal-save" :disabled="saving" aria-label="保存" @click="save">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" style="font-size: 18px;" />
@@ -501,7 +502,7 @@ function close(): void { emit('close'); }
   font-family: var(--font-mono); font-size: var(--fs-body);
 }
 .vram-used { color: var(--text); }
-.vram-total { color: var(--accent-hover); }           /* 显卡显存恒蓝 */
+.vram-total { color: var(--primary); }                 /* 显卡显存总量恒紫（2026-08-29 主题紫统一） */
 .vram-sep, .vram-unit { color: var(--muted); }
 .vram-indicator--green .vram-used { color: var(--ok); }
 .vram-indicator--orange .vram-used { color: var(--vram-orange); }
