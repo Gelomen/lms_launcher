@@ -615,6 +615,15 @@ describe('TemplateModal vram indicator', () => {
     w.unmount();
   });
 
+  it('model_empty_shows_total_not_double_dash', async () => {
+    // 批注(2026-08-29)：未填 -m 时 total 仍要显示已配置显卡显存，形如 -- / 24 GB
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    const el = document.querySelector('.vram-indicator') as HTMLElement;
+    expect(el.textContent).toContain('--');
+    expect(el.textContent).toContain('24.0');
+    w.unmount();
+  });
+
   it('grey_dash_when_estimate_fails', async () => {
     // 估算失败（如非 GGUF）→ grey 档 + -- 占位；hover tooltip（:title）文案在 dev 目视验证
     mockVram(null, 'GGUF: 非 GGUF 文件（magic 不符）');

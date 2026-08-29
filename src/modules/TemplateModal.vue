@@ -331,10 +331,10 @@ function close(): void { emit('close'); }
           <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰 -->
           <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰。hover tooltip = :title（Vue SFC 下 :data-* 绑定不可靠，不另设 data 属性） -->
           <div class="vram-indicator" :class="'vram-indicator--' + vramTier" :title="vramTooltip">
-            <!-- 未填 -m → 不计算，整块 --（不显示显卡总量，避免误读为已估算） -->
+            <!-- 未填 -m → 不计算，used 显示 --；total 照常显示已配置的显卡显存总量（如 -- / 24 GB） -->
             <span class="vram-used">{{ vramHasModel && vramUsedGb !== null ? vramUsedGb.toFixed(1) : '--' }}</span>
             <span class="vram-sep"> / </span>
-            <span class="vram-total">{{ vramHasModel && props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
+            <span class="vram-total">{{ props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
             <span class="vram-unit"> GB</span>
           </div>
           <button class="modal-save" :disabled="saving" aria-label="保存" @click="save">
