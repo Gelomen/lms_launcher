@@ -184,7 +184,7 @@ ipcMain.handle('open_file_dialog', async (_e, key: string): Promise<string | nul
   const win = mainWin();
   if (!win) return null;
   const options: Electron.OpenDialogOptions = {};
-  if (key === 'm' || key === 'mmproj') {
+  if (key === 'm' || key === 'mmproj' || key === 'md') {
     options.filters = [{ name: 'Model files', extensions: ['gguf'] }];
   } else if (key === 'chat_template_file') {
     options.filters = [{ name: 'Jinja template files', extensions: ['jinja'] }];
@@ -201,26 +201,38 @@ ipcMain.handle('exit_app', async (): Promise<void> => {
   app.exit(0);
 });
 // vram_estimate：显存占用预测（规格 2026-08-29-vram-estimate-design §3/§4）。
-// 入参键名 = 渲染端表单键（m/mmproj/ngl/c/ctk/ctv/b/ub/spec_draft_n_max）。
+// 入参键名 = 渲染端表单键（m/mmproj/ngl/c/ctk/ctv/b/ub/spec_type/spec_draft_n_max/md/ngld）。
 // 只读 -m 文件的 stat 与前 64KB GGUF 头；文件不存在 / 非 GGUF / 解析失败 → { ok:false, reason }，不抛错。
+// GGUF 头读取（只读前 512KB，不整文件入内存——模型可达 16GB）：
+// 覆盖 arch 元数据（n_layer/embedding 等字段通常在前 100KB 内）；文件不存在 / 非 GGUF → 抛错由调用方转 ok:false
+function readGgufBytesAndHeader(path: string): { bytes: number; header: ReturnType<typeof parseGgufHeader> } {
+  const CHUNK = 512 * 1024;
+  const bytes = statSync(path).size;
+  const fd = openSync(path, 'r');
+  try {
+    const headerBuf = Buffer.alloc(Math.min(CHUNK, bytes));
+    readSync(fd, headerBuf, 0, headerBuf.length, 0);
+    return { bytes, header: parseGgufHeader(headerBuf) };
+  } finally { closeSync(fd); }
+}
 ipcMain.handle('vram_estimate', async (_e, args: {
   m: string; mmproj?: string; ngl?: string; c?: string; ctk?: string; ctv?: string;
-  b?: string; ub?: string; spec_draft_n_max?: string;
-}): Promise<{ ok: true; usedGb: number; parts: { model: number; mmproj: number; kv: number; batch: number; draft: number; fixed: number } } | { ok: false; reason: string }> => {
+  b?: string; ub?: string; spec_type?: string; spec_draft_n_max?: string; md?: string; ngld?: string;
+}): Promise<{ ok: true; usedGb: number; parts: { model: number; mmproj: number; kv: number; batch: number; draft: number; draftModel: number; fixed: number } } | { ok: false; reason: string }> => {
   try {
-    const modelBytes = statSync(args.m).size;
-    // GGUF KV 元数据在文件头部：用 fd 限定读前 512KB（不整文件入内存——模型可达 16GB）；
-    // 覆盖 arch 元数据 + 前 64KB 的 token 表之前（n_layer/embedding 等字段通常在前 100KB 内）；
-    // 超出窗口的 KV 跳过时 parseGgufHeader 按「缺少层数/维度」报告
-    const CHUNK = 512 * 1024;
-    const fd = openSync(args.m, 'r');
-    let headerBuf: Buffer;
-    try {
-      headerBuf = Buffer.alloc(Math.min(CHUNK, modelBytes));
-      readSync(fd, headerBuf, 0, headerBuf.length, 0);
-    } finally { closeSync(fd); }
-    const { n_layer, n_embd, full_attention_interval, head_count_kv, head_count, head_dim } = parseGgufHeader(headerBuf);
+    const { bytes: modelBytes, header } = readGgufBytesAndHeader(args.m);
+    const { n_layer, n_embd, full_attention_interval, head_count_kv, head_count, head_dim } = header;
     const mmprojBytes = args.mmproj?.trim() ? statSync(args.mmproj).size : 0;
+    // draft 模型（-md）：仅 draft-dflash / draft-dspark 需要（mtp 用内建 MTP 头，无外挂模型）；
+    // 读 -md 的字节数 + GGUF 头（draft 层数/KV 维），文件不存在 / 非 GGUF / 缺层数维度 → ok:false
+    const specType = (args.spec_type ?? '').trim();
+    const isExtDraft = specType === 'draft-dflash' || specType === 'draft-dspark';
+    let mdInfo: { bytes: number; header: ReturnType<typeof parseGgufHeader> } | null = null;
+    if (isExtDraft) {
+      const mdPath = (args.md ?? '').trim();
+      if (mdPath.length === 0) throw new Error('VALIDATION: --spec-type 为 draft-dflash/dspark 时须填写 --spec-draft-model（-md）文件');
+      mdInfo = readGgufBytesAndHeader(mdPath);
+    }
     const res = estimateUsedBytes({
       nLayer: n_layer,
       nEmbD: n_embd,
@@ -236,7 +248,16 @@ ipcMain.handle('vram_estimate', async (_e, args: {
       ctv: args.ctv ?? '',
       b: args.b ?? '',
       ub: args.ub ?? '',
+      specType: args.spec_type ?? '',
       specDraftNMax: args.spec_draft_n_max ?? '',
+      mdBytes: mdInfo?.bytes ?? 0,
+      mdNLayer: mdInfo?.header.n_layer,
+      mdNEmbD: mdInfo?.header.n_embd,
+      mdNFullAttentionInterval: mdInfo?.header.full_attention_interval,
+      mdNHeadCountKV: mdInfo?.header.head_count_kv,
+      mdNHeadCount: mdInfo?.header.head_count,
+      mdNHeadDim: mdInfo?.header.head_dim,
+      ngld: args.ngld ?? '',
     });
     return {
       ok: true,
@@ -247,6 +268,7 @@ ipcMain.handle('vram_estimate', async (_e, args: {
         kv: res.kvBytes / 1024 ** 3,
         batch: res.batchBytes / 1024 ** 3,
         draft: res.draftBytes / 1024 ** 3,
+        draftModel: res.draftModelBytes / 1024 ** 3,
         fixed: res.fixedBytes / 1024 ** 3,
       },
     };

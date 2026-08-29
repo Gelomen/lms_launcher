@@ -4,7 +4,7 @@ import type { ParamsFile, ConfigEntry } from './config';
 import { tmpPath, rm, writeText, mkDir, jp } from './test-utils';
 
 const pf: ParamsFile = {
-  params: { m: '-m', mmproj: '--mmproj', port: '--port' },
+  params: { m: '-m', mmproj: '-mm', port: '--port' },
   required: ['m'],
 };
 
@@ -15,7 +15,7 @@ function entry(pairs: Array<[string, string]>): ConfigEntry {
 const pfV11: ParamsFile = {
   params: {
     m: '-m', jinja: '--jinja', spec_type: '--spec-type', port: '--port',
-    n_cpu_moe: '--n-cpu-moe', fit: '--fit', fit_ctx: '--fit-ctx', fit_target: '--fit-target', metrics: '--metrics', // #14
+    n_cpu_moe: '-ncmoe', fit: '-fit', fit_ctx: '-fitc', fit_target: '-fitt', metrics: '--metrics', // #14
   },
   required: ['m'],
   params_boolean: ['jinja', 'metrics'], // #14：metrics 为无值 flag
@@ -97,7 +97,7 @@ describe('build.ts', () => {
   it('#14_new_params_build_flag_value_pairs', () => {
     const e = entry([['m', 'x.gguf'], ['n_cpu_moe', '0'], ['fit', 'on'], ['fit_ctx', '128000'], ['fit_target', '1024']]);
     expect(buildArgVector('llama-server.exe', pfV11, e)).toEqual(
-      ['llama-server.exe', '-m', 'x.gguf', '--n-cpu-moe', '0', '--fit', 'on', '--fit-ctx', '128000', '--fit-target', '1024']);
+      ['llama-server.exe', '-m', 'x.gguf', '-ncmoe', '0', '-fit', 'on', '-fitc', '128000', '-fitt', '1024']);
   });
 
   it('#14_metrics_boolean_true_flag_only_false_skipped', () => {

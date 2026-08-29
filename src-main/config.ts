@@ -135,18 +135,18 @@ export function validateParamKey(key: string): boolean {
 // params_options / params_boolean / params_file
 export function defaultParams(): ParamsFile {
   const items: Array<[string, string]> = [
-    ['m', '-m'], ['mmproj', '--mmproj'], ['image_min_tokens', '--image-min-tokens'],
-    ['alias', '--alias'], ['ngl', '-ngl'],
-    ['fa', '-fa'], ['n_cpu_moe', '--n-cpu-moe'], ['load_mode', '--load-mode'],
+    ['m', '-m'], ['mmproj', '-mm'], ['image_min_tokens', '--image-min-tokens'],
+    ['alias', '-a'], ['ngl', '-ngl'],
+    ['fa', '-fa'], ['n_cpu_moe', '-ncmoe'], ['load_mode', '-lm'],
     ['np', '-np'], ['c', '-c'], ['b', '-b'], ['ub', '-ub'], ['t', '-t'], ['tb', '-tb'],
-    ['ctk', '-ctk'], ['ctv', '-ctv'], ['spec_type', '--spec-type'], ['spec_draft_n_max', '--spec-draft-n-max'],
+    ['ctk', '-ctk'], ['ctv', '-ctv'], ['spec_type', '--spec-type'], ['spec_draft_n_max', '--spec-draft-n-max'], ['md', '-md'], ['ngld', '-ngld'],
     ['temp', '--temp'], ['top_p', '--top-p'], ['top_k', '--top-k'], ['min_p', '--min-p'],
     ['presence_penalty', '--presence_penalty'], ['repeat_penalty', '--repeat_penalty'],
     ['jinja', '--jinja'], ['chat_template_file', '--chat-template-file'],
-    ['reasoning', '--reasoning'], ['reasoning_format', '--reasoning-format'],
+    ['reasoning', '-rea'], ['reasoning_format', '--reasoning-format'],
     ['reasoning_effort', '--reasoning-effort'], ['reasoning_preserve', '--reasoning-preserve'],
     ['port', '--port'],
-    ['metrics', '--metrics'], ['fit', '--fit'], ['fit_ctx', '--fit-ctx'], ['fit_target', '--fit-target'],
+    ['metrics', '--metrics'], ['fit', '-fit'], ['fit_ctx', '-fitc'], ['fit_target', '-fitt'],
   ];
   const params: Record<string, string> = Object.fromEntries(items);
   return {
@@ -162,6 +162,6 @@ export function defaultParams(): ParamsFile {
       reasoning_effort: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
     },
     params_boolean: ['jinja', 'reasoning_preserve', 'metrics'],
-    params_file: ['m', 'mmproj', 'chat_template_file'],
+    params_file: ['m', 'mmproj', 'chat_template_file', 'md'],
   };
 }

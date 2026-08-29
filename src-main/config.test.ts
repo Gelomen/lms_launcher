@@ -126,7 +126,7 @@ describe('config.ts', () => {
 
   it('default_params_covers_run_bat_common', () => {
     const pf = defaultParams();
-    const keys = ['m','mmproj','spec_type','ngl','fa','load_mode','np','c','b','ub','t','tb','ctk','ctv','jinja','chat_template_file','reasoning_format','reasoning_effort','spec_draft_n_max','temp','top_p','top_k','min_p','presence_penalty','repeat_penalty','port','alias'];
+    const keys = ['m','mmproj','spec_type','ngl','fa','load_mode','np','c','b','ub','t','tb','ctk','ctv','jinja','chat_template_file','reasoning_format','reasoning_effort','spec_draft_n_max','md','temp','top_p','top_k','min_p','presence_penalty','repeat_penalty','port','alias'];
     for (const k of keys) expect(pf.params[k], k).toBeDefined();
     expect(pf.required).toEqual(['m']);
   });
@@ -138,7 +138,7 @@ describe('config.ts', () => {
     paramsLoad(p);
     // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
     const pf2 = paramsLoad(p);
-    expect(Object.keys(pf2.params)).toHaveLength(35);
+    expect(Object.keys(pf2.params)).toHaveLength(37);
     expect(pf2.params['spec_type']).toBe('--spec-type');
     expect(pf2.params['presence_penalty']).toBe('--presence_penalty');
     rm(p);
@@ -177,16 +177,16 @@ params_file:
 
   it('default_params_includes_v1_1_keys_and_sections', () => {
     const pf = defaultParams();
-    expect(pf.params['reasoning']).toBe('--reasoning');
+    expect(pf.params['reasoning']).toBe('-rea');
     expect(pf.params['reasoning_preserve']).toBe('--reasoning-preserve');
     // #14：五个新参数（n_cpu_moe / fit / fit_ctx / fit_target 为普通文本参数；metrics 为 boolean flag）
-    expect(pf.params['n_cpu_moe']).toBe('--n-cpu-moe');
-    expect(pf.params['fit']).toBe('--fit');
-    expect(pf.params['fit_ctx']).toBe('--fit-ctx');
-    expect(pf.params['fit_target']).toBe('--fit-target');
+    expect(pf.params['n_cpu_moe']).toBe('-ncmoe');
+    expect(pf.params['fit']).toBe('-fit');
+    expect(pf.params['fit_ctx']).toBe('-fitc');
+    expect(pf.params['fit_target']).toBe('-fitt');
     expect(pf.params['metrics']).toBe('--metrics');
-    expect(Object.keys(pf.params)).toHaveLength(35); // 既有 26 + v1.1 新增 7 + alias + #15 image_min_tokens
-    expect(pf.params['alias']).toBe('--alias');
+    expect(Object.keys(pf.params)).toHaveLength(37); // 既有 26 + v1.1 新增 7 + alias + #15 image_min_tokens + md + ngld
+    expect(pf.params['alias']).toBe('-a');
     // #15：image_min_tokens 紧随 mmproj 之后，--mmproj 有值时可启用
     expect(pf.params['image_min_tokens']).toBe('--image-min-tokens');
     const pk = Object.keys(pf.params);
@@ -202,7 +202,13 @@ params_file:
     expect(pf.params_options?.ctv).toEqual(['q4_0','q5_0','q8_0','f16']);
     expect(pf.params_boolean).toEqual(['jinja','reasoning_preserve','metrics']); // #14：metrics 声明为 boolean
 
-    expect(pf.params_file).toEqual(['m','mmproj','chat_template_file']);
+    expect(pf.params_file).toEqual(['m','mmproj','chat_template_file','md']);
+    // md（--spec-draft-model）紧随 spec_draft_n_max 之后，params_file 类型
+    expect(pf.params['md']).toBe('-md');
+    expect(pk[pk.indexOf('spec_draft_n_max') + 1]).toBe('md'); // pk 见上文 image_min_tokens 断言
+    // ngld（--spec-draft-ngl，draft 模型 GPU 层数）紧随 md 之后，普通数值参数
+    expect(pf.params['ngld']).toBe('-ngld');
+    expect(pk[pk.indexOf('md') + 1]).toBe('ngld');
   });
 
   it('vram_total_gb_roundtrip', () => {

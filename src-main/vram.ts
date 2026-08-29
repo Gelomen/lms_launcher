@@ -115,7 +115,24 @@ export interface EstimateInput {
   ctv: string;
   b: string;
   ub: string;
+  /** llama-server --spec-type（none/draft-mtp/draft-dflash/draft-dspark）；none（或空）时 --spec-draft-n-max 不生效 → draftBytes 恒 0 */
+  specType: string;
   specDraftNMax: string;
+  /** draft 模型（--spec-draft-model，仅 dflash/dspark 用）：GGUF 文件字节数；0 = 未填 */
+  mdBytes?: number;
+  /** draft 模型 GPU 层数（--spec-draft-ngl/-ngld）：空/auto/all → 全量(1)；数值 → min(ngld/mdNLayer,1)；ngld≤0 → 0 */
+  ngld?: string;
+  /** draft 模型 GGUF 头：层数/维度（dflash/dspark 的 draft KV 公式用） */
+  mdNLayer?: number;
+  mdNEmbD?: number;
+  /** draft 模型 GGUF 头：混合注意力间隔（可选） */
+  mdNFullAttentionInterval?: number;
+  /** draft 模型 GGUF 头：GQA/MQA KV 头数（可选） */
+  mdNHeadCountKV?: number;
+  /** draft 模型 GGUF 头：注意力头数（可选） */
+  mdNHeadCount?: number;
+  /** draft 模型 GGUF 头：头维 key_length（可选） */
+  mdNHeadDim?: number;
 }
 
 // 实测锚点（2026-08-29，Qwen3.8-27B-Ridge @ RTX4090，nvidia-smi 采集）：
@@ -133,8 +150,9 @@ export interface EstimateResult {
   kvBytes: number;
   batchBytes: number;
   draftBytes: number;
+  draftModelBytes: number; // draft 模型本体（--spec-draft-model，仅 dflash/dspark）；mtp/none 恒 0
   fixedBytes: number;  // GPU 固定运行时开销（CUDA context + cuBLAS workspace），固定 2 GiB 计入
-  total: number;        // = modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes + fixedBytes
+  total: number;        // = modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes + draftModelBytes + fixedBytes
 }
 
 export function estimateUsedBytes(input: EstimateInput): EstimateResult {
@@ -169,11 +187,51 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   // -b batch buffer：prompt processing 时每个待处理 token 需一份 hidden state buffer（n_embd × 16B 中间层激活）；
   // buffer 随 max(b, ub) 线性增长（不乘 kvLayers——那是 KV cache 层的项，batch 是独立激活区）。
   const batchBytes = maxBatch > 0 ? maxBatch * input.nEmbD * 16 * r : 0;
-  const nd = input.specDraftNMax.trim() === '' ? 0 : Number(input.specDraftNMax) || 0;
+  // draft context 只在 --spec-type 为 draft-*（非 none）时启用：spec_type 未设为有效值（none/空）时，
+  // 即便填了 --spec-draft-n-max 也不分配 draft 缓存（llama-server 端该 flag 同样不生效）。
+  const specType = input.specType.trim();
+  const specEnabled = specType !== '' && specType !== 'none';
+  const ndRaw = input.specDraftNMax.trim();
+  const nd = ndRaw === '' ? 0 : Number(ndRaw) || 0;
+  // llama.cpp --spec-draft-n-max 默认 3：留空 = 仍按默认启用（draft 照载）；仅显式 nd≤0 禁用投机。
+  const specOn = specEnabled && (ndRaw === '' || nd > 0);
   // draft-mtp：独立 MTP draft context——llama.cpp 按完整 n_ctx 预留 cell × 1 个 MTP 层 × kvDim，K/V 恒 f16
-  // （不跟 -ctk/-ctv）；--spec-draft-n-max（nd）只控制每步投机 token 数，不改变分配（nd 仅作启用开关）。
+  // （不跟 -ctk/-ctv）；nd 只控制每步投机 token 数，不改变分配大小。
   // 实测锚点（Qwen3.6-27B，llama.cpp PR #25465 日志）：n_ctx 190464 → CUDA0 KV buffer 744 MiB（1 layers, K+V f16）。
-  const draftBytes = nd > 0 ? nCtx * kvDim * 4 * r : 0;
+  // 独立外挂 draft 模型（draft-dflash / draft-dspark 的 --spec-draft-model）：模型本体 + 它自己的 KV。
+  // draft 层数/KV 维取自 draft 模型 GGUF 头（md* 字段）。
+  // draft 本体按 -ngld（--spec-draft-ngl）占比计：空/auto/all → 全量；数值 → min(ngld/mdNLayer,1)；ngld≤0 → 0。
+  const isExtDraft = specType === 'draft-dflash' || specType === 'draft-dspark';
+  const mdN = input.mdNLayer ?? 0;
+  // -ngld 与主模型 -ngl 同逻辑：空 / 'auto' / 'all' → 全量；ngld≤0 → 0；数值 → min(ngld/mdNLayer,1)。
+  // 层数未知(mdN=0，纯函数层边缘情形；IPC 层 parseGgufHeader 缺层数已 ok:false)：无法折算占比 → ngld>0 按全量，否则 0。
+  const ngldRaw = (input.ngld ?? '').trim();
+  const ngldNum = ngldRaw === '' || ngldRaw === 'auto' || ngldRaw === 'all' ? 999999 : Number(ngldRaw);
+  const rMd = !isFinite(ngldNum)
+    ? 1
+    : (mdN > 0 ? (ngldNum <= 0 ? 0 : Math.min(ngldNum / mdN, 1)) : (ngldNum > 0 ? 1 : 0));
+  const draftModelBytes = specOn && isExtDraft ? (input.mdBytes ?? 0) * rMd : 0;
+  let draftBytes = 0;
+  if (specOn) {
+    if (isExtDraft) {
+      // draft 模型自己的 KV context（draft 头 × n_ctx，dtype 沿用主模型 -ctk/-ctv 缺省 f16）
+      const mdN = input.mdNLayer ?? 0, mdE = input.mdNEmbD ?? 0;
+      if (mdN > 0 && mdE > 0) {
+        const mdKvLayers = input.mdNFullAttentionInterval && input.mdNFullAttentionInterval > 0
+          ? Math.ceil(mdN / input.mdNFullAttentionInterval) : mdN;
+        const mdHd = input.mdNHeadDim && input.mdNHeadDim > 0
+          ? input.mdNHeadDim
+          : (input.mdNHeadCount && input.mdNHeadCount > 0 ? mdE / input.mdNHeadCount : mdE);
+        const mdKvDim = input.mdNHeadCountKV && input.mdNHeadCountKV > 0 ? mdHd * input.mdNHeadCountKV : mdE;
+        // KV 随层驻留设备：ngld 留部分层在 CPU 时对应 KV 不占显存 → 与本体同乘 rMd
+        draftBytes = 2 * nCtx * mdKvLayers * mdKvDim * (kBytes + vBytes) / 2 * rMd;
+      }
+    } else {
+      // draft-mtp：按完整 n_ctx 预留 cell × 1 个 MTP 层 × kvDim，K/V 恒 f16（不跟 -ctk/-ctv）。
+      // --spec-draft-n-max（nd）只控制每步投机 token 数，不改变分配大小。
+      draftBytes = nCtx * kvDim * 4 * r;
+    }
+  }
   return {
     r,
     modelBytes,
@@ -181,7 +239,8 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
     kvBytes,
     batchBytes,
     draftBytes,
+    draftModelBytes,
     fixedBytes: GPU_FIXED_BYTES,
-    total: modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes + GPU_FIXED_BYTES,
+    total: modelBytes + mmprojBytes + kvBytes + batchBytes + draftBytes + draftModelBytes + GPU_FIXED_BYTES,
   };
 }
