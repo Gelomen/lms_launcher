@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 显卡显存修改小窗（规格 2026-08-29-vram-estimate-design §5）：纯数字输入（GB），保存后调 save_vram_total。
 // 复用 modal-overlay 遮罩语言（TemplateModal 同款 Teleport + 居中卡片）。
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { invoke, errMsg } from '../ipc';
 
 const props = withDefaults(defineProps<{
@@ -10,7 +10,22 @@ const props = withDefaults(defineProps<{
 }>(), { vramTotalGb: undefined });
 const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void }>();
 
+// 初始填充:挂载前已有配置值(数字)→ 直接回填字符串;未配置(undefined)→ 空输入。
 const value = ref<string>(props.vramTotalGb !== undefined ? String(props.vramTotalGb) : '');
+// 每次打开(open=false→true)都重填 prop——覆盖「配置后重启,打开时回填」的重复开合场景。
+watch(
+  () => props.open,
+  (open) => {
+    if (open && props.vramTotalGb !== undefined) value.value = String(props.vramTotalGb);
+  },
+);
+// 异步到达:挂载后 get_app_config 才返回 vramTotalGb,弹窗已打开时仍须回填(重启后加载路径)。
+watch(
+  () => props.vramTotalGb,
+  (gb) => {
+    if (props.open && gb !== undefined) value.value = String(gb);
+  },
+);
 const error = ref<string | null>(null);
 
 function save(): void {
