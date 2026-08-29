@@ -157,6 +157,13 @@ describe('estimateUsedBytes', () => {
     expect(big.total - none.total).toBeGreaterThan(0);          // total 随 -b 变化（动态）
   });
 
+  it('draft_kv_scales_with_nd', () => {
+    const P65 = { ...base, nLayer: 65, nEmbD: 5120, nFullAttentionInterval: 4, nHeadCountKV: 4, nHeadCount: 24, nHeadDim: 256, ngl: '', ctk: 'q8_0', ctv: 'q8_0', b: '', ub: '' };
+    const a = estimateUsedBytes({ ...P65, specDraftNMax: '1' });
+    const b4 = estimateUsedBytes({ ...P65, specDraftNMax: '4' });
+    expect(b4.draftBytes).toBe(a.draftBytes * 4);
+  });
+
   it('draft_zero_or_negative_is_0', () => {
     const r = estimateUsedBytes({ ...base, specDraftNMax: '0', ngl: '', ctk: '', ctv: '', b: '', ub: '' });
     expect(r.draftBytes).toBe(0);

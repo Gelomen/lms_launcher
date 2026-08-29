@@ -161,7 +161,9 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   // buffer 随 max(b, ub) 线性增长（不乘 kvLayers——那是 KV cache 层的项，batch 是独立激活区）。
   const batchBytes = maxBatch > 0 ? maxBatch * input.nEmbD * 16 * r : 0;
   const nd = input.specDraftNMax.trim() === '' ? 0 : Number(input.specDraftNMax) || 0;
-  const draftBytes = nd > 0 ? 2 * nd * nLayer * input.nEmbD * kBytes * r : 0;
+  // draft-mtp：每步 nd 个 draft token 各占一份 KV 条目（每注意力层一份 K/V，维数 = kvDim，dtype 同 KV）；
+  // MTP 权重内嵌主模型（n_layer 已含），不另计。峰值 ≈ nd 个 token 的 KV。
+  const draftBytes = nd > 0 ? nd * kvLayers * kvDim * (kBytes + vBytes) * r : 0;
   return {
     r,
     modelBytes,
