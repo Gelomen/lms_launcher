@@ -2,7 +2,8 @@
 // 无 IO：文件字节数由调用方 stat 后传入；GGUF 头解析接受 Buffer。
 // 只读 GGUF magic + tensor 计数 + KV 元数据，不读张量数据。
 
-export interface GgufHeader { n_layer: number; n_embd: number }
+export interface GgufHeader { n_layer: number; n_embd: number; /** 全注意力间隔：每 full_attention_interval 层中仅 1 层存 KV（混合注意力模型如 qwen3.8-27b：interval=4）；undefined = 纯注意力模型 */
+  full_attention_interval?: number }
 
 // dtype → KV cache 每字节系数（字节/元素近似：q4=0.5, q5=0.625, q8=1.0, f16=2.0）
 const DTYPE_BYTES: Record<string, number> = {
@@ -53,8 +54,9 @@ export function parseGgufHeader(buf: Buffer): GgufHeader {
   // 头布局：magic(u32)@0 + version(u32)@4 + n_tensors(u64)@8 + n_kv(u64)@16 → KV @24
   const kvCount = Number(buf.readBigUInt64LE(16));
   let off = 24;
-  let nLayer = 0; let nEmbD = 0;
+  let nLayer = 0; let nEmbD = 0; let faInterval: number | undefined;
   let scanned = 0;
+  let coreFoundAt = -1; // n_layer + n_embd 首次同时到手的位置
   for (let i = 0; i < kvCount; i++) {
     if (off + 8 > buf.length) break;                 // KV 超出读取窗口
     const keyLen = Number(buf.readBigUInt64LE(off)); off += 8; // key = u64 len + bytes（无 null 终止）
@@ -69,20 +71,27 @@ export function parseGgufHeader(buf: Buffer): GgufHeader {
       const v = readNum(buf, off, ty);
       if (LAYER_NAMES.has(seg)) nLayer = v;
       else if (EMBD_NAMES.has(seg)) nEmbD = v;
+      else if (seg === 'full_attention_interval') faInterval = v; // 混合注意力：仅每 interval 层存 KV
     }
     const next = skipV3(buf, off, ty);                // 推进到下一 KV
     if (next < 0) break;                             // 变长值越界（如超长 tokens 数组）：停止
     off = next;
     scanned = i + 1;
-    if (nLayer > 0 && nEmbD > 0) break;              // 两个字段都到手 → 提前停
+    if (coreFoundAt < 0 && nLayer > 0 && nEmbD > 0) coreFoundAt = i;
+    // 提前停：核心字段(n_layer+n_embd)到手，且可选的 full_attention_interval 也到手；
+    // 纯注意力模型没有 interval → 最多再扫 40 个 KV（arch 元数据总在 tokenizer 大数组之前）。
+    // （不能「核心字段到手就停」：混合模型的 interval 在 block_count/embedding_length 之后，如 qwen3.8-27b KV #27）
+    if (coreFoundAt >= 0 && (faInterval !== undefined || i >= coreFoundAt + 40)) break;
   }
   if (nLayer === 0 || nEmbD === 0) throw new Error('GGUF: 缺少层数/维度元数据（' + scanned + ' 个 KV 内未找到 n_layer/block_count 与 n_embd/embedding_length）');
-  return { n_layer: nLayer, n_embd: nEmbD };
+  return { n_layer: nLayer, n_embd: nEmbD, full_attention_interval: faInterval };
 }
 
 export interface EstimateInput {
   nLayer: number;
   nEmbD: number;
+  /** GGUF full_attention_interval（混合注意力模型：每 interval 层中 1 层存 KV）；undefined=纯注意力 */
+  nFullAttentionInterval?: number;
   modelBytes: number;
   mmprojBytes: number;
   ngl: string;
@@ -106,6 +115,12 @@ export interface EstimateResult {
 
 export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   const nLayer = input.nLayer;
+  // KV 缓存/单 token 激活只存在于注意力层：混合模型（full_attention_interval=I）
+  // 每 I 层中仅 1 层存 KV（qwen3.8-27b: 65 层 / interval 4 ≈ 17 层）；其余层是 SSM/线性层，
+  // 固定状态不随 ctx 增长。
+  const kvLayers = input.nFullAttentionInterval && input.nFullAttentionInterval > 0
+    ? Math.ceil(nLayer / input.nFullAttentionInterval)
+    : nLayer;
   // ngl 空 / ≥n_layer（含 ≥999）→ r=1；ngl≤0 → r=0；其余 → min(ngl/nLayer, 1)
   // （ngl 超出实际层数无意义——按 100% 封顶，避免 99/65=1.52 这类虚高）
   const nglNum = input.ngl.trim() === '' ? 999 : Number(input.ngl);
@@ -115,11 +130,11 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   const vBytes = DTYPE_BYTES[input.ctv] ?? 2.0;
   const modelBytes = input.modelBytes * r;
   const mmprojBytes = input.mmprojBytes; // 视觉投影全量计入（无层占比）
-  const kvBytes = 2 * nCtx * nLayer * input.nEmbD * (kBytes + vBytes) / 2 * r;
+  const kvBytes = 2 * nCtx * kvLayers * input.nEmbD * (kBytes + vBytes) / 2 * r;
   const bs = input.b.trim() === '' ? 0 : Number(input.b) || 0;
   const ubS = input.ub.trim() === '' ? 0 : Number(input.ub) || 0;
   const maxBatch = Math.max(bs, ubS);
-  const batchBytes = maxBatch > 0 ? input.nEmbD * nLayer * r * 16 : 0; // 单 token 激活估算
+  const batchBytes = maxBatch > 0 ? input.nEmbD * kvLayers * r * 16 : 0; // 单 token 激活估算（注意力层主导）
   const nd = input.specDraftNMax.trim() === '' ? 0 : Number(input.specDraftNMax) || 0;
   const draftBytes = nd > 0 ? 2 * nd * nLayer * input.nEmbD * kBytes * r : 0;
   return {

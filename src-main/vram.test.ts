@@ -154,4 +154,13 @@ describe('estimateUsedBytes', () => {
     const r = estimateUsedBytes({ ...base, mmprojBytes: 1024 ** 3, ngl: '12', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });
     expect(r.mmprojBytes).toBe(1024 ** 3);
   });
+
+  it('hybrid_attention_kv_uses_attention_layers_only', () => {
+    // 真实回归（Qwen3.8-27B：65 层 / full_attention_interval=4）：
+    // -c 32000 时 KV 应按 ceil(65/4)=17 层算，而非全 65 层（旧公式 32.4GB 虚高）。
+    const hybrid = estimateUsedBytes({ ...base, nLayer: 65, nEmbD: 5120, nFullAttentionInterval: 4, ngl: '', ctk: 'q8_0', ctv: 'q8_0', nCtx: '32000', b: '', ub: '', specDraftNMax: '' });
+    const plain = estimateUsedBytes({ ...base, nLayer: 65, nEmbD: 5120, ngl: '', ctk: 'q8_0', ctv: 'q8_0', nCtx: '32000', b: '', ub: '', specDraftNMax: '' });
+    // KV 比 = 17/65（17 = ceil(65/4)）
+    expect(hybrid.kvBytes / plain.kvBytes).toBeCloseTo(17 / 65, 5);
+  });
 });
