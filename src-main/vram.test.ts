@@ -115,6 +115,14 @@ describe('estimateUsedBytes', () => {
     expect(r.r).toBe(1);
   });
 
+  it('ngl_exceeding_layer_count_clamps_to_100pct', () => {
+    // 真实回归（Qwen3.8-27B n_layer=65）：ngl=99 > 65 层 → r 必须封顶 1，不得 1.52 虚高
+    const over = estimateUsedBytes({ ...base, nLayer: 65, ngl: '99', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });
+    const capped = estimateUsedBytes({ ...base, nLayer: 65, ngl: '999', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });
+    expect(over.r).toBe(1);
+    expect(over.total).toBe(capped.total); // 超层数与封顶后一致
+  });
+
   it('nctx_empty_uses_4096', () => {
     const a = estimateUsedBytes({ ...base, nCtx: '', ngl: '', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });
     const b2 = estimateUsedBytes({ ...base, nCtx: '4096', ngl: '', ctk: '', ctv: '', b: '', ub: '', specDraftNMax: '' });

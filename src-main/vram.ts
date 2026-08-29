@@ -106,9 +106,10 @@ export interface EstimateResult {
 
 export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   const nLayer = input.nLayer;
-  // ngl 空 / ≥999 → r=1；ngl=0 → r=0；其余 → ngl / nLayer
+  // ngl 空 / ≥n_layer（含 ≥999）→ r=1；ngl≤0 → r=0；其余 → min(ngl/nLayer, 1)
+  // （ngl 超出实际层数无意义——按 100% 封顶，避免 99/65=1.52 这类虚高）
   const nglNum = input.ngl.trim() === '' ? 999 : Number(input.ngl);
-  const r = nglNum >= 999 ? 1 : nglNum <= 0 ? 0 : nglNum / nLayer;
+  const r = nglNum <= 0 ? 0 : Math.min(nglNum / nLayer, 1);
   const nCtx = input.nCtx.trim() === '' ? 4096 : Number(input.nCtx) || 4096;
   const kBytes = DTYPE_BYTES[input.ctk] ?? 2.0;
   const vBytes = DTYPE_BYTES[input.ctv] ?? 2.0;
