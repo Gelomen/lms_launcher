@@ -393,6 +393,21 @@ body {
   opacity: 0;
 }
 .tip-up:hover::after { opacity: 1; }
+/* flag-grid 参数 label 的 hover tooltip：position:fixed 浮于视口（.modal-body overflow-y:auto 会裁剪行内
+   abspos 浮层——同 .dd-tip/.vram-tip/.tpl-tip 方案）；JS 挂 label 右侧垂直居中，右侧放不下视口时
+   .flag-tip--flip 翻到左缘内侧。两行：长 flag（第一行）+ 中文说明（第二行）；min-width 260px 兜底宽度。 */
+/* 参数 label 上方：左缘对齐 label 左缘（min-width 260px 在参数名列上方，
+   不盖右侧选项框）+ 底边贴 label 顶边上沿（translateY(-100%)，不盖参数行）；
+   --down（顶部空间不足回落垂直居中）/ --right（超视口右缘时右移对齐）独立维度组合。 */
+.flag-tip {
+  position: fixed;
+  transform: translateY(-100%);
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.5; white-space: pre-line; text-align: center;
+  padding: 3px 10px; border-radius: 6px; /* 宽度随文字自由伸缩（无 min-width） */
+  z-index: 30; pointer-events: none;
+}
+.flag-tip--down { transform: translateY(-50%); }
 .icon-btn { position: relative; }
 .icon-btn::after {
   content: attr(data-tooltip);
