@@ -71,7 +71,7 @@ function onClose(): void { emit('close'); }
   flex: none; width: 42px; height: 42px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 18px;
-  color: var(--accent); background: rgba(59, 130, 246, 0.12);
+  color: var(--primary); background: rgba(139, 92, 246, 0.12);   /* 中性 tone 紫（2026-08-29 蓝→紫统一） */
 }
 .confirm-icon.danger { color: var(--danger); background: rgba(239, 68, 68, 0.12); }
 .confirm-title { font-size: 15px; font-weight: 600; margin: 0 0 2px; }

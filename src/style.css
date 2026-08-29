@@ -109,12 +109,12 @@ body {
 }
 .btn:hover { background: #F6F7F8; }
 .btn-primary {
-  background: var(--accent);
+  background: var(--primary);
   color: #fff;
-  border-color: var(--accent);
-  height: var(--h-primary);
+  border-color: var(--primary);          /* 主操作紫（2026-08-29 蓝→紫统一） */
+  height: var(--h-control);              /* 与 .btn 同高（32px），不再用 --h-primary(36px)——同排按钮同尺寸 */
 }
-.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:hover { background: var(--primary-hover); }
 .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-danger:hover { background: #DC2626; }
 
