@@ -144,6 +144,19 @@ describe('estimateUsedBytes', () => {
     expect(none.batchBytes).toBe(0);
   });
 
+  it('batch_scales_with_size_and_is_visible', () => {
+    // 回归（-b/ub 动态可见性）：batch 项必须随 max(b,ub) 线性增长（不得淹没在 0.00 里）。
+    // 历史 bug：batch 项公式漏乘 maxBatch → -b/-ub 任意取值都返回同一 total，看起来「没动态计算」。
+    const none = estimateUsedBytes({ ...base, b: '', ub: '', ngl: '', ctk: '', ctv: '', specDraftNMax: '' });
+    const small = estimateUsedBytes({ ...base, b: '512', ub: '', ngl: '', ctk: '', ctv: '', specDraftNMax: '' });
+    const big = estimateUsedBytes({ ...base, b: '4096', ub: '', ngl: '', ctk: '', ctv: '', specDraftNMax: '' });
+    expect(none.batchBytes).toBe(0);
+    expect(big.batchBytes).toBeGreaterThan(small.batchBytes); // 单调
+    expect(big.batchBytes).toBeGreaterThan(0);                 // 可见（非 0）
+    expect(big.batchBytes / small.batchBytes).toBeCloseTo(8, 5); // 4096/512 = 8 倍（线性）
+    expect(big.total - none.total).toBeGreaterThan(0);          // total 随 -b 变化（动态）
+  });
+
   it('draft_zero_or_negative_is_0', () => {
     const r = estimateUsedBytes({ ...base, specDraftNMax: '0', ngl: '', ctk: '', ctv: '', b: '', ub: '' });
     expect(r.draftBytes).toBe(0);

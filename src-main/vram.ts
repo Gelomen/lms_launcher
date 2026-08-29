@@ -154,7 +154,9 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   const bs = input.b.trim() === '' ? 0 : Number(input.b) || 0;
   const ubS = input.ub.trim() === '' ? 0 : Number(input.ub) || 0;
   const maxBatch = Math.max(bs, ubS);
-  const batchBytes = maxBatch > 0 ? input.nEmbD * kvLayers * r * 16 : 0; // 单 token 激活估算（注意力层主导）
+  // -b batch buffer：prompt processing 时每个待处理 token 需一份 hidden state buffer（n_embd × 16B 中间层激活）；
+  // buffer 随 max(b, ub) 线性增长（不乘 kvLayers——那是 KV cache 层的项，batch 是独立激活区）。
+  const batchBytes = maxBatch > 0 ? maxBatch * input.nEmbD * 16 * r : 0;
   const nd = input.specDraftNMax.trim() === '' ? 0 : Number(input.specDraftNMax) || 0;
   const draftBytes = nd > 0 ? 2 * nd * nLayer * input.nEmbD * kBytes * r : 0;
   return {
