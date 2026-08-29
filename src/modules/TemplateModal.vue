@@ -213,6 +213,8 @@ const vramOk = ref(true);
 const vramReason = ref<string | null>(null);
 const VRAM_KEYS = ['m', 'mmproj', 'ngl', 'c', 'ctk', 'ctv', 'b', 'ub', 'spec_draft_n_max'] as const;
 let vramTimer: ReturnType<typeof setTimeout> | null = null;
+// -m 是否已填（决定指示是否计算/显示：未填 → 整块 --，不估算）
+const vramHasModel = computed((): boolean => (formValues.value['m'] ?? '').trim().length > 0);
 
 function scheduleVramEstimate(): void {
   if (vramTimer) clearTimeout(vramTimer);
@@ -245,6 +247,7 @@ const vramFreeGb = computed(() =>
     : null
 );
 const vramTier = computed((): 'green' | 'orange' | 'red' | 'grey' => {
+  if (!vramHasModel.value) return 'grey'; // 未填 -m：不计算，整块 --
   if (props.vramTotalGb === undefined) return 'grey';
   if (vramFreeGb.value === null) return 'grey';
   if (vramFreeGb.value >= 2) return 'green';
@@ -252,6 +255,7 @@ const vramTier = computed((): 'green' | 'orange' | 'red' | 'grey' => {
   return 'red';
 });
 const vramTooltip = computed((): string | undefined => {
+  if (!vramHasModel.value) return '填写模型文件（-m）后自动估算显存占用';
   if (props.vramTotalGb === undefined) return '未配置显卡显存——点模板卡片右上角 VRAM 按钮设置';
   if (vramUsedGb.value === null) return (vramOk.value ? '填写模型文件后自动估算' : (vramReason ?? '估算失败'));
   return '余量 ' + vramFreeGb.value!.toFixed(1) + ' GB';
@@ -327,9 +331,10 @@ function close(): void { emit('close'); }
           <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰 -->
           <!-- VRAM 指示：底栏正中；used 按 vramTier 上色,total 恒蓝;grey 档整块灰。hover tooltip = :title（Vue SFC 下 :data-* 绑定不可靠，不另设 data 属性） -->
           <div class="vram-indicator" :class="'vram-indicator--' + vramTier" :title="vramTooltip">
-            <span class="vram-used">{{ vramUsedGb !== null ? vramUsedGb.toFixed(1) : '--' }}</span>
+            <!-- 未填 -m → 不计算，整块 --（不显示显卡总量，避免误读为已估算） -->
+            <span class="vram-used">{{ vramHasModel && vramUsedGb !== null ? vramUsedGb.toFixed(1) : '--' }}</span>
             <span class="vram-sep"> / </span>
-            <span class="vram-total">{{ props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
+            <span class="vram-total">{{ vramHasModel && props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
             <span class="vram-unit"> GB</span>
           </div>
           <button class="modal-save" :disabled="saving" aria-label="保存" @click="save">

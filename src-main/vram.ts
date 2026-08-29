@@ -9,44 +9,74 @@ const DTYPE_BYTES: Record<string, number> = {
   q4_0: 0.5, q5_0: 0.625, q8_0: 1.0, f16: 2.0,
 };
 
-// KV 值类型码（llama.cpp gguf.h）：0=u8(1B) 1=u16(2B) 2=u32(4B) 3=u64(8B) 4=f32(4B) 5=f64(8B) 6=bool(1B)
-// 7=string(u32 len + bytes + 0x00) 8=array(u64 count + u32 elem_type + count×elem)。
-export function parseGgufHeader(buf: Buffer): GgufHeader {
-  if (buf.length < 20) throw new Error('GGUF: 文件过小');
-  if (buf.readUInt32LE(0) !== 0x46475547) throw new Error('GGUF: 非 GGUF 文件（magic 不符）');
-  const kvCount = Number(buf.readBigUInt64LE(12));
-  let off = 20;
-  let nLayer = 0; let nEmbD = 0;
-  const fixedSizes: Record<number, number> = { 0: 1, 1: 2, 2: 4, 3: 8, 4: 4, 5: 8, 6: 1 };
-  for (let i = 0; i < kvCount; i++) {
-    if (off + 4 > buf.length) break;
-    const keyLen = buf.readUInt32LE(off); off += 4;
-    if (off + keyLen + 1 > buf.length) break;
-    const key = buf.toString('utf8', off, off + keyLen); off += keyLen;
-    off += 1; // 0x00 终止符（C 字符串，单字节）
-    if (off + 4 > buf.length) break;
-    const type = buf.readUInt32LE(off); off += 4;
-    let vSize = 0; let v = 0;
-    if (fixedSizes[type] !== undefined) {
-      vSize = fixedSizes[type];
-      v = type === 3 ? Number(buf.readBigUInt64LE(off)) : (buf.readUInt32LE(off) & 0xffffffff) >>> 0;
-      // u8/u16/bool 复用 u32 读法（低位取值足够 n_layer/n_embd）
-      off += vSize;
-    } else if (type === 7) { // string：u32 len（含 0x00 终止符）+ bytes
-      const len = buf.readUInt32LE(off); off += 4;
-      off += len;
-    } else if (type === 8) { // array：count(u64) + elem_type(u32) + count × elem
-      const count = Number(buf.readBigUInt64LE(off)); off += 8;
-      const elemType = buf.readUInt32LE(off); off += 4;
-      const es = fixedSizes[elemType] ?? 4;
-      off += count * es;
-    } else {
-      break; // 未知类型：不再继续（避免错位）
-    }
-    if (key === 'n_layer') nLayer = v;
-    else if (key === 'n_embd') nEmbD = v;
+// GGUF v3 元数据值类型码（ggml/docs/gguf.md）：
+// 0=uint8 1=int8 2=uint16 3=int16 4=uint32 5=int32 6=float32 7=bool 8=string 9=array 10=uint64 11=int64 12=float64
+// 定长类型的字节大小（string=8 变长、array=9 变长）
+const V3_SIZES: Record<number, number> = { 0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8 };
+// 层数/维度字段名因架构而异（末段匹配）：
+//   llama 系 = n_layer / n_embd；qwen/gemini 系 = block_count / embedding_length；其它常见回退
+const LAYER_NAMES = new Set(['n_layer', 'block_count', 'n_layers']);
+const EMBD_NAMES = new Set(['n_embd', 'embedding_length', 'd_model']);
+// 跳过单个值（不读内容），返回新偏移；越界返回 -1
+function skipV3(buf: Buffer, off: number, ty: number): number {
+  const sz = V3_SIZES[ty];
+  if (sz !== undefined) { if (off + sz > buf.length) return -1; return off + sz; }
+  if (ty === 8) { // string：u64 len + bytes
+    if (off + 8 > buf.length) return -1;
+    const l = Number(buf.readBigUInt64LE(off));
+    if (off + 8 + l > buf.length) return -1;
+    return off + 8 + l;
   }
-  if (nLayer === 0 || nEmbD === 0) throw new Error('GGUF: 缺少 n_layer/n_embd 元数据');
+  if (ty === 9) { // array：u32 elem_type + u64 len + 逐元素
+    if (off + 12 > buf.length) return -1;
+    const et = buf.readUInt32LE(off);
+    const len = Number(buf.readBigUInt64LE(off + 4));
+    let o = off + 12;
+    for (let j = 0; j < len; j++) { o = skipV3(buf, o, et); if (o < 0) return -1; }
+    return o;
+  }
+  return -1; // 未知类型
+}
+// 读取定长整数值（层/维度字段恒为整型）
+function readNum(buf: Buffer, off: number, ty: number): number {
+  const sz = V3_SIZES[ty];
+  if (sz === 1) return buf.readUInt8(off);
+  if (sz === 2) return buf.readUInt16LE(off);
+  if (sz === 4) return buf.readUInt32LE(off);
+  return Number(buf.readBigUInt64LE(off)); // 8B
+}
+// 解析 GGUF v3 头，返回层数与维度。只扫描元数据 KV，不读张量。
+// 架构字段命名不一致 → 按 key 末段（. 之后）匹配 LAYER_NAMES / EMBD_NAMES。
+export function parseGgufHeader(buf: Buffer): GgufHeader {
+  if (buf.length < 24) throw new Error('GGUF: 文件过小');
+  if (buf.readUInt32LE(0) !== 0x46554747) throw new Error('GGUF: 非 GGUF 文件（magic 不符）'); // LE 字节 47 47 55 46 = "GGUF"
+  // 头布局：magic(u32)@0 + version(u32)@4 + n_tensors(u64)@8 + n_kv(u64)@16 → KV @24
+  const kvCount = Number(buf.readBigUInt64LE(16));
+  let off = 24;
+  let nLayer = 0; let nEmbD = 0;
+  let scanned = 0;
+  for (let i = 0; i < kvCount; i++) {
+    if (off + 8 > buf.length) break;                 // KV 超出读取窗口
+    const keyLen = Number(buf.readBigUInt64LE(off)); off += 8; // key = u64 len + bytes（无 null 终止）
+    if (keyLen > 60000) break;                       // 异常长度：布局错位，停止
+    if (off + keyLen > buf.length) break;
+    const key = buf.toString('utf8', off, off + keyLen); off += keyLen;
+    if (off + 4 > buf.length) break;
+    const ty = buf.readUInt32LE(off); off += 4;      // value_type(u32)
+    const seg = key.includes('.') ? key.slice(key.lastIndexOf('.') + 1) : key;
+    const fixed = V3_SIZES[ty] !== undefined;
+    if (fixed) {
+      const v = readNum(buf, off, ty);
+      if (LAYER_NAMES.has(seg)) nLayer = v;
+      else if (EMBD_NAMES.has(seg)) nEmbD = v;
+    }
+    const next = skipV3(buf, off, ty);                // 推进到下一 KV
+    if (next < 0) break;                             // 变长值越界（如超长 tokens 数组）：停止
+    off = next;
+    scanned = i + 1;
+    if (nLayer > 0 && nEmbD > 0) break;              // 两个字段都到手 → 提前停
+  }
+  if (nLayer === 0 || nEmbD === 0) throw new Error('GGUF: 缺少层数/维度元数据（' + scanned + ' 个 KV 内未找到 n_layer/block_count 与 n_embd/embedding_length）');
   return { n_layer: nLayer, n_embd: nEmbD };
 }
 

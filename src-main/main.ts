@@ -209,9 +209,10 @@ ipcMain.handle('vram_estimate', async (_e, args: {
 }): Promise<{ ok: true; usedGb: number } | { ok: false; reason: string }> => {
   try {
     const modelBytes = statSync(args.m).size;
-    // GGUF KV 元数据在文件头部：用 fd 限定读前 64KB（不整文件入内存——模型可达 16GB）；
-    // KV 超出范围时 parseGgufHeader 按「缺少 n_layer/n_embd」报告
-    const CHUNK = 65536;
+    // GGUF KV 元数据在文件头部：用 fd 限定读前 512KB（不整文件入内存——模型可达 16GB）；
+    // 覆盖 arch 元数据 + 前 64KB 的 token 表之前（n_layer/embedding 等字段通常在前 100KB 内）；
+    // 超出窗口的 KV 跳过时 parseGgufHeader 按「缺少层数/维度」报告
+    const CHUNK = 512 * 1024;
     const fd = openSync(args.m, 'r');
     let headerBuf: Buffer;
     try {

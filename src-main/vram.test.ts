@@ -3,44 +3,66 @@
 import { describe, it, expect } from 'vitest';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
 
-// GGUF KV 类型码（llama.cpp gguf.h）：0=u8 1=u16 2=u32 3=u64 4=f32 5=f64 6=bool 7=string 8=array
-// 构造器：parts 累计法（Buffer.alloc(0) 不支持写偏移）
+// GGUF v3 元数据类型码（ggml/docs/gguf.md）：4=uint32 5=int32 6=float32 8=string 9=array 10=uint64
+// KV 布局：keyLen(u64) + key bytes（无 null 终止）+ type(u32) + value
+// 构造器：parts 累计法
 const u32 = (n: number): Buffer => { const b = Buffer.alloc(4); b.writeUInt32LE(n, 0); return b; };
 const u64 = (n: number | bigint): Buffer => { const b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(n), 0); return b; };
-// GGUF: keyLen(u32) = strlen(key) 不含终止符；key bytes 后跟一个 0x00。
-// string 值：len(u32) 含 0x00 终止符（llama.cpp gguf 字符串 = 定长含终止符）。
-// GGUF: key = C 字符串——keyLen(u32) 不含终止符，key bytes 后跟 1 字节 0x00。
-// 值 string：len(u32) + bytes（llama.cpp 按 len 读，无额外终止符）。
 function kvU32(key: string, v: number): Buffer[] {
   const kb = Buffer.from(key, 'utf8');
-  const term = Buffer.from([0]);
-  return [u32(kb.length), kb, term, u32(2), u32(v)]; // [keyLen][key][0x00][type=2][val]
+  return [u64(kb.length), kb, u32(4), u32(v)]; // [keyLen u64][key][type=uint32][val]
 }
 function kvStr(key: string, s: string): Buffer[] {
   const kb = Buffer.from(key, 'utf8');
   const sb = Buffer.from(s, 'utf8');
-  const term = Buffer.from([0]);
-  return [u32(kb.length), kb, term, u32(7), u32(sb.length), sb];
+  return [u64(kb.length), kb, u32(8), u64(sb.length), sb]; // type=string：u64 len + bytes
 }
-function gguf(tensors: number, entries: Buffer[][]): Buffer {
+// string 数组（type=9）：elem_type(u32)=8 + len(u64) + 各元素（u64 len + bytes）
+function kvStrArray(key: string, items: string[]): Buffer[] {
+  const kb = Buffer.from(key, 'utf8');
+  const parts: Buffer[] = [u64(kb.length), kb, u32(9), u32(8), u64(items.length)];
+  for (const it of items) { const sb = Buffer.from(it, 'utf8'); parts.push(u64(sb.length), sb); }
+  return parts;
+}
+function gguf(entries: Buffer[][], tensors = 100): Buffer {
   return Buffer.concat([
-    u32(0x46475547), // magic "GGUF"
-    u64(BigInt(tensors)),
-    u64(BigInt(entries.length)),
+    u32(0x46554747), // magic "GGUF"（LE：字节 47 47 55 46，与真实文件一致）
+    u32(3),          // version = 3
+    u64(BigInt(tensors)),  // n_tensors
+    u64(BigInt(entries.length)), // n_kv
     ...entries.flatMap((e) => e),
   ]);
 }
 
 describe('parseGgufHeader', () => {
   it('parses_n_layer_and_n_embd', () => {
-    const buf = gguf(2, [kvU32('n_layer', 48), kvU32('n_embd', 5120)]);
+    const buf = gguf([kvU32('n_layer', 48), kvU32('n_embd', 5120)]);
     const h = parseGgufHeader(buf);
     expect(h.n_layer).toBe(48);
     expect(h.n_embd).toBe(5120);
   });
 
   it('skips_string_kv_between_values', () => {
-    const buf = gguf(2, [kvU32('n_layer', 48), kvStr('ggml_file_version', '1.0'), kvU32('n_embd', 5120)]);
+    const buf = gguf([kvU32('n_layer', 48), kvStr('ggml_file_version', '1.0'), kvU32('n_embd', 5120)]);
+    const h = parseGgufHeader(buf);
+    expect(h.n_layer).toBe(48);
+    expect(h.n_embd).toBe(5120);
+  });
+
+  it('magic_constant_matches_real_gguf_bytes', () => {
+    // 真实 GGUF 文件头前 4 字节（LE 存储为 47 47 55 46 = ASCII "GGUF"）；
+    // 断言 magic 常量与之对应，防「常量字节序写错」再次自洽漂移。
+    const magicBytes = Buffer.from([0x47, 0x47, 0x55, 0x46]);
+    expect(magicBytes.readUInt32LE(0)).toBe(0x46554747);
+  });
+
+  it('parses_real_layout_with_version_field', () => {
+    // 头布局：magic + version + n_tensors(u64) + n_kv(u64) + KV；version 占 4 字节。
+    const buf = gguf([kvU32('n_layer', 48), kvU32('n_embd', 5120)], 866);
+    expect(buf.readUInt32LE(0)).toBe(0x46554747);   // magic
+    expect(buf.readUInt32LE(4)).toBe(3);            // version
+    expect(buf.readBigUInt64LE(8)).toBe(866n);       // n_tensors
+    expect(buf.readBigUInt64LE(16)).toBe(2n);        // n_kv
     const h = parseGgufHeader(buf);
     expect(h.n_layer).toBe(48);
     expect(h.n_embd).toBe(5120);
@@ -52,8 +74,23 @@ describe('parseGgufHeader', () => {
   });
 
   it('rejects_missing_n_layer', () => {
-    const buf = gguf(2, [kvU32('n_embd', 5120)]);
-    expect(() => parseGgufHeader(buf)).toThrow(/n_layer/);
+    const buf = gguf([kvU32('n_embd', 5120)]);
+    expect(() => parseGgufHeader(buf)).toThrow(/层数|n_layer|block_count/);
+  });
+
+  it('parses_arch_prefixed_field_names_qwen_style', () => {
+    // qwen/gemini 架构用 block_count / embedding_length（而非 n_layer / n_embd），
+    // 且带架构前缀（<arch>.block_count）。解析须按 key 末段匹配。
+    const buf = gguf([
+      kvStr('general.architecture', 'qwen35'),
+      kvStrArray('general.tags', ['foo', 'bar']), // 变长数组：须正确跳过
+      kvU32('qwen35.block_count', 65),
+      kvU32('qwen35.embedding_length', 5120),
+      kvStrArray('tokenizer.ggml.tokens', ['t1', 't2', 't3']), // 之后的 KV 应「找到即停」忽略
+    ]);
+    const h = parseGgufHeader(buf);
+    expect(h.n_layer).toBe(65);
+    expect(h.n_embd).toBe(5120);
   });
 });
 
