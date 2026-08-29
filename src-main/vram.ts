@@ -3,7 +3,11 @@
 // 只读 GGUF magic + tensor 计数 + KV 元数据，不读张量数据。
 
 export interface GgufHeader { n_layer: number; n_embd: number; /** 全注意力间隔：每 full_attention_interval 层中仅 1 层存 KV（混合注意力模型如 qwen3.8-27b：interval=4）；undefined = 纯注意力模型 */
-  full_attention_interval?: number }
+  full_attention_interval?: number;
+  /** KV 头数（GQA/MQA：KV cache 每层只存 kv_heads 个头的 K/V，而非全部注意力头）；undefined = 每注意力头都存（保守高估） */
+  head_count_kv?: number;
+  /** 注意力头数（head_dim = n_embd / head_count，用于按头维精确估 KV cache） */
+  head_count?: number }
 
 // dtype → KV cache 每字节系数（字节/元素近似：q4=0.5, q5=0.625, q8=1.0, f16=2.0）
 const DTYPE_BYTES: Record<string, number> = {
@@ -54,7 +58,7 @@ export function parseGgufHeader(buf: Buffer): GgufHeader {
   // 头布局：magic(u32)@0 + version(u32)@4 + n_tensors(u64)@8 + n_kv(u64)@16 → KV @24
   const kvCount = Number(buf.readBigUInt64LE(16));
   let off = 24;
-  let nLayer = 0; let nEmbD = 0; let faInterval: number | undefined;
+  let nLayer = 0; let nEmbD = 0; let faInterval: number | undefined; let kvHeads: number | undefined; let headCount: number | undefined;
   let scanned = 0;
   let coreFoundAt = -1; // n_layer + n_embd 首次同时到手的位置
   for (let i = 0; i < kvCount; i++) {
@@ -72,6 +76,8 @@ export function parseGgufHeader(buf: Buffer): GgufHeader {
       if (LAYER_NAMES.has(seg)) nLayer = v;
       else if (EMBD_NAMES.has(seg)) nEmbD = v;
       else if (seg === 'full_attention_interval') faInterval = v; // 混合注意力：仅每 interval 层存 KV
+      else if (seg === 'head_count_kv') kvHeads = v; // GQA/MQA：KV cache 每层只存 kv_heads 个头
+      else if (seg === 'head_count') headCount = v; // 注意力头数：head_dim = n_embd / head_count
     }
     const next = skipV3(buf, off, ty);                // 推进到下一 KV
     if (next < 0) break;                             // 变长值越界（如超长 tokens 数组）：停止
@@ -84,7 +90,7 @@ export function parseGgufHeader(buf: Buffer): GgufHeader {
     if (coreFoundAt >= 0 && (faInterval !== undefined || i >= coreFoundAt + 40)) break;
   }
   if (nLayer === 0 || nEmbD === 0) throw new Error('GGUF: 缺少层数/维度元数据（' + scanned + ' 个 KV 内未找到 n_layer/block_count 与 n_embd/embedding_length）');
-  return { n_layer: nLayer, n_embd: nEmbD, full_attention_interval: faInterval };
+  return { n_layer: nLayer, n_embd: nEmbD, full_attention_interval: faInterval, head_count_kv: kvHeads, head_count: headCount };
 }
 
 export interface EstimateInput {
@@ -92,6 +98,10 @@ export interface EstimateInput {
   nEmbD: number;
   /** GGUF full_attention_interval（混合注意力模型：每 interval 层中 1 层存 KV）；undefined=纯注意力 */
   nFullAttentionInterval?: number;
+  /** GGUF attention.head_count_kv（GQA/MQA：KV cache 每层只存这个数目的头）；undefined=每注意力头都存（保守高估） */
+  nHeadCountKV?: number;
+  /** GGUF attention.head_count（注意力头数）：head_dim = n_embd / head_count，用于按头维估 KV cache */
+  nHeadCount?: number;
   modelBytes: number;
   mmprojBytes: number;
   ngl: string;
@@ -130,7 +140,17 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
   const vBytes = DTYPE_BYTES[input.ctv] ?? 2.0;
   const modelBytes = input.modelBytes * r;
   const mmprojBytes = input.mmprojBytes; // 视觉投影全量计入（无层占比）
-  const kvBytes = 2 * nCtx * kvLayers * input.nEmbD * (kBytes + vBytes) / 2 * r;
+  // KV cache 每层每 token 存 2(K+V) × (KV 头维) × dtype 字节。
+  // 头维 head_dim = n_embd / head_count；KV 维度 = head_dim × head_count_kv（GQA/MQA 只存 kv_heads 个头，
+  // 如 qwen3.8-27b：head_dim=256, kv_heads=4 → KV 维 1024，而非全部 24 头的 5120）。
+  // 已知 head_count 与 head_count_kv 时精确；缺 head_count 时退回 nEmbD（保守高估，防漏）。
+  const headDim = input.nHeadCount && input.nHeadCount > 0
+    ? input.nEmbD / input.nHeadCount
+    : input.nEmbD;
+  const kvDim = input.nHeadCountKV && input.nHeadCountKV > 0
+    ? headDim * input.nHeadCountKV
+    : input.nEmbD;
+  const kvBytes = 2 * nCtx * kvLayers * kvDim * (kBytes + vBytes) / 2 * r;
   const bs = input.b.trim() === '' ? 0 : Number(input.b) || 0;
   const ubS = input.ub.trim() === '' ? 0 : Number(input.ub) || 0;
   const maxBatch = Math.max(bs, ubS);
