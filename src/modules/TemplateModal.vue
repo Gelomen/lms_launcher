@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faXmark, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 import { faFloppyDisk, faFolderOpen, faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
@@ -14,9 +14,9 @@ import ConfirmDialog from '../components/ConfirmDialog.vue';
 // FontAwesome：按需注册 regular 款——floppy-disk（保存）/ folder-open（选择文件）/ trash-can（删除），
 // xmark（关闭 ×）无 regular 款，保留 free-solid；均经 library.add 进入本地库
 config.autoGenerateCss = true;
-library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen);
+library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen, faCircleInfo);
 // byPrefixAndName：按「前缀 → { iconName: IconDefinition }」组织，模板侧 <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" /> 直接取图标定义
-const byPrefixAndName = { fat: { 'floppy-disk': faFloppyDisk, xmark: faXmark, 'trash-can': faTrashCan, 'folder-open': faFolderOpen } };
+const byPrefixAndName = { fat: { 'floppy-disk': faFloppyDisk, xmark: faXmark, 'trash-can': faTrashCan, 'folder-open': faFolderOpen, 'circle-info': faCircleInfo } };
 
 // 模板弹窗（新建 / 编辑共用，规格 §4.2）：
 // flag-form 参数表单 + id 唯一性红框 + 必填(-m)红框不保存；其余空值不写入 yaml。
@@ -226,10 +226,10 @@ function scheduleVramEstimate(): void {
     for (const k of VRAM_KEYS) args[k] = (v[k] ?? '').trim();
     invoke<{ ok: true; usedGb: number } | { ok: false; reason: string }>('vram_estimate', args)
       .then((res) => {
-        if (res.ok) { vramUsedGb.value = res.usedGb; vramOk.value = true; vramReason.value = null; }
-        else { vramUsedGb.value = null; vramOk.value = false; vramReason.value = res.reason; }
+        if (res.ok) { vramUsedGb.value = res.usedGb; vramOk.value = true; vramReason.value = null; vramParts.value = (res as { parts?: Record<string, number> }).parts ?? null; }
+        else { vramUsedGb.value = null; vramOk.value = false; vramReason.value = res.reason; vramParts.value = null; }
       })
-      .catch(() => { vramUsedGb.value = null; vramOk.value = false; vramReason.value = 'IPC 调用失败'; });
+      .catch(() => { vramUsedGb.value = null; vramOk.value = false; vramReason.value = 'IPC 调用失败'; vramParts.value = null; });
   }, 150);
 }
 
@@ -256,9 +256,45 @@ const vramTier = computed((): 'green' | 'orange' | 'red' | 'grey' => {
 });
 const vramTooltip = computed((): string | undefined => {
   if (!vramHasModel.value) return '填写模型文件（-m）后自动估算显存占用';
-  if (props.vramTotalGb === undefined) return '未配置显卡显存——点模板卡片右上角 VRAM 按钮设置';
+  if (props.vramTotalGb === undefined) return '未配置显卡显存，点击 VRAM 按钮设置';
   if (vramUsedGb.value === null) return (vramOk.value ? '填写模型文件后自动估算' : (vramReason ?? '估算失败'));
-  return '余量 ' + vramFreeGb.value!.toFixed(1) + ' GB';
+  // 规格 §6 增量（2026-08-30）：tooltip 须说明估算值含 GPU 固定运行时开销——
+  // CUDA context + cuBLAS/cuBLASLt workspace 等进程上 GPU 即占用的底座（实测 ~1.9GiB，取 2GiB 常量），
+  // 弥补公式只算数据量、漏掉运行时底座的盲区。
+  return '余量 ' + vramFreeGb.value!.toFixed(1) + ' GB（含约 2GB GPU 固定开销：CUDA context + cuBLAS workspace）';
+});
+
+// ---------- VRAM 明细悬停弹窗（规格 2026-08-30-vram-breakdown-tooltip-design §3）----------
+// .vram-info（circle-info span，纯 hover）→ .vram-tip 浮层：估算成功 = 5 数据项（0 项隐藏）
+// + 末行「GPU 固定开销约 2GB」；降级档 = 单行原因文案（与底栏 vramTooltip 同源）。
+const vramParts = ref<Record<string, number> | null>(null);
+// 浮层定位：图标 rect 坐标 + 顶部放不下（top < 150px ≈ 6 行高）翻转到图标下方
+const vramTip = ref<{ x: number; y: number; flip: boolean } | null>(null);
+function onInfoEnter(e: MouseEvent): void {
+  const el = e.currentTarget as HTMLElement;
+  const r = el.getBoundingClientRect();
+  vramTip.value = { x: r.left + r.width / 2, y: r.top, flip: r.top < 150 };
+}
+// 明细行：非 null = 逐项列出（0 项隐藏，fixed 恒显末行）；null = 降级单行（breakdownFallback）
+const breakdown = computed((): Array<{ label: string; gb: number; note?: boolean }> | null => {
+  const p = vramParts.value;
+  if (!vramHasModel.value || vramUsedGb.value === null || p === null) return null;
+  if (props.vramTotalGb === undefined) return null; // 未配置显卡显存 → 降级单行（用户定稿文案）
+  const rows: Array<{ label: string; gb: number }> = [
+    { label: '模型文件（-m）', gb: p.model ?? 0 },
+    { label: '视觉投影（--mmproj）', gb: p.mmproj ?? 0 },
+    { label: 'KV 缓存（-c/-ctk/-ctv/-ngl）', gb: p.kv ?? 0 },
+    { label: 'batch 缓冲（-b/-ub）', gb: p.batch ?? 0 },
+    { label: 'draft 缓存（--spec-draft-n-max）', gb: p.draft ?? 0 },
+  ].filter((r) => r.gb > 0); // 0 项隐藏（fixed 除外，恒显）
+  rows.push({ label: 'GPU 固定开销约 2GB', gb: p.fixed ?? 0, note: true }); // 末行说明性文案（用户定稿，不拼数值）
+  return rows;
+});
+const breakdownFallback = computed((): string => {
+  if (!vramHasModel.value) return '填写模型文件（-m）后自动估算';
+  if (props.vramTotalGb === undefined) return '未配置显卡显存，点击 VRAM 按钮设置';
+  if (vramUsedGb.value === null) return (vramOk.value ? '填写模型文件后自动估算' : (vramReason ?? '估算失败'));
+  return '估算中…'; // usedGb 在手但 parts 缺失（不应发生：主进程恒返回 parts）
 });
 
 function close(): void { emit('close'); }
@@ -337,6 +373,9 @@ function close(): void { emit('close'); }
             <span class="vram-total">{{ props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
             <!-- &nbsp;：flex item 内容的首空格会被 CSS 折叠（24.0 与 GB 贴死），用不换行空格兜底 -->
             <span class="vram-unit">&nbsp;GB</span>
+            <span class="vram-info" aria-label="显存估算明细" @mouseenter="onInfoEnter" @mouseleave="vramTip = null">
+              <FontAwesomeIcon :icon="byPrefixAndName.fat['circle-info']" />
+            </span>
           </div>
           <button class="modal-save" :disabled="saving" aria-label="保存" @click="save">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" style="font-size: 18px;" />
@@ -347,6 +386,18 @@ function close(): void { emit('close'); }
     <!-- 删除二次确认（方案 B：tone=danger 红色；[确认]才 delete_config，失败回 saveError 区） -->
     <!-- 文案（2026-08-27 优化）：引用配置名字（name prop，即 desc 字段），而非 id；
          超长名截断 + …（视觉宽度预算 8），hover title=完整值 -->
+    <!-- VRAM 明细浮层：position:fixed 浮于视口（同 .tpl-tip 方案，避开底栏/卡片裁剪）；
+         默认图标上方居中，顶部放不下时 .vram-tip--down 翻转到下方（vramTip.y + 24px） -->
+    <div v-if="vramTip" class="vram-tip" :class="{ 'vram-tip--down': vramTip.flip }"
+      :style="{ left: vramTip.x + 'px', top: (vramTip.flip ? vramTip.y + 24 : vramTip.y) + 'px' }">
+      <template v-if="breakdown">
+        <div v-for="row in breakdown" :key="row.label" class="vram-tip__row">
+          <template v-if="row.note">{{ row.label }}</template>
+          <template v-else>{{ row.label }} {{ row.gb.toFixed(1) }} GB</template>
+        </div>
+      </template>
+      <div v-else class="vram-tip__row">{{ breakdownFallback }}</div>
+    </div>
     <ConfirmDialog :open="confirmDeleteOpen" title="删除模板"
       :message="deleteShortMsg()" :tip="visualWidth(props.name || '') > NAME_BUDGET + 2 ? deleteFullMsg : undefined"
       tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
@@ -511,4 +562,27 @@ function close(): void { emit('close'); }
 .vram-indicator--grey .vram-total,
 .vram-indicator--grey .vram-sep,
 .vram-indicator--grey .vram-unit { color: var(--muted); }
+/* VRAM 明细悬停弹窗（规格 2026-08-30-vram-breakdown-tooltip-design §3.1/§3.2）：
+   与「编辑」按钮 tooltip 同视觉语言（深灰底白字/12px/圆角 6px/z-30），多行列表自绘浮层；
+   position:fixed 浮于视口，避开 .modal-box overflow 裁剪（同 .tpl-tip / .dd-tip 方案）。 */
+.vram-info {
+  margin-left: 4px;
+  display: inline-flex; align-items: center;
+  color: var(--muted);
+  font-size: 13px; line-height: 1;
+  cursor: default;          /* 纯 hover 提示，非可点击 */
+}
+.vram-tip {
+  position: fixed;
+  transform: translateX(-50%) translateY(-100%); /* 默认：图标上方居中 */
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.6;
+  white-space: nowrap;
+  padding: 6px 10px; border-radius: 6px;
+  z-index: 30;
+  pointer-events: none;
+}
+/* 顶部放不下：翻转到图标下方（去掉 translateY(-100%)） */
+.vram-tip--down { transform: translateX(-50%); }
+.vram-tip__row + .vram-tip__row { margin-top: 2px; }
 </style>
