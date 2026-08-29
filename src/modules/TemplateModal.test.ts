@@ -634,5 +634,127 @@ describe('TemplateModal vram indicator', () => {
     expect(el.textContent).toContain('--');
     w.unmount();
   });
+
+  it('tooltip_mentions_gpu_fixed_overhead_when_estimated', async () => {
+    // 规格 §6 增量（2026-08-30）：估算成功时 tooltip 须说明含 GPU 固定运行时开销，
+    // 弥补公式未显式计入的 CUDA context / cuBLAS workspace 底座（实测 ~1.9GiB，量级 1~2GB）。
+    mockVram(22.0);
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    const el = document.querySelector('.vram-indicator') as HTMLElement;
+    expect(el.title).toContain('固定开销');
+    w.unmount();
+  });
+});
+// ---- VRAM 明细悬停弹窗（规格 2026-08-30-vram-breakdown-tooltip-design §3）----
+// circle-info 图标在底栏 VRAM 指示右侧；hover 出 .vram-tip 浮层：
+// 估算成功 = 5 数据项（0 项隐藏）+ 末行「GPU 固定开销约 2GB」；降级档 = 单行原因文案。
+describe('TemplateModal vram breakdown tooltip', () => {
+  const P = paramsMeta;
+
+  function mockParts(parts: Record<string, number>): void {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        calls.push({ cmd, args });
+        if (cmd === 'vram_estimate') return Promise.resolve({ ok: true, usedGb: 22.0, parts });
+        if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID);
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+  }
+
+  async function fillModel(): Promise<void> {
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    setter.call(mIn, 'D:/models/qwen.gguf');
+    mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await new Promise((r) => setTimeout(r, 250)); // 超过 150ms 防抖
+    await flush();
+  }
+
+  it('circle_info_icon_rendered_in_vram_indicator', async () => {
+    calls = []; mockLms();
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await flush();
+    const info = document.querySelector('.vram-indicator .vram-info') as HTMLElement;
+    expect(info).not.toBeNull();                    // circle-info 图标（span，非按钮）
+    expect(info.querySelector('svg')).not.toBeNull(); // FontAwesome circle-info（svg）
+    expect(info.tagName.toLowerCase()).not.toBe('button');
+    w.unmount();
+  });
+
+  it('hover_shows_breakdown_rows_and_hides_zero_items', async () => {
+    // mmproj / batch / draft 未填 → 0 项隐藏；模型 + KV + GPU 固定 = 3 行
+    mockParts({ model: 16, mmproj: 0, kv: 4, batch: 0, draft: 0, fixed: 2 });
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    const info = document.querySelector('.vram-indicator .vram-info') as HTMLElement;
+    expect(document.querySelector('.vram-tip')).toBeNull(); // 未悬停：浮层不存在
+    info.dispatchEvent(new Event('mouseenter'));
+    await flush();
+    const tip = document.querySelector('.vram-tip') as HTMLElement;
+    expect(tip).not.toBeNull();
+    const rows = [...tip.querySelectorAll('.vram-tip__row')].map((r) => (r.textContent ?? '').trim());
+    expect(rows).toHaveLength(3);                        // 0 项隐藏
+    expect(rows[0]).toBe('模型文件（-m） 16.0 GB');
+    expect(rows[1]).toBe('KV 缓存（-c/-ctk/-ctv/-ngl） 4.0 GB');
+    expect(rows[2]).toBe('GPU 固定开销约 2GB');          // 末行 = 说明性文案（用户定稿）
+    w.unmount();
+  });
+
+  it('fallback_row_when_model_empty', async () => {
+    mockParts({ model: 0, mmproj: 0, kv: 0, batch: 0, draft: 0, fixed: 2 });
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await flush();
+    (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
+    await flush();
+    expect(document.querySelector('.vram-tip')?.textContent).toContain('填写模型文件（-m）后自动估算');
+    w.unmount();
+  });
+
+  it('fallback_row_when_total_unconfigured', async () => {
+    mockParts({ model: 16, mmproj: 0, kv: 4, batch: 0, draft: 0, fixed: 2 });
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: undefined } });
+    await fillModel();
+    (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
+    await flush();
+    expect(document.querySelector('.vram-tip')?.textContent).toContain('未配置显卡显存，点击 VRAM 按钮设置'); // 用户定稿文案
+    w.unmount();
+  });
+
+  it('fallback_row_when_estimate_fails', async () => {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        calls.push({ cmd, args });
+        if (cmd === 'vram_estimate') return Promise.resolve({ ok: false, reason: 'GGUF: 非 GGUF 文件（magic 不符）' });
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
+    await flush();
+    expect(document.querySelector('.vram-tip')?.textContent).toContain('GGUF: 非 GGUF 文件');
+    w.unmount();
+  });
+
+  it('mouseleave_hides_tooltip', async () => {
+    mockParts({ model: 16, mmproj: 0, kv: 4, batch: 0, draft: 0, fixed: 2 });
+    const w = mount(TemplateModal, { attachTo: document.body, props: { open: true, id: '', values: {}, paramsMeta: P, vramTotalGb: 24 } });
+    await fillModel();
+    const info = document.querySelector('.vram-indicator .vram-info') as HTMLElement;
+    info.dispatchEvent(new Event('mouseenter'));
+    await flush();
+    expect(document.querySelector('.vram-tip')).not.toBeNull();
+    info.dispatchEvent(new Event('mouseleave'));
+    await flush();
+    expect(document.querySelector('.vram-tip')).toBeNull(); // 移开即消失
+    w.unmount();
+  });
 });
 
