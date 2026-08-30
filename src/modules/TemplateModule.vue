@@ -181,16 +181,19 @@ onMounted(() => { void reload(); void loadVramTotal(); });
             :data-tooltip="tipFor(id)"
             @mouseenter="(e) => onLabelEnter(e as MouseEvent, id)"
             @mouseleave="onLabelLeave"> {{ rowName(id) }} </span>
-          <!-- 复制按钮（2026-08-30 spec）：编辑左边；faCopy regular 款；点击=新 id + name 加 - copy（递增编号）+ 插入本行后 -->
-          <button class="icon-btn icon-btn--sm" data-tooltip="复制" aria-label="复制"
-            :disabled="copying"
-            @click="onCopy(id)">
-            <FontAwesomeIcon :icon="byPrefixAndName.fat['copy']" />
-          </button>
-          <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
-            @click="openEdit(id)">
-            <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
-          </button>
+          <!-- 操作按钮组：margin-left:auto 贴卡片右缘（复制在编辑左边） -->
+          <div class="tpl-row__actions">
+            <!-- 复制按钮（2026-08-30 spec）：faCopy regular 款；点击=新 id + name 加 - copy（递增编号）+ 插入本行后 -->
+            <button class="icon-btn icon-btn--sm" data-tooltip="复制" aria-label="复制"
+              :disabled="copying"
+              @click="onCopy(id)">
+              <FontAwesomeIcon :icon="byPrefixAndName.fat['copy']" />
+            </button>
+            <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
+              @click="openEdit(id)">
+              <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
+            </button>
+          </div>
         </div>
       </div>
       <p v-if="configs && Object.keys(configs).length === 0" class="label">暂无配置</p>
