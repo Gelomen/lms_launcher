@@ -20,7 +20,7 @@ export function checkLlamaInstall(dir: string): LlamaInstallStatus {
 export function installCheckMessage(dir: string, status: LlamaInstallStatus): string {
   switch (status) {
     case 'unset': return '[lms_launcher] 启动检测 · 未配置 llama.cpp 安装目录';
-    case 'dir_missing': return '[lms_launcher] 启动检测 · 安装目录不存在：' + dir;
+    case 'dir_missing': return '[lms_launcher] 启动检测 · llama.cpp 安装目录不存在：' + dir;
     case 'exe_missing': return '[lms_launcher] 启动检测 · 目录中未找到 llama-server.exe：' + dir;
     case 'ok': return '[lms_launcher] 启动检测 · llama-server.exe 已找到：' + dir;
   }

@@ -60,6 +60,11 @@ function appendSys(line: string): void {
   appendLine({ line: line.startsWith('[lms_launcher]') ? line : '[lms_launcher] ' + line, stream: 'sys' });
 }
 
+// DirModule emit → App：目录卡片校验结果（✓/✗）同步写一条「目录校验」sys 行进 launcher 桶（不带括号，与启动检测行同风格）
+function onDirValidated(r: { ok: boolean; dir: string }): void {
+  appendSys(r.ok ? '目录校验 · llama-server.exe 已找到：' + r.dir : '目录校验 · 未找到 llama-server.exe：' + r.dir);
+}
+
 // LaunchBar emit → App：start_server，catch 一律 errMsg + isMissing/isValidation 分类
 async function doStart(configId: string): Promise<void> {
   state.value = { ...state.value, starting: true }; // start_server 在途：单按钮（绿[启动]）禁用防重复点击
@@ -148,7 +153,7 @@ function onExitConfirmed(): void {
   <main class="layout">
     <section class="grid">
       <div class="stack">
-        <div class="card"><DirModule /></div>
+        <div class="card"><DirModule @validated="onDirValidated" /></div>
         <div class="card">
           <LaunchBar :state="state" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
         </div>

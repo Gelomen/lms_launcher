@@ -5,6 +5,9 @@ import { faFolderOpen } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 
+// 2026-08-31：校验出 ✓/✗ 结果后向 App 通报（App 写「目录校验」sys 行进 LMS Launcher 日志区）
+const emit = defineEmits<{ (e: 'validated', r: { ok: boolean; dir: string }): void }>();
+
 // FontAwesome：按需注册 folder-open regular 款（选择目录按钮原「…」三点），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
 config.autoGenerateCss = true;
 library.add(faFolderOpen);
@@ -49,6 +52,7 @@ async function validate(): Promise<void> {
   if (dir.value.trim().length === 0) { status.value = null; return; }
   try {
     const ok = await invoke<boolean>('validate_dir', dir.value.trim());
+    emit('validated', { ok, dir: dir.value.trim() }); // 日志区记录校验结果（成功/失败均发）
     if (ok) {
       status.value = { ok: true, msg: 'llama-server.exe 已找到' };
       saving.value = true;
@@ -82,7 +86,7 @@ onMounted(load);
     </div>
     <!-- 下方恒定槽位：预留校验结果行（单行，与「保存中…」共用；避免校验前后卡片高度抖动） -->
     <div class="dir-status">
-      <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}（已保存）</p>
+      <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}</p>
       <p v-else-if="status && !status.ok" class="error-text">✗ {{ status.msg }}</p>
       <p v-else-if="saving" class="label">保存中…</p>
     </div>

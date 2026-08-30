@@ -156,6 +156,36 @@ describe('App start flow', () => {
 });
 
 // §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认）。点[确认]才 invoke('exit_app')；[取消]不 invoke。
+// 2026-08-31：目录卡片校验结果 → LMS Launcher 日志区（launcher 桶，[lms_launcher] 前缀，不带括号）
+describe('App dir validation log', () => {
+  function launcherTexts(w: any): string[] {
+    const pane = w.find('.log-pane[data-tab-id="launcher"]');
+    return pane.findAll('p').map((p: any) => p.text()).filter((t: string) => t !== '（暂无日志）');
+  }
+
+  it('validated ok emits a launcher log line with the dir path', async () => {
+    const { w } = mountApp();
+    await flush();
+    const dm = w.findComponent({ name: 'DirModule' });
+    (dm.vm as any).$emit('validated', { ok: true, dir: 'D:\\AI\\llama-cpp' });
+    await flush();
+    const lines = launcherTexts(w);
+    expect(lines).toContain('[lms_launcher] 目录校验 · llama-server.exe 已找到：D:\\AI\\llama-cpp');
+    expect(lines.some((l) => l.includes('（'))).toBe(false); // 不带任何括号文字
+    w.unmount();
+  });
+
+  it('validated fail emits a launcher log line with the dir path', async () => {
+    const { w } = mountApp();
+    await flush();
+    const dm = w.findComponent({ name: 'DirModule' });
+    (dm.vm as any).$emit('validated', { ok: false, dir: 'D:\\no-such-dir' });
+    await flush();
+    expect(launcherTexts(w)).toContain('[lms_launcher] 目录校验 · 未找到 llama-server.exe：D:\\no-such-dir');
+    w.unmount();
+  });
+});
+
 describe('App tray exit', () => {
   it('tray exit opens confirm dialog; [确认] invokes exit_app', async () => {
     const { w } = mountApp();
