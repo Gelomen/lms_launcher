@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faPenToSquare } from '@fortawesome/free-regular-svg-icons';
+import { faPenToSquare, faCopy } from '@fortawesome/free-regular-svg-icons';
 import { faFileCirclePlus } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
@@ -11,8 +11,8 @@ import VramDialog from './VramDialog.vue';
 
 // FontAwesome：按需注册 pen-to-square regular 款（列表行「编辑」）+ file-circle-plus solid 款（新建模板按钮），tree-shakeable 用法；与 TemplateModal / Dropdown 同模式。
 config.autoGenerateCss = true;
-library.add(faPenToSquare, faFileCirclePlus);
-const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare, 'file-circle-plus': faFileCirclePlus } };
+library.add(faPenToSquare, faCopy, faFileCirclePlus);
+const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare, copy: faCopy, 'file-circle-plus': faFileCirclePlus } };
 
 // 模块 2 · 启动参数模板管理（规格 §4.2）
 interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[] }
@@ -61,6 +61,49 @@ async function reload(): Promise<void> {
   } catch (e) {
     const msg = errMsg(e);
     if (!isMissing(msg) && !isValidation(msg)) error.value = msg; // 映射表本身坏了才报错，MISSING 沿用空表
+  }
+}
+
+// 复制命名（2026-08-30 spec-template-copy-button，方案 A：递增编号 + 占用检测）：
+// 候选 base - copy / base - copy 2 / …，取第一个不在现有 name 集合中的；
+// base 本身是复制品（- copy / - copy N 结尾）→ 剥后缀还原原始 base，防止滚成 "X - copy - copy"
+const COPY_SUFFIX = / - copy( \d+)?$/;
+function nextCopyName(base: string, taken: Set<string>): string {
+  const root = base.replace(COPY_SUFFIX, '');
+  for (let i = 1; ; i++) {
+    const cand = i === 1 ? `${root} - copy` : `${root} - copy ${i}`;
+    if (!taken.has(cand)) return cand;
+  }
+}
+
+// 复制：suggest_config_id 生成新 id → values 原样深拷贝 → name 加 - copy 后缀 → save_config 持久化；
+// 成功后本地重建 configs（字符串键保持插入序）把新条目插到源条目正后方 + emit('changed') 刷 LaunchBar；
+// 失败（VALIDATION/IO）→ error 区展示，列表不变
+const copying = ref(false);
+async function onCopy(id: string): Promise<void> {
+  if (copying.value || !configs.value) return;
+  const src = configs.value[id];
+  if (!src) return;
+  copying.value = true;
+  error.value = null;
+  try {
+    const newId = await invoke<string>('suggest_config_id');
+    const taken = new Set(Object.values(configs.value).map((c) => c.name).filter((n): n is string => typeof n === 'string'));
+    const newName = nextCopyName(src.name ?? '', taken);
+    await invoke('save_config', newId, newName, { ...src.values });
+    // 本地重排：按现有序遍历，源 id 后插入新 id（键序 = 显示序）
+    const cur = configs.value;
+    const next: ConfigMap = {};
+    for (const k of Object.keys(cur)) {
+      next[k] = cur[k];
+      if (k === id) next[newId] = { name: newName, values: { ...src.values } };
+    }
+    configs.value = next;
+    emit('changed');
+  } catch (e) {
+    error.value = errMsg(e);
+  } finally {
+    copying.value = false;
   }
 }
 
@@ -121,7 +164,7 @@ onMounted(() => { void reload(); void loadVramTotal(); });
     <!-- VRAM 按钮:卡片右上角,紫底白字 14px;未配置显 VRAM / 已配置显 24GB(规格 §5) -->
     <button class="vram-badge tip-up" :data-tooltip="'显卡显存: ' + (vramTotal !== undefined ? vramTotal + ' GB' : '未配置')"
       aria-label="显卡显存设置" @click="vramDialogOpen = true">
-      {{ vramTotal !== undefined ? vramTotal + 'GB' : 'VRAM' }}
+      {{ vramTotal !== undefined ? vramTotal + ' GB' : 'VRAM' }}
     </button>
     <div class="template-list">
       <p v-if="missing && error" class="label">暂无模板配置</p>
@@ -138,6 +181,12 @@ onMounted(() => { void reload(); void loadVramTotal(); });
             :data-tooltip="tipFor(id)"
             @mouseenter="(e) => onLabelEnter(e as MouseEvent, id)"
             @mouseleave="onLabelLeave"> {{ rowName(id) }} </span>
+          <!-- 复制按钮（2026-08-30 spec）：编辑左边；faCopy regular 款；点击=新 id + name 加 - copy（递增编号）+ 插入本行后 -->
+          <button class="icon-btn icon-btn--sm" data-tooltip="复制" aria-label="复制"
+            :disabled="copying"
+            @click="onCopy(id)">
+            <FontAwesomeIcon :icon="byPrefixAndName.fat['copy']" />
+          </button>
           <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
             @click="openEdit(id)">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
@@ -163,10 +212,11 @@ onMounted(() => { void reload(); void loadVramTotal(); });
   </section>
 </template>
 <style scoped>
-/* VRAM 按钮:紧贴卡片右上圆角;紫底白字 14px;hover 加深一档 */
+/* VRAM 按钮:紧贴卡片右上圆角;紫底白字 14px;hover 加深一档;
+   min-width 70px + 左右 padding 5px,容纳 3 位数 + 空格 + GB(如 999 GB)不换行 */
 .vram-badge {
   position: absolute; top: 0; right: 0;
-  height: 26px; padding: 0 12px;
+  height: 26px; padding: 0 5px; min-width: 70px; white-space: nowrap;
   border: none; cursor: pointer;
   border-top-right-radius: var(--radius-card);
   font-size: 14px; font-weight: 600;

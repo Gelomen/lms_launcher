@@ -214,6 +214,121 @@ describe('TemplateModule', () => {
     wrapper.unmount();
   });
 
+  // ---------- 复制按钮（2026-08-30 spec-template-copy-button）----------
+  function stubLms(over: Record<string, (...a: unknown[]) => unknown> = {}): void {
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS)));
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (over[cmd]) return Promise.resolve(over[cmd](...args));
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+  }
+
+  it('copy_button_renders_left_of_edit_button_in_each_row', async () => {
+    stubLms();
+    const wrapper = mount(TemplateModule);
+    await flush();
+    const row = wrapper.findAll('.module-template .tpl-row')[0];
+    const btns = row.findAll('button');
+    expect(btns.length).toBe(2);
+    expect(btns[0].attributes('data-tooltip')).toBe('复制'); // 复制在编辑左边
+    expect(btns[1].attributes('data-tooltip')).toBe('编辑');
+    expect(btns[0].attributes('aria-label')).toBe('复制');
+    wrapper.unmount();
+  });
+
+  it('copy_click_dups_config_after_source_with_copy_name_and_new_id', async () => {
+    let suggested = 0;
+    const saved: Array<[string, string | null, Record<string, string>]> = [];
+    stubLms({
+      suggest_config_id: () => { suggested += 1; return 'tplcopy' + suggested; },
+      save_config: (...a: unknown[]) => { saved.push(a as [string, string | null, Record<string, string>]); },
+    });
+    const wrapper = mount(TemplateModule);
+    await flush();
+    const copyBtn = wrapper.findAll('button').find((b) => b.attributes('data-tooltip') === '复制')!;
+    await copyBtn.trigger('click');
+    await flush();
+
+    expect(suggested).toBe(1);
+    expect(saved.length).toBe(1);
+    // 新 id / name 加 " - copy" 后缀 / values 完整拷贝
+    expect(saved[0][0]).toBe('tplcopy1');
+    expect(saved[0][1]).toBe('日常 - copy');
+    expect(saved[0][2]).toEqual({ m: 'x.gguf', port: '9931' });
+    // 新行插入源行正后方，显示新名字
+    const rows = wrapper.findAll('.module-template .tpl-row');
+    expect(rows.length).toBe(2);
+    expect(rows[0].text()).toContain('日常');
+    expect(rows[0].text()).not.toContain('- copy');
+    expect(rows[1].text()).toContain('日常 - copy');
+    wrapper.unmount();
+  });
+
+  it('copying_a_copy_strips_suffix_and_increments_number', async () => {
+    const CONFIGS_COPY = {
+      a: { name: '日常', values: { m: 'x.gguf' } },
+      b: { name: '日常 - copy', values: { m: 'y.gguf' } },
+    };
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS_COPY)));
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'suggest_config_id') return Promise.resolve('tplc2');
+        if (cmd === 'save_config') return Promise.resolve(null);
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+    let savedName: string | null = null;
+    const wrapper = mount(TemplateModule);
+    await flush();
+    // 点「日常 - copy」行（第二行）的复制
+    const rows = wrapper.findAll('.module-template .tpl-row');
+    const copyBtn = rows[1].findAll('button').find((b) => b.attributes('data-tooltip') === '复制')!;
+    await copyBtn.trigger('click');
+    await flush();
+    const all = wrapper.findAll('.module-template .tpl-row');
+    expect(all.length).toBe(3);
+    // 剥掉 - copy 后缀还原 base=日常 → 占用检测跳过 1 → "日常 - copy 2"
+    const text = all[2].text();
+    expect(text).toContain('日常 - copy 2');
+    expect(text).not.toContain('copy - copy');
+    wrapper.unmount();
+  });
+
+  it('copy_skips_taken_numbers_and_reuses_free_slot', async () => {
+    // 占用：日常 - copy、日常 - copy 3 → 复制「日常」应得「日常 - copy 2」
+    const CONFIGS_TAKEN = {
+      a: { name: '日常', values: { m: 'x.gguf' } },
+      b: { name: '日常 - copy', values: {} },
+      c: { name: '日常 - copy 3', values: {} },
+    };
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS_TAKEN)));
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'suggest_config_id') return Promise.resolve('tplc3');
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule);
+    await flush();
+    const copyBtn = wrapper.findAll('.module-template .tpl-row')[0].findAll('button').find((b) => b.attributes('data-tooltip') === '复制')!;
+    await copyBtn.trigger('click');
+    await flush();
+    const all = wrapper.findAll('.module-template .tpl-row');
+    expect(all.length).toBe(4);
+    expect(all[1].text()).toContain('日常 - copy 2'); // 插在源行后、编号复用空位
+    wrapper.unmount();
+  });
+
   it("top_button_is_plus_icon_with_tooltip_opens_new_modal", async () => {
     (window as any).lms = {
       invoke: (cmd: string) => {

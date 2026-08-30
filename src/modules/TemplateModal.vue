@@ -439,6 +439,8 @@ function close(): void { emit('close'); }
          默认图标上方居中，顶部放不下时 .vram-tip--down 翻转到下方（vramTip.y + 24px） -->
     <div v-if="vramTip" class="vram-tip" :class="{ 'vram-tip--down': vramTip.flip }"
       :style="{ left: vramTip.x + 'px', top: (vramTip.flip ? vramTip.y + 24 : vramTip.y) + 'px' }">
+      <!-- 顶部提示行（主题紫）：预测仅供参考，明细/降级两种形态都显示 -->
+      <div class="vram-tip__title">显存占用预测，仅供参考</div>
       <template v-if="breakdown">
         <div v-for="row in breakdown" :key="row.label" class="vram-tip__row">
           <template v-if="row.note">{{ row.label }}</template>
@@ -641,4 +643,7 @@ function close(): void { emit('close'); }
 /* 顶部放不下：翻转到图标下方（去掉 translateY(-100%)） */
 .vram-tip--down { transform: translateX(-50%); }
 .vram-tip__row + .vram-tip__row { margin-top: 2px; }
+/* 顶部提示行：主题紫（--primary），与下方明细行留 4px 间距 */
+.vram-tip__title { color: var(--primary); margin-bottom: 4px; }
+.vram-tip__title + .vram-tip__row { margin-top: 0; }
 </style>
