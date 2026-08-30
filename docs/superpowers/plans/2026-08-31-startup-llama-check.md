@@ -1,5 +1,7 @@
 # 应用启动时检测 llama.cpp 安装目录 实现计划
 
+> 注：dir_missing 文案后于 2026-08-31 微调为「llama.cpp 安装目录不存在」（commit 6219024），下文引用旧文案处以此为准。
+
 > **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
 
 **目标：** 应用启动（app whenReady）时检测已保存的 llama.cpp 安装目录与 llama-server.exe 存在性，结果以 sys 日志行写入 LMS Launcher 日志区（日志行不带任何括号文字）。

@@ -36,7 +36,7 @@ export function checkLlamaInstall(dir: string): LlamaInstallStatus
 | status | 行 |
 |--------|----|
 | unset | [lms_launcher] 启动检测 · 未配置 llama.cpp 安装目录 |
-| dir_missing | [lms_launcher] 启动检测 · 安装目录不存在：<dir> |
+| dir_missing | [lms_launcher] 启动检测 · llama.cpp 安装目录不存在：<dir> |（2026-08-31 文案微调，commit 6219024）
 | exe_missing | [lms_launcher] 启动检测 · 目录中未找到 llama-server.exe：<dir> |
 | ok | [lms_launcher] 启动检测 · llama-server.exe 已找到：<dir> |
 
