@@ -228,4 +228,56 @@ params_file:
     expect(cfg.llama_dir).toBe('d:\\x\\');
     rm(p);
   });
+
+  it('default_params_includes_params_default_and_fit_options', () => {
+    // params_default：新建模板自动填写的默认值（port/fit）；fit 同时是下拉（off/on），非 boolean
+    const pf = defaultParams();
+    expect(pf.params_default).toEqual({ port: '9931', fit: 'off' });
+    expect(pf.params_options?.fit).toEqual(['off', 'on']);
+    expect(pf.params_boolean ?? []).not.toContain('fit');
+  });
+
+  it('params_yaml_roundtrip_preserves_params_default', () => {
+    // 首次加载把默认 params 写盘 → 再读回 params_default / fit 选项仍在（往返不丢）
+    const p = tmpPath('params_default_rt.yaml');
+    rm(p);
+    paramsLoad(p);
+    const pf = paramsLoad(p);
+    expect(pf.params_default).toEqual({ port: '9931', fit: 'off' });
+    expect(pf.params_options?.fit).toEqual(['off', 'on']);
+    rm(p);
+  });
+
+  it('save_config_backfills_missing_params_defaults', () => {
+    // 存量模板缺 port/fit → 保存时自动补默认值（用户已设的 port 不覆盖）
+    const p = tmpPath('cfg_backfill.yaml');
+    rm(p);
+    saveConfigEntry(p, 'old', '存量', { m: 'x.gguf', port: '8080' }, defaultParams());
+    const map = configsLoad(p);
+    expect(map.old.values['port']).toBe('8080'); // 已有用户值保留
+    expect(map.old.values['fit']).toBe('off');   // 缺失 fit → 默认补齐
+    rm(p);
+  });
+
+  it('save_config_backfill_keeps_user_set_fit', () => {
+    // 用户显式 fit=on → 不覆盖；缺失的 port 补默认
+    const p = tmpPath('cfg_backfill2.yaml');
+    rm(p);
+    saveConfigEntry(p, 'u', '用户', { m: 'x.gguf', fit: 'on' }, defaultParams());
+    const map = configsLoad(p);
+    expect(map.u.values['fit']).toBe('on');
+    expect(map.u.values['port']).toBe('9931');
+    rm(p);
+  });
+
+  it('save_config_without_defaults_keeps_legacy_behavior', () => {
+    // defaults 省略（向后兼容签名）→ 不回填
+    const p = tmpPath('cfg_backfill3.yaml');
+    rm(p);
+    saveConfigEntry(p, 'l', 'Legacy', { m: 'x.gguf' });
+    const map = configsLoad(p);
+    expect(map.l.values['port']).toBeUndefined();
+    expect(map.l.values['fit']).toBeUndefined();
+    rm(p);
+  });
 });

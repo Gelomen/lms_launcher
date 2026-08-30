@@ -8,6 +8,8 @@ export interface ParamsFile {
   params_options?: Record<string, string[]>;
   params_boolean?: string[];
   params_file?: string[];
+  // params_default（2026-09）：新建模板自动填写的默认值——保存时也写入用户模板配置（用户改过则用用户的）
+  params_default?: Record<string, string>;
 }
 // 字段 key：desc → name（2026-09）；存量 yaml 的 desc 键由 configsLoad 归一，任意一次保存后即以 name 持久化
 export interface ConfigEntry { name?: string; values: Record<string, string> }
@@ -99,8 +101,9 @@ export function suggestConfigId(existing: string[]): string {
   throw new Error('VALIDATION: id 生成失败（无法产生唯一值）');
 }
 
-// save：坏 id → VALIDATION；值 trim 后空串丢弃；文件不存在则首次创建
-export function saveConfigEntry(path: string, id: string, name: string | undefined, values: Record<string, string>): void {
+// save：坏 id → VALIDATION；值 trim 后空串丢弃；文件不存在则首次创建。
+// defaults（2026-09 params_default）：被保存条目缺失的默认值自动补入（用户已设值不覆盖）
+export function saveConfigEntry(path: string, id: string, name: string | undefined, values: Record<string, string>, defaults?: ParamsFile): void {
   if (!validateConfigId(id)) throw new Error('VALIDATION: id 须为小写字母开头的字母数字串（不含空格/大写），最长 32 位');
   let map: ConfigsMap = {};
   if (existsSync(path)) map = configsLoad(path); // legacy desc → name 归一（任意一次保存后即固化）
@@ -109,8 +112,34 @@ export function saveConfigEntry(path: string, id: string, name: string | undefin
     const t = v.trim();
     if (t.length > 0) clean[k] = t;
   }
+  for (const [k, v] of Object.entries(defaults?.params_default ?? {})) { // params_default 回填：缺失才补
+    const t = v.trim();
+    if (t.length > 0 && clean[k] === undefined) clean[k] = t;
+  }
   map[id] = name ? { name, values: clean } : { values: clean }; // 字段 key：desc → name（2026-09）
   writeFileSync(path, dump(map));
+}
+
+// params_default 存量兼容（2026-09）：现有模板配置里缺失的默认值自动为用户新增（已有值不覆盖）。
+// configs yaml 缺失（首个模板尚未创建）→ 直接跳过；返回是否有改动（改动才落盘）。
+export function configsBackfillDefaults(path: string, pf: ParamsFile): boolean {
+  let map: ConfigsMap;
+  try {
+    map = configsLoad(path);
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('MISSING')) return false;
+    throw e;
+  }
+  let changed = false;
+  for (const entry of Object.values(map)) {
+    for (const [k, v] of Object.entries(pf.params_default ?? {})) {
+      const cur = (entry.values[k] ?? '').trim();
+      const t = v.trim();
+      if (cur.length === 0 && t.length > 0) { entry.values[k] = t; changed = true; }
+    }
+  }
+  if (changed) writeFileSync(path, dump(map));
+  return changed;
 }
 
 export function deleteConfigEntry(path: string, id: string): void {
@@ -160,8 +189,10 @@ export function defaultParams(): ParamsFile {
       reasoning: ['auto', 'on', 'off'],
       reasoning_format: ['none', 'hide', 'deepseek'],
       reasoning_effort: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+      fit: ['off', 'on'], // -fit 显存自动调整开关（默认 off：llama-server 自身默认 on，launcher 显式 off 保持参数显式可控）
     },
     params_boolean: ['jinja', 'reasoning_preserve', 'metrics'],
     params_file: ['m', 'mmproj', 'chat_template_file', 'md'],
+    params_default: { port: '9931', fit: 'off' }, // 新建模板自动填写 + 保存时写入用户模板；存量配置由 configsBackfillDefaults 补齐
   };
 }
