@@ -6,6 +6,7 @@ import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
 import { ProcessState } from './process';
+import { checkLlamaInstall, installCheckMessage } from './llama-check';
 
 // ---------- 单实例锁：禁止多开 ----------
 // requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
@@ -81,6 +82,15 @@ function createTray(): void {
   tray.on('double-click', () => {
     restoreWindow();
   });
+}
+
+// ---------- 启动检测（规格 2026-08-31-startup-llama-check-design） ----------
+// whenReady 内 createWindow 后调用：读已保存的 llama_dir → 判定 → emitLog sys 行进 LMS Launcher 日志区。
+// createWindow 同步建窗；send 先于渲染端订阅发出的消息按通道缓存，onMounted 订阅后按序收到，不丢行。
+function detectLlamaInstall(): void {
+  const [p] = yamlPaths();
+  const dir = appConfigLoad(p).llama_dir;
+  emitLog(installCheckMessage(dir, checkLlamaInstall(dir)), 'sys');
 }
 
 // ---------- 窗口 ----------
@@ -302,6 +312,7 @@ app.whenReady().then(() => {
     emitLog('[lms_launcher] params_default 回填失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
   }
   createWindow();
+  detectLlamaInstall();
   createTray();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
