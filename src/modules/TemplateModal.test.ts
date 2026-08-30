@@ -821,3 +821,78 @@ describe('TemplateModal vram breakdown tooltip', () => {
   });
 });
 
+// ---- params_default 契约（2026-09 用户规格）：
+//      1) 新建模板表单自动填写 params_default（port=9931 / fit=off），无需用户手动输入；
+//      2) 保存时这些默认值也写入用户模板配置；
+//      3) 用户改过的参数以用户值保存（如 port 改 8080）。 ----
+describe('TemplateModal params_default', () => {
+  // 按 flag label 定位行的输入控件：label 的下一个兄弟（.row-cell / .dropdown）
+  function rowControl(flagText: string): Element {
+    const label = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === flagText)!;
+    return label.nextElementSibling!;
+  }
+  function portInput(): HTMLInputElement {
+    return rowControl('--port').querySelector('.row-cell input')! as HTMLInputElement;
+  }
+  function fitLabel(): Element {
+    return rowControl('-fit').querySelector('.select-label')!;
+  }
+  // 名字输入框（本地版：外层 describe 内的 descIn 不可见）
+  function descInput(): HTMLInputElement {
+    const label = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('名字'))!;
+    return label.nextElementSibling as HTMLInputElement;
+  }
+  function saveMock(): void {
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => { calls.push({ cmd, args }); if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID); return Promise.resolve(null); },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+  }
+  // 填齐必填（-m + 名字）后点保存
+  async function fillRequiredAndSave(): Promise<void> {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    setter.call(descInput(), '日常'); descInput().dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    (document.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+  }
+
+  it('new_template_form_prefills_params_default_port_and_fit', async () => {
+    calls = []; saveMock();
+    const w = mountModal(); await flush();
+    // 表单自动填写：port 输入框 = 9931；fit 下拉触发显示 off（params_default / options 首项）
+    expect(portInput().value).toBe('9931');
+    expect(fitLabel().textContent).toBe('off');
+    w.unmount();
+  });
+
+  it('new_template_save_emits_default_port_and_fit', async () => {
+    calls = []; saveMock();
+    const w = mountModal(); await flush();
+    await fillRequiredAndSave();
+    const saved = calls.find((c) => c.cmd === 'save_config');
+    expect(saved).toBeDefined();
+    const values = (saved!.args as unknown[])[2] as Record<string, string>;
+    expect(values['port']).toBe('9931'); // 默认端口自动保存
+    expect(values['fit']).toBe('off');   // 默认 fit=off 自动保存（覆盖 llama-server 的 fit 默认 on）
+    w.unmount();
+  });
+
+  it('user_modified_port_wins_over_default_on_save', async () => {
+    calls = []; saveMock();
+    const w = mountModal(); await flush();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    setter.call(portInput(), '8080'); portInput().dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    await fillRequiredAndSave();
+    const saved = calls.find((c) => c.cmd === 'save_config');
+    expect(saved).toBeDefined();
+    const values = (saved!.args as unknown[])[2] as Record<string, string>;
+    expect(values['port']).toBe('8080'); // 用户改过的端口以用户值保存
+    expect(values['fit']).toBe('off');   // 未动过的 fit 仍是默认
+    w.unmount();
+  });
+});
+

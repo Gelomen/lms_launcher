@@ -32,6 +32,7 @@ const props = withDefaults(defineProps<{
     params_options?: Record<string, string[]>;
     params_boolean?: string[];
     params_file?: string[];
+    params_default?: Record<string, string>; // 2026-09：新建模板自动填写的默认值（port/fit）
   };
   // 显卡显存总量（GB）：卡片右上角 VRAM 按钮持久化值；未配置 = undefined
   vramTotalGb?: number;
@@ -62,6 +63,14 @@ function fill(): void {
     if (row.type === 'boolean') init[row.key] = 'false';            // §#9D：boolean 恒默认 false（'false' 不写入 yaml）
     else if (row.type === 'options') init[row.key] = row.opts[0];   // options 恒默认首个选项（无未设置占位）
     else init[row.key] = '';
+  }
+  // params_default（2026-09）：自动填写默认值（port/fit）——覆盖类型基线默认；
+  // 编辑模式下已有存值在下方循环覆盖之（用户值优先）
+  const defs = props.paramsMeta.params_default ?? {};
+  for (const k of Object.keys(defs)) {
+    if (init[k] === undefined) continue; // key 不在 params 表（开发阶段无兼容）
+    const t = defs[k].trim();
+    if (t.length > 0) init[k] = t;
   }
   if (isEdit.value) {
     for (const [k, v] of Object.entries(props.values)) {

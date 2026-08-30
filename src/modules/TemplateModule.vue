@@ -15,7 +15,7 @@ library.add(faPenToSquare, faCopy, faFileCirclePlus);
 const byPrefixAndName = { fat: { 'pen-to-square': faPenToSquare, copy: faCopy, 'file-circle-plus': faFileCirclePlus } };
 
 // 模块 2 · 启动参数模板管理（规格 §4.2）
-interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[] }
+interface ParamMeta { params: Record<string, string>; required: string[]; params_options?: Record<string, string[]>; params_boolean?: string[]; params_file?: string[]; params_default?: Record<string, string> }
 // 数据 key：desc → name（2026-09）；legacy desc 由 main configsLoad 归一
 type ConfigMap = Record<string, { name?: string; values: Record<string, string> }>;
 
