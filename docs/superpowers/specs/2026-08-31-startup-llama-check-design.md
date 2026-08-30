@@ -47,9 +47,11 @@ export function checkLlamaInstall(dir: string): LlamaInstallStatus
 - src-main/main.ts：app.whenReady() 内 createWindow() 之后调用 detectLlamaInstall()：
   读 appConfigLoad 的 llama_dir → checkLlamaInstall → emitLog(对应行, 'sys')。
 - 不新增 IPC 命令、不新增事件、不改 preload、不改渲染端。
-- 时序：createWindow() 同步建窗，webContents.send 在页面就绪前发出的消息由
-  Electron 按通道缓存，渲染端 onMounted 订阅 onLogLine 后按序收到，不会丢行
-  （与 params_default 回填失败日志同一模式）。
+- 时序（2026-08-31 修复）：webContents.send 是即发即弃——渲染端未就绪（页面未加载完、
+  App onMounted 尚未订阅 log-line）时发出的消息会被直接丢弃而非按通道缓存
+  （dev 模式 loadURL 冷加载必丢；loadFile 快加载可侥幸收到）。
+  detectLlamaInstall 因此改为：页面仍在加载时把 emitLog 挂到该窗口的
+  did-finish-load 再发（此时渲染端已 mount 并订阅），已加载完则立即发。
 - 检测为同步 existsSync/statSync（微秒级），直接内联，无异步处理。
 - 纯新增：不影响 start_server 的 prepareLaunch 校验，不影响目录卡片（用户已批注：仅日志）。
 

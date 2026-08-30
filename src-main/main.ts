@@ -86,11 +86,17 @@ function createTray(): void {
 
 // ---------- 启动检测（规格 2026-08-31-startup-llama-check-design） ----------
 // whenReady 内 createWindow 后调用：读已保存的 llama_dir → 判定 → emitLog sys 行进 LMS Launcher 日志区。
-// createWindow 同步建窗；send 先于渲染端订阅发出的消息按通道缓存，onMounted 订阅后按序收到，不丢行。
+// 关键时序：webContents.send 是即发即弃——渲染端未就绪（页面未加载完、App onMounted 尚未订阅
+// log-line）时发出的消息不会被缓存，而是直接丢弃；dev 模式 loadURL（HTTP）冷加载尤甚，
+// 这正是启动检测行偶发缺失的根因。故页面仍在加载时，把 emitLog 延到 did-finish-load
+// （此时渲染端 Vue 已 mount、preload 的 ipcRenderer.on 已注册），不再丢行；已加载完则立即发。
 function detectLlamaInstall(): void {
   const [p] = yamlPaths();
   const dir = appConfigLoad(p).llama_dir;
-  emitLog(installCheckMessage(dir, checkLlamaInstall(dir)), 'sys');
+  const line = installCheckMessage(dir, checkLlamaInstall(dir));
+  const win = mainWin();
+  if (!win || !win.webContents.isLoading()) { emitLog(line, 'sys'); return; }
+  win.webContents.once('did-finish-load', () => emitLog(line, 'sys'));
 }
 
 // ---------- 窗口 ----------
