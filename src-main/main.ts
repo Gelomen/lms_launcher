@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import { existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
@@ -132,8 +132,9 @@ ipcMain.handle('suggest_config_id', (): string => {
   return suggestConfigId(existingConfigIds(p));
 });
 ipcMain.handle('save_config', (_e, id: string, desc: string | null, values: Record<string, string>): void => {
-  const [, , p] = yamlPaths();
-  saveConfigEntry(p, id, desc ?? undefined, values);
+  const [, pfP, p] = yamlPaths();
+  // params_default（2026-09）：保存时缺失的默认值（port/fit）自动补入用户模板（用户已设值不覆盖）
+  saveConfigEntry(p, id, desc ?? undefined, values, paramsLoad(pfP));
 });
 ipcMain.handle('delete_config', (_e, id: string): void => {
   const [, , p] = yamlPaths();
@@ -293,6 +294,13 @@ ipcMain.handle('win_close', () => { mainWin()?.hide(); }); // 隐藏到托盘，
 app.whenReady().then(() => {
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
   Menu.setApplicationMenu(null);
+  // params_default 存量兼容（2026-09）：现有模板配置缺失的默认值自动为用户新增（仅改动才落盘；失败只记日志不挡启动）
+  try {
+    const [, pfP, cfgP] = yamlPaths();
+    configsBackfillDefaults(cfgP, paramsLoad(pfP));
+  } catch (e) {
+    emitLog('[lms_launcher] params_default 回填失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
+  }
   createWindow();
   createTray();
   app.on('activate', () => {
