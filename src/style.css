@@ -178,9 +178,9 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: var(--card-pad);
+  /* border: 1px solid var(--border); */
+  /* border-radius: var(--radius-card); */
+  /* padding: var(--card-pad); */
   min-width: 0;
 }
 .log-view {
