@@ -1,7 +1,7 @@
 # 日志链接 Ctrl+左键打开（Windows Terminal 式）— 设计规格
 
 日期：2026-08-31
-状态：已实现（3c077d0）
+状态：已实现（3c077d0；相邻双链接拆分迭代 f62fab2）
 关联模块：`src/modules/LogTabView.vue`、`src/util/linkify.ts`（新增）、`src-main/main.ts`、`src-main/preload.ts`、`src/style.css`
 
 ## 1. 目的
@@ -27,6 +27,7 @@ export function linkify(line: string): LinkSeg[]
 - 正则：`/https?:\/\/[^\s"'<>]+/g`。
 - 尾部标点剥离：把匹配结尾的 `.,;:!?)]}>"'` 逐个剥掉（URL 不以这些字符收尾），剥回的部分归入后随文本段——Windows Terminal 同款处理。
 - 一行可含多个链接，返回段序列（文本段 + 链接段交替，顺序还原原行）。
+- 相邻无空格双链接（如 `http://a/1http://b/2`）：匹配内部再出现 `http(s)://` 时在该边界截断，后半由下一轮识别为独立链接段（f62fab2 迭代，原正则的固有合并行为已修正）。
 - 纯函数、无 DOM/无副作用，可单测（与 `src/util/truncate.ts` 同模式）。
 
 ### 3.2 渲染（`LogTabView.vue`）
