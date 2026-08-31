@@ -44,9 +44,9 @@ function restoreWindow(): void {
   else { createWindow(); }
 }
 type StreamName = 'sys' | 'out' | 'err';
-function emitLog(line: string, stream: StreamName): void {
+function emitLog(line: string, stream: StreamName, echoTabs?: string[]): void {
   const win = mainWin();
-  if (win) win.webContents.send("log-line", { line, stream });
+  if (win) win.webContents.send("log-line", { line, stream, ...(echoTabs ? { echoTabs } : {}) });
 }
 
 // ---------- 应用图标 ----------
@@ -171,7 +171,7 @@ ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => 
   const summary = summarize(configs[configId], pf);
   await ps.launch(args[0], args.slice(1), configId);
   // launcher 日志：完整启动命令行（exe 全路径 + 参数向量）——start_server 的返回值仍是 summary
-  emitLog("[lms_launcher] 启动命令 · " + commandLine(args), "sys");
+  emitLog("[lms_launcher] 启动命令 · " + commandLine(args), "sys", ['llama-server']);
   const { stdout, stderr } = ps.takePipes();
   stdout.on('data', (chunk: Buffer) => {
     chunk.toString().split("\n").filter((l) => l.length > 0).forEach((l) => emitLog(l, "out"));
@@ -181,7 +181,7 @@ ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => 
   });
   ps.onExit((code, error) => {
     // PROC 启动失败（error 非空）：日志区可见；process-exit 事件仍发 { code }
-    if (error) emitLog(error, "sys");
+    if (error) emitLog(error, "sys", ['llama-server']);
     const win = mainWin();
     if (win) win.webContents.send("process-exit", { code });
   });
@@ -211,7 +211,7 @@ ipcMain.handle('open_file_dialog', async (_e, key: string): Promise<string | nul
 });
 ipcMain.handle('stop_server', async (): Promise<void> => {
   await ps.stopGraceful(3);
-  emitLog('[lms_launcher] 停止指令已发送', 'sys');
+  emitLog('[lms_launcher] 停止指令已发送', 'sys', ['llama-server']);
 });
 // open_external（规格 2026-08-31-log-link-ctrl-click-design §3.3）：渲染端日志链接 Ctrl+点击 → 默认浏览器。
 // 协议白名单：仅 http/https 放行（防御 file:// 等，尽管 linkify 只会产出 http/https）；
