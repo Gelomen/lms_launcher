@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
 import { existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults } from './config';
@@ -212,6 +212,17 @@ ipcMain.handle('open_file_dialog', async (_e, key: string): Promise<string | nul
 ipcMain.handle('stop_server', async (): Promise<void> => {
   await ps.stopGraceful(3);
   emitLog('[lms_launcher] 停止指令已发送', 'sys');
+});
+// open_external（规格 2026-08-31-log-link-ctrl-click-design §3.3）：渲染端日志链接 Ctrl+点击 → 默认浏览器。
+// 协议白名单：仅 http/https 放行（防御 file:// 等，尽管 linkify 只会产出 http/https）；
+// shell.openExternal 失败（默认浏览器不存在等极端情况）静默忽略——无 UI 后果，不写日志避免噪音。
+ipcMain.handle('open_external', async (_e, url: string): Promise<void> => {
+  if (typeof url !== 'string' || !(url.startsWith('http://') || url.startsWith('https://'))) return;
+  try {
+    await shell.openExternal(url);
+  } catch {
+    // 静默（规格 §4）
+  }
 });
 ipcMain.handle('exit_app', async (): Promise<void> => {
   await ps.stopGraceful(3);
