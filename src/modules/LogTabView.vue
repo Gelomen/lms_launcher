@@ -3,12 +3,20 @@ import { nextTick, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import { invoke } from '../ipc';
+import { linkify } from '../util/linkify';
 
 // 清空日志（2026-08-28）：无文字 icon 按钮——复用编辑模板弹窗左下角的删除图标
 // （faTrashCan regular，TemplateModal .btn-delete 同源）；emit('clear')，App 只清本 tab 桶。
 library.add(faTrashCan);
 const emit = defineEmits<{ (e: 'clear'): void }>();
 function onClear(): void { emit('clear'); }
+
+// 日志链接 Ctrl+左键打开（规格 2026-08-31-log-link-ctrl-click-design §3.2）：
+// invoke 的 reject（协议被主进程拒绝等）静默——主进程已白名单校验，无 UI 后果。
+function onLink(url: string): void {
+  void invoke('open_external', url).catch(() => {});
+}
 
 // 单个 tab 的日志视图（§4.4）：白底 Solarized Light、等宽 13px、自动滚动可关。
 // 自动滚动状态由本组件自持——每个 tab 一个实例，切走再切回各自保留。
@@ -75,7 +83,12 @@ watch(autoScroll, (on) => {
     </div>
     <div ref="view" class="log-view">
       <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>
-      <p v-for="(e, i) in lines" :key="i" :class="cls(e)" style="margin: 0;">{{ e.line }}</p>
+      <p v-for="(e, i) in lines" :key="i" :class="cls(e)" style="margin: 0;">
+        <template v-for="(seg, j) in linkify(e.line)" :key="j">
+          <span v-if="seg.isLink" class="ln-link" :title="seg.url" @click.ctrl="onLink(seg.url!)">{{ seg.text }}</span>
+          <template v-else>{{ seg.text }}</template>
+        </template>
+      </p>
     </div>
   </div>
 </template>

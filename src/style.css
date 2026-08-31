@@ -198,6 +198,8 @@ body {
 .log-view .ln-warn { color: var(--log-warn); }
 .log-view .ln-ok { color: var(--log-ok); }
 .log-view .ln-dim { color: var(--log-dim); }
+/* 日志链接（规格 2026-08-31-log-link-ctrl-click-design §3.2）：主题紫 + 下划线，覆盖所在行 error/warn 色 */
+.log-view .ln-link { color: var(--primary); text-decoration: underline; cursor: pointer; }
 
 /* ---- 日志 tab 条（文件夹/浏览器式：相邻共边、左上右上圆角；
     激活页签「切断」一条 1px 顶部横线——可见灰线从其右下角（右缘底点）出发延伸到面板右缘）---- */
