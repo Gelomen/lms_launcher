@@ -25,7 +25,7 @@ describe('LogTabView 链接渲染', () => {
     const link = w.find('.ln-link');
     expect(link.exists()).toBe(true);
     expect(link.text()).toBe('https://example.com/guide');
-    expect(link.attributes('title')).toBe('https://example.com/guide');
+    expect(link.attributes('data-tooltip')).toBe('https://example.com/guide'); // hover tooltip = 全局 tip-up 方案（data-tooltip），原生 :title 不保留
     // 行整体文本不变（段拼接还原原行）
     expect(w.find('.log-view').text()).toBe('docs at https://example.com/guide end');
     w.unmount();

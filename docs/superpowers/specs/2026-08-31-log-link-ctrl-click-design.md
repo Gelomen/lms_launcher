@@ -32,7 +32,7 @@ export function linkify(line: string): LinkSeg[]
 
 ### 3.2 渲染（`LogTabView.vue`）
 
-- 每行由单个 `<p>{{ e.line }}</p>` 改为 `<p v-for>` 内按 `linkify(e.line)` 输出段：文本段裸文本，链接段 `<span class="ln-link" :title="url" @click.ctrl="onLink(url)">`。
+- 每行由单个 `<p>{{ e.line }}</p>` 改为 `<p v-for>` 内按 `linkify(e.line)` 输出段：文本段裸文本，链接段 `<span class="ln-link tip-up" :data-tooltip="url" @click.ctrl="onLink(url)"></span>`（2026-09 迭代：hover 提示由原生 `title` 改为全局 `tip-up` + `data-tooltip` 浮层——与 `.icon-btn`/.dd-tip 同视觉语言，深灰底白字，不保留原生 `title`）。
 - 普通左键不绑定任何处理——`<span>` 不是 `<a>`，天然无导航行为。
 - `@click.ctrl` 调 `invoke('open_external', url)`（经现有 `src/ipc.ts` 的 `invoke` 封装）。
 - 着色：`.ln-link { color: var(--primary); text-decoration: underline; cursor: pointer; }` 置于 `.log-view .ln-err/.ln-warn` 之后，链接统一紫色，覆盖所在行的 error/warn 色（视觉一致，用户指定主题紫）。
@@ -74,7 +74,7 @@ llama-server 日志行 → App 分桶 → LogTabView linkify(line) → 段渲染
 
 ## 6. 不做（YAGNI）
 
-- 不做链接 tooltip（`:title` 已提供浏览器原生提示，足够）。
+- 链接 hover 提示用全局 `tip-up` 方案（`data-tooltip`），不引入新的浮层机制。
 - 不做右键"复制链接"菜单。
 - 不改 App.vue / LogPanel.vue（分桶与 tab 逻辑不动）。
 - 不改 preload.ts。
