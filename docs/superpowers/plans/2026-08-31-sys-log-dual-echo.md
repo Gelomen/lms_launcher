@@ -297,18 +297,18 @@ git commit -m "feat: echo lifecycle sys log lines into llama-server tab (rendere
 
 **文件：** 无代码改动；产出报告 `.superpowers/sdd/dual-echo-verify-report.md`。
 
-- [ ] **步骤 1：构建并 dev 运行**
+- [x] **步骤 1：构建并 dev 运行**
 
 运行：`npm run build`（确保 dist 最新）→ `npm run dev`（后台）。
 无可用 llama.cpp 目录时，验证点 2/3 走启动失败路径：模板下拉选任意模板点[启动] → 预期 sys 行「启动失败 · …」**同时**出现在两个页签。
 
-- [ ] **步骤 2：逐页签核对**
+- [x] **步骤 2：逐页签核对**
 
 - LMS Launcher 页签与 llama-server 页签同时可见：启动失败行（或启动命令/停止指令行，若环境可真实启动）
 - 目录校验行只出现在 LMS Launcher 页签
 - 两页签 [清空日志] 互不影响（清 llama-server 后 launcher 行仍在）
 
-- [ ] **步骤 3：收尾**
+- [x] **步骤 3：收尾**
 
 杀掉 dev 进程；将观察结果（页面截图或文字记录）写入 `.superpowers/sdd/dual-echo-verify-report.md`；commit：
 

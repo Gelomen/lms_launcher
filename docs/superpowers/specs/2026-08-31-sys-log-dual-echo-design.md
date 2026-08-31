@@ -1,7 +1,7 @@
 # 服务生命周期日志双发至 llama-server 日志区设计
 
 日期：2026-08-31
-状态：待实现
+状态：已实现（c2e7ec2；真实运行验证见 .superpowers/sdd/dual-echo-verify-report.md）
 
 ## 1. 需求
 
