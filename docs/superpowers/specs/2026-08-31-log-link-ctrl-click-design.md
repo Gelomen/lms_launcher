@@ -1,7 +1,7 @@
 # 日志链接 Ctrl+左键打开（Windows Terminal 式）— 设计规格
 
 日期：2026-08-31
-状态：待实现
+状态：已实现（3c077d0）
 关联模块：`src/modules/LogTabView.vue`、`src/util/linkify.ts`（新增）、`src-main/main.ts`、`src-main/preload.ts`、`src/style.css`
 
 ## 1. 目的
