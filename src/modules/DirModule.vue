@@ -74,7 +74,13 @@ onMounted(load);
 </script>
 <template>
   <section class="module module-dir">
-    <h2>llama.cpp 安装目录</h2>
+    <h2 style="display: flex; align-items: center; gap: 6px;">
+      <svg width="16" height="16" viewBox="0 0 600 600" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink: 0; fill: currentColor;" aria-hidden="true">
+        <path d="M600 392L504.249 558L504.137 557.929C487.252 584.069 458.193 600 426.864 600H120L240 392H600Z"></path>
+        <path d="M240 392H0L199.602 46.0254C216.032 17.5463 246.411 3.25756e-05 279.29 0H466.154L240 392Z"></path>
+      </svg>
+      llama.cpp 安装目录
+    </h2>
     <p v-if="error" class="error-text">{{ error }}</p>
     <div style="display: flex; gap: 8px;">
       <input class="input" v-model="dir" @change="status = null" />
