@@ -3,7 +3,7 @@ declare global {
   interface Window {
     lms: {
       invoke: (cmd: string, ...args: unknown[]) => Promise<unknown>;
-      onLogLine: (cb: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void) => () => void;
+      onLogLine: (cb: (e: { line: string; stream: 'sys' | 'out' | 'err'; echoTabs?: string[] }) => void) => () => void;
       onProcessExit: (cb: (e: { code: number }) => void) => () => void;
       onTrayExitRequest: (cb: () => void) => () => void;
       onWinMaxChanged: (cb: (e: { maximized: boolean }) => void) => () => void;
@@ -15,7 +15,7 @@ export function invoke<T = unknown>(cmd: string, ...args: unknown[]): Promise<T>
   return window.lms.invoke(cmd, ...args) as Promise<T>;
 }
 
-export function onLogLine(cb: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void): () => void {
+export function onLogLine(cb: (e: { line: string; stream: 'sys' | 'out' | 'err'; echoTabs?: string[] }) => void): () => void {
   return window.lms.onLogLine(cb);
 }
 
