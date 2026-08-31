@@ -1,6 +1,6 @@
 # 服务生命周期日志双发至 llama-server 日志区 实现计划
 
-> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
+> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [x]`）语法来跟踪进度。
 
 **目标：** LMS Launcher 日志区中与 llama-server 服务生命周期相关的行，同时写入 llama-server 日志区；通过 payload 可选字段 echoTabs（string[]）实现，未来新增标签页时发射点写目标 id 列表即可，分发逻辑不变。
 
@@ -34,7 +34,7 @@
 - 修改：`src/main/preload.ts`（正确路径：`src-main/preload.ts`）
 - 修改：`src/ipc.ts`
 
-- [ ] **步骤 1：改 preload.ts**
+- [x] **步骤 1：改 preload.ts**
 
 `src-main/preload.ts` 中 onLogLine 两处内联类型改为：
 
@@ -46,7 +46,7 @@
   },
 ```
 
-- [ ] **步骤 2：改 ipc.ts**
+- [x] **步骤 2：改 ipc.ts**
 
 `src/ipc.ts` 中 window.lms 声明与 onLogLine 导出函数的内联类型同样加 `echoTabs?: string[]`：
 
@@ -59,12 +59,12 @@ export function onLogLine(cb: (e: { line: string; stream: 'sys' | 'out' | 'err';
   return window.lms.onLogLine(cb);
 ```
 
-- [ ] **步骤 3：类型检查 + 全量测试**
+- [x] **步骤 3：类型检查 + 全量测试**
 
 运行：`npm test`
 预期：全过（本任务零行为变化；若构建脚本含 tsc 报错则说明类型不一致，修到干净）
 
-- [ ] **步骤 4：Commit**
+- [x] **步骤 4：Commit**
 
 ```bash
 git add src-main/preload.ts src/ipc.ts
@@ -78,7 +78,7 @@ git commit -m "feat: add optional echoTabs to log-line IPC payload types"
 **文件：**
 - 修改：`src-main/main.ts:46-50`（emitLog）、`174`（启动命令）、`184`（PROC 错误行）、`214`（停止指令）
 
-- [ ] **步骤 1：emitLog 签名扩展**
+- [x] **步骤 1：emitLog 签名扩展**
 
 `src-main/main.ts`：
 
@@ -92,7 +92,7 @@ function emitLog(line: string, stream: StreamName, echoTabs?: string[]): void {
 
 （spread 保证不带标记时 payload 与现状逐字段一致——不出现 echoTabs: undefined。）
 
-- [ ] **步骤 2：3 个发射点加标记**
+- [x] **步骤 2：3 个发射点加标记**
 
 `src-main/main.ts` start_server 内（约 174 行）：
 
@@ -114,12 +114,12 @@ stop_server（约 214 行）：
 
 其余发射点（detectLlamaInstall、onDirValidated 无主进程对应、params_default 回填失败约 329 行）不动。
 
-- [ ] **步骤 3：全量测试**
+- [x] **步骤 3：全量测试**
 
 运行：`npm test`
 预期：全过（主进程无 emitLog 单测，行为变化由任务 3 渲染端测试覆盖）
 
-- [ ] **步骤 4：Commit**
+- [x] **步骤 4：Commit**
 
 ```bash
 git add src-main/main.ts
@@ -134,7 +134,7 @@ git commit -m "feat: echo lifecycle log lines to llama-server tab from main proc
 - 修改：`src/App.vue`（LogEntry、appendLine、doStart catch、doStop catch、onProcessExit）
 - 测试：`src/App.test.ts`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 `src/App.test.ts` 两处修改（复用文件顶部既有 mountApp / logHandlers / flush 基础设施）：
 
@@ -227,12 +227,12 @@ describe('lifecycle log dual-echo (echoTabs)', () => {
 
 （注 1：既有 ipc mock 的 errMsg 为 `(e) => (e as Error).message`，`start2.reject(new Error('boom'))` 落通用分支，文案 = `'启动失败 · boom'`——与 App.vue doStart catch 第三分支一致。注 2：doStop 失败行与上述两行走同一 appendLine 双写分支（同构），不单独挂完整生命周期用例。注 3：新挂载的 `mount(App)` 直接复用文件顶部的 `import { mount } from '@vue/test-utils'`。）
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`npx vitest run src/App.test.ts`
 预期：新增 describe 中第 1 条 FAIL（llama-server 桶为空）；第 2 条 PASS（未知 id 现状即忽略）；第 3 条 FAIL（启动失败行未进 llama-server 桶）；第 4 条 FAIL（进程退出行未进 llama-server 桶）。
 
-- [ ] **步骤 3：实现 App.vue 双写**
+- [x] **步骤 3：实现 App.vue 双写**
 
 `src/App.vue`：
 
@@ -274,17 +274,17 @@ function appendSys(line: string, echoTabs?: string[]): void {
 - onProcessExit：`appendSys('进程退出 code=' + e.code, ['llama-server']);`
 - onDirValidated 两处调用不动（保持单桶）。
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`npx vitest run src/App.test.ts`
 预期：全过（含既有「sys 行单桶 / out-err 单桶 / 各桶 500 裁剪 / 逐 tab 清空」用例——注意既有用例发的行无 echoTabs，走缺省单桶路径不受影响）。
 
-- [ ] **步骤 5：全量测试 + 构建**
+- [x] **步骤 5：全量测试 + 构建**
 
 运行：`npm test` 然后 `npm run build`
 预期：全过，构建 exit 0。
 
-- [ ] **步骤 6：Commit**
+- [x] **步骤 6：Commit**
 
 ```bash
 git add src/App.vue src/App.test.ts
