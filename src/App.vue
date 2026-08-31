@@ -22,7 +22,7 @@ const byPrefixAndName = { fat: { 'window-minimize': faWindowMinimize, 'window-ma
 
 // 全局状态（任务 8）：App 持有 logLines / state，下发给模块 3/4；启动/停止由 LaunchBar emit → App 调 invoke。
 interface ServerState { running: boolean; stopping: boolean; configId: string | null; starting?: boolean }
-interface LogEntry { line: string; stream: 'sys' | 'out' | 'err' }
+interface LogEntry { line: string; stream: 'sys' | 'out' | 'err'; echoTabs?: string[] }
 
 const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重复实现
 // 日志按 tab 分桶（stream 判据路由：sys → launcher；out/err → llama-server）。每桶独立裁剪，互不挤占。
@@ -41,11 +41,20 @@ function bucketOf(stream: LogEntry['stream']): LogTabId {
   return stream === 'sys' ? 'launcher' : 'llama-server';
 }
 
+function trimBucket(arr: LogEntry[]): void {
+  if (arr.length > MAX_LINES) arr.splice(0, arr.length - MAX_LINES); // 裁最旧，仅本桶
+}
+
 function appendLine(e: LogEntry): void {
   const id = bucketOf(e.stream);
   logBuckets.value[id].push(e);
-  if (logBuckets.value[id].length > MAX_LINES) {
-    logBuckets.value[id].splice(0, logBuckets.value[id].length - MAX_LINES); // 裁最旧，仅本桶
+  trimBucket(logBuckets.value[id]);
+  // echoTabs（规格 2026-08-31-sys-log-dual-echo §2.1）：主桶之外，对每个已注册且非主桶的
+  // tab id 再写一份并各自独立裁剪；未知 id 静默忽略（主/渲染端版本不一致时不崩）
+  for (const t of e.echoTabs ?? []) {
+    if (t === id || !logBuckets.value[t]) continue;
+    logBuckets.value[t].push(e);
+    trimBucket(logBuckets.value[t]);
   }
 }
 
@@ -56,8 +65,8 @@ function onLogClear(tab: LogTabId): void {
 }
 
 // sys 行统一 [lms_launcher] 前缀（主进程已发的不重复加）→ launcher 桶
-function appendSys(line: string): void {
-  appendLine({ line: line.startsWith('[lms_launcher]') ? line : '[lms_launcher] ' + line, stream: 'sys' });
+function appendSys(line: string, echoTabs?: string[]): void {
+  appendLine({ line: line.startsWith('[lms_launcher]') ? line : '[lms_launcher] ' + line, stream: 'sys', ...(echoTabs ? { echoTabs } : {}) });
 }
 
 // DirModule emit → App：目录卡片校验结果（✓/✗）同步写一条「目录校验」sys 行进 launcher 桶（不带括号，与启动检测行同风格）
@@ -77,7 +86,7 @@ async function doStart(configId: string): Promise<void> {
     const msg = errMsg(e);
     appendSys(isMissing(msg) ? '启动失败（配置缺失）· ' + msg
       : isValidation(msg) ? '启动失败（校验未过）· ' + msg
-      : '启动失败 · ' + msg);
+      : '启动失败 · ' + msg, ['llama-server']);
     // 启动失败自动恢复绿 [启动]：进程侧已回落 ready，但「启动成功」的分支没跑过 get_state，
     // 此处按主进程权威状态刷新（若启动后进程已即刻退出——端口占用等——也会落到 ready）
     try {
@@ -97,7 +106,7 @@ async function doStop(): Promise<void> {
     // 强杀路径下 process-exit 事件可能稍晚落地（其复位幂等），不能干等它。
     state.value = { running: false, stopping: false, configId: state.value.configId };
   } catch (e) {
-    appendSys('停止失败 · ' + errMsg(e));
+    appendSys('停止失败 · ' + errMsg(e), ['llama-server']);
     state.value = { ...state.value, stopping: false }; // 失败回落，不卡在「...」
     // 主进程状态可能已自行回落 ready（stopGraceful 幂等）→ 按权威状态恢复绿 [启动]
     try {
@@ -118,7 +127,7 @@ onMounted(async () => {
   }));
   unsubs.push(onProcessExit((e) => {
     state.value = { ...state.value, running: false, stopping: false };
-    appendSys('进程退出 code=' + e.code);
+    appendSys('进程退出 code=' + e.code, ['llama-server']);
   }));
   // 会话恢复：窗口重载时读一次主进程状态（进程可能仍在跑）
   try {

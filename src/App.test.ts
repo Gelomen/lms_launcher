@@ -14,13 +14,15 @@ const trayHandlers: Array<() => void> = [];
 const winMaxHandlers: Array<(e: { maximized: boolean }) => void> = [];
 // 任务 2：onLogLine 改为捕获回调（原为 no-op），测试通过 logHandlers 驱动日志行进入分桶路由。
 const logHandlers: Array<(e: { line: string; stream: 'sys' | 'out' | 'err' }) => void> = [];
+// 生命周期双发（规格 2026-08-31-sys-log-dual-echo）：onProcessExit 捕获回调，测试驱动进程退出行
+const processExitHandlers: Array<(e: { code: number }) => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
   isMissing: (m: string): boolean => m.includes('MISSING:'),
   isValidation: (m: string): boolean => m.includes('VALIDATION:'),
   onLogLine: (fn: (e: { line: string; stream: 'sys' | 'out' | 'err' }) => void) => { logHandlers.push(fn); return () => {} },
-  onProcessExit: () => () => {},
+  onProcessExit: (fn: (e: { code: number }) => void) => { processExitHandlers.push(fn); return () => {} },
   onTrayExitRequest: (fn: () => void) => { trayHandlers.push(fn); return () => {} },
   onWinMaxChanged: (fn: (e: { maximized: boolean }) => void) => { winMaxHandlers.push(fn); return () => {}; },
 }));
@@ -324,6 +326,74 @@ describe('log routing to tabs', () => {
     h({ line: 'S3', stream: 'out' });
     await flush();
     expect(w.find('.log-pane[data-tab-id="llama-server"]').findAll('p').length).toBe(4);
+    w.unmount();
+  });
+});
+
+describe('lifecycle log dual-echo (echoTabs)', () => {
+  function tabTexts(w: any, tabId: string): string[] {
+    return w.find(`.log-pane[data-tab-id="${tabId}"]`)
+      .findAll('p')
+      .map((p: any) => p.text())
+      .filter((t: string) => t !== '（暂无日志）');
+  }
+
+  it('sys line with echoTabs: [llama-server] lands in both tabs; without it stays launcher-only', async () => {
+    const { w } = mountApp();
+    await flush();
+    const h = logHandlers.at(-1)!;
+    h({ line: '[lms_launcher] 启动命令 · llama-server.exe -m x', stream: 'sys', echoTabs: ['llama-server'] });
+    h({ line: '[lms_launcher] 目录校验 · 已找到', stream: 'sys' }); // 无 echoTabs → 单桶
+    await flush();
+    expect(tabTexts(w, 'launcher')).toEqual([
+      '[lms_launcher] 启动命令 · llama-server.exe -m x',
+      '[lms_launcher] 目录校验 · 已找到',
+    ]);
+    expect(tabTexts(w, 'llama-server')).toEqual(['[lms_launcher] 启动命令 · llama-server.exe -m x']);
+    w.unmount();
+  });
+
+  it('echoTabs with unknown tab id is silently ignored', async () => {
+    const { w } = mountApp();
+    await flush();
+    const h = logHandlers.at(-1)!;
+    h({ line: '[lms_launcher] X', stream: 'sys', echoTabs: ['dsh'] }); // dsh 尚未注册
+    await flush();
+    expect(tabTexts(w, 'launcher')).toEqual(['[lms_launcher] X']);
+    expect(tabTexts(w, 'llama-server')).toEqual([]);
+    w.unmount();
+  });
+
+  it('start-fail line (local catch) lands in both tabs', async () => {
+    // 独立于 mountApp：自备 invoke mock（get_state=ready）与可控 start_server，触发 doStart catch 通用失败分支
+    const start2 = Promise.withResolvers<void>();
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve({ running: false, stopping: false, configId: null });
+        case 'get_configs': return Promise.resolve({ c1: { name: null, values: {} } });
+        case 'start_server': return start2.promise;
+        case 'stop_server': return Promise.resolve(undefined);
+        default: return Promise.resolve(undefined);
+      }
+    });
+    const w = mount(App) as import('@vue/test-utils').VueWrapper<any>;
+    await flush();
+    const launchBtn = w.find('.module-launch .btn-launch');
+    await launchBtn.trigger('click');
+    start2.reject(new Error('boom'));
+    await flush();
+    expect(tabTexts(w, 'launcher')).toContain('[lms_launcher] 启动失败 · boom');
+    expect(tabTexts(w, 'llama-server')).toContain('[lms_launcher] 启动失败 · boom');
+    w.unmount();
+  });
+
+  it('process-exit line (local onProcessExit) lands in both tabs', async () => {
+    const { w } = mountApp();
+    await flush();
+    processExitHandlers.at(-1)!({ code: 1 });
+    await flush();
+    expect(tabTexts(w, 'launcher')).toContain('[lms_launcher] 进程退出 code=1');
+    expect(tabTexts(w, 'llama-server')).toContain('[lms_launcher] 进程退出 code=1');
     w.unmount();
   });
 });
