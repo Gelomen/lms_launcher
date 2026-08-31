@@ -52,6 +52,18 @@ describe('linkify', () => {
     ]);
   });
 
+  it('adjacent_links_without_space_split_into_two_segments', () => {
+    // 相邻无空格双链接（规格 §3.1 迭代）：http:// 边界拆分，两段各自成链接
+    expect(linkify('a http://a/1http://b/2 c')).toEqual([
+      { text: 'a ', isLink: false },
+      { text: 'http://a/1', isLink: true, url: 'http://a/1' },
+      { text: 'http://b/2', isLink: true, url: 'http://b/2' },
+      { text: ' c', isLink: false },
+    ]);
+    // 段拼接还原原行
+    expect(linkify('http://a/1http://b/2').map((s) => s.text).join('')).toBe('http://a/1http://b/2');
+  });
+
   it('non_http_protocols_are_not_recognized', () => {
     expect(linkify('ftp://mirror/x.tar.gz')).toEqual([{ text: 'ftp://mirror/x.tar.gz', isLink: false }]);
     expect(linkify('file:///C:/x.txt')).toEqual([{ text: 'file:///C:/x.txt', isLink: false }]);

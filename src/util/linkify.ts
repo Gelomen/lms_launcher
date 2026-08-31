@@ -4,7 +4,8 @@
 export interface LinkSeg { text: string; isLink: boolean; url?: string }
 
 const URL_RE = /https?:\/\/[^\s"'<>]+/g;
-const TRAIL_PUNCT = '.,;:!?)]}>';
+// 规格 §3.1 字面表：.,;:!?)]}>">'（"/' 因正则已排除而不可达，列出仅为与规格逐字对齐）
+const TRAIL_PUNCT = '.,;:!?)]}>">\'';
 
 export function linkify(line: string): LinkSeg[] {
   // 快速路径：绝大多数日志行不含 http，零正则开销
@@ -16,6 +17,13 @@ export function linkify(line: string): LinkSeg[] {
   while ((m = URL_RE.exec(line)) !== null) {
     const start = m.index;
     let url = m[0];
+    // 相邻无空格双链接（规格 §3.1 迭代）：匹配内部再出现 http(s):// 时在此截断，
+    // 后半（截断点起）由下一轮识别为独立链接段；lastIndex 回拨到截断点，否则 exec 自动前进会跳过后半。
+    const proto = [url.indexOf('https://', 8), url.indexOf('http://', 7)].filter((i) => i > 0);
+    if (proto.length > 0) {
+      url = url.slice(0, Math.min(...proto));
+      URL_RE.lastIndex = start + url.length;
+    }
     // 尾部标点逐个剥掉（URL 不以这些字符收尾）；剥回的部分归入后随文本段
     while (url.length > 0 && TRAIL_PUNCT.includes(url[url.length - 1])) {
       url = url.slice(0, -1);
