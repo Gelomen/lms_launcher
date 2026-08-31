@@ -1,5 +1,5 @@
 // src-main/ico.test.ts
-// ICO 容器校验器 + 思维晶格 logo 的结构/透明性断言。
+// ICO 容器校验器 + 电源块 logo（2026-09-01 换：平涂紫 #8B5CF6 上块 + 渐变深蓝 #312E81→#191B5C 主体）的结构/透明性断言。
 // 8/25 事故（docs/superpowers/spec/2026-08-25-exe-and-titlebar-logo-fix.md）：
 // 旧 icon.ico 容器字段互相矛盾 → Windows GDI+ 拒载。本测试是其结构性防线：
 // planes/bpp/dataOffset/AND-mask 逐条对 MS ICO 规范断言，外加 alpha 抽查。
@@ -39,7 +39,7 @@ function px(f: IcoFile, entryOffset: number, x: number, y: number): [number, num
   return [f.buf[k], f.buf[k + 1], f.buf[k + 2], f.buf[k + 3]]; // B,G,R,A
 }
 
-describe('icon.ico — 思维晶格多尺寸 ICO', () => {
+describe('icon.ico — 电源块多尺寸 ICO', () => {
   const f = parseIco(readFileSync(ICO_PATH));
 
   it('容器：8 个尺寸档、按 16→256 升序、全部 32bpp + planes=1', () => {
@@ -69,19 +69,24 @@ describe('icon.ico — 思维晶格多尺寸 ICO', () => {
     }
   });
 
-  it('alpha：256 档四角全透明，晶体中心实心（新 logo 必须是真透明底）', () => {
+  it('alpha：256 档四角全透明，主体中心实心（新 logo 必须是真透明底）', () => {
     const idx = f.entries.findIndex((e) => e.w === 256);
     expect(idx).toBeGreaterThanOrEqual(0);
     const off = f.entries[idx].offset;
     for (const [x, y] of [[0, 0], [255, 0], [0, 255], [255, 255]] as const) {
       expect(px(f, off, x, y)[3]).toBe(0); // 四角 alpha=0：无圆底/无光晕的定稿保证
     }
-    const c = px(f, off, 128, 128);
-    expect(c[3]).toBeGreaterThanOrEqual(240); // 中心（晶体投影内）实心
-    // 中心偏左落在上锥切面区：蓝色系（B > R），而非旧渐变方块的纯蓝绿——宽幅校验图形确实换了
-    const facet = px(f, off, 96, 88);
+    const c = px(f, off, 128, 127);
+    expect(c[3]).toBeGreaterThanOrEqual(240); // 中心（斜条带内）实心
+    // 中心落在深蓝渐变主体中段：R≈G、B 明显高（#312E81→#191B5C 中段）
+    expect(c[0]).toBeGreaterThan(c[2]); // B > R
+    expect(Math.abs(c[0] - c[1])).toBeLessThan(80);
+    // 上部偏左落在平涂紫块（#8B5CF6 → B≈246 G≈92 R≈139）：宽幅校验图形确实换了
+    const facet = px(f, off, 86, 38);
     expect(facet[3]).toBeGreaterThan(0);
-    expect(facet[0]).toBeGreaterThan(facet[2]); // B > R
+    expect(facet[2]).toBeGreaterThan(100); // R 高（紫）
+    expect(facet[0]).toBeGreaterThan(200); // B 高（紫）
+    expect(facet[1]).toBeLessThan(150);   // G 中
   });
 
   it('16 档同样是 32bpp 透明底（标题栏最小档）', () => {
