@@ -101,7 +101,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
 </script>
 <template>
   <section class="module module-launch">
-    <h2>启动控制</h2>
+    <h2>llama-server 启动控制</h2>
     <!-- 配置下拉 + 单一切换按钮同行排布（与「llama.cpp 安装目录」卡片一致：控件占满宽度、按钮贴右）：
          未运行 = 绿 [启动]；运行中 = 红 [停止]（stopping → 「...」禁用）；
          启动失败 / 进程退出 → state 回落 ready → 自动恢复绿 [启动] -->
