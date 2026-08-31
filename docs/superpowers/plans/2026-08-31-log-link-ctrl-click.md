@@ -1,6 +1,6 @@
 # 日志链接 Ctrl+左键打开（Windows Terminal 式）实现计划
 
-> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
+> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [x]`）语法来跟踪进度。
 
 **目标：** 日志面板行内的 http/https 链接高亮为主题紫 + 下划线，Ctrl+鼠标左键点击在默认浏览器打开（Windows Terminal 式）；普通左键无任何行为。
 
@@ -8,7 +8,7 @@
 
 **技术栈：** Electron 28（ipcMain / shell）、Vue 3 SFC、Vitest（node + happy-dom）、vitest 全量回归 `npm test`、主进程编译 `tsc -p tsconfig.main.json`。
 
-**规格：** docs/superpowers/specs/2026-08-31-log-link-ctrl-click-design.md（已批准，状态待实现）
+**规格：** docs/superpowers/specs/2026-08-31-log-link-ctrl-click-design.md（已批准，已实现 3c077d0）
 
 ---
 
@@ -33,7 +33,7 @@
 - 测试：`src/util/linkify.test.ts`（创建）
 - 创建：`src/util/linkify.ts`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 创建 `src/util/linkify.test.ts`：
 
@@ -101,12 +101,12 @@ describe('linkify', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`npx vitest run src/util/linkify.test.ts`
 预期：FAIL —— 无法解析模块 `./linkify`（文件不存在）。
 
-- [ ] **步骤 3：编写最小实现**
+- [x] **步骤 3：编写最小实现**
 
 创建 `src/util/linkify.ts`：
 
@@ -142,12 +142,12 @@ export function linkify(line: string): LinkSeg[] {
 }
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`npx vitest run src/util/linkify.test.ts`
 预期：PASS（6 个用例全绿）。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add src/util/linkify.ts src/util/linkify.test.ts
@@ -161,7 +161,7 @@ git commit -m "feat: add linkify pure function for log-line http(s) link segment
 **文件：**
 - 修改：`src-main/main.ts`（import 增加 `shell`；IPC 命令区新增 handler）
 
-- [ ] **步骤 1：修改 main.ts**
+- [x] **步骤 1：修改 main.ts**
 
 第 1 行 import 增加 `shell`：
 
@@ -185,17 +185,17 @@ ipcMain.handle('open_external', async (_e, url: string): Promise<void> => {
 });
 ```
 
-- [ ] **步骤 2：编译验证**
+- [x] **步骤 2：编译验证**
 
 运行：`npx tsc -p tsconfig.main.json --noEmit`
 预期：exit 0，无错误。
 
-- [ ] **步骤 3：全量回归**
+- [x] **步骤 3：全量回归**
 
 运行：`npm test`
 预期：全部 PASS（与改前同数，本任务不加新测试文件）。
 
-- [ ] **步骤 4：Commit**
+- [x] **步骤 4：Commit**
 
 ```bash
 git add src-main/main.ts
@@ -211,7 +211,7 @@ git commit -m "feat: add open_external IPC (http/https whitelist) for log link c
 - 修改：`src/modules/LogTabView.vue`
 - 修改：`src/style.css`（ln-link 规则）
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 创建 `src/modules/LogTabView.test.ts`：
 
@@ -276,12 +276,12 @@ describe('LogTabView Ctrl+点击', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`npx vitest run src/modules/LogTabView.test.ts`
 预期：FAIL —— `w.find('.ln-link').exists()` 为 false（当前行是整段裸文本）。
 
-- [ ] **步骤 3：修改 LogTabView.vue**
+- [x] **步骤 3：修改 LogTabView.vue**
 
 `src/modules/LogTabView.vue` 的 `<script setup>` 顶部 import 增加：
 
@@ -314,7 +314,7 @@ function onLink(url: string): void {
 
 注意：`<p>` 内嵌套 `<template>` 在 Vue 3 模板中合法（编译为 fragment）；`word-break: break-all` 作用在 `p` 上对 span 内容同样生效（继承），长 URL 仍会折行。
 
-- [ ] **步骤 4：修改 style.css**
+- [x] **步骤 4：修改 style.css**
 
 在 `src/style.css` 中 `.log-view .ln-dim { color: var(--log-dim); }`（约 200 行）之后插入：
 
@@ -323,17 +323,17 @@ function onLink(url: string): void {
 .log-view .ln-link { color: var(--primary); text-decoration: underline; cursor: pointer; }
 ```
 
-- [ ] **步骤 5：运行测试验证通过**
+- [x] **步骤 5：运行测试验证通过**
 
 运行：`npx vitest run src/modules/LogTabView.test.ts`
 预期：PASS（4 个用例全绿）。
 
-- [ ] **步骤 6：全量回归**
+- [x] **步骤 6：全量回归**
 
 运行：`npm test`
 预期：全部 PASS。
 
-- [ ] **步骤 7：Commit**
+- [x] **步骤 7：Commit**
 
 ```bash
 git add src/modules/LogTabView.vue src/modules/LogTabView.test.ts src/style.css
@@ -346,12 +346,12 @@ git commit -m "feat: highlight log-line http(s) links; ctrl+click opens in defau
 
 **文件：** 无新增改动（验证任务）
 
-- [ ] **步骤 1：全量构建**
+- [x] **步骤 1：全量构建**
 
 运行：`npm run build`
 预期：vite build 与 `tsc -p tsconfig.main.json` 均成功（exit 0）。
 
-- [ ] **步骤 2：真实运行验证（dev）**
+- [x] **步骤 2：真实运行验证（dev）**
 
 运行：`npm run dev`（后台）。等窗口出现后：
 1. 日志区若存在含 http(s) 的日志行，链接显示为主题紫 + 下划线；
@@ -360,7 +360,7 @@ git commit -m "feat: highlight log-line http(s) links; ctrl+click opens in defau
 
 验证完成后终止 dev 进程。
 
-- [ ] **步骤 3：规格状态更新 + Commit**
+- [x] **步骤 3：规格状态更新 + Commit**
 
 `docs/superpowers/specs/2026-08-31-log-link-ctrl-click-design.md` 第 4 行 `状态：待实现` 改为 `状态：已实现（<commit 短哈希>）`，并 commit：
 

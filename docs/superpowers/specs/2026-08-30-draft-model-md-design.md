@@ -1,5 +1,7 @@
 # draft 模型（-md）字段与 dflash/dspark 显存公式 设计规格
 
+状态：已实现（042dfd2）
+
 ## 背景
 
 `--spec-draft-n-max` 的显存预测此前只按 draft-mtp 的内建 MTP 头公式计（`n_ctx × kvDim × 4B`）。

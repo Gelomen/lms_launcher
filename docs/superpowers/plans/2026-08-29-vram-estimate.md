@@ -1,6 +1,6 @@
 # VRAM Estimate 实现计划
 
-> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [ ]`）语法来跟踪进度。
+> **面向 AI 代理的工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实现此计划。步骤使用复选框（`- [x]`）语法来跟踪进度。
 
 **目标：** 在模板弹窗底栏正中实时预测显存占用（占用/显卡显存 GB，按余量绿/橙/红），显卡显存总量在模板卡片右上角 VRAM 按钮里配置并持久化。
 
@@ -39,7 +39,7 @@
 - 创建：`src-main/vram.ts`
 - 测试：`src-main/vram.test.ts`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 ```typescript
 // src-main/vram.test.ts
@@ -158,12 +158,12 @@ describe('estimateUsedBytes', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`npx vitest run -- src-main/vram.test.ts`
 预期：FAIL，"Cannot find module './vram'" 或类似导入错误。
 
-- [ ] **步骤 3：编写实现**
+- [x] **步骤 3：编写实现**
 
 ```typescript
 // src-main/vram.ts
@@ -274,12 +274,12 @@ export function estimateUsedBytes(input: EstimateInput): EstimateResult {
 }
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`npx vitest run -- src-main/vram.test.ts`
 预期：PASS（11 个用例全绿）。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add src-main/vram.ts src-main/vram.test.ts
@@ -294,7 +294,7 @@ git commit -m "feat: vram estimate pure functions (gguf header + formula)"
 - 修改：`src-main/config.ts`（AppConfig、appConfigLoad、appConfigSave）
 - 修改：`src-main/config.test.ts`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 在 `src-main/config.test.ts` 末尾追加：
 
@@ -320,12 +320,12 @@ describe('vram_total_gb_persistence', () => {
 
 （若 `tmpPath` 未定义，复用 config.test.ts 现有的临时路径 helper；若测试文件用 `fs` 但未 import，补 `import { writeFileSync } from 'node:fs'`。）
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`npx vitest run -- src-main/config.test.ts`
 预期：FAIL，"vram_total_gb does not exist on AppConfig"（TS 类型错误）或 undefined 断言失败。
 
-- [ ] **步骤 3：修改 AppConfig 与 load/save**
+- [x] **步骤 3：修改 AppConfig 与 load/save**
 
 ```typescript
 // config.ts —— AppConfig 加可选字段
@@ -348,12 +348,12 @@ export function appConfigLoad(path: string): AppConfig {
 // appConfigSave 实现不改（已 dump(cfg)）。
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`npx vitest run -- src-main/config.test.ts`
 预期：PASS。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git add src-main/config.ts src-main/config.test.ts
@@ -367,7 +367,7 @@ git commit -m "feat: persist vram_total_gb in app config yaml"
 **文件：**
 - 修改：`src-main/main.ts`
 
-- [ ] **步骤 1：注册两个 IPC handler**
+- [x] **步骤 1：注册两个 IPC handler**
 
 在 `main.ts` 顶部 import：
 
@@ -419,12 +419,12 @@ ipcMain.handle('save_vram_total', (_e, gb: number): void => {
 });
 ```
 
-- [ ] **步骤 2：TypeScript 编译验证**
+- [x] **步骤 2：TypeScript 编译验证**
 
 运行：`npx tsc -p tsconfig.main.json`（若项目用 tsconfig.main.json，见根目录；若无此脚本则 `npx tsc --noEmit`）
 预期：无错误。
 
-- [ ] **步骤 3：Commit**
+- [x] **步骤 3：Commit**
 
 ```bash
 git add src-main/main.ts
@@ -438,7 +438,7 @@ git commit -m "feat: register vram_estimate and save_vram_total IPC"
 **文件：**
 - 修改：`src/style.css`
 
-- [ ] **步骤 1：在 :root 加两个变量**
+- [x] **步骤 1：在 :root 加两个变量**
 
 在 `--h-control` 行后追加：
 
@@ -447,7 +447,7 @@ git commit -m "feat: register vram_estimate and save_vram_total IPC"
   --vram-purple: #8B5CF6;       /* VRAM 按钮紫底（白字） */
 ```
 
-- [ ] **步骤 2：Commit**
+- [x] **步骤 2：Commit**
 
 ```bash
 git add src/style.css
@@ -461,7 +461,7 @@ git commit -m "style: add vram orange/purple color vars"
 **文件：**
 - 创建：`src/modules/VramDialog.vue`
 
-- [ ] **步骤 1：编写组件**
+- [x] **步骤 1：编写组件**
 
 ```vue
 <script setup lang="ts">
@@ -512,7 +512,7 @@ function save(): void {
 </style>
 ```
 
-- [ ] **步骤 2：Commit**
+- [x] **步骤 2：Commit**
 
 ```bash
 git add src/modules/VramDialog.vue
@@ -526,7 +526,7 @@ git commit -m "feat: vram total dialog component"
 **文件：**
 - 修改：`src/modules/TemplateModule.vue`
 
-- [ ] **步骤 1：在 script 加 vramTotal 状态 + dialog 开关**
+- [x] **步骤 1：在 script 加 vramTotal 状态 + dialog 开关**
 
 在 `const modalOpen = ref(false);` 前加：
 
@@ -553,7 +553,7 @@ function onVramSaved(): void {
 
 （`onMounted` 已 import；`invoke` 已 import。）
 
-- [ ] **步骤 2：在 template 卡片右上角加按钮 + VramDialog**
+- [x] **步骤 2：在 template 卡片右上角加按钮 + VramDialog**
 
 在 `<section class="module module-template">` 开头加 `position: relative`（用 style 属性），加：
 
@@ -592,7 +592,7 @@ function onVramSaved(): void {
 
 （section 加 `style="position: relative;"`。）
 
-- [ ] **步骤 3：Commit**
+- [x] **步骤 3：Commit**
 
 ```bash
 git add src/modules/TemplateModule.vue
@@ -607,7 +607,7 @@ git commit -m "feat: vram badge on template card top-right"
 - 修改：`src/modules/TemplateModal.vue`
 - 修改：`src/modules/TemplateModal.test.ts`
 
-- [ ] **步骤 1：编写失败的测试**
+- [x] **步骤 1：编写失败的测试**
 
 在 `TemplateModal.test.ts` 追加：
 
@@ -697,12 +697,12 @@ describe('vram_indicator', () => {
 
 （颜色档位断言用 class 名：happy-dom 对 scoped 样式的 getComputedStyle 级联不可靠，class 名契约由 CSS 规则兑现；实际颜色在任务 8 的 dev 运行中视觉验证。）
 
-- [ ] **步骤 2：运行测试验证失败**
+- [x] **步骤 2：运行测试验证失败**
 
 运行：`npx vitest run -- src/modules/TemplateModal.test.ts`
 预期：FAIL，"vram-indicator not found" 或 prop 类型错误。
 
-- [ ] **步骤 3：修改 TemplateModal.vue**
+- [x] **步骤 3：修改 TemplateModal.vue**
 
 script 加：
 
@@ -792,17 +792,17 @@ scoped style：
 .vram-indicator--grey .vram-total { color: var(--muted); }
 ```
 
-- [ ] **步骤 4：运行测试验证通过**
+- [x] **步骤 4：运行测试验证通过**
 
 运行：`npx vitest run -- src/modules/TemplateModal.test.ts`
 预期：PASS（原有 + 新增 6 个用例全绿）。
 
-- [ ] **步骤 5：全量测试**
+- [x] **步骤 5：全量测试**
 
 运行：`npm test`
 预期：全部 PASS（无回归）。
 
-- [ ] **步骤 6：Commit**
+- [x] **步骤 6：Commit**
 
 ```bash
 git add src/modules/TemplateModal.vue src/modules/TemplateModal.test.ts
@@ -815,22 +815,22 @@ git commit -m "feat: vram indicator in modal footer with dynamic color tiers"
 
 **文件：** 无新增
 
-- [ ] **步骤 1：全量测试**
+- [x] **步骤 1：全量测试**
 
 运行：`npm test`
 预期：全部 PASS。
 
-- [ ] **步骤 2：构建前端 + 主进程**
+- [x] **步骤 2：构建前端 + 主进程**
 
 运行：`npm run build`
 预期：dist/ 和 dist-main/ 生成，无 TS 错误。
 
-- [ ] **步骤 3：dev 运行验证**
+- [x] **步骤 3：dev 运行验证**
 
 运行：`npm run dev`（后台）
 预期：窗口打开；模板卡片右上角显示 VRAM 紫色按钮；点 [新建模板] → 填入 -m 模型路径 → 底栏显示 VRAM 指示；点 VRAM 按钮 → 小窗输入 24 → 保存 → 底栏变为 22.x / 24.0 GB。
 
-- [ ] **步骤 4：Final commit（若 build 产物有变更）**
+- [x] **步骤 4：Final commit（若 build 产物有变更）**
 
 ```bash
 git add -A
