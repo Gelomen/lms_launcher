@@ -64,7 +64,7 @@ function createTray(): void {
   const icon = nativeImage.createFromPath(appIconPath());
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   const menu = Menu.buildFromTemplate([
-    { label: '启动 lms_launcher', click: () => {
+    { label: '打开 LMS 启动器', click: () => {
       restoreWindow();
     } },
     { label: '退出', click: () => {
