@@ -30,6 +30,7 @@ const logBuckets = ref<Record<LogTabId, LogEntry[]>>({ launcher: [], 'llama-serv
 const state = ref<ServerState>({ running: false, stopping: false, configId: null });
 const configsReloadKey = ref(0); // TemplateModule 保存/删除后 bump（ref，Vue 响应式追踪）
 const exitConfirm = ref(false); // §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认），替代系统 window.confirm
+const version = ref(''); // 顶栏版本号（get_version IPC → app.getVersion；获取失败静默，不显示）
 
 // frameless winbar 状态与 handler
 const maximized = ref(false);
@@ -134,6 +135,10 @@ onMounted(async () => {
     const s = await invoke<ServerState>('get_state');
     state.value = { running: s.running, stopping: s.stopping, configId: s.configId };
   } catch { /* 首次启动无状态可恢复 */ }
+  // 顶栏版本号：package.json 的 version（主进程 app.getVersion）；非 Electron/IPC 异常 → 静默不显示
+  try {
+    version.value = await invoke<string>('get_version');
+  } catch { /* 版本号缺失不影响应用 */ }
 });
 onUnmounted(() => { for (const u of unsubs) u(); });
 
@@ -152,6 +157,7 @@ function onExitConfirmed(): void {
       <div class="winbar__brand">
         <img class="winbar__logo" :src="logoUrl" alt="" draggable="false" />
         <span class="winbar__name">LMS 启动器</span>
+        <span v-if="version" class="winbar__version">v{{ version }}</span>
       </div>
       <div class="winbar__controls">
         <button class="winbtn" aria-label="最小化" title="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
