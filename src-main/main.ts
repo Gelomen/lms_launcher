@@ -317,6 +317,8 @@ ipcMain.handle('win_maximize', () => {
   if (w.isMaximized()) w.unmaximize(); else w.maximize();
 });
 ipcMain.handle('win_close', () => { mainWin()?.hide(); }); // 隐藏到托盘，不退出（真退出仍走 exit_app）
+// get_version：顶栏显示用（package.json 的 version；electron-builder 打包命名同源）
+ipcMain.handle('get_version', (): string => app.getVersion());
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
