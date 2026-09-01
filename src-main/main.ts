@@ -106,7 +106,7 @@ function createWindow(): void {
     title: 'lms_launcher',
     frame: false, // 去系统标题栏；窗口仍可边缘拖动/缩放（DWM 边框保留）
     icon: appIconPath(),
-    width: 980, height: 720, minWidth: 760, minHeight: 540,
+    width: 1400, height: 950, minWidth: 760, minHeight: 540,
     webPreferences: {
       preload: require.resolve('./preload.js'),
       contextIsolation: true,
