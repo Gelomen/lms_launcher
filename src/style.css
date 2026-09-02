@@ -457,6 +457,7 @@ body {
   cursor: pointer;
   white-space: nowrap;
   -webkit-app-region: no-drag; /* winbar 整条为拖动区：按钮恢复可点击 */
+  pointer-events: auto; /* 父 .winbar__brand 设了 none 防 logo 拖动误触——按钮必须恢复 */
 }
 .update-pill:hover { background: #7C3AED; }
 .update-pill--busy { background: #C4B5FD; color: #fff; cursor: default; }
