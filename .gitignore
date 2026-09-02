@@ -1,6 +1,8 @@
 dist/
 dist-main/
 dist-release/
+dist-release-update/
+dist-update/
 node_modules/
 .npm-cache/
 .superpowers/
