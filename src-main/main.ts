@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
-import { existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
@@ -7,6 +7,8 @@ import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
 import { ProcessState } from './process';
 import { checkLlamaInstall, installCheckMessage } from './llama-check';
+import { spawn } from 'node:child_process';
+import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 
 // ---------- 单实例锁：禁止多开 ----------
 // requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
@@ -21,6 +23,9 @@ if (!app.requestSingleInstanceLock()) {
 
 // ---------- AppState ----------
 const ps = new ProcessState();
+
+// 自动更新：check_update 成功后暂存 latest 信息，download_update 据此下载（内存态，重启即失）
+let pendingUpdate: LatestReleaseInfo | null = null;
 
 // 数据目录：打包后 = exe 所在目录（portable 解压目录，可写）；dev-time = 项目 cwd
 function dataDir(): string {
@@ -66,6 +71,14 @@ function createTray(): void {
   const menu = Menu.buildFromTemplate([
     { label: '打开 LMS 启动器', click: () => {
       restoreWindow();
+    } },
+    { label: '检查更新', click: () => {
+      const win = mainWin();
+      if (win) {
+        // 先唤回窗口（关闭=隐藏到托盘），渲染端收到 tray-update-request 后走顶栏同款检查流程
+        win.show(); win.focus();
+        win.webContents.send('tray-update-request', {});
+      }
     } },
     { label: '退出', click: () => {
       const win = mainWin();
@@ -319,6 +332,120 @@ ipcMain.handle('win_maximize', () => {
 ipcMain.handle('win_close', () => { mainWin()?.hide(); }); // 隐藏到托盘，不退出（真退出仍走 exit_app）
 // get_version：顶栏显示用（package.json 的 version；electron-builder 打包命名同源）
 ipcMain.handle('get_version', (): string => app.getVersion());
+// ---------- 自动更新（规格 2026-09-01-auto-update） ----------
+// check_update：GitHub latest → semver 比较 → 有新版才 available（开发模式/失败一律 false）
+ipcMain.handle('check_update', async (): Promise<{ available: boolean; version?: string }> => {
+  if (!app.isPackaged) return { available: false };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(RELEASE_API_URL, {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': 'lms_launcher' },
+    });
+    if (!res.ok) {
+      emitLog('[更新] 检查失败：HTTP ' + res.status, 'sys');
+      return { available: false };
+    }
+    const info = parseLatestRelease(await res.json());
+    if (!info) {
+      emitLog('[更新] 检查失败：无法解析 release 信息', 'sys');
+      return { available: false };
+    }
+    if (compareVersions(app.getVersion(), info.tag) < 1) return { available: false };
+    pendingUpdate = info;
+    return { available: true, version: info.tag };
+  } catch (e) {
+    emitLog('[更新] 检查失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
+    return { available: false };
+  } finally {
+    clearTimeout(timer);
+  }
+});
+// download_update：流式下载 pendingUpdate.zipUrl → exe 目录 lms-launcher-update.zip
+// 进度经 update-download-progress 事件推渲染端；失败删半成品并报错（可重试）
+ipcMain.handle('download_update', async (): Promise<
+  { ok: true; zipPath: string; size: number } | { ok: false; reason: string }
+> => {
+  if (!pendingUpdate) return { ok: false, reason: '尚无更新任务（请先检查更新）' };
+  const zipPath = join(dataDir(), 'lms-launcher-update.zip');
+  emitLog('[更新] 开始下载：' + pendingUpdate.zipUrl, 'sys');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 600000); // 10 分钟超时
+  try {
+    const res = await fetch(pendingUpdate.zipUrl, { signal: ctrl.signal, redirect: 'follow' });
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+    const total = parseInt(res.headers.get('content-length') ?? '0', 10) || null;
+    const { createWriteStream } = await import('node:fs');
+    const out = createWriteStream(zipPath);
+    let received = 0;
+    let lastPct = -1;
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!out.write(Buffer.from(value))) await new Promise<void>((r) => out.once('drain', () => r()));
+      received += value.length;
+      const pct = total ? Math.floor((received * 100) / total) : 0;
+      if (pct !== lastPct) {
+        lastPct = pct;
+        mainWin()?.webContents.send('update-download-progress', { pct });
+      }
+    }
+    out.end();
+    await new Promise<void>((r) => out.on('finish', () => r()));
+    const size = statSync(zipPath).size;
+    emitLog('[更新] 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB', 'sys');
+    return { ok: true, zipPath, size };
+  } catch (e) {
+    try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
+    const msg = e instanceof Error ? e.message : String(e);
+    emitLog('[更新] 下载失败：' + msg, 'sys');
+    return { ok: false, reason: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+});
+// run_update：detached 启动 update.exe [zipPath, installDir] → 复用 exit_app 真退出
+// Windows 父子进程天然不联动（无 Job Object）：exe 退出后 update.exe 继续等、替换、拉起新版
+ipcMain.handle('run_update', async (): Promise<void> => {
+  const installDir = dataDir();
+  const zipPath = join(installDir, 'lms-launcher-update.zip');
+  const upd = join(installDir, 'update.exe');
+  if (!existsSync(upd) || !existsSync(zipPath)) {
+    throw new Error('更新文件缺失（update.exe / lms-launcher-update.zip）');
+  }
+  emitLog('[更新] 已启动更新器，应用即将退出', 'sys');
+  const child = spawn(upd, [zipPath, installDir], {
+    cwd: installDir,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  await ps.stopGraceful(3);
+  app.exit(0);
+});
+// update.exe 日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [更新器] 前缀
+// 进 LMS Launcher 日志区 → 删除（一次性）。与 detectLlamaInstall 同机制处理渲染端未就绪——
+// 页面加载完前 send 的消息即发即弃，故延迟到 did-finish-load
+function replayUpdateLog(): void {
+  const logPath = join(dataDir(), 'lms_launcher_update.log');
+  if (!existsSync(logPath)) return;
+  let content: string;
+  try {
+    content = readFileSync(logPath, 'utf8');
+  } catch {
+    return;
+  }
+  try { unlinkSync(logPath); } catch { /* 删除失败不影响回显 */ }
+  const lines = content.split(/\r?\n/).filter((l) => l.trim());
+  const sendAll = (): void => {
+    for (const l of lines) emitLog('[更新器] ' + l, 'sys');
+  };
+  const win = mainWin();
+  if (!win || !win.webContents.isLoading()) { sendAll(); return; }
+  win.webContents.once('did-finish-load', sendAll);
+}
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
@@ -332,6 +459,7 @@ app.whenReady().then(() => {
   }
   createWindow();
   detectLlamaInstall();
+  replayUpdateLog();
   createTray();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
