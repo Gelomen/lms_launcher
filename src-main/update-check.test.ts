@@ -57,4 +57,33 @@ describe('update-check.ts', () => {
     expect(parseLatestRelease({ tag_name: 'v0.2.0', assets: [] })).toBeNull();
     expect(parseLatestRelease({ tag_name: 'v0.2.0', assets: [{ name: 'no-win64.zip' }] })).toBeNull();
   });
+
+  // 兼容历史命名：2026-08-28 v0.1.0 实际上传 LMS-Launcher-v0.1.0.zip（无 -win64 后缀）。
+  // 该资产名必须能被识别，否则「检查失败：无法解析 release 信息」。
+  it('parseLatestRelease_legacy_lms_launcher_zip_accepted', () => {
+    const json = {
+      tag_name: 'v0.1.0',
+      assets: [
+        { name: 'LMS-Launcher-v0.1.0.zip', browser_download_url: 'https://gh/LMS-Launcher-v0.1.0.zip' },
+      ],
+    };
+    expect(parseLatestRelease(json)).toEqual({
+      tag: '0.1.0',
+      zipUrl: 'https://gh/LMS-Launcher-v0.1.0.zip',
+    });
+  });
+
+  it('parseLatestRelease_win64_preferred_over_legacy', () => {
+    const json = {
+      tag_name: 'v0.2.0',
+      assets: [
+        { name: 'LMS-Launcher-v0.2.0.zip', browser_download_url: 'https://gh/legacy.zip' },
+        { name: 'lms-launcher-v0.2.0-win64.zip', browser_download_url: 'https://gh/win64.zip' },
+      ],
+    };
+    expect(parseLatestRelease(json)).toEqual({
+      tag: '0.2.0',
+      zipUrl: 'https://gh/win64.zip',
+    });
+  });
 });

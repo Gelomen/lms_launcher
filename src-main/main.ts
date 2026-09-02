@@ -333,9 +333,20 @@ ipcMain.handle('win_close', () => { mainWin()?.hide(); }); // 隐藏到托盘，
 // get_version：顶栏显示用（package.json 的 version；electron-builder 打包命名同源）
 ipcMain.handle('get_version', (): string => app.getVersion());
 // ---------- 自动更新（规格 2026-09-01-auto-update） ----------
-// check_update：GitHub latest → semver 比较 → 有新版才 available（开发模式/失败一律 false）
-ipcMain.handle('check_update', async (): Promise<{ available: boolean; version?: string }> => {
-  if (!app.isPackaged) return { available: false };
+// check_update：GitHub latest → semver 比较 → 有新版才 available。
+// 返回值区分四类结果，供渲染端在「托盘/手动检查更新」时弹反馈窗（规格 F 的静默启动检查仍只看 available）：
+//   available:true  → 有新版（status='update-available'，version=latest）
+//   available:false →
+//     status='up-to-date'   已是最新（version=当前版本）
+//     status='error'        网络/解析/HTTP 失败
+//     status='dev'          开发模式（非 packaged）
+type UpdateCheckResult =
+  | { available: true; status: 'update-available'; version: string }
+  | { available: false; status: 'up-to-date'; version?: string }
+  | { available: false; status: 'error' }
+  | { available: false; status: 'dev' };
+ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
+  if (!app.isPackaged) return { available: false, status: 'dev' };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
@@ -345,19 +356,23 @@ ipcMain.handle('check_update', async (): Promise<{ available: boolean; version?:
     });
     if (!res.ok) {
       emitLog('[更新] 检查失败：HTTP ' + res.status, 'sys');
-      return { available: false };
+      return { available: false, status: 'error' };
     }
     const info = parseLatestRelease(await res.json());
     if (!info) {
       emitLog('[更新] 检查失败：无法解析 release 信息', 'sys');
-      return { available: false };
+      return { available: false, status: 'error' };
     }
-    if (compareVersions(app.getVersion(), info.tag) < 1) return { available: false };
+    const cur = app.getVersion();
+    if (compareVersions(cur, info.tag) < 1) {
+      // 已是最新（相等或更低）：保留当前版本号供渲染端展示
+      return { available: false, status: 'up-to-date', version: cur };
+    }
     pendingUpdate = info;
-    return { available: true, version: info.tag };
+    return { available: true, status: 'update-available', version: info.tag };
   } catch (e) {
     emitLog('[更新] 检查失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
-    return { available: false };
+    return { available: false, status: 'error' };
   } finally {
     clearTimeout(timer);
   }

@@ -32,7 +32,11 @@ export function compareVersions(cur: string, latest: string): -1 | 0 | 1 {
   return 0;
 }
 
-// 解析 GitHub releases/latest 响应 → LatestReleaseInfo；tag 非 semver 或无 win64 zip 资产 → null
+// 解析 GitHub releases/latest 响应 → LatestReleaseInfo；tag 非 semver 或无匹配 zip 资产 → null
+// 资产命名优先级：
+//   1) 规范新式命名 *-win64.zip（docs 约定的 lms-launcher-v{version}-win64.zip）
+//   2) 历史命名 LMS-Launcher-v{version}.zip（2026-08-28 v0.1.0 实际上传的资产名）
+// 若未来重新发布，仍推荐用 *-win64.zip（含架构信息）；历史命名仅作兼容。
 export function parseLatestRelease(json: unknown): LatestReleaseInfo | null {
   if (typeof json !== 'object' || json === null) return null;
   const r = json as Record<string, unknown>;
@@ -40,15 +44,31 @@ export function parseLatestRelease(json: unknown): LatestReleaseInfo | null {
   const m = tagName.match(TAG_RE);
   if (!m) return null;
   const assets = Array.isArray(r.assets) ? r.assets : [];
-  const zip = assets.find((a) => {
-    const o = a as Record<string, unknown>;
+  const hasDownloadUrl = (o: unknown): o is { name: string; browser_download_url: string } => {
+    const rec = o as Record<string, unknown> | null;
     return (
-      typeof o?.name === 'string' &&
-      o.name.endsWith('-win64.zip') &&
-      typeof o.browser_download_url === 'string'
+      !!rec &&
+      typeof rec.name === 'string' &&
+      typeof rec.browser_download_url === 'string'
     );
-  });
+  };
+  // 1) 优先：新式 win64 zip
+  const zip =
+    assets.find((a) =>
+      hasDownloadUrl(a) && a.name.endsWith('-win64.zip')
+    ) ??
+    // 2) 兼容：历史 LMS-Launcher-v{version}.zip（大小写不敏感、去分隔符后包含 version 数字）
+    (() => {
+      const version = m[1];
+      const normVersion = version.replace(/[^a-z0-9]/g, '');
+      return assets.find((a) => {
+        if (!hasDownloadUrl(a)) return false;
+        const name = a.name.toLowerCase();
+        if (!name.endsWith('.zip')) return false;
+        if (!name.includes('launcher')) return false;
+        return name.replace(/[^a-z0-9]/g, '').includes(normVersion);
+      });
+    })();
   if (!zip) return null;
-  const z = zip as Record<string, unknown>;
-  return { tag: m[1], zipUrl: z.browser_download_url as string };
+  return { tag: m[1], zipUrl: zip.browser_download_url };
 }

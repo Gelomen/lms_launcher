@@ -39,6 +39,23 @@ const updateState = ref<{ phase: UpdatePhase; version: string; pct: number }>({
 });
 const updateConfirm = ref(false);        // 第一次确认：下载并更新
 const updateRestartConfirm = ref(false); // 第二次确认：退出应用开始更新
+// check_update IPC 返回类型（与 main.ts UpdateCheckResult 一致）：手动「检查更新」据此弹反馈窗
+type UpdateCheckResult =
+  | { available: true; status: 'update-available'; version: string }
+  | { available: false; status: 'up-to-date'; version?: string }
+  | { available: false; status: 'error' }
+  | { available: false; status: 'dev' };
+// 反馈对话框（纯信息展示）：手动「检查更新」无新版/失败时可见反馈
+const feedbackOpen = ref(false);
+const feedbackTitle = ref('');
+const feedbackMessage = ref('');
+const feedbackTone = ref<'primary' | 'danger'>('primary');
+function showUpdateFeedback(title: string, message: string, tone: 'primary' | 'danger'): void {
+  feedbackTitle.value = title;
+  feedbackMessage.value = message;
+  feedbackTone.value = tone;
+  feedbackOpen.value = true;
+}
 
 // frameless winbar 状态与 handler
 const maximized = ref(false);
@@ -149,10 +166,10 @@ onMounted(async () => {
   } catch { /* 版本号缺失不影响应用 */ }
   // 启动时静默检查更新：available → 顶栏显示「有新版本!」按钮；失败静默（主进程已写日志）
   try {
-    const r = await invoke<{ available: boolean; version?: string }>('check_update');
+    const r = await invoke<UpdateCheckResult>('check_update');
     if (r.available) {
-      updateState.value = { phase: 'available', version: r.version ?? '', pct: 0 };
-      appendSys('检查更新 · 发现新版本 v' + (r.version ?? ''));
+      updateState.value = { phase: 'available', version: r.version, pct: 0 };
+      appendSys('检查更新 · 发现新版本 v' + r.version);
     }
   } catch { /* 检查失败不阻塞启动 */ }
   // 下载进度事件 → 按钮变「下载中 NN%」
@@ -174,19 +191,31 @@ function onExitConfirmed(): void {
 }
 
 // ---------- 自动更新（规格 2026-09-01-auto-update §F） ----------
-// 按钮点击 → re-check → 有新版弹第一次确认
+// 按钮点击 / 托盘「检查更新」→ re-check → 有新版弹第一次确认；无新版/失败 → 弹反馈窗
+//（手动触发时用户期望可见反馈，不再静默仅写日志）
 async function onUpdateButton(): Promise<void> {
+  updateState.value = { phase: 'idle', version: '', pct: 0 };
   try {
-    const r = await invoke<{ available: boolean; version?: string }>('check_update');
-    if (!r.available) {
-      updateState.value = { phase: 'idle', version: '', pct: 0 };
-      appendSys('检查更新 · 当前已是最新版本');
+    const r = await invoke<UpdateCheckResult>('check_update');
+    if (r.available) {
+      updateState.value = { phase: 'available', version: r.version, pct: 0 };
+      updateConfirm.value = true;
       return;
     }
-    updateState.value = { phase: 'available', version: r.version ?? '', pct: 0 };
-    updateConfirm.value = true;
+    switch (r.status) {
+      case 'up-to-date':
+        appendSys('检查更新 · 当前已是最新版本');
+        showUpdateFeedback('已是最新版本', '当前版本 v' + (r.version ?? '') + ' 已是最新，无需更新。', 'primary');
+        break;
+      case 'error':
+        showUpdateFeedback('检查更新失败', '无法连接更新服务器或解析版本信息，请稍后重试。', 'danger');
+        break;
+      case 'dev':
+        showUpdateFeedback('开发模式', '开发模式不检查更新。', 'primary');
+        break;
+    }
   } catch {
-    updateState.value = { phase: 'idle', version: '', pct: 0 };
+    showUpdateFeedback('检查更新失败', '检查更新时发生未知错误，请稍后重试。', 'danger');
   }
 }
 
@@ -266,5 +295,9 @@ function onRestartConfirmed(): void {
       message="应用将立即退出，更新完成后自动重新启动新版。继续？"
       tone="primary"
       @confirm="onRestartConfirmed" @close="() => (updateRestartConfirm = false)" />
+    <!-- 检查更新反馈（纯信息展示；手动「检查更新」无新版/失败/开发模式时可见反馈） -->
+    <ConfirmDialog :open="feedbackOpen" :title="feedbackTitle" :message="feedbackMessage"
+      :tone="feedbackTone"
+      @confirm="() => (feedbackOpen = false)" @close="() => (feedbackOpen = false)" />
   </main>
 </template>
