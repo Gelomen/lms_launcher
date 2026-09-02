@@ -684,16 +684,34 @@ function replayUpdateLog(): void {
   replayUpdateLog();
 ```
 
-- [ ] **步骤 4：编译 + 全量测试验证**
+- [ ] **步骤 4：托盘菜单新增「检查更新」选项**
+
+在 `createTray()` 的菜单模板中，'退出' 项上方插入「检查更新」项。与现有 '退出' 项同款唤回模式：窗口可能藏在托盘里，确认对话框开在渲染端窗口内，须先 show+focus 再发消息：
+
+```ts
+    { label: '检查更新', click: () => {
+      const win = mainWin();
+      if (win) {
+        // 先唤回窗口（关闭=隐藏到托盘），渲染端收到 tray-update-request 后走顶栏同款检查流程
+        win.show(); win.focus();
+        win.webContents.send('tray-update-request', {});
+      }
+    } },
+    { label: '退出', click: () => { /* 现有退出项，保持原样 */ } },
+```
+
+（实际代码为在现有数组字面量中、'退出' 项前插入上述对象，'退出' 项本体不变。）
+
+- [ ] **步骤 5：编译 + 全量测试验证**
 
 运行：`npx tsc -p tsconfig.main.json && npx vitest run`
 预期：编译 0 错误；全部测试 PASS
 
-- [ ] **步骤 5：Commit**
+- [ ] **步骤 6：Commit**
 
 ```bash
 git add src-main/main.ts
-git commit -m "feat: 主进程新增 check_update/download_update/run_update IPC 与更新器日志回显"
+git commit -m "feat: 主进程新增 check_update/download_update/run_update IPC、更新器日志回显与托盘检查更新菜单"
 ```
 
 ---
@@ -714,6 +732,12 @@ git commit -m "feat: 主进程新增 check_update/download_update/run_update IPC
     ipcRenderer.on('update-download-progress', listener);
     return () => ipcRenderer.removeListener('update-download-progress', listener);
   },
+  // 托盘「检查更新」：主进程唤回窗口后通知渲染端执行与顶栏按钮相同的检查流程
+  onTrayUpdateRequest: (cb: () => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('tray-update-request', listener);
+    return () => ipcRenderer.removeListener('tray-update-request', listener);
+  },
 ```
 
 - [ ] **步骤 2：ipc.ts 声明与封装**
@@ -722,6 +746,7 @@ git commit -m "feat: 主进程新增 check_update/download_update/run_update IPC
 
 ```ts
       onUpdateDownloadProgress: (cb: (e: { pct: number }) => void) => () => void;
+      onTrayUpdateRequest: (cb: () => void) => () => void;
 ```
 
 在文件末尾 `onWinMaxChanged` 导出函数之后追加：
@@ -729,6 +754,10 @@ git commit -m "feat: 主进程新增 check_update/download_update/run_update IPC
 ```ts
 export function onUpdateDownloadProgress(cb: (e: { pct: number }) => void): () => void {
   return window.lms.onUpdateDownloadProgress(cb);
+}
+
+export function onTrayUpdateRequest(cb: () => void): () => void {
+  return window.lms.onTrayUpdateRequest(cb);
 }
 ```
 
@@ -958,7 +987,7 @@ const updateRestartConfirm = ref(false); // 第二次确认：退出应用开始
 在 `src/App.vue` 顶部 import 行（现有 './ipc' import）末尾补一个导入：
 
 ```ts
-import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress } from './ipc';
+import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest } from './ipc';
 ```
 
 在 onMounted 内版本号获取 try/catch 块之后追加：
@@ -976,6 +1005,8 @@ import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTr
   unsubs.push(onUpdateDownloadProgress((e) => {
     updateState.value = { ...updateState.value, phase: 'downloading', pct: e.pct };
   }));
+  // 托盘「检查更新」→ 与顶栏按钮同一入口（含 re-check 与第一次确认框）
+  unsubs.push(onTrayUpdateRequest(() => { void onUpdateButton(); }));
 ```
 
 在文件末尾（onExitConfirmed 函数之后）追加 handler：
@@ -1181,6 +1212,7 @@ git commit -m "chore: 发布打包脚本与自动更新说明文档"
 2. **断网**：断网启动 → 无按钮 + 日志区「[lms_launcher] [更新] 检查失败:…」
 3. **杀 update.exe**：更新流程中任务管理器杀掉 update.exe → lms_launcher.exe 旧版本文件完好可再次启动
 4. **点 × 只隐藏**：更新确认前点 × → 窗口隐藏但 update.exe 未被启动（run_update 前不 spawn）——符合预期，无异常
+5. **托盘检查更新**：隐藏到托盘后右键托盘图标 → 点击「检查更新」→ 窗口自动唤回并弹出与新版本相同的确认框（或已是最新的日志行）——与顶栏按钮行为一致
 
 - [ ] **步骤 3：恢复版本号为 0.1.0（如临时改过）**
 
