@@ -16,6 +16,9 @@ const winMaxHandlers: Array<(e: { maximized: boolean }) => void> = [];
 const logHandlers: Array<(e: { line: string; stream: 'sys' | 'out' | 'err' }) => void> = [];
 // 生命周期双发（规格 2026-08-31-sys-log-dual-echo）：onProcessExit 捕获回调，测试驱动进程退出行
 const processExitHandlers: Array<(e: { code: number }) => void> = [];
+// 自动更新（2026-09-01）：下载进度 / 托盘「检查更新」事件桥；App.vue onMounted 无条件订阅
+const updateProgressHandlers: Array<(e: { pct: number }) => void> = [];
+const trayUpdateHandlers: Array<() => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
@@ -25,6 +28,8 @@ vi.mock('./ipc', () => ({
   onProcessExit: (fn: (e: { code: number }) => void) => { processExitHandlers.push(fn); return () => {} },
   onTrayExitRequest: (fn: () => void) => { trayHandlers.push(fn); return () => {} },
   onWinMaxChanged: (fn: (e: { maximized: boolean }) => void) => { winMaxHandlers.push(fn); return () => {}; },
+  onUpdateDownloadProgress: (fn: (e: { pct: number }) => void) => { updateProgressHandlers.push(fn); return () => {}; },
+  onTrayUpdateRequest: (fn: () => void) => { trayUpdateHandlers.push(fn); return () => {}; },
 }));
 
 const RUNNING = { running: true, stopping: false, configId: 'c1' };

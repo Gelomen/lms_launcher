@@ -444,3 +444,20 @@ body {
 .winbtn:hover { background: #EBEDEF; }
 .winbtn--close:hover { background: var(--danger); color: #fff; }
 
+/* ---- 自动更新按钮（规格 2026-09-01-auto-update §F）：pill 圆角、紫底白字(#8B5CF6)、版本号右侧 ---- */
+.update-pill {
+  margin-left: 8px;
+  height: 20px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: var(--fs-label);
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-app-region: no-drag; /* winbar 整条为拖动区：按钮恢复可点击 */
+}
+.update-pill:hover { background: #7C3AED; }
+.update-pill--busy { background: #C4B5FD; color: #fff; cursor: default; }
+
