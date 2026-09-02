@@ -86,3 +86,10 @@ npm test
 | llama_launch_configs.yaml | 参数模板(保存第一个模板时生成) |
 
 可手动编辑,flag 映射遵循 llama-server 官方参数格式。
+
+## 自动更新
+
+- 应用启动时静默检查 GitHub Releases；发现新版本时顶栏版本号右侧显示「有新版本!」按钮。
+- 点击按钮 → 确认 → 下载（显示进度）→ 确认后应用退出，由 update.exe 替换文件并自动重启新版。
+- **update.exe 必须与 lms_launcher.exe 同目录**（发布 zip 已包含）。
+- Electron 大版本升级（运行时更新）无法通过本机制完成，需下载整包 zip 手动解压重装（用户数据 yaml 不受影响）。
