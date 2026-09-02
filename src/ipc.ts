@@ -7,6 +7,8 @@ declare global {
       onProcessExit: (cb: (e: { code: number }) => void) => () => void;
       onTrayExitRequest: (cb: () => void) => () => void;
       onWinMaxChanged: (cb: (e: { maximized: boolean }) => void) => () => void;
+      onUpdateDownloadProgress: (cb: (e: { pct: number }) => void) => () => void;
+      onTrayUpdateRequest: (cb: () => void) => () => void;
     };
   }
 }
@@ -29,6 +31,14 @@ export function onTrayExitRequest(cb: () => void): () => void {
 
 export function onWinMaxChanged(cb: (e: { maximized: boolean }) => void): () => void {
   return window.lms.onWinMaxChanged(cb);
+}
+
+export function onUpdateDownloadProgress(cb: (e: { pct: number }) => void): () => void {
+  return window.lms.onUpdateDownloadProgress(cb);
+}
+
+export function onTrayUpdateRequest(cb: () => void): () => void {
+  return window.lms.onTrayUpdateRequest(cb);
 }
 
 /**
