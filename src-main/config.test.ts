@@ -281,3 +281,27 @@ params_file:
     rm(p);
   });
 });
+
+describe('proxy 字段兼容', () => {
+  it('老 yaml 无 proxy 字段 → 两字段 undefined', () => {
+    const p = tmpPath('app_proxy_legacy.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: /x');
+    const cfg = appConfigLoad(p);
+    expect(cfg.proxy_host).toBeUndefined();
+    expect(cfg.proxy_port).toBeUndefined();
+    expect(cfg.llama_dir).toBe('/x');
+    rm(p);
+  });
+
+  it('save 后 proxy 字段持久化', () => {
+    const p = tmpPath('app_proxy.yaml');
+    rm(p);
+    const cfg = { llama_dir: '/x', proxy_host: '127.0.0.1', proxy_port: 10808 };
+    appConfigSave(p, cfg);
+    const loaded = appConfigLoad(p);
+    expect(loaded.proxy_host).toBe('127.0.0.1');
+    expect(loaded.proxy_port).toBe(10808);
+    rm(p);
+  });
+});

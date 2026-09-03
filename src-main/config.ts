@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 
-export interface AppConfig { llama_dir: string; vram_total_gb?: number }
+export interface AppConfig { llama_dir: string; vram_total_gb?: number; proxy_host?: string; proxy_port?: number }
 export interface ParamsFile {
   params: Record<string, string>;
   required: string[];
@@ -43,7 +43,7 @@ export function appConfigLoad(path: string): AppConfig {
     const s = readFileSync(path, 'utf8');
     if (s.trim().length === 0) return EMPTY_APP_CONFIG;
     const parsed = parseYaml(path, s, 'lms_launcher.yaml') as Partial<AppConfig> | null;
-    return { llama_dir: parsed?.llama_dir ?? '', vram_total_gb: parsed?.vram_total_gb };
+    return { llama_dir: parsed?.llama_dir ?? '', vram_total_gb: parsed?.vram_total_gb, proxy_host: parsed?.proxy_host, proxy_port: parsed?.proxy_port };
   } catch {
     return EMPTY_APP_CONFIG;
   }
