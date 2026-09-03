@@ -461,4 +461,18 @@ body {
 }
 .update-pill:hover { background: #7C3AED; }
 .update-pill--busy { background: #C4B5FD; color: #fff; cursor: default; }
+/* ---- 文字按钮（.text-btn：更新弹窗等无填充动作按钮，与 .btn 同高 32px） ---- */
+.text-btn {
+  height: var(--h-control);
+  padding: 0 10px;
+  border: none;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.text-btn:hover { background: #F6F7F8; }
+.text-btn:disabled { color: var(--muted); cursor: default; background: #fff; }
+
 
