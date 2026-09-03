@@ -42,6 +42,11 @@ export function onTrayUpdateRequest(cb: () => void): () => void {
   return window.lms.onTrayUpdateRequest(cb);
 }
 
+// 托盘「设置」（2026-10-01 update-proxy-settings）：主进程唤回窗口后通知渲染端打开设置弹窗
+export function onTraySettingsRequest(cb: () => void): () => void {
+  return window.lms.onTraySettingsRequest(cb);
+}
+
 /**
  * invoke 的 reject 值是带 .message 的 Error——直接 String(err) 会得 [object Object]。
  * Electron 主进程侧抛出的 Error 经 ipcRenderer.invoke 会被包一层外壳：

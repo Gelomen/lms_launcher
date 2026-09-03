@@ -56,6 +56,8 @@ async function save() {
 </script>
 
 <template>
+  <!-- 与 TemplateModal/UpdateModal 同款：Teleport 到 body（全局遮罩） -->
+  <Teleport to="body">
   <div v-if="open" class="modal-overlay">
     <div class="modal-box card">
       <div class="modal-head">
@@ -82,6 +84,7 @@ async function save() {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

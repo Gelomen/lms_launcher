@@ -3,7 +3,7 @@
 //  idle/failed   -> green [启动]
 //  running       -> red   [停止]; stopping -> red 「...」disabled, back to green once the service truly stopped
 //  start failure -> automatically falls back to green [启动] (authoritative get_state)
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import App from './App.vue';
 
@@ -19,6 +19,8 @@ const processExitHandlers: Array<(e: { code: number }) => void> = [];
 // 自动更新（2026-09-01）：下载进度 / 托盘「检查更新」事件桥；App.vue onMounted 无条件订阅
 const updateProgressHandlers: Array<(e: { pct: number }) => void> = [];
 const trayUpdateHandlers: Array<() => void> = [];
+// 设置（2026-10-01 update-proxy-settings）：托盘「设置」事件桥；App.vue onMounted 无条件订阅
+let traySettingsHandlers: Array<() => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
@@ -30,6 +32,7 @@ vi.mock('./ipc', () => ({
   onWinMaxChanged: (fn: (e: { maximized: boolean }) => void) => { winMaxHandlers.push(fn); return () => {}; },
   onUpdateDownloadProgress: (fn: (e: { pct: number }) => void) => { updateProgressHandlers.push(fn); return () => {}; },
   onTrayUpdateRequest: (fn: () => void) => { trayUpdateHandlers.push(fn); return () => {}; },
+  onTraySettingsRequest: (fn: () => void) => { traySettingsHandlers.push(fn); return () => {}; },
 }));
 
 const RUNNING = { running: true, stopping: false, configId: 'c1' };
@@ -51,6 +54,8 @@ function mountApp(initial: object = RUNNING): { w: import('@vue/test-utils').Vue
       case 'get_configs': return Promise.resolve(cfg());
       case 'start_server': return start.promise;
       case 'stop_server': return stop.promise;
+      case 'get_app_config': return Promise.resolve({ llama_dir: '/x', proxy_host: '127.0.0.1', proxy_port: 10808 });
+      case 'save_proxy': return Promise.resolve('ok');
       default: return Promise.resolve(undefined);
     }
   });
@@ -60,6 +65,11 @@ function mountApp(initial: object = RUNNING): { w: import('@vue/test-utils').Vue
 
 // the single toggle button: locate by its state class (btn-launch / btn-danger) — the dropdown's
 // "…" button is btn-secondary, so these two classes uniquely identify the toggle.
+// 每个用例重置设置事件捕获（App 每测 mount 一次，旧回调指向已 unmount 实例）
+beforeEach(() => {
+  traySettingsHandlers = [];
+});
+
 function btn(w: import('@vue/test-utils').VueWrapper<any>): any {
   const all = w.findAll('.module-launch .btn');
   expect(all.length).toBe(2); // toggle + dropdown …
@@ -629,5 +639,18 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     expect(row).not.toContain('尚无更新任务');
     expect(updateBtns()[0].textContent).toContain('检查更新');
     w.unmount();
+  });
+});
+
+// 设置（2026-10-01 update-proxy-settings）：托盘「设置」→ SettingsModal（纯 props 驱动，open 由 App 持有）
+describe('App tray settings', () => {
+  it('tray-settings-request opens settings modal', async () => {
+    mountApp();
+    await flush();
+    expect(traySettingsHandlers.length).toBeGreaterThan(0);
+    traySettingsHandlers[0]();
+    await flush();
+    const title = document.querySelector('.modal-overlay .modal-title');
+    expect(title?.textContent).toBe('设置');
   });
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest } from './ipc';
+import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest, onTraySettingsRequest } from './ipc';
 import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
 import LaunchBar from './modules/LaunchBar.vue';
@@ -8,6 +8,7 @@ import LogPanel from './modules/LogPanel.vue';
 import { LOG_TABS, type LogTabId } from './modules/log-tabs';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import UpdateModal from './modules/UpdateModal.vue';
+import SettingsModal from './modules/SettingsModal.vue';
 
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
@@ -37,6 +38,7 @@ const version = ref(''); // 顶栏版本号（get_version IPC → app.getVersion
 // 自动更新（规格 2026-09-01-update-modal）：检查更新弹窗 + 七态状态机（App 持有，UpdateModal 纯 props 驱动）
 type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
 const updateOpen = ref(false); // 弹窗开关；入口统一（托盘「检查更新」/ 顶栏「有新版本!」→ 只开弹窗，不 re-check）
+const settingsOpen = ref(false); // 设置弹窗（2026-10-01 update-proxy-settings）：托盘「设置」→ SettingsModal
 const updateState = ref<{ phase: UpdatePhase; version: string; pct: number; errorText: string }>({
   phase: 'idle', version: '', pct: 0, errorText: '',
 });
@@ -173,6 +175,8 @@ onMounted(async () => {
   }));
   // §E 入口统一：托盘「检查更新」→ 只开弹窗（不再 re-check、不弹旧确认框）
   unsubs.push(onTrayUpdateRequest(() => { updateOpen.value = true; }));
+  // 设置（2026-10-01 update-proxy-settings）：托盘「设置」→ SettingsModal
+  unsubs.push(onTraySettingsRequest(() => { settingsOpen.value = true; }));
 });
 onUnmounted(() => { for (const u of unsubs) u(); });
 
@@ -322,5 +326,7 @@ function onExitClose(): void {
     <!-- 检查更新弹窗（七态由 updateState 驱动；action 事件由 onUpdateAction 分流） -->
     <UpdateModal :open="updateOpen" :items="updateItems"
       @action="onUpdateAction" @close="() => (updateOpen = false)" />
+    <!-- 设置弹窗（2026-10-01 update-proxy-settings）：托盘「设置」入口；close/saved 均关弹窗 -->
+    <SettingsModal :open="settingsOpen" @close="settingsOpen = false" @saved="settingsOpen = false" />
   </main>
 </template>
