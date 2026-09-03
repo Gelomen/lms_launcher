@@ -9,7 +9,6 @@ vi.mock('undici', () => ({
 }));
 import { buildProxyUri, makeUpdateFetch } from './update-http';
 import * as undici from 'undici';
-const mockFetch = undici.fetch as any;
 const MockProxyAgent = undici.ProxyAgent as any;
 
 describe('buildProxyUri', () => {
