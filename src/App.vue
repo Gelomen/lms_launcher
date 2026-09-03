@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest } from './ipc';
 import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
@@ -7,6 +7,7 @@ import LaunchBar from './modules/LaunchBar.vue';
 import LogPanel from './modules/LogPanel.vue';
 import { LOG_TABS, type LogTabId } from './modules/log-tabs';
 import ConfirmDialog from './components/ConfirmDialog.vue';
+import UpdateModal from './modules/UpdateModal.vue';
 
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
@@ -29,33 +30,26 @@ const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重�
 const logBuckets = ref<Record<LogTabId, LogEntry[]>>({ launcher: [], 'llama-server': [] });
 const state = ref<ServerState>({ running: false, stopping: false, configId: null });
 const configsReloadKey = ref(0); // TemplateModule 保存/删除后 bump（ref，Vue 响应式追踪）
-const exitConfirm = ref(false); // §4.6：托盘「退出」→ ConfirmDialog（主题化二次确认），替代系统 window.confirm
+const exitConfirm = ref(false); // 共用二次确认：托盘「退出」/ 更新 ready 后「重启应用」→ 同一 ConfirmDialog（规格 2026-09-01-update-modal §D）
+const exitAction = ref<'exit' | 'run_update'>('exit'); // 确认框 confirm 时的动作分流
 const version = ref(''); // 顶栏版本号（get_version IPC → app.getVersion；获取失败静默，不显示）
 
-// 自动更新（规格 2026-09-01-auto-update §F）：顶栏「有新版本!」按钮态机
-type UpdatePhase = 'idle' | 'available' | 'downloading';
-const updateState = ref<{ phase: UpdatePhase; version: string; pct: number }>({
-  phase: 'idle', version: '', pct: 0,
+// 自动更新（规格 2026-09-01-update-modal）：检查更新弹窗 + 七态状态机（App 持有，UpdateModal 纯 props 驱动）
+type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
+const updateOpen = ref(false); // 弹窗开关；入口统一（托盘「检查更新」/ 顶栏「有新版本!」→ 只开弹窗，不 re-check）
+const updateState = ref<{ phase: UpdatePhase; version: string; pct: number; errorText: string }>({
+  phase: 'idle', version: '', pct: 0, errorText: '',
 });
-const updateConfirm = ref(false);        // 第一次确认：下载并更新
-const updateRestartConfirm = ref(false); // 第二次确认：退出应用开始更新
-// check_update IPC 返回类型（与 main.ts UpdateCheckResult 一致）：手动「检查更新」据此弹反馈窗
+// 状态行：恒单行，数据驱动便于扩展（UpdateModal items 契约）
+const updateItems = computed(() => [{ name: 'LMS 启动器', ...updateState.value }]);
+// 最近一次失败类型：error 态「重试」据此分流（check 失败→重发 check；download 失败→重发 download）
+const lastFailure = ref<'check' | 'download'>('check');
+// check_update IPC 返回类型（与 main.ts UpdateCheckResult 一致）
 type UpdateCheckResult =
   | { available: true; status: 'update-available'; version: string }
   | { available: false; status: 'up-to-date'; version?: string }
   | { available: false; status: 'error' }
   | { available: false; status: 'dev' };
-// 反馈对话框（纯信息展示）：手动「检查更新」无新版/失败时可见反馈
-const feedbackOpen = ref(false);
-const feedbackTitle = ref('');
-const feedbackMessage = ref('');
-const feedbackTone = ref<'primary' | 'danger'>('primary');
-function showUpdateFeedback(title: string, message: string, tone: 'primary' | 'danger'): void {
-  feedbackTitle.value = title;
-  feedbackMessage.value = message;
-  feedbackTone.value = tone;
-  feedbackOpen.value = true;
-}
 
 // frameless winbar 状态与 handler
 const maximized = ref(false);
@@ -147,8 +141,9 @@ onMounted(async () => {
   // 事件：日志流 / 进程退出（桥 onLogLine/onProcessExit）
   unsubs.push(onLogLine((e) => appendLine(e)));
   unsubs.push(onWinMaxChanged((e) => { maximized.value = e.maximized; }));
-  // §4.6：托盘「退出」→ ConfirmDialog（tone=primary）；用户点[确认]才 exit_app（主进程 stopGraceful + app.exit(0)，任务 5）
+  // §D 共用退出确认：托盘「退出」→ exitAction='exit' → ConfirmDialog；[确认]才 invoke exit_app
   unsubs.push(onTrayExitRequest(() => {
+    exitAction.value = 'exit';
     exitConfirm.value = true; // 主题化对话框；取消/遮罩/ESC 由 @close 复位
   }));
   unsubs.push(onProcessExit((e) => {
@@ -164,20 +159,20 @@ onMounted(async () => {
   try {
     version.value = await invoke<string>('get_version');
   } catch { /* 版本号缺失不影响应用 */ }
-  // 启动时静默检查更新：available → 顶栏显示「有新版本!」按钮；失败静默（主进程已写日志）
+  // 启动时静默检查更新：available → 初始 phase=available（顶栏「有新版本!」按钮 + 弹窗行同步）；失败静默（主进程已写日志）
   try {
     const r = await invoke<UpdateCheckResult>('check_update');
     if (r.available) {
-      updateState.value = { phase: 'available', version: r.version, pct: 0 };
+      updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
       appendSys('检查更新 · 发现新版本 v' + r.version);
     }
   } catch { /* 检查失败不阻塞启动 */ }
-  // 下载进度事件 → 按钮变「下载中 NN%」
+  // 下载进度事件 → 状态机 downloading + pct
   unsubs.push(onUpdateDownloadProgress((e) => {
     updateState.value = { ...updateState.value, phase: 'downloading', pct: e.pct };
   }));
-  // 托盘「检查更新」→ 与顶栏按钮同一入口（含 re-check 与第一次确认框）
-  unsubs.push(onTrayUpdateRequest(() => { void onUpdateButton(); }));
+  // §E 入口统一：托盘「检查更新」→ 只开弹窗（不再 re-check、不弹旧确认框）
+  unsubs.push(onTrayUpdateRequest(() => { updateOpen.value = true; }));
 });
 onUnmounted(() => { for (const u of unsubs) u(); });
 
@@ -185,62 +180,93 @@ function onTemplateChanged(): void {
   configsReloadKey.value += 1; // bump → LaunchBar watch 重新 load()
 }
 
-// §4.6：ConfirmDialog @confirm → exit_app；finally 复位对话框（主进程 app.exit 后窗口即销毁，此复位是防御性）
-function onExitConfirmed(): void {
-  invoke('exit_app').finally(() => { exitConfirm.value = false; });
-}
-
-// ---------- 自动更新（规格 2026-09-01-auto-update §F） ----------
-// 按钮点击 / 托盘「检查更新」→ re-check → 有新版弹第一次确认；无新版/失败 → 弹反馈窗
-//（手动触发时用户期望可见反馈，不再静默仅写日志）
-async function onUpdateButton(): Promise<void> {
-  updateState.value = { phase: 'idle', version: '', pct: 0 };
+// ---------- 自动更新（规格 2026-09-01-update-modal）：七态状态机 + 弹窗 ----------
+async function runCheck(): Promise<void> {
+  updateState.value = { ...updateState.value, phase: 'checking', errorText: '' };
+  let r: UpdateCheckResult;
   try {
-    const r = await invoke<UpdateCheckResult>('check_update');
-    if (r.available) {
-      updateState.value = { phase: 'available', version: r.version, pct: 0 };
-      updateConfirm.value = true;
-      return;
-    }
-    switch (r.status) {
-      case 'up-to-date':
-        appendSys('检查更新 · 当前已是最新版本');
-        showUpdateFeedback('已是最新版本', '当前版本 v' + (r.version ?? '') + ' 已是最新，无需更新。', 'primary');
-        break;
-      case 'error':
-        showUpdateFeedback('检查更新失败', '无法连接更新服务器或解析版本信息，请稍后重试。', 'danger');
-        break;
-      case 'dev':
-        showUpdateFeedback('开发模式', '开发模式不检查更新。', 'primary');
-        break;
-    }
+    r = await invoke<UpdateCheckResult>('check_update');
   } catch {
-    showUpdateFeedback('检查更新失败', '检查更新时发生未知错误，请稍后重试。', 'danger');
+    lastFailure.value = 'check';
+    updateState.value = { phase: 'error', version: updateState.value.version, pct: 0, errorText: '检查更新时发生未知错误，请稍后重试。' };
+    return;
+  }
+  if (r.available) {
+    lastFailure.value = 'check'; // 非失败动作不清空也无妨，保持显式
+    appendSys('检查更新 · 发现新版本 v' + r.version);
+    updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
+    return;
+  }
+  switch (r.status) {
+    case 'up-to-date':
+      appendSys('检查更新 · 当前已是最新版本');
+      updateState.value = { phase: 'up-to-date', version: r.version ?? '', pct: 0, errorText: '' };
+      break;
+    case 'error':
+      lastFailure.value = 'check';
+      updateState.value = { phase: 'error', version: '', pct: 0, errorText: '无法连接更新服务器或解析版本信息，请稍后重试。' };
+      break;
+    case 'dev':
+      lastFailure.value = 'check';
+      updateState.value = { phase: 'error', version: '', pct: 0, errorText: '开发模式不检查更新' };
+      break;
   }
 }
 
-// 第一次确认 → 下载（进度事件驱动按钮文案）
-async function startDownload(): Promise<void> {
-  updateState.value = { ...updateState.value, phase: 'downloading', pct: 0 };
+async function runDownload(): Promise<void> {
+  updateState.value = { ...updateState.value, phase: 'downloading', pct: 0, errorText: '' };
   appendSys('开始下载新版本…');
-  const r = await invoke<{ ok: boolean; reason?: string }>('download_update');
+  let r: { ok: boolean; reason?: string };
+  try {
+    r = await invoke<{ ok: boolean; reason?: string }>('download_update');
+  } catch {
+    lastFailure.value = 'download';
+    updateState.value = { ...updateState.value, phase: 'error', errorText: '更新下载时发生未知错误，请稍后重试。' };
+    return;
+  }
   if (r.ok) {
-    updateRestartConfirm.value = true;
-  } else {
-    updateState.value = { ...updateState.value, phase: 'available', pct: 0 };
-    appendSys('更新下载失败 · ' + (r.reason ?? '未知错误'));
+    appendSys('新版本下载完成');
+    updateState.value = { ...updateState.value, phase: 'ready', errorText: '' };
+    return;
+  }
+  // 「尚无更新任务」= 渲染端状态机与主进程下载任务失步 → 回落 idle 并自动重新 check（重新同步）
+  if (r.reason && r.reason.includes('尚无更新任务')) {
+    updateState.value = { phase: 'idle', version: updateState.value.version, pct: 0, errorText: '' };
+    void runCheck();
+    return;
+  }
+  lastFailure.value = 'download';
+  appendSys('更新下载失败 · ' + (r.reason ?? '未知错误'));
+  updateState.value = { ...updateState.value, phase: 'error', errorText: r.reason ?? '未知错误' };
+}
+
+// UpdateModal @action：check / download / retry / restart（restart 走共用退出确认框）
+function onUpdateAction(_index: number, kind: string): void {
+  if (kind === 'check') {
+    void runCheck();
+  } else if (kind === 'download') {
+    void runDownload();
+  } else if (kind === 'retry') {
+    if (lastFailure.value === 'download') void runDownload();
+    else void runCheck();
+  } else if (kind === 'restart') {
+    exitAction.value = 'run_update'; // §D：复用「退出程序」ConfirmDialog
+    exitConfirm.value = true;
   }
 }
 
-// 第一次确认对话框 @confirm
-function onDownloadConfirmed(): void {
-  updateConfirm.value = false;
-  void startDownload();
+// §D 共用退出确认 @confirm：按 exitAction 分流（'exit' → exit_app；'run_update' → run_update）。
+// finally 复位对话框（主进程 app.exit / spawn update.exe 后窗口即销毁，此复位是防御性）
+function onExitConfirmed(): void {
+  const action = exitAction.value;
+  invoke(action === 'run_update' ? 'run_update' : 'exit_app')
+    .finally(() => { exitConfirm.value = false; });
 }
 
-// 第二次确认对话框 @confirm → run_update（主进程 spawn update.exe + 真退出）
-function onRestartConfirmed(): void {
-  invoke('run_update').finally(() => { updateRestartConfirm.value = false; });
+// §D 共用退出确认 @close（[取消]/遮罩）：复位开关与动作；run_update 入口取消时保持 ready 态
+function onExitClose(): void {
+  exitConfirm.value = false;
+  exitAction.value = 'exit';
 }
 </script>
 <template>
@@ -250,13 +276,13 @@ function onRestartConfirmed(): void {
         <img class="winbar__logo" :src="logoUrl" alt="" draggable="false" />
         <span class="winbar__name">LMS 启动器</span>
         <span v-if="version" class="winbar__version">v{{ version }}</span>
-        <!-- 自动更新（2026-09-01）：有新版本 → 圆角紫底按钮；下载中 → 进度态禁用 -->
+        <!-- 自动更新（2026-09-01-update-modal §E）：有新版本 → 圆角紫底按钮；点击只打开检查更新弹窗 -->
         <button
           v-if="updateState.phase === 'available'"
           type="button"
           class="update-pill"
-          :title="'发现新版本 v' + updateState.version + '，点击检查并安装'"
-          @click="onUpdateButton">有新版本!</button>
+          :title="'发现新版本 v' + updateState.version + '，点击查看并安装'"
+          @click="updateOpen = true">有新版本!</button>
         <button
           v-else-if="updateState.phase === 'downloading'"
           type="button"
@@ -282,22 +308,11 @@ function onRestartConfirmed(): void {
     <section class="log-area">
       <LogPanel :buckets="logBuckets" @clear="onLogClear" />
     </section>
-    <!-- §4.6：托盘「退出」二次确认（方案 B：LM Studio 式紧凑对话框；tone=primary 蓝） -->
+    <!-- §D 共用退出确认：托盘「退出」(exit_app) 与 更新 ready 后「重启应用」(run_update) 共享；exitAction 分流 -->
     <ConfirmDialog :open="exitConfirm" title="退出程序" message="将停止 llama-server 并退出，是否确认？" tone="primary"
-      @confirm="onExitConfirmed" @close="() => (exitConfirm = false)" />
-    <!-- 自动更新：第一次确认（下载并更新） -->
-    <ConfirmDialog :open="updateConfirm" title="发现新版本"
-      :message="'发现新版本 v' + updateState.version + '，是否下载并安装？'"
-      tone="primary"
-      @confirm="onDownloadConfirmed" @close="() => (updateConfirm = false)" />
-    <!-- 自动更新：第二次确认（退出并开始更新） -->
-    <ConfirmDialog :open="updateRestartConfirm" title="开始更新"
-      message="应用将立即退出，更新完成后自动重新启动新版。继续？"
-      tone="primary"
-      @confirm="onRestartConfirmed" @close="() => (updateRestartConfirm = false)" />
-    <!-- 检查更新反馈（纯信息展示；手动「检查更新」无新版/失败/开发模式时可见反馈） -->
-    <ConfirmDialog :open="feedbackOpen" :title="feedbackTitle" :message="feedbackMessage"
-      :tone="feedbackTone"
-      @confirm="() => (feedbackOpen = false)" @close="() => (feedbackOpen = false)" />
+      @confirm="onExitConfirmed" @close="onExitClose" />
+    <!-- 检查更新弹窗（七态由 updateState 驱动；action 事件由 onUpdateAction 分流） -->
+    <UpdateModal :open="updateOpen" :items="updateItems"
+      @action="onUpdateAction" @close="() => (updateOpen = false)" />
   </main>
 </template>

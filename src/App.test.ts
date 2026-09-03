@@ -402,3 +402,163 @@ describe('lifecycle log dual-echo (echoTabs)', () => {
     w.unmount();
   });
 });
+
+// 任务 3（2026-09-01 检查更新弹窗）：入口统一（托盘/顶栏只开弹窗）+ 共用退出确认 + 七态流转。
+// UpdateModal 为纯 props 驱动组件 → 测试经 document 层查询（.update-modal / .text-btn）；
+// invoke 按 cmd 分流（check_update 按脚本顺序返回、download_update 用可控 promise）。
+describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', () => {
+  const AVAILABLE = { available: true, status: 'update-available', version: '9.9.9' };
+
+  function makeUpdateMount() {
+    const ctrl = {
+      // check_update 依次返回脚本中的结果；耗尽后复用最后一个（空脚本 → 默认 up-to-date）
+      checkScript: [] as unknown[],
+      // download_update：可控 promise
+      download: Promise.withResolvers<{ ok: boolean; reason?: string }>(),
+    };
+    let checkIdx = 0;
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve(READY);
+        case 'get_configs': return Promise.resolve(cfg());
+        case 'check_update': {
+          const script = ctrl.checkScript;
+          const r = script.length
+            ? script[Math.min(checkIdx, script.length - 1)]
+            : { available: false, status: 'up-to-date', version: '1.0.0' };
+          checkIdx += 1;
+          return Promise.resolve(r);
+        }
+        case 'download_update': return ctrl.download.promise;
+        default: return Promise.resolve(undefined);
+      }
+    });
+    const w = mount(App) as any;
+    return { w, ctrl };
+  }
+
+  function updateBtns(): HTMLButtonElement[] {
+    return [...document.querySelectorAll('.update-modal .text-btn')] as HTMLButtonElement[];
+  }
+
+  it('托盘「检查更新」只打开 UpdateModal（不 re-check、不弹旧确认框）', async () => {
+    const { w } = makeUpdateMount();
+    await flush(); // onMounted 的启动静默 check_update 已发生一次
+    invoke.mockClear();
+    trayUpdateHandlers.at(-1)(); // 托盘事件 → 只开弹窗
+    await flush();
+    expect(document.querySelector('.update-modal')).not.toBeNull();
+    // 打开弹窗不得再次 invoke check_update
+    expect(invoke.mock.calls.some((c) => c[0] === 'check_update')).toBe(false);
+    // 也不得出现旧的两步确认对话框
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    w.unmount();
+  });
+
+  it('顶栏「有新版本!」点击打开同一 UpdateModal', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    const pill = w.find('.update-pill');
+    expect(pill.exists()).toBe(true);
+    expect(pill.text()).toBe('有新版本!');
+    await pill.trigger('click'); // 入口统一：只开弹窗
+    await flush();
+    expect(document.querySelector('.update-modal')).not.toBeNull();
+    // available 态按钮为「下载更新」
+    expect(updateBtns()[0].textContent).toContain('下载更新');
+    w.unmount();
+  });
+
+  it('available → 下载(进度事件) → ready → 重启应用 → 共用退出确认 → 确认 → invoke run_update', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    trayUpdateHandlers.at(-1)(); // 开弹窗
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('下载更新');
+    updateBtns()[0].click(); // 下载更新 → download_update 在途
+    await flush(); // downloading 态（0%）
+    // 进度事件驱动 pct
+    updateProgressHandlers.at(-1)!({ pct: 55 });
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('下载中 55%');
+    // 下载完成 → ready
+    ctrl.download.resolve({ ok: true });
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    updateBtns()[0].click(); // 重启应用 → 共用「退出程序」确认框
+    await flush();
+    const box = document.querySelector('.confirm-box');
+    expect(box).not.toBeNull();
+    expect(box!.textContent).toContain('退出程序');
+    invoke.mockClear();
+    (document.querySelector('.confirm-box .confirm-ok') as HTMLButtonElement).click();
+    await flush();
+    expect(invoke.mock.calls.find((c) => c[0] === 'run_update')).toBeDefined();
+    w.unmount();
+  });
+
+  it('重启确认取消 → 不 invoke run_update，保持 ready 态', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    trayUpdateHandlers.at(-1)();
+    await flush();
+    updateBtns()[0].click(); // 下载更新
+    ctrl.download.resolve({ ok: true });
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    updateBtns()[0].click(); // → 退出确认框
+    await flush();
+    expect(document.querySelector('.confirm-box')).not.toBeNull();
+    invoke.mockClear();
+    (document.querySelector('.confirm-box .confirm-cancel') as HTMLButtonElement).click();
+    await flush();
+    expect(invoke.mock.calls.find((c) => c[0] === 'run_update')).toBeUndefined();
+    // ready 态保持：弹窗仍在，按钮仍为「重启应用」
+    expect(document.querySelector('.update-modal')).not.toBeNull();
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    w.unmount();
+  });
+
+  it('check 失败 → error 态；点「重试」→ 重新 invoke check_update', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [{ available: false, status: 'error' }];
+    await flush();
+    trayUpdateHandlers.at(-1)();
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('检查更新'); // idle 态
+    updateBtns()[0].click();
+    await flush();
+    // error 态：原因文本 + 「重试」按钮
+    const row = (document.querySelector('.update-modal') as HTMLElement).textContent ?? '';
+    expect(row).toContain('无法连接更新服务器');
+    expect(updateBtns()[0].textContent).toContain('重试');
+    invoke.mockClear();
+    updateBtns()[0].click(); // 重试 → 重发 check_update
+    await flush();
+    expect(invoke.mock.calls.find((c) => c[0] === 'check_update')).toBeDefined();
+    w.unmount();
+  });
+
+  it('download 失败 reason 含「尚无更新任务」→ 回落 idle 并自动重新 check', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE, { available: false, status: 'up-to-date', version: '1.0.0' }];
+    await flush(); // 启动静默 check_update → available
+    trayUpdateHandlers.at(-1)();
+    await flush();
+    const baselineChecks = invoke.mock.calls.filter((c) => c[0] === 'check_update').length;
+    updateBtns()[0].click(); // 下载更新
+    ctrl.download.resolve({ ok: false, reason: '尚无更新任务，请先检查更新' });
+    await flush();
+    // 自动重新 check：除启动静默外恰好新增 1 次 check_update
+    const checks = invoke.mock.calls.filter((c) => c[0] === 'check_update');
+    expect(checks.length).toBe(baselineChecks + 1);
+    // 不再显示下载失败错误文本；回落 idle 后走了 check 流程（第二次返回 up-to-date）
+    const row = (document.querySelector('.update-modal') as HTMLElement).textContent ?? '';
+    expect(row).not.toContain('尚无更新任务');
+    expect(updateBtns()[0].textContent).toContain('检查更新');
+    w.unmount();
+  });
+});
