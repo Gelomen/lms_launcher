@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
@@ -9,6 +9,7 @@ import { ProcessState } from './process';
 import { checkLlamaInstall, installCheckMessage } from './llama-check';
 import { spawn } from 'node:child_process';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
+import { makeUpdateFetch, buildProxyUri } from './update-http';
 
 // ---------- 单实例锁：禁止多开 ----------
 // requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
@@ -91,6 +92,14 @@ function createTray(): void {
         win.webContents.send('tray-update-request', {});
       }
     } },
+    { label: '设置', click: () => {
+      const win = mainWin();
+      if (win) {
+        // 先唤回窗口（关闭=隐藏到托盘），渲染端收到 tray-settings-request 后打开设置面板
+        win.show(); win.focus();
+        win.webContents.send('tray-settings-request', {});
+      }
+    } },
     { label: '退出', click: () => {
       const win = mainWin();
       if (win) {
@@ -149,6 +158,16 @@ function createWindow(): void {
 ipcMain.handle('get_app_config', (): AppConfig => {
   const [p] = yamlPaths();
   return appConfigLoad(p);
+});
+// save_proxy：持久化更新代理（host/port 均为空 = 清空代理，行为回落到直连）；saveProxy 的 throw 原样传给渲染端 reject
+ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
+  const [p] = yamlPaths();
+  const cfg = saveProxy(p, host, port);
+  const on = cfg.proxy_host && cfg.proxy_port
+    ? `已保存代理 http://${cfg.proxy_host}:${cfg.proxy_port}`
+    : '已清空代理';
+  emitLog(`[lms_launcher] 设置 · ${on}`, 'sys');
+  return 'ok';
 });
 ipcMain.handle('save_llama_dir', (_e, dir: string): void => {
   const [p] = yamlPaths();
@@ -360,18 +379,22 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
   if (!app.isPackaged) return { available: false, status: 'dev' };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 5000);
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+  const fetchFn = makeUpdateFetch(cfg);
+  const proxyNote = buildProxyUri(cfg) ? `（代理 ${buildProxyUri(cfg)}）` : '';
   try {
-    const res = await fetch(RELEASE_API_URL, {
+    const res = await fetchFn(RELEASE_API_URL, {
       signal: ctrl.signal,
       headers: { 'User-Agent': 'lms_launcher' },
     });
     if (!res.ok) {
-      emitLog('[lms_launcher] 检查更新失败：HTTP ' + res.status, 'sys');
+      emitLog('[lms_launcher] 检查更新失败：HTTP ' + res.status + proxyNote, 'sys');
       return { available: false, status: 'error' };
     }
     const info = parseLatestRelease(await res.json());
     if (!info) {
-      emitLog('[lms_launcher] 检查更新失败：无法解析 release 信息', 'sys');
+      emitLog('[lms_launcher] 检查更新失败：无法解析 release 信息' + proxyNote, 'sys');
       return { available: false, status: 'error' };
     }
     const cur = app.getVersion();
@@ -382,7 +405,7 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
     pendingUpdate = info;
     return { available: true, status: 'update-available', version: info.tag };
   } catch (e) {
-    emitLog('[lms_launcher] 检查更新失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
+    emitLog('[lms_launcher] 检查更新失败：' + (e instanceof Error ? e.message : String(e)) + proxyNote, 'sys');
     return { available: false, status: 'error' };
   } finally {
     clearTimeout(timer);
@@ -398,8 +421,12 @@ ipcMain.handle('download_update', async (): Promise<
   emitLog('[lms_launcher] 更新 · 开始下载：' + pendingUpdate.zipUrl, 'sys');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 600000); // 10 分钟超时
+  const [dp] = yamlPaths();
+  const cfg = appConfigLoad(dp);
+  const fetchFn = makeUpdateFetch(cfg);
+  const proxyNote = buildProxyUri(cfg) ? `（代理 ${buildProxyUri(cfg)}）` : '';
   try {
-    const res = await fetch(pendingUpdate.zipUrl, { signal: ctrl.signal, redirect: 'follow' });
+    const res = await fetchFn(pendingUpdate.zipUrl, { signal: ctrl.signal, redirect: 'follow' });
     if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
     const total = parseInt(res.headers.get('content-length') ?? '0', 10) || null;
     const { createWriteStream } = await import('node:fs');
@@ -426,7 +453,7 @@ ipcMain.handle('download_update', async (): Promise<
   } catch (e) {
     try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
     const msg = e instanceof Error ? e.message : String(e);
-    emitLog('[lms_launcher] 更新 · 下载失败：' + msg, 'sys');
+    emitLog('[lms_launcher] 更新 · 下载失败：' + msg + proxyNote, 'sys');
     return { ok: false, reason: msg };
   } finally {
     clearTimeout(timer);
