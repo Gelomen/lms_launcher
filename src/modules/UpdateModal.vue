@@ -134,7 +134,7 @@ function onClose(): void {
   width: 320px;
   background: var(--card);
   border-radius: var(--radius-card);
-  box-shadow: 0 2px 10px rgba(16, 24, 40, 0.18);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); /* 与 TemplateModal 全局 .card 卡片阴影一致 */
   overflow: hidden;
 }
 
@@ -202,6 +202,7 @@ function onClose(): void {
 .update-row__error { color: var(--danger); }
 .update-row__action {
   flex: none;
+  margin-left: auto; /* 动作按钮恒贴行右缘：中段不渲染（idle/checking/downloading）时不留白、不跳变 */
   display: flex;
   flex-direction: column;
   align-items: flex-end;
