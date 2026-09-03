@@ -9,6 +9,7 @@ declare global {
       onWinMaxChanged: (cb: (e: { maximized: boolean }) => void) => () => void;
       onUpdateDownloadProgress: (cb: (e: { pct: number }) => void) => () => void;
       onTrayUpdateRequest: (cb: () => void) => () => void;
+      onTraySettingsRequest: (cb: () => void) => () => void;
     };
   }
 }

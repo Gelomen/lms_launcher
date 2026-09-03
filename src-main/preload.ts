@@ -33,4 +33,9 @@ contextBridge.exposeInMainWorld('lms', {
     ipcRenderer.on('tray-update-request', listener);
     return () => ipcRenderer.removeListener('tray-update-request', listener);
   },
+  onTraySettingsRequest: (cb: () => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('tray-settings-request', listener);
+    return () => ipcRenderer.removeListener('tray-settings-request', listener);
+  },
 });
