@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds, saveProxy } from './config';
 import { tmpPath, rm, writeText, jp } from './test-utils';
 
 describe('config.ts', () => {
@@ -302,6 +302,40 @@ describe('proxy 字段兼容', () => {
     const loaded = appConfigLoad(p);
     expect(loaded.proxy_host).toBe('127.0.0.1');
     expect(loaded.proxy_port).toBe(10808);
+    rm(p);
+  });
+});
+
+describe('saveProxy', () => {
+  it('host+port 合法 → trim 后写回', () => {
+    const p = tmpPath('saveproxy_ok.yaml');
+    rm(p);
+    const cfg = saveProxy(p, '127.0.0.1 ', ' 10808 ');
+    expect(cfg.proxy_host).toBe('127.0.0.1');
+    expect(cfg.proxy_port).toBe(10808);
+    rm(p);
+  });
+  it('两参均空 → 清除代理字段', () => {
+    const p = tmpPath('saveproxy_clear.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', proxy_host: 'h', proxy_port: 1 });
+    const cfg = saveProxy(p, '  ', '');
+    expect(cfg.proxy_host).toBeUndefined();
+    expect(cfg.proxy_port).toBeUndefined();
+    rm(p);
+  });
+  it('host 非空 port 空 → throw 端口不能为空', () => {
+    const p = tmpPath('saveproxy_noport.yaml');
+    rm(p);
+    expect(() => saveProxy(p, '127.0.0.1', '')).toThrow('端口不能为空');
+    rm(p);
+  });
+  it('port 非法（0 / 99999 / abc）→ throw', () => {
+    const p = tmpPath('saveproxy_badport.yaml');
+    rm(p);
+    expect(() => saveProxy(p, 'h', '0')).toThrow('端口须为 1–65535');
+    expect(() => saveProxy(p, 'h', '99999')).toThrow('端口须为 1–65535');
+    expect(() => saveProxy(p, 'h', 'abc')).toThrow('端口须为 1–65535');
     rm(p);
   });
 });

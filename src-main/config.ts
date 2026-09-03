@@ -196,3 +196,23 @@ export function defaultParams(): ParamsFile {
     params_default: { port: '9931', fit: 'off' }, // 新建模板自动填写 + 保存时写入用户模板；存量配置由 configsBackfillDefaults 补齐
   };
 }
+
+/** 保存代理设置（端口走字符串，由主进程校验防注入）；两参均空 = 清除代理 */
+export function saveProxy(p: string, host: string, port: string): AppConfig {
+  const cfg = appConfigLoad(p);
+  const h = (host ?? '').trim();
+  const ps = (port ?? '').trim();
+  if (!h && !ps) {
+    cfg.proxy_host = undefined;
+    cfg.proxy_port = undefined;
+    appConfigSave(p, cfg);
+    return cfg;
+  }
+  if (!h || !ps) throw new Error('端口不能为空（或留空禁用代理）');
+  const n = Number(ps);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error('端口须为 1–65535 的数字');
+  cfg.proxy_host = h;
+  cfg.proxy_port = n;
+  appConfigSave(p, cfg);
+  return cfg;
+}
