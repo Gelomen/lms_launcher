@@ -2,6 +2,7 @@ dist/
 dist-main/
 dist-release/
 dist-release-update/
+lms-launcher-v*-win64.zip
 dist-update/
 node_modules/
 .npm-cache/
