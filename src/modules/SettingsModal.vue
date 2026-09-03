@@ -28,10 +28,16 @@ onMounted(async () => {
 
 watch(() => props.open, (v) => { if (v) saveError.value = ''; });
 
+// 代理地址格式白名单：IPv4（a.b.c.d）或主机名（字母数字点连字符，每段不以连字符起头）。
+// 拒绝带 scheme（http://evil）、带端口（host:80，端口应另填）、带空格/路径等畸形输入，
+// 否则这些会拼进 ProxyAgent uri 才在「检查更新」时报 invalid URL（延迟 UX）。
+const PROXY_HOST_RE = /^(?:\d{1,3}\.){3}\d{1,3}$|^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
+
 function validate(): string | null {
   const h = proxyHost.value.trim();
   const p = proxyPort.value.trim();
   if ((h && !p) || (!h && p)) return '端口不能为空（或留空禁用代理）';
+  if (h && !PROXY_HOST_RE.test(h)) return '代理地址须为 IPv4 或主机名（不含端口、协议、空格）';
   if (p) {
     const n = Number(p);
     if (!Number.isInteger(n) || n < 1 || n > 65535) return '端口须为 1–65535 的数字';

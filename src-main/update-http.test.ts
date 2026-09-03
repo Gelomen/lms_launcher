@@ -1,15 +1,26 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 const calls: any[] = [];
+const createdAgents: any[] = [];
 vi.mock('undici', () => ({
-  ProxyAgent: vi.fn().mockImplementation((o: any) => ({ uri: o.uri, __tag: 'agent' })),
+  ProxyAgent: vi.fn().mockImplementation((o: any) => {
+    const agent = { uri: o.uri, __tag: 'agent', close: vi.fn(() => Promise.resolve()) };
+    createdAgents.push(agent);
+    return agent;
+  }),
   fetch: vi.fn().mockImplementation(async (url: any, init: any) => {
     calls.push({ url, init });
     return new Response('ok');
   }),
 }));
-import { buildProxyUri, makeUpdateFetch } from './update-http';
+import { buildProxyUri, makeUpdateFetch, __resetProxyAgentCacheForTest } from './update-http';
 import * as undici from 'undici';
 const MockProxyAgent = undici.ProxyAgent as any;
+
+beforeEach(() => {
+  createdAgents.length = 0;
+  MockProxyAgent.mockClear?.();
+  __resetProxyAgentCacheForTest();
+});
 
 describe('buildProxyUri', () => {
   it('host+port 有效 → http://host:port', () => {
@@ -47,5 +58,32 @@ describe('makeUpdateFetch', () => {
     expect(c.init.headers).toEqual({ a: 'b' });
     expect(c.init.redirect).toBe('follow');
     expect(c.init.dispatcher).toMatchObject({ __tag: 'agent' });
+  });
+});
+
+describe('makeUpdateFetch 连接池缓存', () => {
+  it('同一 uri 复用 → ProxyAgent 只创建一次', () => {
+    const cfg = { llama_dir: '', proxy_host: '127.0.0.1', proxy_port: 10808 };
+    makeUpdateFetch(cfg);
+    makeUpdateFetch(cfg);
+    expect(createdAgents.length).toBe(1);
+  });
+
+  it('uri 变化 → 关闭旧代理，新建新代理', async () => {
+    makeUpdateFetch({ llama_dir: '', proxy_host: '10.0.0.1', proxy_port: 8080 });
+    const oldAgent = createdAgents[0];
+    expect(createdAgents.length).toBe(1);
+    makeUpdateFetch({ llama_dir: '', proxy_host: '10.0.0.2', proxy_port: 9090 });
+    expect(createdAgents.length).toBe(2);
+    // 旧代理被关闭
+    expect(oldAgent.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('关闭失败 → 不抛错阻断（close 的 Promise reject 被吞）', () => {
+    // 手动注入一个 close 会 reject 的 agent 到缓存，验证 swap 不崩
+    makeUpdateFetch({ llama_dir: '', proxy_host: 'a', proxy_port: 1 });
+    createdAgents[0].close = vi.fn(() => Promise.reject(new Error('close fail')));
+    // 触发 swap（不同 uri），不应同步抛错
+    expect(() => makeUpdateFetch({ llama_dir: '', proxy_host: 'b', proxy_port: 2 })).not.toThrow();
   });
 });
