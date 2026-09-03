@@ -366,12 +366,12 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
       headers: { 'User-Agent': 'lms_launcher' },
     });
     if (!res.ok) {
-      emitLog('[更新] 检查失败：HTTP ' + res.status, 'sys');
+      emitLog('[lms_launcher] 检查更新失败：HTTP ' + res.status, 'sys');
       return { available: false, status: 'error' };
     }
     const info = parseLatestRelease(await res.json());
     if (!info) {
-      emitLog('[更新] 检查失败：无法解析 release 信息', 'sys');
+      emitLog('[lms_launcher] 检查更新失败：无法解析 release 信息', 'sys');
       return { available: false, status: 'error' };
     }
     const cur = app.getVersion();
@@ -382,7 +382,7 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
     pendingUpdate = info;
     return { available: true, status: 'update-available', version: info.tag };
   } catch (e) {
-    emitLog('[更新] 检查失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
+    emitLog('[lms_launcher] 检查更新失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
     return { available: false, status: 'error' };
   } finally {
     clearTimeout(timer);
@@ -395,7 +395,7 @@ ipcMain.handle('download_update', async (): Promise<
 > => {
   if (!pendingUpdate) return { ok: false, reason: '尚无更新任务（请先检查更新）' };
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip
-  emitLog('[更新] 开始下载：' + pendingUpdate.zipUrl, 'sys');
+  emitLog('[lms_launcher] 更新 · 开始下载：' + pendingUpdate.zipUrl, 'sys');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 600000); // 10 分钟超时
   try {
@@ -421,12 +421,12 @@ ipcMain.handle('download_update', async (): Promise<
     out.end();
     await new Promise<void>((r) => out.on('finish', () => r()));
     const size = statSync(zipPath).size;
-    emitLog('[更新] 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB', 'sys');
+    emitLog('[lms_launcher] 更新 · 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB', 'sys');
     return { ok: true, zipPath, size };
   } catch (e) {
     try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
     const msg = e instanceof Error ? e.message : String(e);
-    emitLog('[更新] 下载失败：' + msg, 'sys');
+    emitLog('[lms_launcher] 更新 · 下载失败：' + msg, 'sys');
     return { ok: false, reason: msg };
   } finally {
     clearTimeout(timer);
@@ -441,7 +441,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   if (!existsSync(upd) || !existsSync(zipPath)) {
     throw new Error('更新文件缺失（update.exe / lms-launcher-update.zip）');
   }
-  emitLog('[更新] 已启动更新器，应用即将退出', 'sys');
+  emitLog('[lms_launcher] 更新 · 已启动更新器，应用即将退出', 'sys');
   const child = spawn(upd, [zipPath, installDir], {
     cwd: installDir,
     detached: true,
@@ -451,7 +451,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   await ps.stopGraceful(3);
   app.exit(0);
 });
-// update.exe 日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [更新器] 前缀
+// update.exe 日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
 // 进 LMS Launcher 日志区 → 删除（一次性）。与 detectLlamaInstall 同机制处理渲染端未就绪——
 // 页面加载完前 send 的消息即发即弃，故延迟到 did-finish-load
 function replayUpdateLog(): void {
@@ -466,7 +466,7 @@ function replayUpdateLog(): void {
   try { unlinkSync(logPath); } catch { /* 删除失败不影响回显 */ }
   const lines = content.split(/\r?\n/).filter((l) => l.trim());
   const sendAll = (): void => {
-    for (const l of lines) emitLog('[更新器] ' + l, 'sys');
+    for (const l of lines) emitLog('[lms_launcher] ' + l, 'sys');
   };
   const win = mainWin();
   if (!win || !win.webContents.isLoading()) { sendAll(); return; }
