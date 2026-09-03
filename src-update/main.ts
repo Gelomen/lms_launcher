@@ -8,6 +8,7 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, rmSync } from 'nod
 import { spawn } from 'node:child_process';
 import StreamZip from 'node-stream-zip';
 import { runUpdate } from '../src-main/updater-core';
+import { getProgramArgs } from './argv-utils';
 
 let logFile = '';
 function log(msg: string): void {
@@ -18,19 +19,22 @@ function log(msg: string): void {
 }
 
 app.whenReady().then(async () => {
-  const [, , zipPath, installDir] = process.argv;
+  // 打包 exe 的 argv 比 dev 少一个 electron 前缀，统一经 getProgramArgs 取参（否则恒缺参数）
+  const [zipPath, installDir] = getProgramArgs(process.argv);
+  // 日志路径先行：即使参数不全，已知 installDir 时错误也能落盘（避免静默失败无从排查）
+  if (installDir) logFile = join(installDir, 'lms_launcher_update.log');
   if (!zipPath || !installDir) {
-    log('[ERROR] 缺少参数（用法：update.exe <zipPath> <installDir>）');
+    log('[ERROR] 缺少参数（用法：update.exe <zipPath> <installDir>），argv=' + JSON.stringify(process.argv));
     process.exit(1);
   }
-  logFile = join(installDir, 'lms_launcher_update.log');
   log('[INFO] update.exe 启动 v' + app.getVersion() + ' · zip=' + zipPath + ' · dir=' + installDir);
 
   const outcome = await runUpdate({
     zipPath,
     installDir,
     listEntries: async (zip) => {
-      const z = new StreamZip.StreamZipAsync({ file: zip });
+      // 运行时类挂载在 StreamZip.async（.StreamZipAsync 仅为 d.ts 命名空间类型名，不存在于运行时）
+      const z = new StreamZip.async({ file: zip });
       const entries = await z.entries();
       const names = Object.entries(entries)
         .filter(([, e]) => !e.isDirectory)
@@ -38,7 +42,7 @@ app.whenReady().then(async () => {
       await z.close();
       return names;
     },
-    extractEntry: async (zip, entry, destDir) => { await new StreamZip.StreamZipAsync({ file: zip }).extract(entry, destDir); },
+    extractEntry: async (zip, entry, destDir) => { await new StreamZip.async({ file: zip }).extract(entry, destDir); },
     ops: {
       copy: (s, d) => copyFileSync(s, d),
       rm: (p) => rmSync(p, { force: true, recursive: true }),
