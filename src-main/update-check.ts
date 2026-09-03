@@ -14,6 +14,7 @@ const TAG_RE = /^v?((\d+\.\d+\.\d+)(-[0-9A-Za-z.]+)?)$/;
 export interface LatestReleaseInfo {
   tag: string;      // 已去 v 前缀的 semver（可能带预发布后缀）
   zipUrl: string;   // 匹配 *-win64.zip 资产的 browser_download_url
+  digest?: string;  // 资产 sha256 校验和（sha256: + 64 位 hex）；缺失/非法 → 省略（不校验哈希）
 }
 
 // 严格 semver（无 v 前缀、无预发布后缀）→ [maj,min,pat]；不合规则 null
@@ -65,6 +66,12 @@ export function compareVersions(cur: string, latest: string): -1 | 0 | 1 {
 //   1) 规范新式命名 *-win64.zip（docs 约定的 lms-launcher-v{version}-win64.zip）
 //   2) 历史命名 LMS-Launcher-v{version}.zip（2026-08-28 v0.1.0 实际上传的资产名）
 // 若未来重新发布，仍推荐用 *-win64.zip（含架构信息）；历史命名仅作兼容。
+// 资产 digest 字段：仅接受 sha256: + 64 位十六进制小写；其他（缺失/空/非字符串/非 sha256/长度或字符非法）→ null
+const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
+export function parseDigest(v: unknown): string | null {
+  return typeof v === 'string' && DIGEST_RE.test(v) ? v : null;
+}
+
 export function parseLatestRelease(json: unknown): LatestReleaseInfo | null {
   if (typeof json !== 'object' || json === null) return null;
   const r = json as Record<string, unknown>;
@@ -98,5 +105,8 @@ export function parseLatestRelease(json: unknown): LatestReleaseInfo | null {
       });
     })();
   if (!zip) return null;
-  return { tag: m[1], zipUrl: zip.browser_download_url };
+  const info: LatestReleaseInfo = { tag: m[1], zipUrl: zip.browser_download_url };
+  const digest = parseDigest((zip as Record<string, unknown>).digest);
+  if (digest) info.digest = digest;
+  return info;
 }

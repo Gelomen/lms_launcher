@@ -125,4 +125,44 @@ describe('update-check.ts', () => {
   it('compareVersions_invalid_prerelease_shape_consults_base', () => {
     // 非 semver 预发布(无版本数字): 解析失败 -> 0(保守不弹)
     expect(compareVersions('0.1.0', 'valpha')).toBe(0);
-  });});
+  });
+
+  // 2026-09-05 下载完整性校验（spec 2026-09-05-download-integrity-check-design）：
+  // parseLatestRelease 从 zip asset 提取 digest（仅 sha256: + 64 位 hex 合法；其他一律省略）
+  it('parseLatestRelease_valid_sha256_digest_extracted', () => {
+    const json = {
+      tag_name: 'v0.2.0',
+      assets: [
+        {
+          name: 'lms-launcher-v0.2.0-win64.zip',
+          browser_download_url: 'https://gh/x.zip',
+          digest: 'sha256:5fc386e6b292e1a1be9befd94f1b5914279e3ab6ef645fccb78b2fa7ebe765b7',
+        },
+      ],
+    };
+    const r = parseLatestRelease(json);
+    expect(r).not.toBeNull();
+    expect(r!.digest).toBe('sha256:5fc386e6b292e1a1be9befd94f1b5914279e3ab6ef645fccb78b2fa7ebe765b7');
+  });
+
+  it('parseLatestRelease_missing_or_invalid_digest_omitted', () => {
+    const mk = (digest: unknown) => ({
+      tag_name: 'v0.2.0',
+      assets: [
+        { name: 'a-win64.zip', browser_download_url: 'u', ...(digest !== undefined ? { digest } : {}) },
+      ],
+    });
+    // 无 digest 字段
+    expect(parseLatestRelease(mk(undefined))).toEqual({ tag: '0.2.0', zipUrl: 'u' });
+    // 空串
+    expect(parseLatestRelease(mk(''))).toEqual({ tag: '0.2.0', zipUrl: 'u' });
+    // 非字符串
+    expect(parseLatestRelease(mk(123))).toEqual({ tag: '0.2.0', zipUrl: 'u' });
+    // 其他算法
+    expect(parseLatestRelease(mk('sha1:abc'))).toEqual({ tag: '0.2.0', zipUrl: 'u' });
+    // 长度不足
+    expect(parseLatestRelease(mk('sha256:abc'))).toEqual({ tag: '0.2.0', zipUrl: 'u' });
+    // 含非法字符
+    expect(parseLatestRelease(mk('sha256:XYZ'))).toEqual({ tag: '0.2.0', zipUrl: 'u' });
+  });
+});
