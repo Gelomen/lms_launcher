@@ -10,6 +10,7 @@ import { checkLlamaInstall, installCheckMessage } from './llama-check';
 import { spawn } from 'node:child_process';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
+import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
 
 // ---------- 单实例锁：禁止多开 ----------
 // requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
@@ -448,7 +449,25 @@ ipcMain.handle('download_update', async (): Promise<
     out.end();
     await new Promise<void>((r) => out.on('finish', () => r()));
     const size = statSync(zipPath).size;
-    emitLog('[lms_launcher] 更新 · 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB', 'sys');
+    // 完整性校验（spec 2026-09-05-download-integrity-check-design）：
+    // 1) Content-Length 比对（截断/断流的流也会 done:true → 靠此拦截半成品）
+    // 2) 发布资产 SHA-256 比对（digest 缺失则跳过）；失败均删半成品 → 渲染端 error 态可重试
+    const expectedDigest: string | null = pendingUpdate.digest ?? null;
+    const actualDigest = expectedDigest
+      ? await sha256FileAsync(zipPath)
+      : null;
+    const integrity = evaluateDownloadIntegrity({
+      expectedSize: total,
+      actualSize: size,
+      expectedDigest,
+      actualDigest: actualDigest !== null && digestMatches(expectedDigest, actualDigest) ? expectedDigest : null,
+    });
+    if (!integrity.ok) {
+      try { unlinkSync(zipPath); } catch { /* 残留由下次下载覆盖 */ }
+      emitLog('[lms_launcher] 更新 · ' + integrity.reason, 'sys');
+      return { ok: false, reason: integrity.reason ?? '校验失败' };
+    }
+    emitLog('[lms_launcher] 更新 · 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB' + (pendingUpdate.digest ? '（SHA-256 校验通过）' : ''), 'sys');
     return { ok: true, zipPath, size };
   } catch (e) {
     try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
