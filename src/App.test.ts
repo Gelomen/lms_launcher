@@ -470,6 +470,37 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     w.unmount();
   });
 
+  it('downloading 态顶栏「下载中 NN%」可点 → 打开同一 UpdateModal（恢复当前状态）', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    // 进入 downloading：托盘开弹窗 → 点「下载更新」→ 进度事件驱动 55%
+    trayUpdateHandlers.at(-1)();
+    await flush();
+    updateBtns()[0].click(); // 下载更新 → download_update 在途
+    await flush();
+    updateProgressHandlers.at(-1)!({ pct: 55 });
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('下载中 55%');
+    // 关闭弹窗（下载继续）
+    (document.querySelector('.update-modal .update-close') as HTMLButtonElement).click();
+    await flush();
+    expect(document.querySelector('.update-modal')).toBeNull();
+    // 顶栏显示「下载中 55%」且未禁用
+    const busy = w.find('.update-pill--busy');
+    expect(busy.exists()).toBe(true);
+    expect(busy.text()).toContain('下载中 55%');
+    expect(busy.attributes('disabled')).toBeUndefined();
+    // 点击 → 打开同一 UpdateModal
+    await busy.trigger('click');
+    await flush();
+    expect(document.querySelector('.update-modal')).not.toBeNull();
+    // 恢复当前状态：仍为「下载中 55%」（弹窗内动作按钮不可点，下载进行中）
+    expect(updateBtns()[0].textContent).toContain('下载中 55%');
+    expect(updateBtns()[0].disabled).toBe(true);
+    w.unmount();
+  });
+
   it('available → 下载(进度事件) → ready → 重启应用 → 共用退出确认 → 确认 → invoke run_update', async () => {
     const { w, ctrl } = makeUpdateMount();
     ctrl.checkScript = [AVAILABLE];

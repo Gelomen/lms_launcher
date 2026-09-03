@@ -460,7 +460,8 @@ body {
   pointer-events: auto; /* 父 .winbar__brand 设了 none 防 logo 拖动误触——按钮必须恢复 */
 }
 .update-pill:hover { background: #7C3AED; }
-.update-pill--busy { background: #C4B5FD; color: #fff; cursor: default; }
+/* busy（downloading）：可点击查看进度弹窗 → 恢复 pointer */
+.update-pill--busy { background: #C4B5FD; color: #fff; cursor: pointer; }
 /* ---- 文字按钮（.text-btn：更新弹窗等无填充动作按钮，与 .btn 同高 32px） ---- */
 .text-btn {
   height: var(--h-control);

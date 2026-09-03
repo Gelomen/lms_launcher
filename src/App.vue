@@ -294,7 +294,8 @@ function onExitClose(): void {
           v-else-if="updateState.phase === 'downloading'"
           type="button"
           class="update-pill update-pill--busy"
-          disabled>下载中 {{ updateState.pct }}%</button>
+          :title="'下载中 ' + updateState.pct + '%，点击查看进度'"
+          @click="updateOpen = true">下载中 {{ updateState.pct }}%</button>
       </div>
       <div class="winbar__controls">
         <button class="winbtn" aria-label="最小化" title="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>

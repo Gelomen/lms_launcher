@@ -81,7 +81,8 @@ lms_launcher 已有自动更新机制（规格 2026-09-01-auto-update-design.md�
 
 ### E. 入口统一
 
-- 顶栏「有新版本!」按钮（update-pill）：点击 → 只打开 UpdateModal（不再 re-check + 弹确认框）；按钮本体与下载进度显示逻辑不变（phase available/downloading 的渲染维持）
+- 顶栏「有新版本!」按钮（update-pill）：点击 → 只打开 UpdateModal（不再 re-check + 弹确认框）
+- 顶栏「下载中 NN%」按钮（update-pill--busy）：下载进行中同样可点 → 只打开 UpdateModal（恢复 downloading 态 + 进度条）；2026-09-03 由「纯禁用占位」改为「可点入口」，与 available 态同口径（入口统一原则：顶栏任何更新相关 pill 点击都只开弹窗）
 - 托盘右键「检查更新」：主进程唤回窗口 + tray-update-request（现有 IPC 不变）→ 渲染端打开 UpdateModal（不再走旧 onUpdateButton 确认流程）
 - App.vue 持有：updateOpen（弹窗开关）、updateState（C 节状态机）、exitAction（D 节）；UpdateModal 通过 props/emits 通信（与 LaunchBar 同模式）
 
