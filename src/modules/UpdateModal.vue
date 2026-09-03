@@ -48,10 +48,12 @@ function btnDisabled(item: Item): boolean {
 }
 
 // 中段渲染（12px）：available/ready → 新版号（--muted）；up-to-date → 灰字「已是最新版本 vX.Y.Z」；error → 红字错误原因
+// ready 带 errorText（run_update 失败）→ 红字错误优先展示；否则显示新版号
 function middleKind(item: Item): string {
   switch (item.phase) {
-    case 'available':
     case 'ready':
+      return item.errorText ? 'error' : 'version';
+    case 'available':
       return 'version';
     case 'up-to-date':
       return 'latest';

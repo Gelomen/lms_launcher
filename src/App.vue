@@ -256,10 +256,17 @@ function onUpdateAction(_index: number, kind: string): void {
 }
 
 // §D 共用退出确认 @confirm：按 exitAction 分流（'exit' → exit_app；'run_update' → run_update）。
-// finally 复位对话框（主进程 app.exit / spawn update.exe 后窗口即销毁，此复位是防御性）
+// finally 复位对话框（主进程 app.exit / spawn update.exe 后窗口即销毁，此复位是防御性）。
+// run_update 失败（update.exe/更新包缺失）→ 在 ready 态行内显示错误文案（errorText 通道），用户可重试。
 function onExitConfirmed(): void {
   const action = exitAction.value;
   invoke(action === 'run_update' ? 'run_update' : 'exit_app')
+    .catch((e) => {
+      if (action === 'run_update') {
+        appendSys('启动更新失败 · ' + errMsg(e));
+        updateState.value = { ...updateState.value, phase: 'ready', errorText: errMsg(e) };
+      }
+    })
     .finally(() => { exitConfirm.value = false; });
 }
 

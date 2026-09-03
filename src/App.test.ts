@@ -522,6 +522,44 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     w.unmount();
   });
 
+  // run_update 失败（主进程 update.exe/更新包缺失时 throw）→ 渲染端不得吞掉：
+  // ready 态行内显示错误文案（可重试），且未调用 exit_app、确认框复位。
+  it('run_update 失败 → ready 态行内显示错误文案（不 exit_app、按钮仍可点）', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    trayUpdateHandlers.at(-1)(); // 开弹窗
+    await flush();
+    updateBtns()[0].click(); // 下载更新
+    ctrl.download.resolve({ ok: true });
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    updateBtns()[0].click(); // 重启应用 → 共用「退出程序」确认框
+    await flush();
+    expect(document.querySelector('.confirm-box')).not.toBeNull();
+    // 独立控制 run_update：reject（覆盖 mount 内默认 resolve）
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      if (cmd === 'run_update') return Promise.reject(new Error('更新文件缺失（update.exe / lms-launcher-update.zip）'));
+      return Promise.resolve(undefined);
+    });
+    invoke.mockClear();
+    (document.querySelector('.confirm-box .confirm-ok') as HTMLButtonElement).click();
+    await flush();
+    // 错误文案行内可见（红字 .update-row__error）
+    const rowText = (document.querySelector('.update-modal') as HTMLElement).textContent ?? '';
+    expect(rowText).toContain('更新文件缺失');
+    expect(document.querySelector('.update-row__error')).not.toBeNull();
+    // 未走 exit_app 分支
+    expect(invoke.mock.calls.find((c) => c[0] === 'exit_app')).toBeUndefined();
+    // ready 态保持：按钮仍为「重启应用」可点（用户可重试），弹窗仍在
+    expect(document.querySelector('.update-modal')).not.toBeNull();
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    expect(updateBtns()[0].disabled).toBe(false);
+    // 确认框复位（finally 逻辑保留）
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    w.unmount();
+  });
+
   it('check 失败 → error 态；点「重试」→ 重新 invoke check_update', async () => {
     const { w, ctrl } = makeUpdateMount();
     ctrl.checkScript = [{ available: false, status: 'error' }];
