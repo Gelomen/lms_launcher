@@ -6,6 +6,7 @@ lms-launcher-v*-win64.zip
 dist-update/
 node_modules/
 .npm-cache/
+.pnpm-store/
 .superpowers/
 .dsh-watch/
 .repro/
