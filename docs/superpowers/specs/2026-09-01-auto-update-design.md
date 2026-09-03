@@ -38,6 +38,7 @@ lms_launcher 是 Electron 桌面应用,当前通过 GitHub Release 分发 win-un
 - 触发:app whenReady 后静默一次;「有新版本!」按钮点击时 re-check 后再弹窗
 - 数据源:GET https://api.github.com/repos/Gelomen/lms_launcher/releases/latest(5 秒超时)
 - 比较:tag_name 去 v 前缀,semver 严格大于当前 app.getVersion() 才算有新版;相等/更低/解析失败 → 无更新
+- 预发布 tag(如 v0.2.0-rc.1): 2026-09-03 修复,现支持;基础版本更高时(0.1.0 → 0.2.0-rc.1)提示更新,基础版本相同时(0.2.0 → 0.2.0-rc.1)不提示
 - 非 packaged(开发模式)→ 一律不可用
 - 失败处理:静默(不显示按钮),但写日志 [更新] 检查失败:xxx
 - 纯函数模块 src-main/update-check.ts:compareVersions(cur, latest)、parseLatestRelease(json) → 可单测

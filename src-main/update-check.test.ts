@@ -86,4 +86,43 @@ describe('update-check.ts', () => {
       zipUrl: 'https://gh/win64.zip',
     });
   });
-});
+  // 2026-09-03 bug: GitHub latest 为预发布 tag v0.2.0-rc.1 时,
+  // TAG_RE/VERSION_RE 只认严格 semver -> 解析失败 -> 报「无法连接更新服务器或解析版本信息」。
+  it('parseLatestRelease_prerelease_tag_accepted', () => {
+    const json = {
+      tag_name: 'v0.2.0-rc.1',
+      assets: [
+        { name: 'lms-launcher-v0.2.0-rc.1-win64.zip', browser_download_url: 'https://gh/rc.zip' },
+      ],
+    };
+    expect(parseLatestRelease(json)).toEqual({
+      tag: '0.2.0-rc.1',
+      zipUrl: 'https://gh/rc.zip',
+    });
+  });
+
+  it('parseLatestRelease_no_v_prefix_prerelease_accepted', () => {
+    const json = {
+      tag_name: '0.2.0-rc.1',
+      assets: [
+        { name: 'lms-launcher-v0.2.0-rc.1-win64.zip', browser_download_url: 'u' },
+      ],
+    };
+    expect(parseLatestRelease(json)).toEqual({ tag: '0.2.0-rc.1', zipUrl: 'u' });
+  });
+
+  it('compareVersions_prerelease_is_newer_than_lower_base', () => {
+    // 用户场景: 当前 0.1.0, latest 0.2.0-rc.1 -> 视为有新版
+    expect(compareVersions('0.1.0', '0.2.0-rc.1')).toBe(1);
+  });
+
+  it('compareVersions_prerelease_not_newer_than_its_base', () => {
+    // 0.2.0-rc.1 比基础版 0.2.0 更早 -> 不算「有新版」(0)
+    expect(compareVersions('0.2.0', '0.2.0-rc.1')).toBe(0);
+    expect(compareVersions('0.2.0-rc.1', '0.2.0-rc.1')).toBe(0);
+  });
+
+  it('compareVersions_invalid_prerelease_shape_consults_base', () => {
+    // 非 semver 预发布(无版本数字): 解析失败 -> 0(保守不弹)
+    expect(compareVersions('0.1.0', 'valpha')).toBe(0);
+  });});

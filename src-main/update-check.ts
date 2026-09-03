@@ -6,10 +6,13 @@ export const RELEASE_API_URL =
   'https://api.github.com/repos/Gelomen/lms_launcher/releases/latest';
 
 const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/;
-const TAG_RE = /^v?(\d+\.\d+\.\d+)$/;
+// 2026-09-03：GitHub releases/latest 允许预发布 tag（如 v0.2.0-rc.1）。
+// 旧正则只认严格 semver → 解析失败 → 报「无法连接更新服务器或解析版本信息」。
+// 现接受 -rc.1 / -beta.2 等预发布后缀。
+const TAG_RE = /^v?((\d+\.\d+\.\d+)(-[0-9A-Za-z.]+)?)$/;
 
 export interface LatestReleaseInfo {
-  tag: string;      // 已去 v 前缀的 semver
+  tag: string;      // 已去 v 前缀的 semver（可能带预发布后缀）
   zipUrl: string;   // 匹配 *-win64.zip 资产的 browser_download_url
 }
 
@@ -20,16 +23,41 @@ export function parseVersion(s: string): [number, number, number] | null {
   return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
 }
 
+// 宽松解析：基础三位数字 + 可选预发布后缀（compareVersions 内部使用）
+const LOOSE_RE = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+interface LooseVersion {
+  n: [number, number, number];
+  pre: string | null;
+}
+function parseLoose(s: string): LooseVersion | null {
+  const m = s.match(LOOSE_RE);
+  if (!m) return null;
+  return {
+    n: [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)],
+    pre: m[4] ?? null,
+  };
+}
+
 // -1 = latest 更低 / 0 = 相等或任一侧解析失败 / 1 = latest 更新
 // 只有 1 才视为「有新版」（失败保守 → 不弹更新）
+// 预发布语义：
+//   - 基础版本不同 → 比基础版本（0.2.0-rc.1 对 0.1.x 仍是新版）
+//   - 基础版本相同：稳定版 vs 预发布 → 预发布更早（0.2.0-rc.1 不算 0.2.0 的新版）
+//   - 同为预发布 → 按后缀字符串顺序（简化）
 export function compareVersions(cur: string, latest: string): -1 | 0 | 1 {
-  const a = parseVersion(cur);
-  const b = parseVersion(latest);
+  const a = parseLoose(cur);
+  const b = parseLoose(latest);
   if (!a || !b) return 0;
   for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return b[i] < a[i] ? -1 : 1;
+    if (a.n[i] !== b.n[i]) return b.n[i] < a.n[i] ? -1 : 1;
   }
-  return 0;
+  if (a.pre === null && b.pre === null) return 0;
+  if (a.pre !== null && b.pre === null) return 1; // cur 是 rc，latest 是正式版 → 更新
+  if (a.pre === null && b.pre !== null) return 0; // latest 是该版本的 rc → 不算更新
+  // 走到这里 a.pre / b.pre 均非 null（上方已排除 null 组合）
+  const ap = a.pre as string;
+  const bp = b.pre as string;
+  return ap === bp ? 0 : ap < bp ? -1 : 1;
 }
 
 // 解析 GitHub releases/latest 响应 → LatestReleaseInfo；tag 非 semver 或无匹配 zip 资产 → null
