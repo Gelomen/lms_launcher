@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
-import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
@@ -35,6 +35,17 @@ function dataDir(): string {
 function yamlPaths(): [string, string, string] {
   const d = dataDir();
   return [join(d, 'lms_launcher.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
+}
+// 更新包目录：exe 目录下 downloads/（不直接落根目录，保持根目录整洁）
+// 下载前确保存在（不存在则创建，失败不阻断——writeStream 会自行报错走原有失败分支）
+function updateZipDir(): string {
+  const d = join(dataDir(), 'downloads');
+  try { mkdirSync(d, { recursive: true }); } catch { /* 目录创建失败由后续写入报错处理 */ }
+  return d;
+}
+// 更新包路径：downloads/lms-launcher-update.zip（download_update 与 run_update 共用同一约定）
+function updateZipPath(): string {
+  return join(updateZipDir(), 'lms-launcher-update.zip');
 }
 
 // ---------- 日志事件 ----------
@@ -377,13 +388,13 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
     clearTimeout(timer);
   }
 });
-// download_update：流式下载 pendingUpdate.zipUrl → exe 目录 lms-launcher-update.zip
+// download_update：流式下载 pendingUpdate.zipUrl → exe 目录 downloads/lms-launcher-update.zip
 // 进度经 update-download-progress 事件推渲染端；失败删半成品并报错（可重试）
 ipcMain.handle('download_update', async (): Promise<
   { ok: true; zipPath: string; size: number } | { ok: false; reason: string }
 > => {
   if (!pendingUpdate) return { ok: false, reason: '尚无更新任务（请先检查更新）' };
-  const zipPath = join(dataDir(), 'lms-launcher-update.zip');
+  const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip
   emitLog('[更新] 开始下载：' + pendingUpdate.zipUrl, 'sys');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 600000); // 10 分钟超时
@@ -425,7 +436,7 @@ ipcMain.handle('download_update', async (): Promise<
 // Windows 父子进程天然不联动（无 Job Object）：exe 退出后 update.exe 继续等、替换、拉起新版
 ipcMain.handle('run_update', async (): Promise<void> => {
   const installDir = dataDir();
-  const zipPath = join(installDir, 'lms-launcher-update.zip');
+  const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip（与 download_update 一致）
   const upd = join(installDir, 'update.exe');
   if (!existsSync(upd) || !existsSync(zipPath)) {
     throw new Error('更新文件缺失（update.exe / lms-launcher-update.zip）');
