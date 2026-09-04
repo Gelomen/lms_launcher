@@ -26,6 +26,15 @@ if ($ZipPath -eq '' -or $InstallDir -eq '') {
 }
 $LogPath = Join-Path $InstallDir 'lms_launcher_update.log'
 Write-Log '[INFO] 更新脚本启动 · zip=' + $ZipPath + ' · dir=' + $InstallDir
+
+# 自清理调度任务（2026-09-05）：本脚本由任务计划程序 LMSLauncherUpdate 拉起。启动即自删
+# —— /Delete /F 对运行中的一次性任务安全（探针验证：任务库即时移除，脚本进程不受影响），
+# 失败路径（提前 exit）同样兜底一次，避免 ONCE 任务残留到下次启动误触发；
+# 应用启动时另有 cleanStaleUpdateTask 兜底。
+function Remove-UpdateTask() {
+  try { & schtasks.exe /Delete /F /TN 'LMSLauncherUpdate' 2>&1 | Out-Null } catch { }
+}
+Remove-UpdateTask
 if (-not (Test-Path $InstallDir)) {
   Write-Log ('[ERROR] 安装目录不存在：' + $InstallDir)
   exit 1
@@ -87,10 +96,12 @@ try {
   Write-Log '[INFO] 启动新版 lms_launcher.exe'
   Start-Process -FilePath $newExe -WorkingDirectory $InstallDir
   Write-Log '[INFO] 更新完成'
+  Remove-UpdateTask
   exit 0
 }
 catch {
   Write-Log ('[ERROR] 更新失败：' + $_.Exception.Message)
   try { if ($tmp -ne '' -and (Test-Path $tmp)) { Remove-Item $tmp -Recurse -Force } } catch { }
+  Remove-UpdateTask
   exit 1
 }

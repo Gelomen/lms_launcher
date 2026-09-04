@@ -7,7 +7,12 @@ import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
 import { ProcessState } from './process';
 import { checkLlamaInstall, installCheckMessage } from './llama-check';
-import { spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
+
+// 更新调度任务名（schtasks）：2026-09-05 探针矩阵（.temp/decisive4~11）证明本机 Electron 子进程
+// 无论 detached / 非 detached / cmd 包裹 / windowsHide / 双叉 / VBS 均无法既真正执行脚本又
+// 在 app.exit 后存活；只有任务计划程序（svchost 发起，与应用无父子关系）两条都满足。
+const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
@@ -496,33 +501,54 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   try {
     appendFileSync(updateLogPath, stamp + ' [INFO] [node] 发起 spawn · ps1=' + ps1 + ' · zip=' + zipPath + ' · cwd=' + installDir + '\r\n', 'utf8');
   } catch { /* 日志失败不阻断更新 */ }
-  // 2026-09-04 探针定位（.temp/probe*.mjs / decisive2.mjs）：非交互式环境下直接
-  // spawn powershell.exe + detached:true 会在 ~0.5s 内以 code=0 假性退出且脚本体
-  // 完全不执行；非 detached 则父进程退出时子进程被杀（更新半途而废）。两者都不可用。
-  // 正解：cmd.exe 包一层——cmd 支持 detached 且能在父进程退出后存活，其普通子进程
-  // powershell 正常执行全量更新（decisive2 E2E：解压→校验→覆盖→启动新版，全通过）。
-  const psCmd = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + '"'+ ps1 + '" ' + '"'+ zipPath + '" ' + '"'+ installDir + '"';
-  const child = spawn('cmd.exe', ['/d', '/c', psCmd], {
-    cwd: installDir,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.on('error', (err) => {
-    emitLog('[lms_launcher] 更新脚本启动失败：' + err.message, 'sys');
+  // 2026-09-05 探针矩阵（.temp/decisive4~11.mjs）：本机所有 spawn 变体（detached/非
+  // detached/cmd 包裹/windowsHide/start /min 双叉/wscript VBS）在「fake 应用存活 +
+  // 父进程 3s 后退出」的真实流程条件下全部失败（detached 系 ~0.2-0.5s 假性退出 code=0
+  // 或 0xFFFD0000 且脚本体不执行；非 detached 在父进程退出时被连带杀死）。唯一
+  // 同时满足「真正执行」与「父进程退出后存活」的是任务计划程序：decisive11 E2E
+  // 全通过（解压→校验→覆盖→Start-Process 新版；日志被新应用 replayUpdateLog
+  // 重放后删除属正常）。schtasks 以当前用户身份运行本地目录写操作，无需管理员。
+  const taskCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + ps1 + '" "' + zipPath + '" "' + installDir + '"';
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const st = new Date(Date.now() + 2 * 60 * 1000);
+  const futureTime = pad(st.getHours()) + ':' + pad(st.getMinutes());
+  let taskScheduled = false;
+  try {
+    // /F 覆盖：同名任务若残留（上次 create 后 /Run 前崩溃）直接重建。
+    // /SC ONCE 只设下次触发的计划时间；随后立即 /Run 手动触发，计划时间仅作
+    // 崩溃兜底（应用没起来时任务仍会在计划点执行）。
+    execSync('schtasks /Create /F /SC ONCE /ST ' + futureTime + ' /TN "' + UPDATE_TASK_NAME + '" /TR "' + taskCommand + '"', { stdio: 'ignore' });
+    taskScheduled = true;
+    execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { stdio: 'ignore' });
     try {
-      appendFileSync(updateLogPath, stamp + ' [ERROR] [node] spawn 失败：' + err.message + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] 已创建并触发计划任务 ' + UPDATE_TASK_NAME + ' · ST=' + futureTime + ' · TR=' + taskCommand + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
-  });
-  child.once('exit', (code, signal) => {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    emitLog('[lms_launcher] 更新失败：计划任务创建/触发失败（' + msg + '）', 'sys');
     try {
-      appendFileSync(updateLogPath, stamp + ' [INFO] [node] cmd 进程退出 · code=' + String(code) + ' signal=' + String(signal) + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [ERROR] [node] schtasks 失败：' + msg + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
-  });
-  child.unref();
+    // 已创建未触发时尽力手动补一次（create 成功但 /Run 抛错的边界）
+    if (taskScheduled) {
+      try { execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { stdio: 'ignore' }); } catch { /* 忽略 */ }
+    }
+    throw new Error('更新任务启动失败：' + msg);
+  }
   await ps.stopGraceful(3);
-  await new Promise((resolve) => setTimeout(resolve, 3000)); // 等子进程真正落地（spawn 异步），避免 app.exit 抢先
+  await new Promise((resolve) => setTimeout(resolve, 3000)); // 等任务拉起脚本落地（/Run 后 ps1 需数秒才写到首行日志），避免 app.exit 抢先
   app.exit(0);
 });
+// 清理残留更新任务：上次 create 成功但 /Run 前应用崩溃（或用户强杀）会留下
+// ONCE 任务，其计划触发点可能落在下次启动后的 2 分钟窗口内——ps1 会等 lms_launcher
+// 退出才覆盖，届时应用正在运行，等待必然 60s 超时。启动时删除即可（任务幂等，
+// 正常运行时它本来也已在 ps1 尾部自删）。
+function cleanStaleUpdateTask(): void {
+  try {
+    execSync('schtasks /Delete /F /TN "' + UPDATE_TASK_NAME + '"', { stdio: 'ignore' });
+    emitLog('[lms_launcher] 更新 · 已清理残留计划任务 ' + UPDATE_TASK_NAME, 'sys');
+  } catch { /* 任务不存在 / schtasks 不可用：均无影响 */ }
+}
 // 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
 // 进 LMS Launcher 日志区 → 删除（一次性）。与 detectLlamaInstall 同机制处理渲染端未就绪——
 // 页面加载完前 send 的消息即发即弃，故延迟到 did-finish-load
@@ -557,6 +583,7 @@ app.whenReady().then(() => {
   }
   createWindow();
   detectLlamaInstall();
+  cleanStaleUpdateTask();
   replayUpdateLog();
   createTray();
   app.on('activate', () => {
