@@ -478,17 +478,25 @@ ipcMain.handle('download_update', async (): Promise<
     clearTimeout(timer);
   }
 });
-// run_update：detached 启动 update.exe [zipPath, installDir] → 复用 exit_app 真退出
-// Windows 父子进程天然不联动（无 Job Object）：exe 退出后 update.exe 继续等、替换、拉起新版
+// run_update：detached 启动 PowerShell 更新脚本 [zipPath, installDir] → 应用真退出
+// 2026-09-05 起由 lms-launcher-update.ps1 取代 Electron update.exe（Electron 的 asar-fs
+// 补丁会拦截任何含 .asar 路径的写入，导致「Invalid package」；非 Electron 进程无此问题）。
+// Windows 父子进程天然不联动（无 Job Object）：exe 退出后脚本继续等、覆盖、拉起新版
 ipcMain.handle('run_update', async (): Promise<void> => {
   const installDir = dataDir();
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip（与 download_update 一致）
-  const upd = join(installDir, 'update.exe');
-  if (!existsSync(upd) || !existsSync(zipPath)) {
-    throw new Error('更新文件缺失（update.exe / lms-launcher-update.zip）');
+  const ps1 = join(installDir, 'lms-launcher-update.ps1');
+  if (!existsSync(ps1) || !existsSync(zipPath)) {
+    throw new Error('更新文件缺失（lms-launcher-update.ps1 / lms-launcher-update.zip）');
   }
-  emitLog('[lms_launcher] 更新 · 已启动更新器，应用即将退出', 'sys');
-  const child = spawn(upd, [zipPath, installDir], {
+  emitLog('[lms_launcher] 更新 · 已启动更新脚本，应用即将退出', 'sys');
+  const child = spawn('powershell.exe', [
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', ps1,
+    zipPath,
+    installDir,
+  ], {
     cwd: installDir,
     detached: true,
     stdio: 'ignore',
@@ -497,7 +505,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   await ps.stopGraceful(3);
   app.exit(0);
 });
-// update.exe 日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
+// 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
 // 进 LMS Launcher 日志区 → 删除（一次性）。与 detectLlamaInstall 同机制处理渲染端未就绪——
 // 页面加载完前 send 的消息即发即弃，故延迟到 did-finish-load
 function replayUpdateLog(): void {

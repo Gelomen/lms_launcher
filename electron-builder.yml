@@ -11,6 +11,10 @@ files:
   - "!dist-main/test-utils.js"
 asar: true
 electronDist: node_modules/electron/dist
+# 更新脚本随包分发：win-unpacked/lms-launcher-update.ps1（portable 解压后与主 exe 同目录）
+extraFiles:
+  - from: scripts/lms-launcher-update.ps1
+    to: lms-launcher-update.ps1
 extraResources:
   - from: src-main/icon.ico
     to: icon.ico

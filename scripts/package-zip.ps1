@@ -9,8 +9,8 @@ $stage     = Join-Path $repo ('.temp-build\release-v' + $Version)
 $outZip    = Join-Path $repo ('lms-launcher-v' + $Version + '-win64.zip')
 
 if (-not (Test-Path $mainDir)) { throw ('未找到 ' + $mainDir + '（先跑 build.bat）') }
-if (-not (Test-Path (Join-Path $mainDir 'update.exe'))) {
-  throw ('未在 ' + $mainDir + ' 找到 update.exe（先跑 build.bat 以生成 update.exe）')
+if (-not (Test-Path (Join-Path $mainDir 'lms-launcher-update.ps1'))) {
+  throw ('未在 ' + $mainDir + ' 找到 lms-launcher-update.ps1（先跑 build.bat 以生成更新脚本）')
 }
 
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
