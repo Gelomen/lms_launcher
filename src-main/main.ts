@@ -16,6 +16,7 @@ const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
+import { downloadToFile } from './update-download';
 
 // ---------- 单实例锁：禁止多开 ----------
 // requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
@@ -431,29 +432,20 @@ ipcMain.handle('download_update', async (): Promise<
   const cfg = appConfigLoad(dp);
   const fetchFn = makeUpdateFetch(cfg);
   const proxyNote = buildProxyUri(cfg) ? `（代理 ${buildProxyUri(cfg)}）` : '';
+  // 防御性清理：上一轮异常中断（主进程崩溃 / EPERM 残留）可能留下半成品；
+  // createWriteStream 默认覆盖写，删除只是保险（残留时先清，失败不阻断）
+  try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留由覆盖写处理 */ }
   try {
-    const res = await fetchFn(pendingUpdate.zipUrl, { signal: ctrl.signal, redirect: 'follow' });
-    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
-    const total = parseInt(res.headers.get('content-length') ?? '0', 10) || null;
-    const { createWriteStream } = await import('node:fs');
-    const out = createWriteStream(zipPath);
-    let received = 0;
-    let lastPct = -1;
-    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!out.write(Buffer.from(value))) await new Promise<void>((r) => out.once('drain', () => r()));
-      received += value.length;
-      const pct = total ? Math.floor((received * 100) / total) : 0;
-      if (pct !== lastPct) {
-        lastPct = pct;
-        mainWin()?.webContents.send('update-download-progress', { pct });
-      }
-    }
-    out.end();
-    await new Promise<void>((r) => out.on('finish', () => r()));
-    const size = statSync(zipPath).size;
+    // 流式下载（模块 ./update-download：error/drain/finish 全监听，杜绝主进程 uncaughtException；
+    // EPERM 短延迟重试，对抗杀毒实时扫描锁文件）。失败由外层 catch 删半成品并返回 error 态。
+    const { size, total } = await downloadToFile({
+      fetchFn,
+      url: pendingUpdate.zipUrl,
+      dest: zipPath,
+      signal: ctrl.signal,
+      onProgress: (pct) => { mainWin()?.webContents.send('update-download-progress', { pct }); },
+      onRetry: (a) => { emitLog('[lms_launcher] 更新 · 写入被系统拒绝（EPERM，多为杀毒实时扫描锁文件），稍后重试（第 ' + (a + 1) + ' 次尝试）', 'sys'); },
+    });
     // 完整性校验（spec 2026-09-05-download-integrity-check-design）：
     // 1) Content-Length 比对（截断/断流的流也会 done:true → 靠此拦截半成品）
     // 2) 发布资产 SHA-256 比对（digest 缺失则跳过）；失败均删半成品 → 渲染端 error 态可重试
