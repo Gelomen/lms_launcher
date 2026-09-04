@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { evaluateDownloadIntegrity, sha256FileAsync } from './update-verify';
+import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
 
 describe('update-verify.ts', () => {
   // ---------- evaluateDownloadIntegrity：纯函数两级校验判定 ----------
@@ -71,5 +71,22 @@ describe('update-verify.ts', () => {
 
   it('rejects_missing_file', async () => {
     await expect(sha256FileAsync(join(dir, 'nope.bin'))).rejects.toThrow();
+  });
+
+  // ---------- digestMatches：发布格式 sha256:xxx 与本地 hex 摘要比较 ----------
+
+  it('digest_matches_true_when_equal', () => {
+    const h = 'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9';
+    expect(digestMatches('sha256:' + h, h)).toBe(true);
+  });
+
+  it('digest_matches_false_when_different', () => {
+    expect(digestMatches('sha256:' + 'a'.repeat(64), 'b'.repeat(64))).toBe(false);
+  });
+
+  it('digest_matches_false_on_shape_violation', () => {
+    expect(digestMatches(null, 'x')).toBe(false);
+    expect(digestMatches('sha1:abc', 'abc')).toBe(false);
+    expect(digestMatches('not-a-digest', 'x')).toBe(false);
   });
 });

@@ -4,6 +4,14 @@
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 
+// 发布格式 sha256:<hex> 与本地实际摘要比较（大小写不敏感；格式不合法一律 false）
+export function digestMatches(expected: string | null, actual: string): boolean {
+  if (!expected) return false;
+  const m = expected.match(/^sha256:([0-9a-f]{64})$/i);
+  if (!m) return false;
+  return m[1].toLowerCase() === actual.toLowerCase();
+}
+
 export interface IntegrityInput {
   expectedSize: number | null;   // Content-Length；null = 服务器未提供（跳过大小校验）
   actualSize: number;            // 落盘文件字节数
