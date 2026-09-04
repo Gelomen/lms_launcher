@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
-import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync } from 'node:fs';
+import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
@@ -483,10 +483,16 @@ ipcMain.handle('download_update', async (): Promise<
     clearTimeout(timer);
   }
 });
-// run_update：detached 启动 PowerShell 更新脚本 [zipPath, installDir] → 应用真退出
+// run_update：任务计划程序拉起 PowerShell 更新脚本 [zipPath, installDir] → 应用真退出
 // 2026-09-05 起由 lms-launcher-update.ps1 取代 Electron update.exe（Electron 的 asar-fs
 // 补丁会拦截任何含 .asar 路径的写入，导致「Invalid package」；非 Electron 进程无此问题）。
-// Windows 父子进程天然不联动（无 Job Object）：exe 退出后脚本继续等、覆盖、拉起新版
+// 拉起方式（2026-09-05 探针矩阵 .temp/decisive4~12 + 生产失败复盘）：
+//   1) spawn 全灭：detached 系 ~0.2-0.5s 假性退出且脚本体不执行；非 detached 随父进程被杀。
+//   2) schtasks 是唯一同时满足「真执行」与「父进程退出后存活」的机制（svchost 发起，
+//      与应用无父子关系）；以当前用户身份运行，本地目录写无需管理员。
+//   3) schtasks /TR 有 261 字符上限：ps1+zip+installDir 三个绝对参数内联会超限
+//      （生产路径下 create 直接被拒）。解法：把命令写进安装目录的
+//      lms_launcher_update.cmd 短启动器，/TR 只引用该文件（~90 字符）。
 ipcMain.handle('run_update', async (): Promise<void> => {
   const installDir = dataDir();
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip（与 download_update 一致）
@@ -497,43 +503,40 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   emitLog('[lms_launcher] 更新 · 已启动更新脚本，应用即将退出', 'sys');
   const updateLogPath = join(installDir, 'lms_launcher_update.log');
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  // Node 侧先写一行，之后无论脚本是否被拉起都能从日志判断 spawn 是否发起
-  try {
-    appendFileSync(updateLogPath, stamp + ' [INFO] [node] 发起 spawn · ps1=' + ps1 + ' · zip=' + zipPath + ' · cwd=' + installDir + '\r\n', 'utf8');
-  } catch { /* 日志失败不阻断更新 */ }
-  // 2026-09-05 探针矩阵（.temp/decisive4~11.mjs）：本机所有 spawn 变体（detached/非
-  // detached/cmd 包裹/windowsHide/start /min 双叉/wscript VBS）在「fake 应用存活 +
-  // 父进程 3s 后退出」的真实流程条件下全部失败（detached 系 ~0.2-0.5s 假性退出 code=0
-  // 或 0xFFFD0000 且脚本体不执行；非 detached 在父进程退出时被连带杀死）。唯一
-  // 同时满足「真正执行」与「父进程退出后存活」的是任务计划程序：decisive11 E2E
-  // 全通过（解压→校验→覆盖→Start-Process 新版；日志被新应用 replayUpdateLog
-  // 重放后删除属正常）。schtasks 以当前用户身份运行本地目录写操作，无需管理员。
-  const taskCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + ps1 + '" "' + zipPath + '" "' + installDir + '"';
+  // 短启动器：ASCII + CRLF，每次更新重建（ps1/zip 路径不变，内容幂等）。
+  const bootstrapCmd = join(installDir, 'lms_launcher_update.cmd');
   const pad = (n: number): string => String(n).padStart(2, '0');
   const st = new Date(Date.now() + 2 * 60 * 1000);
   const futureTime = pad(st.getHours()) + ':' + pad(st.getMinutes());
   let taskScheduled = false;
   try {
+    writeFileSync(bootstrapCmd, '@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + ps1 + '" "' + zipPath + '" "' + installDir + '"\r\n', 'ascii');
+    // Node 侧先写一行，之后无论脚本是否被拉起都能从日志判断任务是否创建
+    try {
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] 已写入更新启动器 · cmd=' + bootstrapCmd + ' · ps1=' + ps1 + ' · zip=' + zipPath + '\r\n', 'utf8');
+    } catch { /* 日志失败不阻断更新 */ }
     // /F 覆盖：同名任务若残留（上次 create 后 /Run 前崩溃）直接重建。
     // /SC ONCE 只设下次触发的计划时间；随后立即 /Run 手动触发，计划时间仅作
     // 崩溃兜底（应用没起来时任务仍会在计划点执行）。
-    execSync('schtasks /Create /F /SC ONCE /ST ' + futureTime + ' /TN "' + UPDATE_TASK_NAME + '" /TR "' + taskCommand + '"', { stdio: 'ignore' });
+    // stdio 管道化：create 被拒时把 schtasks 的 ERROR 原文带进异常（此前 ignore 吞掉了真实原因）。
+    execSync('schtasks /Create /F /SC ONCE /ST ' + futureTime + ' /TN "' + UPDATE_TASK_NAME + '" /TR "' + bootstrapCmd + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     taskScheduled = true;
-    execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { stdio: 'ignore' });
+    execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     try {
-      appendFileSync(updateLogPath, stamp + ' [INFO] [node] 已创建并触发计划任务 ' + UPDATE_TASK_NAME + ' · ST=' + futureTime + ' · TR=' + taskCommand + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] 已创建并触发计划任务 ' + UPDATE_TASK_NAME + ' · ST=' + futureTime + ' · TR=' + bootstrapCmd + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    emitLog('[lms_launcher] 更新失败：计划任务创建/触发失败（' + msg + '）', 'sys');
+    const errText = (e instanceof Error ? e.message : String(e))
+      .split('\n').map((l) => l.trim()).filter(Boolean).slice(-3).join(' | ');
+    emitLog('[lms_launcher] 更新失败：计划任务创建/触发失败（' + errText + '）', 'sys');
     try {
-      appendFileSync(updateLogPath, stamp + ' [ERROR] [node] schtasks 失败：' + msg + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [ERROR] [node] schtasks 失败：' + errText + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
     // 已创建未触发时尽力手动补一次（create 成功但 /Run 抛错的边界）
     if (taskScheduled) {
-      try { execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { stdio: 'ignore' }); } catch { /* 忽略 */ }
+      try { execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); } catch { /* 忽略 */ }
     }
-    throw new Error('更新任务启动失败：' + msg);
+    throw new Error('更新任务启动失败：' + errText);
   }
   await ps.stopGraceful(3);
   await new Promise((resolve) => setTimeout(resolve, 3000)); // 等任务拉起脚本落地（/Run 后 ps1 需数秒才写到首行日志），避免 app.exit 抢先

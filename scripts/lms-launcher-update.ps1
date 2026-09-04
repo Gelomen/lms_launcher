@@ -25,7 +25,7 @@ if ($ZipPath -eq '' -or $InstallDir -eq '') {
   exit 1
 }
 $LogPath = Join-Path $InstallDir 'lms_launcher_update.log'
-Write-Log '[INFO] 更新脚本启动 · zip=' + $ZipPath + ' · dir=' + $InstallDir
+Write-Log ('[INFO] 更新脚本启动 · zip=' + $ZipPath + ' · dir=' + $InstallDir)
 
 # 自清理调度任务（2026-09-05）：本脚本由任务计划程序 LMSLauncherUpdate 拉起。启动即自删
 # —— /Delete /F 对运行中的一次性任务安全（探针验证：任务库即时移除，脚本进程不受影响），
