@@ -222,6 +222,7 @@ onMounted(() => { void reload(); void loadVramTotal(); });
   height: 26px; padding: 0 5px; min-width: 70px; white-space: nowrap;
   border: none; cursor: pointer;
   border-top-right-radius: var(--radius-card);
+  border-bottom-left-radius: calc(var(--radius-card) / 2); /* 左下圆角 = 右上弧度 1/2 */
   font-size: 14px; font-weight: 600;
   background: var(--primary); color: #fff;
 }
