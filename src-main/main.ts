@@ -496,13 +496,13 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   try {
     appendFileSync(updateLogPath, stamp + ' [INFO] [node] 发起 spawn · ps1=' + ps1 + ' · zip=' + zipPath + ' · cwd=' + installDir + '\r\n', 'utf8');
   } catch { /* 日志失败不阻断更新 */ }
-  const child = spawn('powershell.exe', [
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', ps1,
-    zipPath,
-    installDir,
-  ], {
+  // 2026-09-04 探针定位（.temp/probe*.mjs / decisive2.mjs）：非交互式环境下直接
+  // spawn powershell.exe + detached:true 会在 ~0.5s 内以 code=0 假性退出且脚本体
+  // 完全不执行；非 detached 则父进程退出时子进程被杀（更新半途而废）。两者都不可用。
+  // 正解：cmd.exe 包一层——cmd 支持 detached 且能在父进程退出后存活，其普通子进程
+  // powershell 正常执行全量更新（decisive2 E2E：解压→校验→覆盖→启动新版，全通过）。
+  const psCmd = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File ' + '"'+ ps1 + '" ' + '"'+ zipPath + '" ' + '"'+ installDir + '"';
+  const child = spawn('cmd.exe', ['/d', '/c', psCmd], {
     cwd: installDir,
     detached: true,
     stdio: 'ignore',
@@ -515,7 +515,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   });
   child.once('exit', (code, signal) => {
     try {
-      appendFileSync(updateLogPath, stamp + ' [INFO] [node] powershell 进程退出 · code=' + String(code) + ' signal=' + String(signal) + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] cmd 进程退出 · code=' + String(code) + ' signal=' + String(signal) + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
   });
   child.unref();
