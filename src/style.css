@@ -395,6 +395,20 @@ body {
   opacity: 0;
 }
 .tip-up:hover::after { opacity: 1; }
+/* 向下 tooltip 定位（2026-09-05-update-pill-tooltip）：与 .tip-up 同视觉语言（深灰底白字/12px/圆角/z-30），
+   仅定位轴相反——供贴窗口顶部的元素复用（winbar 的 .update-pill：上方是窗口边界，tip-up 会被裁掉） */
+.tip-down { position: relative; }
+.tip-down::after {
+  content: attr(data-tooltip);
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.4; white-space: nowrap;
+  padding: 2px 8px; border-radius: 6px;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+}
+.tip-down:hover::after { opacity: 1; }
 /* flag-grid 参数 label 的 hover tooltip：position:fixed 浮于视口（.modal-body overflow-y:auto 会裁剪行内
    abspos 浮层——同 .dd-tip/.vram-tip/.tpl-tip 方案）；JS 挂 label 右侧垂直居中，右侧放不下视口时
    .flag-tip--flip 翻到左缘内侧。两行：长 flag（第一行）+ 中文说明（第二行）；min-width 260px 兜底宽度。 */

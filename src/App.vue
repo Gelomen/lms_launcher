@@ -291,14 +291,14 @@ function onExitClose(): void {
         <button
           v-if="updateState.phase === 'available'"
           type="button"
-          class="update-pill"
-          :title="'发现新版本 v' + updateState.version + '，点击查看并安装'"
+          class="update-pill tip-down"
+          :data-tooltip="'发现新版本 v' + updateState.version + '，点击查看并安装'"
           @click="updateOpen = true">有新版本!</button>
         <button
           v-else-if="updateState.phase === 'downloading'"
           type="button"
-          class="update-pill update-pill--busy"
-          :title="'下载中 ' + updateState.pct + '%，点击查看进度'"
+          class="update-pill update-pill--busy tip-down"
+          :data-tooltip="'下载中 ' + updateState.pct + '%，点击查看进度'"
           @click="updateOpen = true">下载中 {{ updateState.pct }}%</button>
       </div>
       <div class="winbar__controls">

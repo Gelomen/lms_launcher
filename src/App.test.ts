@@ -472,6 +472,10 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     const pill = w.find('.update-pill');
     expect(pill.exists()).toBe(true);
     expect(pill.text()).toBe('有新版本!');
+    // hover 提示 = 项目公共 tooltip（data-tooltip + .tip-down 向下定位），原生 title 不保留（2026-09-05-update-pill-tooltip）
+    expect(pill.classes()).toContain('tip-down');
+    expect(pill.attributes('data-tooltip')).toBe('发现新版本 v9.9.9，点击查看并安装');
+    expect(pill.attributes('title')).toBeUndefined();
     await pill.trigger('click'); // 入口统一：只开弹窗
     await flush();
     expect(document.querySelector('.update-modal')).not.toBeNull();
@@ -501,6 +505,10 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     expect(busy.exists()).toBe(true);
     expect(busy.text()).toContain('下载中 55%');
     expect(busy.attributes('disabled')).toBeUndefined();
+    // busy 态同公共 tooltip（规格 2026-09-05-update-pill-tooltip）
+    expect(busy.classes()).toContain('tip-down');
+    expect(busy.attributes('data-tooltip')).toBe('下载中 55%，点击查看进度');
+    expect(busy.attributes('title')).toBeUndefined();
     // 点击 → 打开同一 UpdateModal
     await busy.trigger('click');
     await flush();
