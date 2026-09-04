@@ -56,9 +56,27 @@ export function compareVersions(cur: string, latest: string): -1 | 0 | 1 {
   if (a.pre !== null && b.pre === null) return 1; // cur 是 rc，latest 是正式版 → 更新
   if (a.pre === null && b.pre !== null) return 0; // latest 是该版本的 rc → 不算更新
   // 走到这里 a.pre / b.pre 均非 null（上方已排除 null 组合）
-  const ap = a.pre as string;
-  const bp = b.pre as string;
-  return ap === bp ? 0 : ap < bp ? -1 : 1;
+  // 2026-09-04 bug 修复：同基础版本下按 semver 规范比较预发布标识符——
+  // 数字段按数值比较(rc.2 < rc.10)，数字段 < 非数字段，非数字段按字典序。
+  // 旧实现用整个后缀字符串字典序比较且方向写反，rc.2→rc.3 被误判为「更低」(检查不出新版)。
+  const cmpPre = (x: string, y: string): number => {
+    const xs = x.split('.');
+    const ys = y.split('.');
+    for (let i = 0; i < Math.max(xs.length, ys.length); i++) {
+      const xsOk = i < xs.length;
+      const ysOk = i < ys.length;
+      if (!xsOk) return -1; // 短的更小（semver 14.1.2.1）
+      if (!ysOk) return 1;
+      const xn = /^\d+$/.test(xs[i]);
+      const yn = /^\d+$/.test(ys[i]);
+      if (xn && yn) return xs[i] === ys[i] ? 0 : Number(xs[i]) < Number(ys[i]) ? -1 : 1;
+      if (xn !== yn) return xn ? -1 : 1; // 数字段 < 非数字段（semver 11.4.4）
+      if (xs[i] !== ys[i]) return xs[i] < ys[i] ? -1 : 1; // 非数字段字典序
+    }
+    return 0;
+  };
+  const pc = cmpPre(a.pre as string, b.pre as string); // <0 = a 更早
+  return pc === 0 ? 0 : pc < 0 ? 1 : -1;
 }
 
 // 解析 GitHub releases/latest 响应 → LatestReleaseInfo；tag 非 semver 或无匹配 zip 资产 → null

@@ -122,6 +122,32 @@ describe('update-check.ts', () => {
     expect(compareVersions('0.2.0-rc.1', '0.2.0-rc.1')).toBe(0);
   });
 
+  it('compareVersions_prerelease_same_base_ascending_detected', () => {
+    // 2026-09-04 bug: rc.2 检查不出 rc.3 —— 同为预发布时后缀按字典序比较且方向写反(-1=latest 更低)
+    // 正确: latest 的预发布后缀更高 → 1(有新版)
+    expect(compareVersions('0.2.0-rc.2', '0.2.0-rc.3')).toBe(1);
+  });
+
+  it('compareVersions_prerelease_numbers_compared_numerically', () => {
+    // 预发布编号按 semver 数值比较(非字典序): rc.2 < rc.10 < rc.11
+    expect(compareVersions('0.2.0-rc.3', '0.2.0-rc.10')).toBe(1);
+    expect(compareVersions('0.2.0-rc.10', '0.2.0-rc.2')).toBe(-1);
+    expect(compareVersions('0.2.0-rc.10', '0.2.0-rc.11')).toBe(1);
+  });
+
+  it('compareVersions_prerelease_different_identifiers_lexicographic', () => {
+    // 非数字标识符按字典序(semver: alpha < beta < rc)
+    expect(compareVersions('0.2.0-alpha.1', '0.2.0-beta.1')).toBe(1);
+    expect(compareVersions('0.2.0-beta.1', '0.2.0-rc.1')).toBe(1);
+    expect(compareVersions('0.2.0-rc.1', '0.2.0-beta.1')).toBe(-1);
+  });
+
+  it('compareVersions_prerelease_numeric_identifier_lower_than_alphanumeric', () => {
+    // semver 11.4.4: 纯数字标识符优先级低于非数字标识符(1.0.0-1 < 1.0.0-alpha)
+    expect(compareVersions('1.0.0-alpha', '1.0.0-1')).toBe(-1);
+    expect(compareVersions('1.0.0-1', '1.0.0-alpha')).toBe(1);
+  });
+
   it('compareVersions_invalid_prerelease_shape_consults_base', () => {
     // 非 semver 预发布(无版本数字): 解析失败 -> 0(保守不弹)
     expect(compareVersions('0.1.0', 'valpha')).toBe(0);
