@@ -1,11 +1,12 @@
-// 自动更新（规格 2026-09-01-auto-update）：update.exe 替换流程核心。
-// 设计原则：依赖全部可注入（tasklist/解压）→ 可单测；
-// 任何失败路径都不允许改动安装目录已有文件（旧版本完好）。
+// 自动更新（规格 2026-09-01-auto-update / 2026-09-05 全量覆盖）：update.exe 替换流程核心。
+// 设计原则：依赖全部可注入（tasklist/解压/文件操作）→ 可单测；
+// 任何失败路径都不允许破坏安装目录可运行性（旧版本完好）。
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 
 export const MAIN_EXE_NAME = 'lms_launcher.exe';
 export const UPDATE_EXE_NAME = 'update.exe';
+export const STAGED_UPDATE_NAME = 'update.exe.new';
 
 // ---------- tasklist 进程检测 ----------
 
@@ -64,12 +65,16 @@ export function validateRelease(f: ZipEntryFilter): { ok: boolean; reason: strin
 // ---------- 替换流程（依赖注入） ----------
 
 export interface CopyOps {
-  copy: (src: string, dest: string) => void; // 目标被锁时抛错
+  copy: (src: string, dest: string) => void;      // 目标被锁时抛错
   rm: (p: string) => void;
   mkDir: (p: string) => void;
   exists: (p: string) => boolean;
   spawnDetached: (exe: string) => void;
   log: (msg: string) => void;
+  /** 列出目录内全部文件（相对路径，/ 分隔；含子目录）。新增用于全量覆盖 */
+  listDir: (p: string) => string[];
+  /** 调度自更新 move（可选，注入保持可测）。新增用于 update.exe 两阶段自更新 */
+  scheduleSelfReplace?: (stagedPath: string) => void;
 }
 
 export interface UpdateOutcome {
@@ -86,7 +91,7 @@ export async function runUpdate(opts: {
   zipPath: string;
   installDir: string;
   listEntries: (zip: string) => Promise<string[]>;
-  extractEntry: (zip: string, entry: string, destDir: string) => Promise<void>;
+  extractEntry: (zip: string, entry: string | null, destDir: string) => Promise<void>;
   ops: CopyOps;
   pollDelayMs?: number;    // 默认 1000
   maxPolls?: number;       // 默认 60
@@ -130,27 +135,47 @@ export async function runUpdate(opts: {
     }
     ops.log('[INFO] 检测到进程已退出，开始替换');
 
-    // 3. 解包到临时目录，仅取两个 exe（node-stream-zip 保持相对路径结构）
+    // 3. 清理残留的 staging update.exe.new（上次 move 未完成）
+    const staleStaged = join(installDir, STAGED_UPDATE_NAME);
+    try { if (ops.exists(staleStaged)) ops.rm(staleStaged); } catch { /* 残留不阻断 */ }
+
+    // 4. 解包全部文件到临时目录（保持 zip 目录结构）
     const f = filterZipEntries(await listEntries(zipPath));
     const v = validateRelease(f);
     if (!v.ok) return fail(v.reason ?? '更新包校验失败');
     ops.mkDir(tmpDir);
-    const newMain = join(tmpDir, f.mainExe!);
-    await extractEntry(zipPath, f.mainExe!, tmpDir);
-    const newUpdate = f.updateExe ? join(tmpDir, f.updateExe) : null;
-    if (f.updateExe) await extractEntry(zipPath, f.updateExe, tmpDir);
+    await extractEntry(zipPath, null, tmpDir);
+    const extracted = ops.listDir(tmpDir);
+    if (!extracted.length) return fail('解包失败：临时目录为空，放弃更新（旧版本未改动）');
+    // 解包后确认主 exe 存在
+    const mainInTmp = extracted.find((e) => e.replace(/\\/g, '/').split('/').pop() === MAIN_EXE_NAME);
+    if (!mainInTmp) return fail('更新包缺少 ' + MAIN_EXE_NAME + '，放弃更新');
 
-    // 4. 替换 lms_launcher.exe（主 exe 失败 → 抛错进 catch，update.exe 未动）
-    ops.copy(newMain, join(installDir, MAIN_EXE_NAME));
-    outcome.filesChanged = true;
-
-    // 5. update.exe 自身运行中被锁 → 跳过并 WARN（幂等：旧版下轮继续服务）
-    if (f.updateExe && newUpdate) {
-      try {
-        ops.copy(newUpdate, join(installDir, UPDATE_EXE_NAME));
-      } catch {
-        ops.log('[WARN] update.exe 自身被锁定，跳过替换（沿用旧版）');
+    // 5. 全量覆盖安装目录（按 zip 内相对路径，逐文件覆盖；目标父目录不存在则创建）
+    for (const rel of extracted) {
+      const srcP = join(tmpDir, ...rel.split('/'));
+      const destP = join(installDir, ...rel.split('/'));
+      const parent = dirname(destP);
+      if (parent && parent !== tmpDir) {
+        try { if (!ops.exists(parent)) ops.mkDir(parent); } catch { /* 已存在不阻断 */ }
       }
+      const base = rel.replace(/\\/g, '/').split('/').pop() || '';
+      if (base === UPDATE_EXE_NAME) {
+        // update.exe 自身运行中映像被锁 → 先试直接覆盖；失败则 staging + 延时 move
+        try {
+          ops.copy(srcP, destP);
+        } catch {
+          try {
+            ops.copy(srcP, staleStaged);
+            ops.scheduleSelfReplace?.(staleStaged);
+          } catch {
+            ops.log('[WARN] update.exe 自身被锁定，跳过替换（沿用旧版）');
+          }
+        }
+      } else {
+        ops.copy(srcP, destP);
+      }
+      outcome.filesChanged = true;
     }
 
     // 6. detached 启动新版 → 清理临时目录 → 成功退出

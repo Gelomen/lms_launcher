@@ -3,8 +3,8 @@
 // 流程：轮询 lms_launcher.exe 退出(1s×60) → 解包两 exe → 替换 → detached 启动新版。
 // 日志：追加写 installDir\lms_launcher_update.log，主应用下次启动回显并删除。
 import { app } from 'electron';
-import { join } from 'node:path';
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { join, dirname, isAbsolute, resolve } from 'node:path';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import StreamZip from 'node-stream-zip';
 import { runUpdate } from '../src-main/updater-core';
@@ -42,7 +42,12 @@ app.whenReady().then(async () => {
       await z.close();
       return names;
     },
-    extractEntry: async (zip, entry, destDir) => { await new StreamZip.async({ file: zip }).extract(entry, destDir); },
+    extractEntry: async (zip, entry, destDir) => {
+      // entry=null → 全量提取（node-stream-zip 保持 zip 目录结构）
+      const z = new StreamZip.async({ file: zip });
+      await z.extract(entry, destDir);
+      await z.close();
+    },
     ops: {
       copy: (s, d) => copyFileSync(s, d),
       rm: (p) => rmSync(p, { force: true, recursive: true }),
@@ -50,8 +55,30 @@ app.whenReady().then(async () => {
       exists: (p) => existsSync(p),
       spawnDetached: (exe) => {
         // 新版启动：detached 解耦（update.exe 随后即退出，不会带走新进程）
-        const c = spawn(exe, [], { cwd: join(exe, '..'), detached: true, stdio: 'ignore' });
+        const c = spawn(exe, [], { cwd: dirname(exe), detached: true, stdio: 'ignore' });
         c.unref();
+      },
+      // 全量覆盖：递归列出目录内所有文件（相对路径，/ 分隔）
+      listDir: (dir) => {
+        const out: string[] = [];
+        const walk = (cur: string, prefix: string) => {
+          for (const name of readdirSync(cur)) {
+            const full = join(cur, name);
+            const rel = prefix ? prefix + '/' + name : name;
+            if (statSync(full).isDirectory()) walk(full, rel);
+            else out.push(rel);
+          }
+        };
+        walk(dir, '');
+        return out;
+      },
+      // update.exe 两阶段自更新：3 秒后 cmd 执行 move（此刻本进程映像已释放）
+      scheduleSelfReplace: (stagedPath) => {
+        const target = stagedPath.replace(/\.new$/, '.exe');
+        const cmd = 'timeout /t 3 >nul & move /y ' + JSON.stringify(stagedPath) + ' ' + JSON.stringify(target);
+        const c = spawn('cmd.exe', ['/c', cmd], { detached: true, stdio: 'ignore' });
+        c.unref();
+        log('[INFO] 已调度 update.exe 自更新：3 秒后 move update.exe.new → update.exe');
       },
       log,
     },
