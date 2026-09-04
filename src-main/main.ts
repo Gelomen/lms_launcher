@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
-import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, unlinkSync, mkdirSync } from 'node:fs';
+import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
@@ -490,6 +490,12 @@ ipcMain.handle('run_update', async (): Promise<void> => {
     throw new Error('更新文件缺失（lms-launcher-update.ps1 / lms-launcher-update.zip）');
   }
   emitLog('[lms_launcher] 更新 · 已启动更新脚本，应用即将退出', 'sys');
+  const updateLogPath = join(installDir, 'lms_launcher_update.log');
+  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  // Node 侧先写一行，之后无论脚本是否被拉起都能从日志判断 spawn 是否发起
+  try {
+    appendFileSync(updateLogPath, stamp + ' [INFO] [node] 发起 spawn · ps1=' + ps1 + ' · zip=' + zipPath + ' · cwd=' + installDir + '\r\n', 'utf8');
+  } catch { /* 日志失败不阻断更新 */ }
   const child = spawn('powershell.exe', [
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
@@ -501,8 +507,20 @@ ipcMain.handle('run_update', async (): Promise<void> => {
     detached: true,
     stdio: 'ignore',
   });
+  child.on('error', (err) => {
+    emitLog('[lms_launcher] 更新脚本启动失败：' + err.message, 'sys');
+    try {
+      appendFileSync(updateLogPath, stamp + ' [ERROR] [node] spawn 失败：' + err.message + '\r\n', 'utf8');
+    } catch { /* 忽略 */ }
+  });
+  child.once('exit', (code, signal) => {
+    try {
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] powershell 进程退出 · code=' + String(code) + ' signal=' + String(signal) + '\r\n', 'utf8');
+    } catch { /* 忽略 */ }
+  });
   child.unref();
   await ps.stopGraceful(3);
+  await new Promise((resolve) => setTimeout(resolve, 3000)); // 等子进程真正落地（spawn 异步），避免 app.exit 抢先
   app.exit(0);
 });
 // 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀

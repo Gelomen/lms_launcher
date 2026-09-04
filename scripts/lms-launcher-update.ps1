@@ -26,7 +26,6 @@ if ($ZipPath -eq '' -or $InstallDir -eq '') {
 }
 $LogPath = Join-Path $InstallDir 'lms_launcher_update.log'
 Write-Log '[INFO] 更新脚本启动 · zip=' + $ZipPath + ' · dir=' + $InstallDir
-
 if (-not (Test-Path $InstallDir)) {
   Write-Log ('[ERROR] 安装目录不存在：' + $InstallDir)
   exit 1
@@ -60,7 +59,7 @@ try {
 
   # 3) 校验关键条目（防空包/损坏包覆盖安装目录）
   $mainExe = Join-Path $tmp 'lms_launcher.exe'
-  $asar = Join-Path $tmp 'resourcesapp.asar'
+  $asar = Join-Path (Join-Path $tmp 'resources') 'app.asar'
   if (-not (Test-Path $mainExe)) {
     Write-Log '[ERROR] 更新包缺少 lms_launcher.exe，中止（未覆盖任何文件）'
     exit 1
