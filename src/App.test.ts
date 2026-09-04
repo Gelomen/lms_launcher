@@ -414,7 +414,7 @@ describe('lifecycle log dual-echo (echoTabs)', () => {
 });
 
 // 任务 3（2026-09-01 检查更新弹窗）：入口统一（托盘/顶栏只开弹窗）+ 共用退出确认 + 七态流转。
-// UpdateModal 为纯 props 驱动组件 → 测试经 document 层查询（.update-modal / .text-btn）；
+// UpdateModal 为纯 props 驱动组件 → 测试经 document 层查询（.update-modal / .btn-primary）；
 // invoke 按 cmd 分流（check_update 按脚本顺序返回、download_update 用可控 promise）。
 describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', () => {
   const AVAILABLE = { available: true, status: 'update-available', version: '9.9.9' };
@@ -448,7 +448,7 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
   }
 
   function updateBtns(): HTMLButtonElement[] {
-    return [...document.querySelectorAll('.update-modal .text-btn')] as HTMLButtonElement[];
+    return [...document.querySelectorAll('.update-modal .btn-primary')] as HTMLButtonElement[];
   }
 
   it('托盘「检查更新」只打开 UpdateModal（不 re-check、不弹旧确认框）', async () => {

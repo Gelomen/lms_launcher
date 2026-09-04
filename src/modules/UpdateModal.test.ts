@@ -23,9 +23,9 @@ function mountModal(props: { open?: boolean; items?: Item[] } = {}) {
 
 afterEach(() => { document.body.innerHTML = ''; });
 
-// 行内动作按钮（全局 .text-btn；task-2 步骤 4 已 grep 确认无冲突）
+// 行内动作按钮（.btn .btn-primary 紫底白字，同 VramDialog [保存] 样式）
 function actionBtns(): HTMLButtonElement[] {
-  return [...document.querySelectorAll('.update-modal .update-row .text-btn')] as HTMLButtonElement[];
+  return [...document.querySelectorAll('.update-modal .update-row .btn-primary')] as HTMLButtonElement[];
 }
 function closeBtn(): HTMLButtonElement | null {
   return document.querySelector('.update-modal .update-close') as HTMLButtonElement | null;

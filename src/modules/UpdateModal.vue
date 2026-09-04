@@ -101,7 +101,7 @@ function onClose(): void {
             </svg>
           </button>
         </div>
-        <!-- 内容区 padding 16px；每行单行三段 flex：项目名（14px） | 中段（12px） | 动作按钮（.text-btn） -->
+        <!-- 内容区 padding 16px；每行单行三段 flex：项目名（14px） | 中段（12px） | 动作按钮（.btn .btn-primary 紫底白字，同 VramDialog [保存]） -->
         <div class="update-body">
           <div v-for="(item, i) in props.items" :key="i" class="update-row">
             <span class="update-row__name">{{ item.name }}</span>
@@ -115,7 +115,7 @@ function onClose(): void {
               "
             >{{ middleText(item) }}</span>
             <div class="update-row__action">
-              <button type="button" class="text-btn" :disabled="btnDisabled(item)" @click="onAction(i, item)">
+              <button type="button" class="btn btn-primary" :disabled="btnDisabled(item)" @click="onAction(i, item)">
                 {{ btnLabel(item) }}
               </button>
               <!-- downloading：按钮下方 4px 高紫色进度条（宽度 = pct%，行下方 4px 间距） -->
