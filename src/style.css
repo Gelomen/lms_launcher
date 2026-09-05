@@ -205,10 +205,23 @@ body {
 /* 日志查找高亮（规格 2026-09-05-log-search）：淡紫底 2px 圆角；当前匹配深一档 */
 .log-view .ln-mark { background: var(--log-mark); border-radius: 2px; }
 .log-view .ln-mark--current { background: var(--log-mark-current); border-radius: 2px; }
-/* 查找工具行控件：输入框定宽不伸缩；计数右对齐定宽防数字变化抖动 */
-.log-search-input { width: 170px; flex: none; margin-left: 8px; }
-.log-search-count { min-width: 44px; margin-left: 8px; text-align: right; white-space: nowrap; }
-.icon-btn--noborder.btn-search-clear, .icon-btn--noborder.btn-search-prev, .icon-btn--noborder.btn-search-next { margin-left: 4px; }
+/* 查找工具行控件：输入框定宽不伸缩；计数右对齐定宽防数字变化抖动。
+   （2026-09-05 用户反馈）控件收进 .log-search 一组统一 gap:4px——
+   原 8px/4px margin 散落使按钮间距过大且不一致。
+   （2026-09-05 用户追加反馈）32px 按钮盒内图标两侧各留约 9px 空白，
+   4px gap 视觉上看仍很宽 → 组内图标按钮收窄到 26×26；计数 44px 右对齐
+   又留出左侧空白 → 缩到 36px（12px 字号「0 / 0」约 28px，留 8px 余量）。
+   （2026-09-05 用户再追加）继续缩小 → gap 4→2px、按钮 26→24px、
+   计数 36→32px（「0 / 0」约 28px 仍容纳）。
+   （2026-09-05 用户再追加）计数改为居中——原右对齐让数字贴住「上一个」按钮，
+   视觉上不居于清空与上一个之间；居中后两侧留白对称，位数增长也不跳位 */
+.log-search { display: flex; align-items: center; gap: 2px; margin-left: 8px; flex: none; }
+.log-search .icon-btn { width: 24px; height: 24px; }
+/* 输入框与清空按钮间加一点距离（2026-09-05 用户追加）：组 gap 2px + 本 margin 4px = 6px，其余控件间距不变 */
+.log-search .btn-search-clear { margin-left: 4px; }
+/* 查找输入框降高（2026-09-05 用户追加）：.input 默认 32px 与 24px 图标按钮不协调 → 本框降至 24px，与组内按钮等高 */
+.log-search-input { width: 170px; flex: none; height: 24px; }
+.log-search-count { min-width: 32px; text-align: center; white-space: nowrap; }
 /* 查找按钮禁用态（icon-btn 既有样式无禁用分支） */
 .icon-btn:disabled { color: #C7CCD4; cursor: not-allowed; }
 .icon-btn:disabled:hover { background: transparent; color: #C7CCD4; }

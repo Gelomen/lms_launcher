@@ -141,23 +141,26 @@ watch(autoScroll, (on) => {
       <button type="button" class="icon-btn icon-btn--noborder" aria-label="清空日志" data-tooltip="清空日志" @click="onClear">
         <FontAwesomeIcon :icon="['far', 'trash-can']" />
       </button>
-      <!-- [日志查找]（2026-09-05）：输入即查 + 计数 + 上/下一个（far circle-up/down，regular 优先） -->
-      <input type="text" class="input log-search-input" v-model="query"
-        placeholder="查找…" aria-label="日志查找" />
-      <!-- [清空查找]（2026-09-05 用户追加）：far circle-xmark 圆形内 x；清空输入即复位高亮与计数 -->
-      <button type="button" class="icon-btn icon-btn--noborder btn-search-clear"
-        aria-label="清空查找" data-tooltip="清空查找" :disabled="clearDisabled" @click="onQueryClear">
-        <FontAwesomeIcon :icon="['far', 'circle-xmark']" />
-      </button>
-      <span class="label log-search-count">{{ countText }}</span>
-      <button type="button" class="icon-btn icon-btn--noborder btn-search-prev"
-        aria-label="上一个匹配" data-tooltip="上一个" :disabled="navDisabled" @click="goPrev">
-        <FontAwesomeIcon :icon="['far', 'circle-up']" />
-      </button>
-      <button type="button" class="icon-btn icon-btn--noborder btn-search-next"
-        aria-label="下一个匹配" data-tooltip="下一个" :disabled="navDisabled" @click="goNext">
-        <FontAwesomeIcon :icon="['far', 'circle-down']" />
-      </button>
+      <!-- [日志查找]（2026-09-05）：输入即查 + 计数 + 上/下一个（far circle-up/down，regular 优先）。
+           （2026-09-05 用户反馈）控件收进 .log-search 一组，统一 gap:4px——原 margin 散落导致按钮间距过大 -->
+      <div class="log-search">
+        <input type="text" class="input log-search-input" v-model="query"
+          placeholder="查找…" aria-label="日志查找" />
+        <!-- [清空查找]（2026-09-05 用户追加）：far circle-xmark 圆形内 x；清空输入即复位高亮与计数 -->
+        <button type="button" class="icon-btn icon-btn--noborder btn-search-clear"
+          aria-label="清空查找" data-tooltip="清空查找" :disabled="clearDisabled" @click="onQueryClear">
+          <FontAwesomeIcon :icon="['far', 'circle-xmark']" />
+        </button>
+        <span class="label log-search-count">{{ countText }}</span>
+        <button type="button" class="icon-btn icon-btn--noborder btn-search-prev"
+          aria-label="上一个匹配" data-tooltip="上一个" :disabled="navDisabled" @click="goPrev">
+          <FontAwesomeIcon :icon="['far', 'circle-up']" />
+        </button>
+        <button type="button" class="icon-btn icon-btn--noborder btn-search-next"
+          aria-label="下一个匹配" data-tooltip="下一个" :disabled="navDisabled" @click="goNext">
+          <FontAwesomeIcon :icon="['far', 'circle-down']" />
+        </button>
+      </div>
     </div>
     <div ref="view" class="log-view">
       <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>
