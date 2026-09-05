@@ -132,6 +132,26 @@ describe('LogTabView 日志查找（规格 2026-09-05-log-search-design）', () 
     w.unmount();
   });
 
+  it('match_count_shrink_resets_or_falls_back_current_index', async () => {
+    // 规格 §行为 6：匹配列表变化后当前序号越界 → 回落到最后一个匹配 / 无匹配复位
+    const w = mountTab([...lines]);
+    await w.find('.log-search-input').setValue('error');
+    await w.find('.btn-search-next').trigger('click'); // currentIdx = 0
+    expect(w.find('.log-search-count').text()).toBe('1 / 2');
+    // 场景 A：行变化使匹配缩减为 1 个 → 当前回落到唯一匹配
+    await w.setProps({ lines: [{ line: 'all quiet', stream: 'out' }, { line: 'Error: retry', stream: 'err' }] });
+    expect(w.find('.log-search-count').text()).toBe('1 / 1');
+    expect(w.find('.ln-mark--current').exists()).toBe(true);
+    const line = w.find('.ln-mark--current').element.closest('p');
+    expect((line as HTMLElement).textContent).toContain('Error: retry');
+    // 场景 B：行全部变化、匹配清零 → 高亮与计数复位、按钮禁用
+    await w.setProps({ lines: [{ line: 'nothing to see', stream: 'out' }] });
+    expect(w.findAll('.ln-mark, .ln-mark--current').length).toBe(0);
+    expect(w.find('.log-search-count').text()).toBe('0');
+    expect(w.find('.btn-search-next').attributes('disabled')).toBeDefined();
+    w.unmount();
+  });
+
   it('match_inside_url_is_highlighted_and_link_preserved', async () => {
     const w = mountTab([{ line: 'see https://docs.example.com/err guide', stream: 'out' }]);
     await w.find('.log-search-input').setValue('docs');

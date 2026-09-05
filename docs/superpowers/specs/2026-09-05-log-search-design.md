@@ -13,7 +13,7 @@
 - 输入框：复用 .input 盒型（32px 高、圆角、control-border 边框），宽约 170px，placeholder「查找…」。
 - 计数：12px 辅助文字（.label 色），文案 当前/总数；0 匹配时显示 0。
 - ↑↓ 按钮：icon-only，沿用 .icon-btn--noborder + data-tooltip；
-  icon 用 FontAwesome regular：far arrow-up（上一个）、far arrow-down（下一个），free-regular 库既有。
+  icon 用 FontAwesome regular：far circle-up（上一个）、far circle-down（下一个），free-regular 库既有（FA7 命名；regular 库无 arrow-up/down，arrow-alt-circle-* 为 FA6 旧名）。
 
 ## 行为
 1. 输入即查：input 事件直接重算（500 行上限内同步计算足够快，无防抖）。
@@ -40,9 +40,9 @@
 ## 纯函数（src/util/log-search.ts，TDD）
 - findMatches(line: string, query: string): Array<[start, end]> —— 单行内全部匹配区间，
   大小写不敏感，非重叠（命中后从 end 继续），空 query 返回 []。
-- splitLine(line: string, query: string, current?: { line: number; range: [number, number] } | null, lineIndex?: number): Segment[]
-  —— 把一行切成 { text, kind: 'plain' | 'mark' | 'mark-current' } 段；无 query 时单段 plain。
-  （链接切分留在模板层：先 linkify，再对非链接段用 findMatches 二次切分高亮。）
+- splitLineForSearch(line: string, query: string, current: MarkRange | null): RenderSeg[]
+  —— 把一行切成 { text, inLink, url?, mark, current } 段（mark 与 current 互斥，current 优先）；
+  与 linkify 分段在绝对偏移上合并切分（链接内的匹配同样高亮且保留链接属性）；无 query 时 = linkify 映射。
 - escapeRegExp 不需要（用 indexOf 而非正则）。
 
 ## 组件测试（LogTabView.test.ts 追加）
@@ -51,10 +51,11 @@
 - ↓ 循环：2 个匹配时从 1 跳到 2、再到 1（wrap）；↑ 反向。
 - 跳转后 autoScroll 被取消勾选。
 - 空输入：无 .ln-mark、计数复位、按钮禁用。
+- 匹配数缩减（新日志/行变化）后当前序号越界 → 回落到最后一个匹配（规格 §行为 6 的测试锚定）。
 - 链接内匹配：https://… URL 中关键词被高亮且 .ln-link 仍保留。
 
 ## 验证
-- npx vitest run 全绿（既有 276 + 新增）。
+- npx vitest run 全绿（实际基线 289 + 新增 18 = 307+；Windows 默认 threads pool 偶发 EBUSY 文件锁时改 --pool=forks 重跑）。
 - npm run build（vite + tsc 双编译）通过。
 
 ## 不做（YAGNI）
