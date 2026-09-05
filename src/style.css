@@ -33,6 +33,8 @@
   --vram-orange: #F59E0B;       /* VRAM 指示橙色（余量 ≥1GB 且 <2GB） */
   --primary: #8B5CF6;           /* 主操作色（紫）：VRAM/启动/保存/选中页签/选中项/自动滚动 */
   --primary-hover: #7C3AED;       /* 主操作色 hover 加深一档 */
+  --log-mark: #E9D5FF;              /* 查找匹配高亮底：比主题紫 #8B5CF6 浅的淡紫 */
+  --log-mark-current: #C4B5FD;      /* 当前匹配高亮底：深一档（与 update-pill--busy 同档） */
   --h-primary: 36px;        /* 主按钮高 */
   --sb-w: 7px;               /* Windows Chromium 传统滚动条宽（.template-list 横向溢出修正用） */
   --card-gap: 12px;         /* 卡片间距 */
@@ -200,6 +202,16 @@ body {
 .log-view .ln-dim { color: var(--log-dim); }
 /* 日志链接（规格 2026-08-31-log-link-ctrl-click-design §3.2）：主题紫 + 下划线，覆盖所在行 error/warn 色 */
 .log-view .ln-link { color: var(--primary); text-decoration: underline; cursor: pointer; }
+/* 日志查找高亮（规格 2026-09-05-log-search）：淡紫底 2px 圆角；当前匹配深一档 */
+.log-view .ln-mark { background: var(--log-mark); border-radius: 2px; }
+.log-view .ln-mark--current { background: var(--log-mark-current); border-radius: 2px; }
+/* 查找工具行控件：输入框定宽不伸缩；计数右对齐定宽防数字变化抖动 */
+.log-search-input { width: 170px; flex: none; margin-left: 8px; }
+.log-search-count { min-width: 44px; margin-left: 8px; text-align: right; white-space: nowrap; }
+.icon-btn--noborder.btn-search-prev, .icon-btn--noborder.btn-search-next { margin-left: 4px; }
+/* 查找按钮禁用态（icon-btn 既有样式无禁用分支） */
+.icon-btn:disabled { color: #C7CCD4; cursor: not-allowed; }
+.icon-btn:disabled:hover { background: transparent; color: #C7CCD4; }
 
 /* ---- 日志 tab 条（文件夹/浏览器式：相邻共边、左上右上圆角；
     激活页签「切断」一条 1px 顶部横线——可见灰线从其右下角（右缘底点）出发延伸到面板右缘）---- */

@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
-import { faTrashCan } from '@fortawesome/free-regular-svg-icons';
+import { faCircleDown, faCircleUp, faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke } from '../ipc';
-import { linkify } from '../util/linkify';
+import { findMatches, splitLineForSearch, type MarkRange, type RenderSeg } from '../util/log-search';
 
 // 清空日志（2026-08-28）：无文字 icon 按钮——复用编辑模板弹窗左下角的删除图标
 // （faTrashCan regular，TemplateModal .btn-delete 同源）；emit('clear')，App 只清本 tab 桶。
-library.add(faTrashCan);
+library.add(faTrashCan, faCircleUp, faCircleDown);
 const emit = defineEmits<{ (e: 'clear'): void }>();
 function onClear(): void { emit('clear'); }
 
@@ -17,6 +17,64 @@ function onClear(): void { emit('clear'); }
 function onLink(url: string): void {
   void invoke('open_external', url).catch(() => {});
 }
+
+// ---- 日志查找（规格 2026-09-05-log-search-design）----
+// 状态自持于本实例（与 autoScroll 同模式）：切 tab 互不影响；清空日志不清查找状态。
+const query = ref('');
+// 扁平匹配列表：第 n 个匹配 = { 行号, 行内区间 }；currentIdx = -1 表示尚未跳转。
+interface Hit { line: number; range: MarkRange }
+const matches = computed<Hit[]>(() => {
+  const q = query.value.trim();
+  const out: Hit[] = [];
+  if (!q) return out;
+  props.lines.forEach((e, i) => {
+    for (const r of findMatches(e.line, q)) out.push({ line: i, range: r });
+  });
+  return out;
+});
+const currentIdx = ref(-1);
+// 匹配列表变化（输入变化 / 新日志到达）：当前序号越界时回落到最后一个匹配（规格 §行为 6）。
+watch(matches, (ms) => {
+  if (currentIdx.value >= ms.length) currentIdx.value = ms.length > 0 ? ms.length - 1 : -1;
+});
+const countText = computed(() =>
+  matches.value.length === 0 ? '0' : `${Math.max(currentIdx.value + 1, 0)} / ${matches.value.length}`);
+const navDisabled = computed(() => matches.value.length === 0);
+// 每行渲染分组（模板逐行调用）：链接/高亮/当前高亮 三类属性合并切分；
+// 连续 inLink 段归入一个链接分组——链接外层只渲染一个 .ln-link（文本完整、
+// Ctrl+Click 命中整链接），高亮段嵌套其中（测试 link 内高亮要求嵌套 DOM）。
+interface LinkGroup { inLink: true; url: string; parts: RenderSeg[] }
+type RenderUnit = RenderSeg | LinkGroup;
+function segsOf(e: Entry, i: number): RenderUnit[] {
+  const cur = currentIdx.value >= 0 && matches.value[currentIdx.value]?.line === i
+    ? matches.value[currentIdx.value].range
+    : null;
+  const segs = splitLineForSearch(e.line, query.value.trim(), cur);
+  const out: RenderUnit[] = [];
+  for (const s of segs) {
+    const last = out[out.length - 1];
+    if (s.inLink && last && 'parts' in last && last.url === s.url) last.parts.push(s);
+    else if (s.inLink) out.push({ inLink: true, url: s.url!, parts: [s] });
+    else out.push(s);
+  }
+  return out;
+}
+// 上/下一个跳转：循环（无当前时 ↓=第 1 个、↑=最后一个）；跳转同时关闭自动滚动——
+// 否则下一批日志到达立即贴底，刚跳到的位置瞬间失效（规格 §行为 5）。
+function jump(delta: 1 | -1): void {
+  const n = matches.value.length;
+  if (n === 0) return;
+  const cur = currentIdx.value;
+  currentIdx.value = cur < 0 ? (delta === 1 ? 0 : n - 1) : (cur + delta + n) % n;
+  autoScroll.value = false;
+  // 滚到当前匹配：等 .ln-mark--current 渲染后 scrollIntoView 视野中部（happy-dom 无该方法 → 可选链守卫）。
+  void nextTick(() => {
+    const el = view.value?.querySelector<HTMLElement>('.ln-mark--current');
+    el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  });
+}
+function goPrev(): void { jump(-1); }
+function goNext(): void { jump(1); }
 
 // 单个 tab 的日志视图（§4.4）：白底 Solarized Light、等宽 13px、自动滚动可关。
 // 自动滚动状态由本组件自持——每个 tab 一个实例，切走再切回各自保留。
@@ -80,13 +138,33 @@ watch(autoScroll, (on) => {
       <button type="button" class="icon-btn icon-btn--noborder" aria-label="清空日志" data-tooltip="清空日志" @click="onClear">
         <FontAwesomeIcon :icon="['far', 'trash-can']" />
       </button>
+      <!-- [日志查找]（2026-09-05）：输入即查 + 计数 + 上/下一个（far circle-up/down，regular 优先） -->
+      <input type="text" class="input log-search-input" v-model="query"
+        placeholder="查找…" aria-label="日志查找" />
+      <span class="label log-search-count">{{ countText }}</span>
+      <button type="button" class="icon-btn icon-btn--noborder btn-search-prev"
+        aria-label="上一个匹配" data-tooltip="上一个" :disabled="navDisabled" @click="goPrev">
+        <FontAwesomeIcon :icon="['far', 'circle-up']" />
+      </button>
+      <button type="button" class="icon-btn icon-btn--noborder btn-search-next"
+        aria-label="下一个匹配" data-tooltip="下一个" :disabled="navDisabled" @click="goNext">
+        <FontAwesomeIcon :icon="['far', 'circle-down']" />
+      </button>
     </div>
     <div ref="view" class="log-view">
       <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>
       <p v-for="(e, i) in lines" :key="i" :class="cls(e)" style="margin: 0;">
-        <template v-for="(seg, j) in linkify(e.line)" :key="j">
-          <span v-if="seg.isLink" class="ln-link tip-up" data-tooltip="Ctrl + Click 打开链接" @click.ctrl="onLink(seg.url!)">{{ seg.text }}</span>
-          <template v-else>{{ seg.text }}</template>
+        <template v-for="(g, k) in segsOf(e, i)" :key="k">
+          <span v-if="g.inLink && g.parts" class="ln-link tip-up" data-tooltip="Ctrl + Click 打开链接" @click.ctrl="onLink(g.url)">
+            <template v-for="(seg, j) in g.parts" :key="j">
+              <span v-if="seg.current" class="ln-mark--current">{{ seg.text }}</span>
+              <span v-else-if="seg.mark" class="ln-mark">{{ seg.text }}</span>
+              <template v-else>{{ seg.text }}</template>
+            </template>
+          </span>
+          <span v-else-if="g.current" class="ln-mark--current">{{ g.text }}</span>
+          <span v-else-if="g.mark" class="ln-mark">{{ g.text }}</span>
+          <template v-else>{{ g.text }}</template>
         </template>
       </p>
     </div>
