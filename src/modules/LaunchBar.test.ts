@@ -9,10 +9,14 @@ const LONG = '这是一个非常长的配置描述名称用来验证启动控制
 const READY = { running: false, stopping: false, configId: null };
 
 // 数据 key：desc → name（2026-09，main 返回 ConfigEntry.name）
+// 记录 invoke 调用（2026-09-05 tray-tooltip-template）：断言 tray-tooltip-update 推送的模板名 / null
+const trayTooltipCalls: Array<string | null> = [];
 function mockLms(map: Record<string, { name?: string; values: Record<string, string> }>): void {
+  trayTooltipCalls.length = 0;
   (window as any).lms = {
-    invoke: (cmd: string) => {
+    invoke: (cmd: string, ...args: unknown[]) => {
       if (cmd === 'get_configs') return Promise.resolve(map);
+      if (cmd === 'tray-tooltip-update') trayTooltipCalls.push(args[0] as string | null);
       return Promise.resolve(undefined);
     },
     onLogLine: () => () => {},
@@ -87,5 +91,37 @@ describe('LaunchBar config dropdown truncation', () => {
     expect(w.find('.select-label').text()).toBe(name); // no manual …, full render (CSS may auto-ellipsis visually)
     expect(w.find('.select-trigger').attributes('data-tooltip')).toBeUndefined(); // not manually truncated → no tooltip
     w.unmount();
+  });
+
+  // 托盘 hover 提示同步（spec 2026-09-05-tray-tooltip-template）：选中完整名推送主进程；无选择 → null（主进程显示「暂无模板配置」）
+  describe('tray tooltip sync', () => {
+    it('after_load_pushes_selected_template_full_name', async () => {
+      mockLms({ a: { name: '模板A', values: {} }, b: { name: '模板B', values: {} } });
+      const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+      await flush();
+      // 默认选中第一个 → 推送完整名（不截断）
+      expect(trayTooltipCalls.at(-1)).toBe('模板A');
+      w.unmount();
+    });
+
+    it('switching_dropdown_pushes_new_selected_name', async () => {
+      mockLms({ a: { name: '模板A', values: {} }, b: { name: '模板B', values: {} } });
+      const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+      await flush();
+      await w.find('.select-trigger').trigger('click');
+      await flush();
+      await w.findAll('.dropdown-panel li')[1].trigger('click');
+      await flush();
+      expect(trayTooltipCalls.at(-1)).toBe('模板B');
+      w.unmount();
+    });
+
+    it('no_configs_pushes_null_placeholder', async () => {
+      mockLms({});
+      const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+      await flush();
+      expect(trayTooltipCalls.at(-1)).toBeNull();
+      w.unmount();
+    });
   });
 });

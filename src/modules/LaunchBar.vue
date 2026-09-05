@@ -46,12 +46,14 @@ async function load(): Promise<void> {
     } else {
       selected.value = '';
     }
+    pushTrayTooltip(selected.value);
   } catch (e) {
     // MISSING / YAML 透传——MISSING 显示提示不崩溃；configs 视为空
     const msg = errMsg(e);
     missing.value = isMissing(msg);
     configs.value = null;
     selected.value = '';
+    pushTrayTooltip('');
   }
 }
 
@@ -77,6 +79,10 @@ function full(id: string): string {
 }
 function display(id: string): string {
   return truncateByWidth(full(id), BUDGET);
+}
+// 托盘 hover 提示同步（spec 2026-09-05-tray-tooltip-template）：选中完整名；无选择 → null → 主进程显示「暂无模板配置」
+function pushTrayTooltip(id: string): void {
+  void invoke('tray-tooltip-update', full(id) || null);
 }
 const options = computed<{
   value: string; label: string; tip?: string;
@@ -112,7 +118,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
                 :value="selected"
                 :options="options ?? []" :tip="triggerTip"
                 :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '暂无模板配置' : '选择配置…'"
-                @update:value="(v: string) => { selected = v; }" />
+                @update:value="(v: string) => { selected = v; pushTrayTooltip(v); }" />
       <button
         class="btn-noshrink"
         :class="state.running ? 'btn btn-danger' : 'btn btn-launch'"
