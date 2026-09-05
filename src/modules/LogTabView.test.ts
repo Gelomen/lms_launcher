@@ -152,6 +152,25 @@ describe('LogTabView 日志查找（规格 2026-09-05-log-search-design）', () 
     w.unmount();
   });
 
+  it('clear_query_button_empties_input_and_resets_highlights', async () => {
+    // 用户追加（2026-09-05）：输入框与计数之间的 far circle-xmark 按钮，点击清空查找
+    const w = mountTab([...lines]);
+    await w.find('.log-search-input').setValue('error');
+    expect(w.findAll('.ln-mark').length).toBe(2);
+    await w.find('.btn-search-clear').trigger('click');
+    expect(w.find('.log-search-input').element.value).toBe('');
+    expect(w.find('.log-search-count').text()).toBe('0 / 0');
+    expect(w.findAll('.ln-mark, .ln-mark--current').length).toBe(0);
+    expect(w.find('.btn-search-clear').attributes('disabled')).toBeDefined(); // 空输入后自身禁用
+    w.unmount();
+  });
+
+  it('clear_button_disabled_when_input_empty', () => {
+    const w = mountTab([...lines]);
+    expect(w.find('.btn-search-clear').attributes('disabled')).toBeDefined();
+    w.unmount();
+  });
+
   it('match_inside_url_is_highlighted_and_link_preserved', async () => {
     const w = mountTab([{ line: 'see https://docs.example.com/err guide', stream: 'out' }]);
     await w.find('.log-search-input').setValue('docs');

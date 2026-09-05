@@ -208,7 +208,7 @@ body {
 /* 查找工具行控件：输入框定宽不伸缩；计数右对齐定宽防数字变化抖动 */
 .log-search-input { width: 170px; flex: none; margin-left: 8px; }
 .log-search-count { min-width: 44px; margin-left: 8px; text-align: right; white-space: nowrap; }
-.icon-btn--noborder.btn-search-prev, .icon-btn--noborder.btn-search-next { margin-left: 4px; }
+.icon-btn--noborder.btn-search-clear, .icon-btn--noborder.btn-search-prev, .icon-btn--noborder.btn-search-next { margin-left: 4px; }
 /* 查找按钮禁用态（icon-btn 既有样式无禁用分支） */
 .icon-btn:disabled { color: #C7CCD4; cursor: not-allowed; }
 .icon-btn:disabled:hover { background: transparent; color: #C7CCD4; }

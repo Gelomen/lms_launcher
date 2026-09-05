@@ -9,11 +9,12 @@
 
 ## 布局
 日志工具行（自动滚动复选框与 [清空日志] 同一行）末尾追加，顺序固定：
-[清空日志按钮] [查找输入框] [计数] [↑按钮] [↓按钮]
+[清空日志按钮] [查找输入框] [清空查找按钮] [计数] [↑按钮] [↓按钮]
 - 输入框：复用 .input 盒型（32px 高、圆角、control-border 边框），宽约 170px，placeholder「查找…」。
 - 计数：12px 辅助文字（.label 色），文案 当前/总数；0 匹配（含空查询）时显示 0 / 0（2026-09-05 用户追加）。
 - ↑↓ 按钮：icon-only，沿用 .icon-btn--noborder + data-tooltip；
-  icon 用 FontAwesome regular：far circle-up（上一个）、far circle-down（下一个），free-regular 库既有（FA7 命名；regular 库无 arrow-up/down，arrow-alt-circle-* 为 FA6 旧名）。
+  icon 用 FontAwesome regular：far circle-up（上一个）、far circle-down（下一个）、far circle-xmark（清空查找，
+  2026-09-05 用户追加：输入框与计数之间，点击清空输入即复位高亮/计数，输入为空时禁用），free-regular 库既有（FA7 命名；regular 库无 arrow-up/down，arrow-alt-circle-* 为 FA6 旧名）。
 
 ## 行为
 1. 输入即查：input 事件直接重算（500 行上限内同步计算足够快，无防抖）。

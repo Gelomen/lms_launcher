@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
-import { faCircleDown, faCircleUp, faTrashCan } from '@fortawesome/free-regular-svg-icons';
+import { faCircleDown, faCircleUp, faCircleXmark, faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke } from '../ipc';
 import { findMatches, splitLineForSearch, type MarkRange, type RenderSeg } from '../util/log-search';
 
 // 清空日志（2026-08-28）：无文字 icon 按钮——复用编辑模板弹窗左下角的删除图标
 // （faTrashCan regular，TemplateModal .btn-delete 同源）；emit('clear')，App 只清本 tab 桶。
-library.add(faTrashCan, faCircleUp, faCircleDown);
+library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark);
 const emit = defineEmits<{ (e: 'clear'): void }>();
 function onClear(): void { emit('clear'); }
 
@@ -40,6 +40,9 @@ watch(matches, (ms) => {
 const countText = computed(() =>
   `${Math.max(currentIdx.value + 1, 0)} / ${matches.value.length}`); // 空查询/无匹配 = 0 / 0（2026-09-05 用户追加）
 const navDisabled = computed(() => matches.value.length === 0);
+// 清空查找输入（2026-09-05 用户追加）：far circle-xmark，输入框与计数之间；输入为空时禁用。
+const clearDisabled = computed(() => query.value.length === 0);
+function onQueryClear(): void { query.value = ''; }
 // 每行渲染分组（模板逐行调用）：链接/高亮/当前高亮 三类属性合并切分；
 // 连续 inLink 段归入一个链接分组——链接外层只渲染一个 .ln-link（文本完整、
 // Ctrl+Click 命中整链接），高亮段嵌套其中（测试 link 内高亮要求嵌套 DOM）。
@@ -141,6 +144,11 @@ watch(autoScroll, (on) => {
       <!-- [日志查找]（2026-09-05）：输入即查 + 计数 + 上/下一个（far circle-up/down，regular 优先） -->
       <input type="text" class="input log-search-input" v-model="query"
         placeholder="查找…" aria-label="日志查找" />
+      <!-- [清空查找]（2026-09-05 用户追加）：far circle-xmark 圆形内 x；清空输入即复位高亮与计数 -->
+      <button type="button" class="icon-btn icon-btn--noborder btn-search-clear"
+        aria-label="清空查找" data-tooltip="清空查找" :disabled="clearDisabled" @click="onQueryClear">
+        <FontAwesomeIcon :icon="['far', 'circle-xmark']" />
+      </button>
       <span class="label log-search-count">{{ countText }}</span>
       <button type="button" class="icon-btn icon-btn--noborder btn-search-prev"
         aria-label="上一个匹配" data-tooltip="上一个" :disabled="navDisabled" @click="goPrev">
