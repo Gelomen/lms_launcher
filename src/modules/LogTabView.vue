@@ -85,7 +85,7 @@ watch(autoScroll, (on) => {
       <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>
       <p v-for="(e, i) in lines" :key="i" :class="cls(e)" style="margin: 0;">
         <template v-for="(seg, j) in linkify(e.line)" :key="j">
-          <span v-if="seg.isLink" class="ln-link tip-up" :data-tooltip="seg.url" @click.ctrl="onLink(seg.url!)">{{ seg.text }}</span>
+          <span v-if="seg.isLink" class="ln-link tip-up" data-tooltip="Ctrl + Click 打开链接" @click.ctrl="onLink(seg.url!)">{{ seg.text }}</span>
           <template v-else>{{ seg.text }}</template>
         </template>
       </p>
