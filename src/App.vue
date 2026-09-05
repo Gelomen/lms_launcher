@@ -302,9 +302,10 @@ function onExitClose(): void {
           @click="updateOpen = true">下载中 {{ updateState.pct }}%</button>
       </div>
       <div class="winbar__controls">
-        <button class="winbtn" aria-label="最小化" title="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
-        <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" :title="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
-        <button class="winbtn winbtn--close" aria-label="关闭" title="关闭" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
+        <!-- hover 提示 = 项目公共 tooltip（tip-down 向下定位，同 .update-pill）；原生 title 不保留 -->
+        <button class="winbtn tip-down" data-tooltip="最小化" aria-label="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
+        <button class="winbtn tip-down" :data-tooltip="maximized ? '还原' : '最大化'" :aria-label="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
+        <button class="winbtn winbtn--close tip-down" data-tooltip="关闭" aria-label="关闭" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
       </div>
   </header>
   <main class="layout">

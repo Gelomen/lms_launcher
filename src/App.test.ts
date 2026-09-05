@@ -242,6 +242,29 @@ describe('window controls (frameless winbar)', () => {
     expect(btns[2].attributes('aria-label')).toBe('关闭');
   });
 
+  it('hover tooltip = 项目公共 tooltip（tip-down 向下定位 + data-tooltip），原生 title 不保留', async () => {
+    const { w } = mountApp();
+    await flush();
+    const btns = w.find('.winbar').findAll('.winbtn');
+    expect(btns[0].classes()).toContain('tip-down');
+    expect(btns[0].attributes('data-tooltip')).toBe('最小化');
+    expect(btns[0].attributes('title')).toBeUndefined();
+    expect(btns[1].attributes('data-tooltip')).toBe('最大化'); // 初始非最大化
+    expect(btns[1].attributes('title')).toBeUndefined();
+    expect(btns[2].classes()).toContain('tip-down');
+    expect(btns[2].attributes('data-tooltip')).toBe('关闭');
+    expect(btns[2].attributes('title')).toBeUndefined();
+  });
+
+  it('maximized push switches the tooltip 最大化 → 还原', async () => {
+    const { w } = mountApp();
+    await flush();
+    winMaxHandlers.forEach(fn => fn({ maximized: true })); // 模拟主进程推送
+    await flush();
+    const maxBtn = w.find('.winbar').findAll('.winbtn')[1];
+    expect(maxBtn.attributes('data-tooltip')).toBe('还原');
+  });
+
   it('clicking the three controls invokes win_minimize / win_maximize / win_close', async () => {
     const { w } = mountApp();
     await flush();
