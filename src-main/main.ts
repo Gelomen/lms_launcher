@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
+import { trayTooltipText } from './tray-tooltip';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy } from './config';
@@ -117,6 +118,9 @@ function createTray(): void {
       }
     } },
   ]);
+  // 托盘 hover 提示（规格 2026-09-05-tray-tooltip-template-design）：初始无选择 = 占位文案；
+  // 渲染端 LaunchBar 首帧 load() 后经 tray-tooltip-update 推送真实选中模板名。
+  tray.setToolTip(trayTooltipText(null));
   tray.setContextMenu(menu);
   // 双击托盘图标 = 唤回窗口（方案 A：单击无反应，右键维持菜单）
   tray.on('double-click', () => {
@@ -165,6 +169,11 @@ function createWindow(): void {
 ipcMain.handle('get_app_config', (): AppConfig => {
   const [p] = yamlPaths();
   return appConfigLoad(p);
+});
+// tray-tooltip-update（规格 2026-09-05-tray-tooltip-template-design）：渲染端 LaunchBar 选中态
+// 变化（load 后 / 切换下拉 / 配置缺失）→ 原生 tray.setToolTip 更新 hover 提示
+ipcMain.handle('tray-tooltip-update', (_e, name: string | null): void => {
+  if (tray) tray.setToolTip(trayTooltipText(name));
 });
 // save_proxy：持久化更新代理（host/port 均为空 = 清空代理，行为回落到直连）；saveProxy 的 throw 原样传给渲染端 reject
 ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
