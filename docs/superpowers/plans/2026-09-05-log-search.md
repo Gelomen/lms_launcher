@@ -125,7 +125,7 @@ export function findMatches(line: string, query: string): MarkRange[] {
 }
 
 // linkify 分段拼接还原原行且按序连续 → 用前缀长度累计即可还原每段绝对偏移。
-function splitLineForSearch(line: string, query: string, current: MarkRange | null): RenderSeg[] {
+export function splitLineForSearch(line: string, query: string, current: MarkRange | null): RenderSeg[] {
   const linkSegs = linkify(line);
   const ranges = query.length > 0 ? findMatches(line, query) : [];
   // 链接段绝对区间（[start,end) + url）
@@ -163,11 +163,7 @@ function splitLineForSearch(line: string, query: string, current: MarkRange | nu
   }
   return merged;
 }
-
-export { splitLineForSearch };
 ```
-
-注：export 写法改为顶部 `export function splitLineForSearch`，删掉文件末尾的 `export { splitLineForSearch }` 行（上面代码块为完整性展示，落地时二选一，保持函数体内无重复声明）。
 
 - [ ] **步骤 1.4：运行测试验证通过**
 
@@ -291,14 +287,16 @@ describe('LogTabView 日志查找（规格 2026-09-05-log-search-design）', () 
 
 - [ ] **步骤 2.3：修改 src/modules/LogTabView.vue**
 
-script 部分改动（在既有 import 区追加两行 import；在 onClear 之后插入查找状态块；cls 函数不动）：
+script 部分改动（import 区 4 行最终形态 + library.add 改 1 行；onLink 之后插入查找状态块；cls 函数不动）：
 
-import 区追加：
+import 区（替换原 vue/fontawesome 两行，新增 1 行，其余既有 import 不动）：
 
 ```ts
-import { computed, nextTick, ref, watch } from 'vue';   // 原行 import { nextTick, ref, watch } from 'vue'; 替换为含 computed
+import { computed, nextTick, ref, watch } from 'vue';
+import { library } from '@fortawesome/fontawesome-svg-core';
 import { faCircleDown, faCircleUp, faTrashCan } from '@fortawesome/free-regular-svg-icons';
-import { splitLineForSearch, type MarkRange, type RenderSeg } from '../util/log-search';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import { findMatches, splitLineForSearch, type MarkRange, type RenderSeg } from '../util/log-search';
 ```
 
 library.add 行改为：
@@ -356,8 +354,6 @@ function jump(delta: 1 | -1): void {
 function goPrev(): void { jump(-1); }
 function goNext(): void { jump(1); }
 ```
-
-同时 import 区补充 `import { findMatches, splitLineForSearch, type MarkRange, type RenderSeg } from '../util/log-search';`（上面合并为一条 import，落地时与 faCircle 行分开书写即可）。
 
 template 部分改动——工具行（原 div 内清空按钮之后）追加：
 
