@@ -74,13 +74,16 @@ async function save() {
       </div>
       <div class="modal-body">
         <p v-if="saveError" class="error-text">{{ saveError }}</p>
-        <div class="form-row">
-          <label class="label" for="proxy-host">代理地址</label>
-          <input id="proxy-host" v-model="proxyHost" class="input" type="text" placeholder="127.0.0.1" />
-        </div>
-        <div class="form-row">
-          <label class="label" for="proxy-port">端口</label>
-          <input id="proxy-port" v-model="proxyPort" class="input" type="text" inputmode="numeric" placeholder="10808" />
+        <!-- 代理地址 + 端口同行：host 弹性伸缩，port 固定 5 位数字宽度（2026-09-07 UI 微调） -->
+        <div class="proxy-row">
+          <div class="form-row host-row">
+            <label class="label" for="proxy-host">代理地址</label>
+            <input id="proxy-host" v-model="proxyHost" class="input" type="text" placeholder="127.0.0.1" />
+          </div>
+          <div class="form-row port-row">
+            <label class="label" for="proxy-port">端口</label>
+            <input id="proxy-port" v-model="proxyPort" class="input" type="text" inputmode="numeric" maxlength="5" placeholder="10808" />
+          </div>
         </div>
       </div>
       <div class="modal-actions">
@@ -124,6 +127,13 @@ async function save() {
 .modal-box.card { padding: 0; }
 .form-row { display: flex; flex-direction: column; gap: 4px; }
 .form-row + .form-row { margin-top: 12px; }
+.proxy-row .form-row + .form-row { margin-top: 0; } /* 同行布局：取消兄弟列的纵向间距（原 12px 会把端口列顶低错位） */
+/* 代理地址 + 端口同行：弹性/定宽放在列（.form-row）上；输入框保持 .input 固有高度 var(--h-control)，两列等高。
+   注意不能在 input 上用 flex:1——.form-row 是 column flex，flex-basis:0% 会沿列方向把 host 框的高度拉高，造成两框不等高。 */
+.proxy-row { display: flex; gap: 12px; align-items: flex-start; }
+.proxy-row .form-row { min-width: 0; }
+.host-row { flex: 1; }
+.port-row { flex: none; width: 92px; } /* 5 位数字 + padding */
 .modal-actions {
   flex: none; position: relative;
   display: flex; justify-content: flex-end; align-items: center;
