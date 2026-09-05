@@ -38,7 +38,7 @@ watch(matches, (ms) => {
   if (currentIdx.value >= ms.length) currentIdx.value = ms.length > 0 ? ms.length - 1 : -1;
 });
 const countText = computed(() =>
-  matches.value.length === 0 ? '0' : `${Math.max(currentIdx.value + 1, 0)} / ${matches.value.length}`);
+  `${Math.max(currentIdx.value + 1, 0)} / ${matches.value.length}`); // 空查询/无匹配 = 0 / 0（2026-09-05 用户追加）
 const navDisabled = computed(() => matches.value.length === 0);
 // 每行渲染分组（模板逐行调用）：链接/高亮/当前高亮 三类属性合并切分；
 // 连续 inLink 段归入一个链接分组——链接外层只渲染一个 .ln-link（文本完整、

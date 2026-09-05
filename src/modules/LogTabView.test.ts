@@ -79,7 +79,7 @@ describe('LogTabView 日志查找（规格 2026-09-05-log-search-design）', () 
     const w = mountTab([...lines]);
     await w.find('.log-search-input').setValue('nope');
     expect(w.findAll('.ln-mark').length).toBe(0);
-    expect(w.find('.log-search-count').text()).toBe('0');
+    expect(w.find('.log-search-count').text()).toBe('0 / 0');
     expect(w.find('.btn-search-prev').attributes('disabled')).toBeDefined();
     expect(w.find('.btn-search-next').attributes('disabled')).toBeDefined();
     w.unmount();
@@ -127,7 +127,7 @@ describe('LogTabView 日志查找（规格 2026-09-05-log-search-design）', () 
     await w.find('.btn-search-next').trigger('click');
     await w.find('.log-search-input').setValue('');
     expect(w.findAll('.ln-mark, .ln-mark--current').length).toBe(0);
-    expect(w.find('.log-search-count').text()).toBe('0');
+    expect(w.find('.log-search-count').text()).toBe('0 / 0');
     expect(w.find('.btn-search-prev').attributes('disabled')).toBeDefined();
     w.unmount();
   });
@@ -147,7 +147,7 @@ describe('LogTabView 日志查找（规格 2026-09-05-log-search-design）', () 
     // 场景 B：行全部变化、匹配清零 → 高亮与计数复位、按钮禁用
     await w.setProps({ lines: [{ line: 'nothing to see', stream: 'out' }] });
     expect(w.findAll('.ln-mark, .ln-mark--current').length).toBe(0);
-    expect(w.find('.log-search-count').text()).toBe('0');
+    expect(w.find('.log-search-count').text()).toBe('0 / 0');
     expect(w.find('.btn-search-next').attributes('disabled')).toBeDefined();
     w.unmount();
   });
