@@ -47,13 +47,15 @@ function btnDisabled(item: Item): boolean {
   return b ? b.disabled : true;
 }
 
-// 中段渲染（12px）：available/ready → 新版号（--muted）；up-to-date → 灰字「已是最新版本 vX.Y.Z」；error → 红字错误原因
+// 中段渲染（12px）：available/downloading/ready → 新版号（--muted）；up-to-date → 灰字「已是最新版本 vX.Y.Z」；error → 红字错误原因
 // ready 带 errorText（run_update 失败）→ 红字错误优先展示；否则显示新版号
+// downloading 期间版本号为已知信息（来自 update-available），恒显示不隐藏
 function middleKind(item: Item): string {
   switch (item.phase) {
     case 'ready':
       return item.errorText ? 'error' : 'version';
     case 'available':
+    case 'downloading':
       return 'version';
     case 'up-to-date':
       return 'latest';
@@ -204,7 +206,7 @@ function onClose(): void {
 .update-row__error { color: var(--danger); }
 .update-row__action {
   flex: none;
-  margin-left: auto; /* 动作按钮恒贴行右缘：中段不渲染（idle/checking/downloading）时不留白、不跳变 */
+  margin-left: auto; /* 动作按钮恒贴行右缘：中段不渲染（idle/checking）时不留白、不跳变 */
   display: flex;
   flex-direction: column;
   align-items: flex-end;

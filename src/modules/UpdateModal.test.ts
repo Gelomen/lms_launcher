@@ -62,12 +62,14 @@ describe('UpdateModal', () => {
     w.unmount();
   });
 
-  // ---- 用例 4：downloading(42%)（按钮禁用 + 4px 高紫色进度条 width 42%）----
-  it('downloading(42%): 按钮「下载中 42%」disabled; 进度条 width 42%', () => {
-    const w = mountModal({ items: [makeItem({ phase: 'downloading', pct: 42 })] });
+  // ---- 用例 4：downloading(42%)（按钮禁用 + 4px 高紫色进度条 width 42% + 中段恒显新版号）----
+  it('downloading(42%): 按钮「下载中 42%」disabled; 进度条 width 42%; 中段显示新版号', () => {
+    const w = mountModal({ items: [makeItem({ phase: 'downloading', version: 'v0.2.0', pct: 42 })] });
     const btn = actionBtns()[0];
     expect(btn.textContent?.trim()).toBe('下载中 42%');
     expect(btn.disabled).toBe(true);
+    // 下载中版本号文件不隐藏：「LMS Launcher | v0.2.0 | 下载中 42%」三段齐全
+    expect(document.querySelector('.update-row__version')?.textContent?.trim()).toBe('v0.2.0');
     // 进度条：轨道 + 填充（填充宽度 = pct%）
     const track = document.querySelector('.update-row .update-progress') as HTMLElement;
     expect(track).not.toBeNull();
