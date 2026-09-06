@@ -88,6 +88,19 @@ function onAction(index: number, item: Item): void {
 function onClose(): void {
   emit('close');
 }
+
+// downloading：按钮本身即进度条——底为全局 .btn:disabled 灰底（未下载部分），
+// 左侧紫填充宽 = pct%；文字白/灰双色渐变的硬边界与填充右缘同一坐标系（按钮 padding 盒）对齐：
+// 压在紫色段的文字为白色，进度条未到的部分保持禁用灰（--muted）；文字内容与百分比不变。
+function fillStyle(item: Item): string | undefined {
+  if (item.phase !== 'downloading') return undefined;
+  return `width: ${Math.floor(item.pct ?? 0)}%;`;
+}
+function textGradientStyle(item: Item): string | undefined {
+  if (item.phase !== 'downloading') return undefined;
+  const p = Math.floor(item.pct ?? 0);
+  return `background-image: linear-gradient(to right, #fff ${p}%, var(--muted) ${p}%);`;
+}
 </script>
 
 <template>
@@ -117,13 +130,17 @@ function onClose(): void {
               "
             >{{ middleText(item) }}</span>
             <div class="update-row__action">
-              <button type="button" class="btn btn-primary" :disabled="btnDisabled(item)" @click="onAction(i, item)">
-                {{ btnLabel(item) }}
+              <!-- downloading：按钮本身即进度条——左侧紫填充宽 = pct%，文字白/灰双色渐变与填充边界对齐；文字与百分比不变 -->
+              <button
+                type="button"
+                class="btn btn-primary"
+                :class="{ 'update-row__btn-progress': item.phase === 'downloading' }"
+                :disabled="btnDisabled(item)"
+                @click="onAction(i, item)"
+              >
+                <span v-if="item.phase === 'downloading'" class="update-row__fill" :style="fillStyle(item)"></span>
+                <span class="update-row__label" :style="textGradientStyle(item)">{{ btnLabel(item) }}</span>
               </button>
-              <!-- downloading：按钮下方 4px 高紫色进度条（宽度 = pct%，行下方 4px 间距） -->
-              <div v-if="item.phase === 'downloading'" class="update-progress">
-                <div class="update-progress-bar" :style="{ width: (item.pct ?? 0) + '%' }"></div>
-              </div>
             </div>
           </div>
         </div>
@@ -212,18 +229,44 @@ function onClose(): void {
   align-items: flex-end;
 }
 
-/* downloading：按钮下方 4px 高紫色进度条（轨道灰 + 填充紫 --primary，与按钮行留 4px 间距） */
-.update-progress {
-  width: 100%;
-  height: 4px;
-  margin-top: 4px;
-  background: var(--disabled-bg);
-  border-radius: 2px;
-  overflow: hidden;
+/* 七态按钮同尺寸（2026-09-06 用户反馈）：以下载态按钮为基准（最长标签「下载中 100%」）。
+   实测（应用渲染器 Segoe UI 14px，真实盒模型：下载态 padding 14/16 + 边框 2）：
+   「下载中 100%」= 99.03px，为七态最宽；其余态自然宽 57.33–85.33px。
+   全局 box-sizing:border-box → min-width 即总宽下限：短标签（检查更新/重启应用/重试等）
+   撑满到 99.03px 不收缩；下载态各百分比（0–100%）恰好贴满不扩不缩，填充/文字渐变对齐不变。
+   nowrap 防窄行下 CJK 按字换行（与 .btn-noshrink 同语言）。 */
+.update-row .btn {
+  min-width: 99.03px; /* = 下载态「下载中 100%」实测总宽（边框 2 + padding 14/16 + 标签 67.03） */
+  white-space: nowrap;
 }
-.update-progress-bar {
-  height: 100%;
+
+/* downloading：按钮本身即进度条——
+   底色 = 全局 .btn:disabled 灰底（未下载部分）；左侧 .update-row__fill 紫填充宽 = pct%；
+   文字颜色随填充：压在紫段上的文字为白色，进度条未到的地方保持禁用灰（--muted）。
+   填充与文字双色渐变共用同一坐标系（按钮 padding 盒）：label 以负 margin 延展至 padding 盒
+   左缘，使渐变硬边界与填充右缘精确对齐。 */
+.update-row__btn-progress {
+  position: relative;
+  overflow: hidden;
+  padding-right: 16px; /* .btn 的 14px + 2px：下载态按钮比常规按钮长 2px */
+}
+.update-row__btn-progress .update-row__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   background: var(--primary);
-  transition: width 0.15s ease;
+}
+.update-row__btn-progress .update-row__label {
+  position: relative; /* 位于 fill 之上（DOM 序在后，同为定位元素） */
+  display: block;
+  width: calc(100% + 30px); /* 按钮 padding 为 0 14px/16px：延展至 padding 盒宽，与 fill 同一坐标系 */
+  margin-left: -14px;
+  height: 100%;
+  line-height: calc(var(--h-control) - 2px); /* 文字垂直居中（扣除按钮上下各 1px 边框） */
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 </style>
