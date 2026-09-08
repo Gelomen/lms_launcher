@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.1",
+    "@fortawesome/free-brands-svg-icons": "^7.3.1",
     "@fortawesome/free-regular-svg-icons": "^7.3.1",
     "@fortawesome/free-solid-svg-icons": "^7.3.1",
     "@fortawesome/vue-fontawesome": "^3.3.3",
@@ -33,5 +34,8 @@
     "vite": "^6.3.5",
     "vitest": "^2.1.0",
     "wait-port": "^1.1.0"
+  },
+  "allowScripts": {
+    "electron@28.3.3": true
   }
 }

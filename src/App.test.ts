@@ -230,16 +230,27 @@ describe('App tray exit', () => {
 });
 
 describe('window controls (frameless winbar)', () => {
-  it('renders winbar with three controls: minimize / maximize / close', async () => {
+  it('renders winbar with github + three controls: github / minimize / maximize / close', async () => {
     const { w } = mountApp();
     await flush();
     const bar = w.find('.winbar');
     expect(bar.exists()).toBe(true);
     const btns = bar.findAll('.winbtn');
-    expect(btns.length).toBe(3);
-    expect(btns[0].attributes('aria-label')).toBe('最小化');
-    expect(btns[1].attributes('aria-label')).toBe('最大化'); // 初始非最大化 → 最大化
-    expect(btns[2].attributes('aria-label')).toBe('关闭');
+    expect(btns.length).toBe(4);
+    expect(btns[0].attributes('aria-label')).toBe('GitHub 仓库');
+    expect(btns[1].attributes('aria-label')).toBe('最小化');
+    expect(btns[2].attributes('aria-label')).toBe('最大化'); // 初始非最大化 → 最大化
+    expect(btns[3].attributes('aria-label')).toBe('关闭');
+  });
+
+  it('github button renders the fab/github brand icon and opens the repo via open_external', async () => {
+    const { w } = mountApp();
+    await flush();
+    const gh = w.find('.winbar').find('.winbtn--github');
+    expect(gh.exists()).toBe(true);
+    expect(gh.find('svg').exists()).toBe(true); // 未注册品牌图标会渲染 [object Object] 无 svg
+    await gh.trigger('click');
+    expect(invoke).toHaveBeenCalledWith('open_external', 'https://github.com/Gelomen/lms_launcher');
   });
 
   it('hover tooltip = 项目公共 tooltip（tip-down 向下定位 + data-tooltip），原生 title 不保留', async () => {
@@ -247,13 +258,15 @@ describe('window controls (frameless winbar)', () => {
     await flush();
     const btns = w.find('.winbar').findAll('.winbtn');
     expect(btns[0].classes()).toContain('tip-down');
-    expect(btns[0].attributes('data-tooltip')).toBe('最小化');
+    expect(btns[0].attributes('data-tooltip')).toBe('GitHub 仓库');
     expect(btns[0].attributes('title')).toBeUndefined();
-    expect(btns[1].attributes('data-tooltip')).toBe('最大化'); // 初始非最大化
+    expect(btns[1].attributes('data-tooltip')).toBe('最小化');
     expect(btns[1].attributes('title')).toBeUndefined();
-    expect(btns[2].classes()).toContain('tip-down');
-    expect(btns[2].attributes('data-tooltip')).toBe('关闭');
+    expect(btns[2].attributes('data-tooltip')).toBe('最大化'); // 初始非最大化
     expect(btns[2].attributes('title')).toBeUndefined();
+    expect(btns[3].classes()).toContain('tip-down');
+    expect(btns[3].attributes('data-tooltip')).toBe('关闭');
+    expect(btns[3].attributes('title')).toBeUndefined();
   });
 
   it('maximized push switches the tooltip 最大化 → 还原', async () => {
@@ -261,26 +274,26 @@ describe('window controls (frameless winbar)', () => {
     await flush();
     winMaxHandlers.forEach(fn => fn({ maximized: true })); // 模拟主进程推送
     await flush();
-    const maxBtn = w.find('.winbar').findAll('.winbtn')[1];
+    const maxBtn = w.find('.winbar').findAll('.winbtn')[2];
     expect(maxBtn.attributes('data-tooltip')).toBe('还原');
   });
 
-  it('clicking the three controls invokes win_minimize / win_maximize / win_close', async () => {
+  it('clicking the controls invokes win_minimize / win_maximize / win_close', async () => {
     const { w } = mountApp();
     await flush();
     const btns = w.find('.winbar').findAll('.winbtn');
-    await btns[0].trigger('click');
-    expect(invoke).toHaveBeenCalledWith('win_minimize');
     await btns[1].trigger('click');
-    expect(invoke).toHaveBeenCalledWith('win_maximize');
+    expect(invoke).toHaveBeenCalledWith('win_minimize');
     await btns[2].trigger('click');
+    expect(invoke).toHaveBeenCalledWith('win_maximize');
+    await btns[3].trigger('click');
     expect(invoke).toHaveBeenCalledWith('win_close');
   });
 
   it('close invokes win_close but NOT exit_app (tray-exit stays the only real quit)', async () => {
     const { w } = mountApp();
     await flush();
-    const closeBtn = w.find('.winbar').findAll('.winbtn')[2];
+    const closeBtn = w.find('.winbar').findAll('.winbtn')[3];
     await closeBtn.trigger('click');
     expect(invoke).toHaveBeenCalledWith('win_close');
     expect(invoke).not.toHaveBeenCalledWith('exit_app');
@@ -291,7 +304,7 @@ describe('window controls (frameless winbar)', () => {
     await flush();
     winMaxHandlers.forEach(fn => fn({ maximized: true })); // 模拟主进程推送
     await flush();
-    const maxBtn = w.find('.winbar').findAll('.winbtn')[1];
+    const maxBtn = w.find('.winbar').findAll('.winbtn')[2];
     expect(maxBtn.attributes('aria-label')).toBe('还原');
   });
 
@@ -307,11 +320,11 @@ describe('window controls (frameless winbar)', () => {
     const { w } = mountApp();
     await flush();
     // App.vue 必须把两枚窗口系列图标注册进 FontAwesome（未注册时渲染为 [object Object]，无 svg）
-    const maxBtn = w.find('.winbar').findAll('.winbtn')[1];
+    const maxBtn = w.find('.winbar').findAll('.winbtn')[2];
     expect(maxBtn.find('svg').exists()).toBe(true);
     winMaxHandlers.forEach(fn => fn({ maximized: true }));
     await flush();
-    expect(w.find('.winbar').findAll('.winbtn')[1].find('svg').exists()).toBe(true);
+    expect(w.find('.winbar').findAll('.winbtn')[2].find('svg').exists()).toBe(true);
   });
 });
 

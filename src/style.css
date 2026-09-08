@@ -482,6 +482,8 @@ body {
 .winbtn { width: 46px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text); cursor: pointer; padding: 0; font-size: 13px; -webkit-app-region: no-drag; /* 三键恢复可点击（父 .winbar = drag） */ }
 .winbtn:hover { background: #EBEDEF; }
 .winbtn--close:hover { background: var(--danger); color: #fff; }
+.winbtn--github { font-size: 15px; } /* GitHub 徽标比三键略大，辨识更清楚 */
+.winbtn--github:hover { background: #EBEDEF; color: #181717; } /* 品牌徽标保持中性 hover（区别于关闭键红色） */
 
 /* ---- 自动更新按钮（规格 2026-09-01-auto-update §F）：pill 圆角、紫底白字(#8B5CF6)、版本号右侧 ---- */
 .update-pill {

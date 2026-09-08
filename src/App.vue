@@ -13,13 +13,14 @@ import SettingsModal from './modules/SettingsModal.vue';
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faWindowMinimize, faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faGithub } from '@fortawesome/free-brands-svg-icons';
 import { faWindowMaximize, faWindowRestore } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 // logo：单一真源 src-main/icon.ico（用户已验收的像素，与任务栏图标同源；vite 输出为静态资源）
 import logoUrl from '../src-main/icon.ico?url';
 config.autoGenerateCss = true;
 // 用户偏好 regular 优先：最大化/还原用 regular（fr）；最小化/关闭保留 solid（LaunchBar 同原则）
-library.add(faWindowMinimize, faWindowMaximize, faWindowRestore, faXmark);
+library.add(faWindowMinimize, faWindowMaximize, faWindowRestore, faXmark, faGithub);
 const byPrefixAndName = { fat: { 'window-minimize': faWindowMinimize, 'window-maximize': faWindowMaximize, 'window-restore': faWindowRestore } };
 
 // 全局状态（任务 8）：App 持有 logLines / state，下发给模块 3/4；启动/停止由 LaunchBar emit → App 调 invoke。
@@ -58,6 +59,9 @@ const maximized = ref(false);
 function onWinMinimize(): void { invoke('win_minimize'); }
 function onWinToggleMax(): void { invoke('win_maximize'); }
 function onWinClose(): void { invoke('win_close'); } // 隐藏到托盘，不退出
+const GITHUB_URL = 'https://github.com/Gelomen/lms_launcher';
+// winbar GitHub 徽标：经 open_external IPC 用默认浏览器打开（主进程协议白名单校验）；失败静默（无 UI 后果）
+function onOpenGithub(): void { void invoke('open_external', GITHUB_URL).catch(() => {}); }
 
 function bucketOf(stream: LogEntry['stream']): LogTabId {
   return stream === 'sys' ? 'launcher' : 'llama-server';
@@ -303,6 +307,7 @@ function onExitClose(): void {
       </div>
       <div class="winbar__controls">
         <!-- hover 提示 = 项目公共 tooltip（tip-down 向下定位，同 .update-pill）；原生 title 不保留 -->
+        <button class="winbtn winbtn--github tip-down" data-tooltip="GitHub 仓库" aria-label="GitHub 仓库" @click="onOpenGithub"><FontAwesomeIcon :icon="['fab','github']" /></button>
         <button class="winbtn tip-down" data-tooltip="最小化" aria-label="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
         <button class="winbtn tip-down" :data-tooltip="maximized ? '还原' : '最大化'" :aria-label="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
         <button class="winbtn winbtn--close tip-down" data-tooltip="关闭" aria-label="关闭" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
