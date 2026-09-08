@@ -16,7 +16,9 @@
 
 ## 2. 数据源（全部已在本机实测验证）
 
-本机环境：双 LUID（0x0000edff = RTX 4090，0x00010f23 = Microsoft Basic Render Driver），Win11，nvidia 驱动。数据分两层：
+**代码不硬编码任何 LUID / 卡名 / 显存值。** 下列开发机 LUID 仅为实测证据（证明双卡场景已验证过），运行时代码全部来自运行时枚举，换任意配置机器（单卡 / 核显 / A 卡 / 多卡）无需改代码：
+
+开发机（实测环境）：双 LUID（0x0000edff = RTX 4090，0x00010f23 = Microsoft Basic Render Driver），Win11。数据分两层：
 
 ### 2.1 动态层（每 2 秒，任务管理器同款计数器）
 
@@ -50,6 +52,12 @@
 - 上限为静态值，启动查一次并缓存；动态层 LUID 集合与静态层不一致时（热插拔，罕见）重查一次（限频 30 秒）
 - 容错：DXGI 查询失败时，卡名回退 "GPU 序号"、上限回退 0（UI 显示 "–"），动态数据照常
 - 已知偏差：DXGI 专用上限比任务管理器显示值低（4090：23.57 vs 24.0，驱动保留区所致），验收口径见 §8
+
+### 2.3 合并规则（跨机器通用性）
+
+- **卡列表以动态层为准**：计数器出现过的 LUID 才构成卡片条目。某些机器上 DXGI 会枚举出无 GPU Adapter Memory 实例的虚拟/遗留适配器——这类 LUID 只存在于静态层，**不显示**（避免空卡噪音）
+- 静态层按小写 LUID join 到动态层：卡名 + 专用/共享上限；join 不上（罕见）→ 卡名回退 "GPU 序号"、上限回退 0（UI 显示 "–"），动态用量照常
+- 开发机上两个 LUID 都有计数器实例，故双卡都会显示；单卡机器只有 1 条——这是同一套规则的运行时结果，无分支逻辑
 
 ## 3. 数据层（src-main/gpu-stats.ts，新增）
 
@@ -132,7 +140,7 @@ export interface GpuStats {
 
 - src-main/gpu-stats.test.ts（纯函数，无 IO）：
   - parseGpuStatsJson：单卡 / 多卡（双 LUID）/ 空结果 / 利用率取 max / 非 3D 引擎实例忽略 / LUID 大小写归一
-  - mergeGpuStats：静态缺失回退（命名 + 上限 0）、LUID 匹配、动态新增 LUID
+  - mergeGpuStats：静态缺失回退（命名 + 上限 0）、LUID 匹配、动态新增 LUID、仅静态层存在的 LUID 被过滤（不显示）
   - formatGb：0（→ "–"）、非整 GB、1 位小数进位
 - src/modules/GpuModule.test.ts：
   - 首帧占位 "…"
