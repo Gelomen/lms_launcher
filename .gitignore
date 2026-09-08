@@ -5,6 +5,7 @@ dist-release-update/
 lms-launcher-v*-win64.zip
 dist-update/
 node_modules/
+.idea/
 .npm-cache/
 .pnpm-store/
 .superpowers/
@@ -13,7 +14,6 @@ node_modules/
 .temp/
 .tmp-*
 logs/
-# 运行时数据文件（dev-time 在 cwd 生成；打包后在 exe 目录）——不入库
 llama_params.yaml
 llama_launch_configs.yaml
 lms_launcher.yaml
