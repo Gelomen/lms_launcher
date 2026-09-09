@@ -19,9 +19,16 @@ const multi = computed(() => (gpus.value?.length ?? 0) > 1);
 function cur(i: number): GpuStats | undefined {
   return gpus.value ? gpus.value[i] : undefined;
 }
-// 四格数值："22.7 GB / 24.0 GB"；任一侧 ≤0 → 该侧 "–"
+// 四格数值："22.7 / 24.0 GB"；任一侧 ≤0 → 该侧 "–"（两侧皆 "–" 时不补单位）
 function mem(used: number, total: number): string {
-  return formatGb(used) + ' / ' + formatGb(total);
+  const num = (b: number): string => {
+    const s = formatGb(b);
+    return s === '–' ? s : s.slice(0, -3); // 去掉 " GB"，单位由本函数统一补在末尾
+  };
+  const u = num(used);
+  const t = num(total);
+  if (u === '–' && t === '–') return '– / –'; // 两侧皆占位：不补单位
+  return u + ' / ' + t + ' GB';
 }
 
 // 轮播层（spec §5.2）：两层绝对定位滑动。x: 0=中心 / 1=+100%（右侧屏外）/ -1=-100%（左侧屏外）。

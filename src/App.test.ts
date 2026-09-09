@@ -737,7 +737,7 @@ describe('App GPU card mount', () => {
     const gpuCard = w.find('.grid > .card:nth-child(3)'); // 第三列直接子级 = GPU 卡
     expect(gpuCard.find('.module-gpu').exists()).toBe(true);
     expect(gpuCard.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
-    expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 GB / 24.0 GB');
+    expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 / 24.0 GB');
     w.unmount();
   });
 });

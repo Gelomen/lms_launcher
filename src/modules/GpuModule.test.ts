@@ -55,7 +55,7 @@ describe('GpuModule 首帧与数据', () => {
     fire([GPU_A, GPU_B]);
     await flush();
     expect(w.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
-    expect(cellTexts(w)).toEqual(['28 %', '22.0 GB / 24.0 GB', '23.0 GB / 72.0 GB', '1.0 GB / 48.0 GB']);
+    expect(cellTexts(w)).toEqual(['28 %', '22.0 / 24.0 GB', '23.0 / 72.0 GB', '1.0 / 48.0 GB']);
     w.unmount();
   });
 
@@ -66,7 +66,7 @@ describe('GpuModule 首帧与数据', () => {
     fire([GPU_B]);
     await flush();
     // GPU_B：dedicatedUsed=0 → '–'；dedicatedTotal=0 → '–'
-    expect(cellTexts(w)).toEqual(['5 %', '– / –', '2.0 GB / 48.0 GB', '2.0 GB / 48.0 GB']);
+    expect(cellTexts(w)).toEqual(['5 %', '– / –', '2.0 / 48.0 GB', '2.0 / 48.0 GB']);
     w.unmount();
   });
 
@@ -76,7 +76,7 @@ describe('GpuModule 首帧与数据', () => {
     await flush();
     fire([{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 10, dedicatedUsed: 1610612736, dedicatedTotal: 24 * GB, sharedUsed: 22 * GB + 880 * 1048576, sharedTotal: 48 * GB }]);
     await flush();
-    expect(cellTexts(w)).toEqual(['10 %', '1.5 GB / 24.0 GB', '24.4 GB / 72.0 GB', '22.9 GB / 48.0 GB']);
+    expect(cellTexts(w)).toEqual(['10 %', '1.5 / 24.0 GB', '24.4 / 72.0 GB', '22.9 / 48.0 GB']);
     w.unmount();
   });
 });
