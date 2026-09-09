@@ -5,6 +5,7 @@ import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
 import LaunchBar from './modules/LaunchBar.vue';
 import LogPanel from './modules/LogPanel.vue';
+import GpuModule from './modules/GpuModule.vue';
 import { LOG_TABS, type LogTabId } from './modules/log-tabs';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import UpdateModal from './modules/UpdateModal.vue';
@@ -317,6 +318,7 @@ function onExitClose(): void {
     <section class="grid">
       <div class="stack">
         <div class="card"><DirModule @validated="onDirValidated" /></div>
+        <div class="card"><GpuModule /></div>
         <div class="card">
           <LaunchBar :state="state" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
         </div>

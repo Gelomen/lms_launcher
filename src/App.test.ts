@@ -21,6 +21,8 @@ const updateProgressHandlers: Array<(e: { pct: number }) => void> = [];
 const trayUpdateHandlers: Array<() => void> = [];
 // 设置（2026-10-01 update-proxy-settings）：托盘「设置」事件桥；App.vue onMounted 无条件订阅
 let traySettingsHandlers: Array<() => void> = [];
+// GPU 卡片（spec 2026-09-09-gpu-card-design）：gpu-stats 推送事件桥
+const gpuStatsHandlers: Array<(e: { gpus: unknown[] }) => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
@@ -33,6 +35,7 @@ vi.mock('./ipc', () => ({
   onUpdateDownloadProgress: (fn: (e: { pct: number }) => void) => { updateProgressHandlers.push(fn); return () => {}; },
   onTrayUpdateRequest: (fn: () => void) => { trayUpdateHandlers.push(fn); return () => {}; },
   onTraySettingsRequest: (fn: () => void) => { traySettingsHandlers.push(fn); return () => {}; },
+  onGpuStats: (fn: (e: { gpus: unknown[] }) => void) => { gpuStatsHandlers.push(fn); return () => {} },
 }));
 
 const RUNNING = { running: true, stopping: false, configId: 'c1' };
@@ -696,5 +699,35 @@ describe('App tray settings', () => {
     await flush();
     const title = document.querySelector('.modal-overlay .modal-title');
     expect(title?.textContent).toBe('设置');
+  });
+});
+
+// GPU 卡片（spec 2026-09-09-gpu-card-design §5）：挂载位置 = 左列 .stack，DirModule 之后、LaunchBar 之前
+describe('App GPU card mount', () => {
+  it('GPU 卡片挂载在左列第二张卡（顺序契约 dir → gpu → launch）', async () => {
+    const { w } = mountApp();
+    await flush();
+    const cards = w.find('.stack').findAll('.card');
+    expect(cards.length).toBe(3);
+    expect(cards[0].find('.module-dir').exists()).toBe(true);
+    expect(cards[1].find('.module-gpu').exists()).toBe(true);
+    expect(cards[2].find('.module-launch').exists()).toBe(true);
+    expect(cards[1].find('h2').text()).toBe('系统 GPU');
+    // 首帧未到达：占位 …（无圆点）
+    expect(cards[1].find('.gpu-title').text()).toBe('…');
+    expect(cards[1].findAll('.dot').length).toBe(0);
+    w.unmount();
+  });
+
+  it('gpu-stats 推送后卡片显示真实数据', async () => {
+    const { w } = mountApp();
+    await flush();
+    const GB = 1073741824;
+    gpuStatsHandlers.at(-1)!({ gpus: [{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB }] });
+    await flush();
+    const gpuCard = w.find('.stack .card:nth-child(2)');
+    expect(gpuCard.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
+    expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 GB / 24.0 GB');
+    w.unmount();
   });
 });
