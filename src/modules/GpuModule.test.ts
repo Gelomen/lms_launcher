@@ -66,6 +66,16 @@ describe('GpuModule 首帧与数据', () => {
     expect(cellTexts(w)).toEqual(['5 %', '– / –', '2.0 GB / 48.0 GB', '2.0 GB / 48.0 GB']);
     w.unmount();
   });
+
+  it('formatGb 副本防漂移锁定：1610612736→1.5 GB、22GB+880MiB→22.9 GB（与 src-main fixture 同组）', async () => {
+    mockLms();
+    const w = mount(GpuModule);
+    await flush();
+    fire([{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 10, dedicatedUsed: 1610612736, dedicatedTotal: 24 * GB, sharedUsed: 22 * GB + 880 * 1048576, sharedTotal: 48 * GB }]);
+    await flush();
+    expect(cellTexts(w)).toEqual(['10 %', '1.5 GB / 24.0 GB', '24.4 GB / 72.0 GB', '22.9 GB / 48.0 GB']);
+    w.unmount();
+  });
 });
 
 describe('GpuModule 圆点与按钮', () => {
