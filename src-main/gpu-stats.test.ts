@@ -118,10 +118,15 @@ describe('mergeGpuStats', () => {
   it('joins_across_luid_segment_order_difference_between_layers', () => {
     // 真机实测（任务 9）：动态层键 0x{High}_0x{Low}，静态层键 0x{Low}_{High}，
     // 顺序不同的同一 LUID 必须 join 上（canonicalLuid 顺序无关键）
-    // 静态侧用 0x{Low}_{High} 写法（0x00010fbf_00000000），动态侧 DYN_A = 0x00000000_0x00010fbf
-    const out = mergeGpuStats([dyn(DYN_A.replace('edff', '0fbf'), 22 * GB, 1 * GB, 74)], [
+    // 静态侧用 0x{Low}_{High} 写法（0x00010fbf_00000000），动态侧 0x{High}_0x{Low} 写法（0x00000000_0x00010fbf），
+    // 同一 LUID（真机实测值，见 real_counter_instance_names_dual_0x_prefix 用例）段序相反
+    const out = mergeGpuStats([dyn('0x00000000_0x00010fbf', 22 * GB, 1 * GB, 74)], [
       { luid: '0x00010fbf_00000000', name: 'NVIDIA GeForce RTX 4090', dedicatedTotal: 24 * GB, sharedTotal: 48 * GB },
     ] as GpuStatic[]).map((g) => ({ name: g.name, dedicatedTotal: g.dedicatedTotal, sharedTotal: g.sharedTotal }));
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('NVIDIA GeForce RTX 4090'); // 静态层卡名，非 'GPU 1' 回退名
+    expect(out[0].dedicatedTotal).toBeGreaterThan(0);
+    expect(out[0]).toEqual({ name: 'NVIDIA GeForce RTX 4090', dedicatedTotal: 24 * GB, sharedTotal: 48 * GB });
   });
 
   it('luid_only_in_static_layer_is_filtered_out', () => {
