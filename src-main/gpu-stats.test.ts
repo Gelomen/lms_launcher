@@ -1,12 +1,16 @@
 // 纯函数单测（spec 2026-09-09-gpu-card-design §7）：parseGpuStatsJson / mergeGpuStats / formatGb。
 // fixture 与渲染端 GpuModule.test.ts 的 formatGb 断言共用同一组数值（防两份实现漂移）。
 import { describe, it, expect } from 'vitest';
-import { parseGpuStatsJson, mergeGpuStats, formatGb } from './gpu-stats';
+import { parseGpuStatsJson, mergeGpuStats, formatGb, canonicalLuid } from './gpu-stats';
 import type { GpuDynamic, GpuStatic } from './gpu-stats';
 
 const GB = 1073741824; // 1 GiB = 1024^3
+// 动态层键 = 计数器实例名内 LUID 的小写原文（真机实测：两段各带 0x 前缀，0x{High}_0x{Low}）
 const LUID_A = '0x0000edff_00000000';
 const LUID_B = '0x00010f23_00000000';
+// 动态层实例名键（与静态层 0x{Low}_{High} 写法不同，join 必须顺序无关）
+const DYN_A = '0x00000000_0x0000edff';
+const DYN_B = '0x00000000_0x00010f23';
 
 // 构造动态层单行 JSON（键名模拟真实计数器实例名）
 function sample(ded: Record<string, number> = {}, shr: Record<string, number> = {}, eng: Record<string, number> = {}): string {
@@ -45,6 +49,19 @@ describe('parseGpuStatsJson', () => {
     expect(parseGpuStatsJson(raw)).toEqual([
       dyn(LUID_A, 22 * GB, 1 * GB, 28),
       dyn(LUID_B, 0, 2 * GB, 5),
+    ]);
+  });
+
+  it('real_counter_instance_names_dual_0x_prefix', () => {
+    // 真机实测（任务 9，2026-09-10，4090 双卡）：实例名两段 LUID 各带 0x 前缀
+    const raw = sample(
+      { ['luid_0x00000000_0x00010fbf_phys_0']: 22 * GB, ['luid_0x00000000_0x000127db_phys_0']: 0 },
+      { ['luid_0x00000000_0x00010fbf_phys_0']: 1 * GB, ['luid_0x00000000_0x000127db_phys_0']: 0 },
+      { ['pid_8104_luid_0x00000000_0x00010fbf_phys_0_eng_0_engtype_3d']: 74 },
+    );
+    expect(parseGpuStatsJson(raw)).toEqual([
+      { luid: '0x00000000_0x00010fbf', dedicatedUsed: 22 * GB, sharedUsed: 1 * GB, utilization: 74 },
+      { luid: '0x00000000_0x000127db', dedicatedUsed: 0, sharedUsed: 0, utilization: 0 },
     ]);
   });
 
@@ -98,6 +115,15 @@ describe('mergeGpuStats', () => {
     ]);
   });
 
+  it('joins_across_luid_segment_order_difference_between_layers', () => {
+    // 真机实测（任务 9）：动态层键 0x{High}_0x{Low}，静态层键 0x{Low}_{High}，
+    // 顺序不同的同一 LUID 必须 join 上（canonicalLuid 顺序无关键）
+    // 静态侧用 0x{Low}_{High} 写法（0x00010fbf_00000000），动态侧 DYN_A = 0x00000000_0x00010fbf
+    const out = mergeGpuStats([dyn(DYN_A.replace('edff', '0fbf'), 22 * GB, 1 * GB, 74)], [
+      { luid: '0x00010fbf_00000000', name: 'NVIDIA GeForce RTX 4090', dedicatedTotal: 24 * GB, sharedTotal: 48 * GB },
+    ] as GpuStatic[]).map((g) => ({ name: g.name, dedicatedTotal: g.dedicatedTotal, sharedTotal: g.sharedTotal }));
+  });
+
   it('luid_only_in_static_layer_is_filtered_out', () => {
     const extra: GpuStatic = { luid: '0x0002ab45_00000000', name: 'Virtual Adapter', dedicatedTotal: 0, sharedTotal: 16 * GB };
     expect(mergeGpuStats(dyns, [...statics, extra])).toHaveLength(2); // 动态层没有的 LUID 不显示
@@ -122,5 +148,19 @@ describe('formatGb', () => {
   it('rounds_to_one_decimal', () => {
     // 22 GiB + 880 MiB = 22.859375 GiB → '22.9 GB'
     expect(formatGb(22 * GB + 880 * 1048576)).toBe('22.9 GB');
+  });
+});
+
+describe('canonicalLuid', () => {
+  it('is_order_independent_across_layer_formats', () => {
+    expect(canonicalLuid('0x00000000_0x00010fbf')).toBe(canonicalLuid('0x00010fbf_00000000'));
+    expect(canonicalLuid('0x00000000_0x000127DB')).toBe(canonicalLuid('0x000127db_00000000'));
+  });
+  it('normalizes_case_and_optional_0x_prefixes', () => {
+    expect(canonicalLuid('0x0000EDFF_00000000')).toBe('00000000_0000edff');
+    expect(canonicalLuid('luid_0x00000000_0x0000edff')).toBe('00000000_0000edff');
+  });
+  it('returns_lowercase_input_when_not_two_hex8_segments', () => {
+    expect(canonicalLuid('not-a-luid')).toBe('not-a-luid');
   });
 });
