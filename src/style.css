@@ -506,7 +506,10 @@ body {
 .update-pill--busy { background: #C4B5FD; color: #fff; cursor: pointer; }
 /* ---- GPU 显存卡片（spec 2026-09-09-gpu-card-design §5.3）---- */
 /* 卡片左右边缘各一个 ‹ ›（多卡）；有按钮时内容区左右各让出按钮宽度，不与内容重叠 */
-.gpu-body { position: relative; }
+/* 卡片内容上下居中（用户指定 2026-09）：section→body→stage 逐层 flex 列拉伸，
+   层内容在舞台内垂直居中——四格（利用率/专用/GPU 内存/共享）不再顶住卡片标题 */
+.module-gpu { height: 100%; display: flex; flex-direction: column; } /* 填满 .card（grid 拉伸到同行最高） */
+.gpu-body { position: relative; flex: 1; display: flex; flex-direction: column; }
 .gpu-body--nav { padding: 0 32px; }
 .gpu-nav-btn {
   position: absolute; top: 50%; transform: translateY(-50%);
@@ -518,10 +521,12 @@ body {
 .gpu-nav-btn:hover { color: var(--text); background: #F6F7F8; }
 .gpu-nav-btn--left { left: 0; }
 .gpu-nav-btn--right { right: 0; }
-/* 舞台：两层绝对定位滑动 + 底部圆点行（20px 高，层让出底部 20px） */
-.gpu-stage { position: relative; min-height: 150px; }
+/* 舞台：两层绝对定位滑动 + 底部圆点行（20px 高，层让出底部 20px）；
+   flex:1 撑满 body 剩余高度，卡片被同行拉高时内容随之垂直居中 */
+.gpu-stage { position: relative; min-height: 150px; flex: 1; }
 .gpu-layer {
   position: absolute; top: 0; left: 0; right: 0; bottom: 20px;
+  display: flex; flex-direction: column; justify-content: center; /* 内容（标题行+四格）舞台内垂直居中 */
   transition: transform 200ms ease-out; /* ~200ms ease-out（spec §5.2） */
   will-change: transform;
 }
