@@ -153,3 +153,75 @@ describe('GpuModule 轮播（模运算绕回）', () => {
     w.unmount();
   });
 });
+
+describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测时长，spec §7）', () => {
+  function layerClasses(w: any): string[][] {
+    return w.findAll('.gpu-layer').map((l: any) => l.classes());
+  }
+
+  it('点 ›：目标层从右侧屏外滑入（gpu-pos-r → gpu-pos-0），当前层滑出到左（gpu-pos-0 → gpu-pos-l）', async () => {
+    mockLms();
+    const w = mount(GpuModule);
+    await flush();
+    fire([GPU_A, GPU_B]);
+    await flush();
+    await w.find('.gpu-nav-btn--right').trigger('click');
+    // 定位帧：目标层（layer[1]）在右侧屏外且无过渡
+    await nextTick();
+    let cls = layerClasses(w);
+    expect(cls[1]).toContain('gpu-pos-r');
+    expect(cls[1]).toContain('gpu-no-anim');
+    // 滑动帧：去掉 no-anim，目标层到中心、当前层到左侧屏外
+    await nextTick(); await nextTick();
+    cls = layerClasses(w);
+    expect(cls[0]).toContain('gpu-pos-l');
+    expect(cls[1]).toContain('gpu-pos-0');
+    expect(cls[1]).not.toContain('gpu-no-anim');
+    // 圆点/标题已切到目标卡
+    expect(activeDot(w)).toBe(1);
+    w.unmount();
+  });
+
+  it('点 ‹：方向相反（当前层 → gpu-pos-r，目标层 gpu-pos-l → gpu-pos-0）', async () => {
+    mockLms();
+    const w = mount(GpuModule);
+    await flush();
+    fire([GPU_A, GPU_B, GPU_C]);
+    await flush();
+    await w.find('.gpu-nav-btn--right').trigger('click'); // 先 0→1，使 index=1 后 ‹ 有非 0 来源
+    await nextTick(); await nextTick();
+    await new Promise((r) => setTimeout(r, 260)); // 等 settle（220ms 定时器）完成归位
+    await nextTick();
+    await w.find('.gpu-nav-btn--left').trigger('click');
+    await nextTick();
+    let cls = layerClasses(w);
+    expect(cls[1]).toContain('gpu-pos-l'); // 目标层在左侧屏外
+    await nextTick(); await nextTick();
+    cls = layerClasses(w);
+    expect(cls[0]).toContain('gpu-pos-r'); // 当前层（原 0 层）滑出到右
+    expect(cls[1]).toContain('gpu-pos-0');
+    expect(activeDot(w)).toBe(0);
+    w.unmount();
+  });
+
+  it('连续快速点击：以最后一次点击的目标为准，中间状态立即归位', async () => {
+    mockLms();
+    const w = mount(GpuModule);
+    await flush();
+    fire([GPU_A, GPU_B, GPU_C]);
+    await flush();
+    // 0 → 1（动画在飞，不等待 settle）
+    await w.find('.gpu-nav-btn--right').trigger('click');
+    await nextTick(); await nextTick();
+    // 在飞中再点 ›：目标应为 2（相对在飞目标 1 前进），且第一层立即隐藏（归位）
+    await w.find('.gpu-nav-btn--right').trigger('click');
+    await nextTick(); await nextTick();
+    expect(activeDot(w)).toBe(2);
+    expect(w.find('.gpu-title').text()).toBe('AMD Radeon RX 7900 XTX');
+    // 归位后继续滑动到 2：只有一个层可见且在 gpu-pos-0
+    const visible = w.findAll('.gpu-layer:not(.gpu-layer--off)');
+    expect(visible.length).toBe(1);
+    expect(visible[0].classes()).toContain('gpu-pos-0');
+    w.unmount();
+  });
+});
