@@ -318,12 +318,13 @@ function onExitClose(): void {
     <section class="grid">
       <div class="stack">
         <div class="card"><DirModule @validated="onDirValidated" /></div>
-        <div class="card"><GpuModule /></div>
         <div class="card">
           <LaunchBar :state="state" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
         </div>
       </div>
       <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>
+      <!-- 系统 GPU（2026-09 挪位）：模板卡片右侧的独立列，与模板卡顶对齐 -->
+      <div class="card"><GpuModule /></div>
     </section>
     <section class="log-area">
       <LogPanel :buckets="logBuckets" @clear="onLogClear" />

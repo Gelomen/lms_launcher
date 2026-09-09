@@ -74,11 +74,12 @@ body {
 }
 .grid {
   display: grid;
-  /* 三卡片绝对固定宽度 = 默认列宽 × 2/3（左 424→280、右 520→350）；靠左排布，右侧留白 */
-  grid-template-columns: 280px 350px;
+  /* 三卡片绝对固定宽度 = 默认列宽 × 2/3（左 424→280、右 520→350）；GPU 卡（2026-09 挪位）= 模板右侧独立列，
+     沿用原左列 280px 定稿宽度；靠左排布，右侧留白 */
+  grid-template-columns: 280px 350px 280px;
   gap: var(--card-gap);
 }
-/* 左列堆叠容器：卡片间保持 --card-gap 间距 */
+/* 左/右列堆叠容器：卡片间保持 --card-gap 间距 */
 .stack {
   display: flex;
   flex-direction: column;
@@ -299,9 +300,9 @@ body {
 .dir-status .error-text, .dir-status .ok-text { margin-top: 0; } /* 槽位已含间距，内部不再叠加 margin */
 
 /* ---- 模板列表固定高度（任务 11 方案 B 同架构；2026-08-26 高度 192 → 161）：
-   右卡 = 左列两卡叠加等高 —— 固定 161px + h2 块 34 + padding 32 + border 2 = 卡 229–237（= .stack 实测 237），
-   消除「模板少时右卡比左列高」的底部留白；多模板超出 161px → 列表内部滚动条（行卡 44px/条），
-   不足留白。 */
+   2026-08-26 定稿：固定 161px + h2 块 34 + padding 32 + border 2 = 卡 229–237（= 左列 .stack 实测 237），
+   消除「模板少时右卡比左列高」的底部留白；多模板超出 161px → 列表内部滚动条（行卡 44px/条），不足留白。
+   （2026-09 起 GPU 卡片为模板右侧独立列，模板卡自身高度定稿值不变。） */
 .template-list {
   height: 161px;
   margin-top: 8px;

@@ -702,20 +702,29 @@ describe('App tray settings', () => {
   });
 });
 
-// GPU 卡片（spec 2026-09-09-gpu-card-design §5）：挂载位置 = 左列 .stack，DirModule 之后、LaunchBar 之前
+// GPU 卡片（spec 2026-09-09-gpu-card-design §5，2026-09 挪位）：挂载位置 = .grid 第三列，TemplateModule 右侧
 describe('App GPU card mount', () => {
-  it('GPU 卡片挂载在左列第二张卡（顺序契约 dir → gpu → launch）', async () => {
+  it('GPU 卡片是网格第三列（顺序契约 左列 dir → launch；列2 template；列3 gpu）', async () => {
     const { w } = mountApp();
     await flush();
-    const cards = w.find('.stack').findAll('.card');
-    expect(cards.length).toBe(3);
-    expect(cards[0].find('.module-dir').exists()).toBe(true);
-    expect(cards[1].find('.module-gpu').exists()).toBe(true);
-    expect(cards[2].find('.module-launch').exists()).toBe(true);
-    expect(cards[1].find('h2').text()).toBe('系统 GPU');
+    const stacks = w.findAll('.stack');
+    expect(stacks.length).toBe(1);
+    const leftCards = stacks[0].findAll('.card');
+    expect(leftCards.length).toBe(2);
+    expect(leftCards[0].find('.module-dir').exists()).toBe(true);
+    expect(leftCards[1].find('.module-launch').exists()).toBe(true);
+    // 网格直接子级 = 3 项：左列堆叠 / 模板卡 / GPU 卡
+    const grid = w.find('.grid');
+    expect(grid.exists()).toBe(true);
+    const gridItems = [...(grid.element as HTMLElement).children];
+    expect(gridItems.length).toBe(3);
+    expect(gridItems[1].querySelector('.module-template')).not.toBeNull();
+    const gpuEl = gridItems[2].querySelector('.module-gpu') as HTMLElement;
+    expect(gpuEl).not.toBeNull();
+    expect(gpuEl.querySelector('h2')!.textContent).toBe('系统 GPU');
     // 首帧未到达：占位 …（无圆点）
-    expect(cards[1].find('.gpu-title').text()).toBe('…');
-    expect(cards[1].findAll('.dot').length).toBe(0);
+    expect(gpuEl.querySelector('.gpu-title')!.textContent).toBe('…');
+    expect(gpuEl.querySelectorAll('.dot').length).toBe(0);
     w.unmount();
   });
 
@@ -725,7 +734,8 @@ describe('App GPU card mount', () => {
     const GB = 1073741824;
     gpuStatsHandlers.at(-1)!({ gpus: [{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB }] });
     await flush();
-    const gpuCard = w.find('.stack .card:nth-child(2)');
+    const gpuCard = w.find('.grid > .card:nth-child(3)'); // 第三列直接子级 = GPU 卡
+    expect(gpuCard.find('.module-gpu').exists()).toBe(true);
     expect(gpuCard.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
     expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 GB / 24.0 GB');
     w.unmount();
