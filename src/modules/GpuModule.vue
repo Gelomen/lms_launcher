@@ -112,7 +112,7 @@ function posClass(x: -1 | 0 | 1): string {
 
 <template>
   <section class="module module-gpu">
-    <h2>系统 GPU</h2>
+    <h2>GPU 信息</h2>
     <div class="gpu-body" :class="{ 'gpu-body--nav': multi }">
       <!-- ‹ 贴卡片左边缘、› 贴右边缘（左右各占一边，纵向居中，用户指定）；单卡不渲染 -->
       <button v-if="multi" type="button" class="gpu-nav-btn gpu-nav-btn--left" aria-label="上一张卡" @click="go(-1)">‹</button>

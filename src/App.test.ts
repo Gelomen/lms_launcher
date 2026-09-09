@@ -721,7 +721,7 @@ describe('App GPU card mount', () => {
     expect(gridItems[1].querySelector('.module-template')).not.toBeNull();
     const gpuEl = gridItems[2].querySelector('.module-gpu') as HTMLElement;
     expect(gpuEl).not.toBeNull();
-    expect(gpuEl.querySelector('h2')!.textContent).toBe('系统 GPU');
+    expect(gpuEl.querySelector('h2')!.textContent).toBe('GPU 信息');
     // 首帧未到达：占位 …（无圆点）
     expect(gpuEl.querySelector('.gpu-title')!.textContent).toBe('…');
     expect(gpuEl.querySelectorAll('.dot').length).toBe(0);

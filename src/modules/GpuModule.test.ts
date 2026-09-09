@@ -40,7 +40,7 @@ describe('GpuModule 首帧与数据', () => {
     mockLms();
     const w = mount(GpuModule);
     await flush();
-    expect(w.find('h2').text()).toBe('系统 GPU');
+    expect(w.find('h2').text()).toBe('GPU 信息');
     expect(w.find('.gpu-title').text()).toBe('…');
     expect(cellTexts(w)).toEqual(['…', '…', '…', '…']);
     expect(w.findAll('.dot').length).toBe(0);
