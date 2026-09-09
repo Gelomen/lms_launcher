@@ -24,9 +24,9 @@
 
 | 数据 | 计数器路径（MultiInstance） | 说明 |
 |---|---|---|
-| 专用显存用量 | \GPU Adapter Memory(*)\Dedicated Usage | 字节，实例名 luid_0x%08x_%08x_phys_N |
+| 专用显存用量 | \GPU Adapter Memory(*)\Dedicated Usage | 字节，实例名 `luid_0x{High}_0x{Low}_phys_N`（真机两段各带 0x 前缀，2026-09-09 真机实证；部分来源为裸 hex，解析器两者兼容） |
 | 共享显存用量 | \GPU Adapter Memory(*)\Shared Usage | 字节，同上 |
-| 利用率 | \GPU Engine(*)\Utilization Percentage | 实例名 pid_X_luid_..._phys_N_eng_M_engtype_3D，0-100 |
+| 利用率 | \GPU Engine(*)\Utilization Percentage | 实例名 `pid_X_luid_0x{High}_0x{Low}_phys_N_eng_M_engtype_3D`（同双 0x 前缀），0-100 |
 
 - 该 LUID 下所有 pid 的 engtype_3D 实例取 max（GPU 级口径，与任务管理器一致）；无 3D 引擎实例的卡利用率取 0
 - 卡列表 = 计数器实例名里的 LUID 集合（动态，能感知热插拔）
@@ -56,7 +56,7 @@
 ### 2.3 合并规则（跨机器通用性）
 
 - **卡列表以动态层为准**：计数器出现过的 LUID 才构成卡片条目。某些机器上 DXGI 会枚举出无 GPU Adapter Memory 实例的虚拟/遗留适配器——这类 LUID 只存在于静态层，**不显示**（避免空卡噪音）
-- 静态层按小写 LUID join 到动态层：卡名 + 专用/共享上限；join 不上（罕见）→ 卡名回退 "GPU 序号"、上限回退 0（UI 显示 "–"），动态用量照常
+- 静态层按顺序无关 canonicalLuid join 到动态层（真机动态层段序 0x{High}_0x{Low} 与静态层 0x{Low}_{High} 相反，join 键须排序归一；小写 + 去 0x 前缀）：卡名 + 专用/共享上限；join 不上（罕见）→ 卡名回退 "GPU 序号"、上限回退 0（UI 显示 "–"），动态用量照常
 - 开发机上两个 LUID 都有计数器实例，故双卡都会显示；单卡机器只有 1 条——这是同一套规则的运行时结果，无分支逻辑
 
 ## 3. 数据层（src-main/gpu-stats.ts，新增）
@@ -65,12 +65,12 @@
 - 静态：启动时一次短命 spawn（同一 .ps1 脚本，Add-Type C# P/Invoke 调 DXGI，见 §2.2），输出 [{luid, name, dedicatedTotal, sharedTotal}] JSON；结果缓存
 - 纯函数（可单测，无 IO）：
   - parseGpuStatsJson(raw: string): GpuDynamic[]——解析动态计数器 JSON，按 LUID 聚合（用量求值、利用率取 max）
-  - mergeGpuStats(dyn: GpuDynamic[], statics: GpuStatic[]): GpuStats[]——按小写 LUID 合并静态名/上限，动态有而静态无 → 回退命名 + 上限 0
+  - mergeGpuStats(dyn: GpuDynamic[], statics: GpuStatic[]): GpuStats[]——按顺序无关 canonicalLuid 合并静态名/上限，动态有而静态无 → 回退命名 + 上限 0
   - formatGb(bytes: number): string——字节 → "22.7 GB"（1024 进制，1 位小数，对齐任务管理器）；bytes ≤ 0 → "–"
 - 推送结构（每轮采样约 2 秒，一次 webContents.send）：
 
 export interface GpuStats {
-  luid: string;              // 小写 luid 串（0x%08x_%08x）
+  luid: string;              // 小写 luid 串（真机双 0x 形状 0x00000000_0x00010fbf；字符串不透明键，组件不解析）
   name: string;              // DXGI 卡名；失败回退 "GPU " + 序号
   utilization: number;       // 0-100
   dedicatedUsed: number;     // 字节

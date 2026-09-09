@@ -2,7 +2,7 @@
 // GPU 卡片（spec 2026-09-09-gpu-card-design §3/§4）：主进程 gpu-stats 事件的合并结果。
 // 字节单位；合计行（专用 + 共享）由组件层计算，不在数据层。
 export interface GpuStats {
-  luid: string; // 小写 luid 串（0x%08x_%08x）
+  luid: string; // 小写 luid 串（真机双 0x 形状 0x00000000_0x00010fbf；字符串不透明键，组件不解析）
   name: string; // DXGI 卡名；join 不上回退 "GPU 序号"
   utilization: number; // 0-100
   dedicatedUsed: number; // 字节

@@ -6,13 +6,13 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 
 export interface GpuDynamic {
-  luid: string; // 小写 luid 串（0x%08x_%08x）
+  luid: string; // 小写 luid 串（真机双 0x 形状 0x00000000_0x00010fbf）
   dedicatedUsed: number; // 字节
   sharedUsed: number;    // 字节
   utilization: number;   // 0-100
 }
 export interface GpuStatic {
-  luid: string; // 小写 luid 串
+  luid: string; // 小写 luid 串（DXGI 侧 0x{Low}_{High}，与动态层段序相反，join 走 canonicalLuid）
   name: string;
   dedicatedTotal: number; // 字节
   sharedTotal: number;    // 字节
@@ -27,9 +27,9 @@ export interface GpuStats {
   sharedTotal: number;
 }
 
-// 计数器实例名格式（spec §2.1，已实测）：
-//   GPU Adapter Memory：luid_0x%08x_%08x_phys_N
-//   GPU Engine：        pid_X_luid_0x%08x_%08x_phys_N_eng_M_engtype_3D
+// 计数器实例名格式（spec §2.1）：
+//   GPU Adapter Memory：luid_0x{High}_0x{Low}_phys_N（真机双 0x 前缀）
+//   GPU Engine：        pid_X_luid_0x{High}_0x{Low}_phys_N_eng_M_engtype_3D
 // 真机实测（任务 9，2026-09-10，4090 双卡）：计数器实例名两段 LUID 各带 0x 前缀
 // （luid_0x{High}_0x{Low}_phys_N），第二段 0x 可选以兼容 spec 记录的单 0x 写法
 const MEM_INST_RE = /^luid_(0x[0-9a-f]{8}_(?:0x[0-9a-f]{8}|[0-9a-f]{8}))_phys_\d+$/i;
