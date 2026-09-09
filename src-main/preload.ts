@@ -38,4 +38,10 @@ contextBridge.exposeInMainWorld('lms', {
     ipcRenderer.on('tray-settings-request', listener);
     return () => ipcRenderer.removeListener('tray-settings-request', listener);
   },
+  // GPU 卡片（spec 2026-09-09-gpu-card-design §4）：主进程每 ~2 秒推送合并后的卡数据
+  onGpuStats: (cb: (e: { gpus: { luid: string; name: string; utilization: number; dedicatedUsed: number; dedicatedTotal: number; sharedUsed: number; sharedTotal: number }[] }) => void) => {
+    const listener = (_e: unknown, payload: { gpus: { luid: string; name: string; utilization: number; dedicatedUsed: number; dedicatedTotal: number; sharedUsed: number; sharedTotal: number }[] }) => cb(payload);
+    ipcRenderer.on('gpu-stats', listener);
+    return () => ipcRenderer.removeListener('gpu-stats', listener);
+  },
 });
