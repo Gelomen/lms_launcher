@@ -158,7 +158,7 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
       return; // 非 JSON 行（脚本诊断等）静默跳过
     }
     // 静态层缺失或 LUID 集合不一致（热插拔，罕见）且距上次查询 >30 秒 → 重查
-    if (statics.length === 0 || (!sameLuidSet(dyn, statics) && Date.now() - lastStaticQuery > 30000)) {
+    if ((statics.length === 0 || !sameLuidSet(dyn, statics)) && Date.now() - lastStaticQuery > 30000) {
       queryStatic();
     }
     onStats(mergeGpuStats(dyn, statics));
