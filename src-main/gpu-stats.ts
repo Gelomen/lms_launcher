@@ -3,6 +3,8 @@
 // 静态层 = 启动时一次性 DXGI 枚举（-Mode static，卡名 + 上限 + LUID，缓存）。
 // 纯函数（parseGpuStatsJson / mergeGpuStats / formatGb）无 IO，单测见 gpu-stats.test.ts；
 // startGpuStats 为 IO 层（spawn），不进单测，由真机验收覆盖（spec §8）。
+import { spawn, type ChildProcess } from 'node:child_process';
+
 export interface GpuDynamic {
   luid: string; // 小写 luid 串（0x%08x_%08x）
   dedicatedUsed: number; // 字节
@@ -90,4 +92,113 @@ export function mergeGpuStats(dyn: GpuDynamic[], statics: GpuStatic[]): GpuStats
 export function formatGb(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '–';
   return (bytes / 1073741824).toFixed(1) + ' GB';
+}
+// ---------- 常驻采样（IO 层，不进单测） ----------
+
+// 动态层 LUID 集合与静态层是否一致（热插拔检测用）
+function sameLuidSet(a: GpuDynamic[], b: GpuStatic[]): boolean {
+  const sa = new Set(a.map((x) => x.luid));
+  const sb = new Set(b.map((x) => x.luid));
+  if (sa.size !== sb.size) return false;
+  for (const l of sa) if (!sb.has(l)) return false;
+  return true;
+}
+
+/**
+ * 启动 GPU 采样。onStats 每轮采样（~2 秒）回调一次合并后的 GpuStats[]（数据层负责 merge，
+ * 合计行由组件层计算）。返回 stop()：置停止标志并 kill 动态子进程（will-quit / exit_app 调用）。
+ *
+ * 生命周期规则（spec §3）：
+ * - 动态进程异常退出 → 限频重建（每 5 秒至多一次），期间 onStats 不回调，渲染端保留最后数据
+ * - 静态层启动查一次并缓存；动态 LUID 集合与静态层不一致且距上次查询 > 30 秒 → 重查一次
+ * - 所有诊断经 log 回调（主进程写 sys 日志行），不 console.log
+ */
+export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) => void, log: (line: string) => void): () => void {
+  let statics: GpuStatic[] = [];
+  let lastStaticQuery = 0;
+  let stopped = false;
+  let proc: ChildProcess | null = null;
+  let lastRespawn = 0;
+  let respawnTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const psArgs = (mode: string): string[] =>
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Mode', mode];
+
+  function queryStatic(): void {
+    lastStaticQuery = Date.now();
+    let p: ChildProcess;
+    try {
+      p = spawn('powershell.exe', psArgs('static'));
+    } catch (e) {
+      log('GPU 静态查询启动失败：' + (e instanceof Error ? e.message : String(e)));
+      return;
+    }
+    let out = '';
+    if (p.stdout) { p.stdout.on('data', (c: Buffer) => { out += c.toString('utf8'); }); }
+    p.on('error', (e) => { log('GPU 静态查询失败：' + e.message); });
+    p.on('close', (code) => {
+      if (stopped) return;
+      if (code === 0) {
+        try {
+          statics = JSON.parse(out.trim()) as GpuStatic[];
+        } catch {
+          log('GPU 静态查询结果解析失败（卡名/上限回退占位值）');
+        }
+      } else {
+        log('GPU 静态查询异常退出 code=' + code + '（卡名/上限回退占位值）');
+      }
+    });
+  }
+
+  function handleLine(line: string): void {
+    let dyn: GpuDynamic[];
+    try {
+      dyn = parseGpuStatsJson(line);
+    } catch {
+      return; // 非 JSON 行（脚本诊断等）静默跳过
+    }
+    // 静态层缺失或 LUID 集合不一致（热插拔，罕见）且距上次查询 >30 秒 → 重查
+    if (statics.length === 0 || (!sameLuidSet(dyn, statics) && Date.now() - lastStaticQuery > 30000)) {
+      queryStatic();
+    }
+    onStats(mergeGpuStats(dyn, statics));
+  }
+
+  function startProc(): void {
+    lastRespawn = Date.now();
+    try {
+      proc = spawn('powershell.exe', psArgs('dynamic'));
+    } catch (e) {
+      log('GPU 采样进程启动失败：' + (e instanceof Error ? e.message : String(e)));
+      return;
+    }
+    let buf = '';
+    if (proc.stdout) { proc.stdout.on('data', (c: Buffer) => {
+      buf += c.toString('utf8');
+      let i: number;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (line.length > 0) handleLine(line);
+      }
+    }); }
+    proc.on('error', (e) => { log('GPU 采样进程错误：' + e.message); });
+    proc.on('close', () => {
+      if (stopped) return;
+      const wait = 5000 - (Date.now() - lastRespawn); // 限频：每 5 秒至多重建一次
+      if (wait <= 0) startProc();
+      else respawnTimer = setTimeout(() => { if (!stopped) startProc(); }, wait);
+    });
+  }
+
+  startProc();
+  queryStatic();
+
+  return (): void => {
+    stopped = true;
+    if (respawnTimer !== null) clearTimeout(respawnTimer);
+    if (proc) {
+      try { proc.kill(); } catch { /* 已退出 */ }
+    }
+  };
 }
