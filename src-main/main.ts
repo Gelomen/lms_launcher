@@ -7,6 +7,7 @@ import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
 import { ProcessState } from './process';
+import { startGpuStats } from './gpu-stats';
 import { checkLlamaInstall, installCheckMessage } from './llama-check';
 import { execSync } from 'node:child_process';
 
@@ -35,6 +36,8 @@ const ps = new ProcessState();
 
 // 自动更新：check_update 成功后暂存 latest 信息，download_update 据此下载（内存态，重启即失）
 let pendingUpdate: LatestReleaseInfo | null = null;
+// GPU 采样停止句柄（whenReady 内 startGpuStats 赋值；exit_app 显式调用——app.exit 不触发 will-quit）
+let stopGpuStats: () => void = () => {};
 
 // 数据目录：打包后 = exe 所在目录（portable 解压目录，可写）；dev-time = 项目 cwd
 function dataDir(): string {
@@ -81,6 +84,12 @@ function appIconPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'icon.ico')
     : join(__dirname, '..', 'src-main', 'icon.ico');
+}
+// GPU 采样脚本路径：打包态 = exe 同目录（electron-builder extraFiles 分发）；dev = src-main/
+function gpuScriptPath(): string {
+  return app.isPackaged
+    ? join(dataDir(), 'gpu-counters.ps1')
+    : join(__dirname, '..', 'src-main', 'gpu-counters.ps1');
 }
 
 // ---------- 托盘（§4.6） ----------
@@ -284,6 +293,7 @@ ipcMain.handle('open_external', async (_e, url: string): Promise<void> => {
   }
 });
 ipcMain.handle('exit_app', async (): Promise<void> => {
+  stopGpuStats();
   await ps.stopGraceful(3);
   app.exit(0);
 });
@@ -590,6 +600,14 @@ app.whenReady().then(() => {
   cleanStaleUpdateTask();
   replayUpdateLog();
   createTray();
+  // GPU 卡片（spec 2026-09-09-gpu-card-design §3/§4）：常驻 2 秒采样 → gpu-stats 事件推送；
+  // 诊断行（进程重建/静态查询失败等）进 launcher 日志桶
+  stopGpuStats = startGpuStats(
+    gpuScriptPath(),
+    (gpus) => { const win = mainWin(); if (win) win.webContents.send('gpu-stats', { gpus }); },
+    (line) => emitLog('[lms_launcher] GPU · ' + line, 'sys'),
+  );
+  app.on('will-quit', () => stopGpuStats());
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

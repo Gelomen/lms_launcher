@@ -15,6 +15,8 @@ electronDist: node_modules/electron/dist
 extraFiles:
   - from: scripts/lms-launcher-update.ps1
     to: lms-launcher-update.ps1
+  - from: src-main/gpu-counters.ps1
+    to: gpu-counters.ps1
 extraResources:
   - from: src-main/icon.ico
     to: icon.ico
