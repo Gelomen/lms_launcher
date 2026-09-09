@@ -113,12 +113,14 @@ while ($true) {
         $mem = Get-Counter -Counter '\GPU Adapter Memory(*)\Dedicated Usage', '\GPU Adapter Memory(*)\Shared Usage' -MaxSamples 1 -ErrorAction Stop
         $eng = Get-Counter -Counter '\GPU Engine(*)\Utilization Percentage' -MaxSamples 1 -ErrorAction Stop
         $ded = @{}; $shr = @{}; $u = @{}
-        foreach ($s in $mem.CounterSet) {
-            if ($s.CounterName -eq 'Dedicated Usage') { $ded[$s.InstanceName] = [long]$s.CookedValue }
-            elseif ($s.CounterName -eq 'Shared Usage') { $shr[$s.InstanceName] = [long]$s.CookedValue }
+        foreach ($s in $mem.CounterSamples) {
+            $cn = $s.Path.Split('\')[-1]
+            if ($cn -eq 'Dedicated Usage') { $ded[$s.InstanceName] = [long]$s.CookedValue }
+            elseif ($cn -eq 'Shared Usage') { $shr[$s.InstanceName] = [long]$s.CookedValue }
         }
-        foreach ($s in $eng.CounterSet) {
-            if ($s.CounterName -eq 'Utilization Percentage') { $u[$s.InstanceName] = [long]$s.CookedValue }
+        foreach ($s in $eng.CounterSamples) {
+            $cn = $s.Path.Split('\')[-1]
+            if ($cn -eq 'Utilization Percentage') { $u[$s.InstanceName] = [long]$s.CookedValue }
         }
         Write-Output (ConvertTo-Json ([ordered]@{ ded = $ded; shr = $shr; eng = $u }) -Compress -Depth 5)
     } catch {
