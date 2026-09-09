@@ -31,6 +31,9 @@ function cellTexts(w: any): string[] {
 function activeDot(w: any): number {
   return w.findAll('.dot').findIndex((d: any) => d.classes().includes('dot--active'));
 }
+// 跨浏览器帧等待：滑动帧是 setTimeout(0) 宏任务（真实 Chromium 在定位帧绘制后才执行）。
+// happy-dom 无绘制概念，纯 nextTick 微任务级联不会让出事件循环、跨不了帧，必须用真实小等待观测滑动帧。
+const waitFrame = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
 
 describe('GpuModule 首帧与数据', () => {
   it('首帧未到达：标题与四格显示占位 …，无圆点、无 ‹ › 按钮', async () => {
@@ -171,8 +174,16 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     let cls = layerClasses(w);
     expect(cls[1]).toContain('gpu-pos-r');
     expect(cls[1]).toContain('gpu-no-anim');
-    // 滑动帧：去掉 no-anim，目标层到中心、当前层到左侧屏外
+    // 跨帧锁定（微任务读帧点：事件循环尚未让给宏任务）——滑动帧此时必须尚未落地。
+    // 旧实现（纯 nextTick 微任务链）在这里已滑到位：真实 Chromium 中定位帧与滑动帧
+    // 合并为同一次绘制 → 目标卡直接弹出（审查重要#1，spec §5.2 的 100%→0 滑入不可见）。
     await nextTick(); await nextTick();
+    cls = layerClasses(w);
+    expect(cls[1]).toContain('gpu-pos-r');
+    expect(cls[1]).toContain('gpu-no-anim');
+    expect(cls[0]).toContain('gpu-pos-0'); // 当前层尚未离场
+    // 滑动帧（setTimeout(0) 宏任务，真实小等待跨帧）：去掉 no-anim，目标层到中心、当前层到左侧屏外
+    await waitFrame();
     cls = layerClasses(w);
     expect(cls[0]).toContain('gpu-pos-l');
     expect(cls[1]).toContain('gpu-pos-0');
@@ -190,13 +201,20 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     await flush();
     await w.find('.gpu-nav-btn--right').trigger('click'); // 先 0→1，使 index=1 后 ‹ 有非 0 来源
     await nextTick(); await nextTick();
-    await new Promise((r) => setTimeout(r, 260)); // 等 settle（220ms 定时器）完成归位
+    await waitFrame();                          // 跨滑动帧（宏任务）
+    await new Promise((r) => setTimeout(r, 260)); // 等 settle（220ms 定时器自滑动帧起算）完成归位
     await nextTick();
     await w.find('.gpu-nav-btn--left').trigger('click');
     await nextTick();
     let cls = layerClasses(w);
     expect(cls[1]).toContain('gpu-pos-l'); // 目标层在左侧屏外
+    // 跨帧锁定：微任务读帧点滑动帧必须尚未落地（见用例 1 注释）
     await nextTick(); await nextTick();
+    cls = layerClasses(w);
+    expect(cls[1]).toContain('gpu-pos-l');
+    expect(cls[1]).toContain('gpu-no-anim');
+    expect(cls[0]).toContain('gpu-pos-0'); // 当前层尚未离场
+    await waitFrame(); // 跨滑动帧
     cls = layerClasses(w);
     expect(cls[0]).toContain('gpu-pos-r'); // 当前层（原 0 层）滑出到右
     expect(cls[1]).toContain('gpu-pos-0');
@@ -213,12 +231,15 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     // 0 → 1（动画在飞，不等待 settle）
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
-    // 在飞中再点 ›：目标应为 2（相对在飞目标 1 前进），且第一层立即隐藏（归位）
+    await waitFrame(); // 跨滑动帧（settle 220ms 未到，动画仍在飞）
+    // 在飞中再点 ›：fast path 必须先取消第一击的帧定时器再归位（否则迟到的帧回调
+    // 把第二击定位好的在飞层拉回 pos-0 并置 noAnim——审查点名的风险）
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(2);
     expect(w.find('.gpu-title').text()).toBe('AMD Radeon RX 7900 XTX');
-    // 归位后继续滑动到 2：只有一个层可见且在 gpu-pos-0
+    // 归位后继续滑动到 2：跨滑动帧后只有一个可见层且在 gpu-pos-0
+    await waitFrame();
     const visible = w.findAll('.gpu-layer:not(.gpu-layer--off)');
     expect(visible.length).toBe(1);
     expect(visible[0].classes()).toContain('gpu-pos-0');

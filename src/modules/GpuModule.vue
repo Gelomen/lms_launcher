@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { onGpuStats, type GpuStats } from '../ipc';
 
 // 模块 5 · 系统 GPU 显存卡片（spec 2026-09-09-gpu-card-design §5）：
@@ -33,10 +33,10 @@ const layers = ref<GpuLayer[]>([
   { on: false, noAnim: true, cardIndex: 0, x: 0 },
 ]);
 
-const activeLayer = ref(0); // 当前停在中心的层下标（静止态恒为 0）
 const animating = ref(false);
-const SETTLE_MS = 220; // 200ms 过渡 + 20ms 余量
+const SETTLE_MS = 220; // 200ms 过渡 + 20ms 余量，自滑动帧执行起算（定位帧可能迟到 ~16ms）
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
+let frameTimer: ReturnType<typeof setTimeout> | null = null; // 待执行的滑动帧（setTimeout 宏任务）
 
 function go(dir: 1 | -1): void {
   const n = gpus.value?.length ?? 0;
@@ -45,15 +45,16 @@ function go(dir: 1 | -1): void {
     // 连续快速点击（spec §5.2）：先把在飞动画归位——滑出中的 0 层与在飞 1 层
     // 都 no-anim 复位并立即隐藏，取消 settle，再对新目标跑动画；
     // 新目标仍走 1 层（槽位不变量），滑入时舞台只有一个可见层。
+    // 先取消两帧的待执行定时器——迟到的滑动帧回调会把刚归位的状态拉回错位
+    if (frameTimer !== null) { clearTimeout(frameTimer); frameTimer = null; }
+    if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
     layers.value[0].on = false;
     layers.value[0].x = 0;
     layers.value[0].noAnim = true;
     layers.value[1].on = false;
     layers.value[1].x = 0;
     layers.value[1].noAnim = true;
-    activeLayer.value = 0;
     animating.value = false;
-    if (settleTimer !== null) { clearTimeout(settleTimer); settleTimer = null; }
   }
   // 目标 = 模运算绕回（用户指定：单一循环逻辑，不分支卡数）
   const target = (index.value + dir + n) % n;
@@ -64,33 +65,31 @@ function go(dir: 1 | -1): void {
   layers.value[1].x = dir === 1 ? 1 : -1;
   layers.value[1].on = true;
   animating.value = true;
-  // 滑动须推迟到第 3 层 nextTick：实测（happy-dom + @vue/test-utils）trigger()
-  // 内部自带一次 nextTick，前两层链会在测试的第一个读帧 tick 之前执行，定位帧
-  // （pos-r/pos-l + no-anim）就观察不到；第 3 层时测试 tick1 读到定位帧、
-  // tick2/3 读到滑动帧（1 层 → 0，0 层 → 反方向屏外）。settle 后把当前卡归位
-  // 回 0 层、闲置 1 层隐藏复位。数据刷新不触发本路径（只有点击触发）。
-  void nextTick().then(() => {
-    void nextTick().then(() => {
-      void nextTick().then(() => {
-      layers.value[1].noAnim = false;
-      layers.value[0].noAnim = false;
+  // 滑动帧跨浏览器帧：定位帧在上面同步写入后由微任务渲染——真实 Chromium 在
+  // 事件循环让出（微任务排空后）先绘制这帧，所以定位帧必然先落帧一次；滑动帧
+  // 用 setTimeout(0) 宏任务推迟到绘制之后执行（1 层 → 0，0 层 → 反方向屏外），
+  // 目标卡才可见地 100%→0 滑入（spec §5.2）。纯 nextTick 微任务链会在同一次
+  // 绘制前排空，两帧合并 → 目标卡直接弹出（审查重要#1）。settle 在滑动帧回调内
+  // 挂出：220ms 自滑动开始起算，保证在过渡结束之后归位——当前卡归回 0 层、
+  // 闲置 1 层隐藏复位。数据刷新不触发本路径（只有点击触发）。
+  frameTimer = setTimeout(() => {
+    frameTimer = null;
+    layers.value[1].noAnim = false;
+    layers.value[0].noAnim = false;
+    layers.value[1].x = 0;
+    layers.value[0].x = dir === 1 ? -1 : 1;
+    settleTimer = setTimeout(() => {
+      animating.value = false;
+      layers.value[0].cardIndex = target;
+      layers.value[0].on = true;
+      layers.value[0].x = 0;
+      layers.value[0].noAnim = true;
+      layers.value[1].on = false;
       layers.value[1].x = 0;
-      layers.value[0].x = dir === 1 ? -1 : 1;
-      settleTimer = setTimeout(() => {
-        animating.value = false;
-        layers.value[0].cardIndex = target;
-        layers.value[0].on = true;
-        layers.value[0].x = 0;
-        layers.value[0].noAnim = true;
-        layers.value[1].on = false;
-        layers.value[1].x = 0;
-        layers.value[1].noAnim = true;
-        activeLayer.value = 0;
-        settleTimer = null;
-      }, SETTLE_MS);
-      });
-    });
-  });
+      layers.value[1].noAnim = true;
+      settleTimer = null;
+    }, SETTLE_MS);
+  }, 0);
 }
 
 // 卡数组长度变化（热插拔，罕见）：index 越界钳回 0
@@ -102,6 +101,7 @@ onMounted(() => {
 });
 onUnmounted(() => {
   if (unsub) unsub();
+  if (frameTimer !== null) clearTimeout(frameTimer);
   if (settleTimer !== null) clearTimeout(settleTimer);
 });
 
