@@ -505,6 +505,7 @@ ipcMain.handle('download_update', async (): Promise<
 //      （生产路径下 create 直接被拒）。解法：把命令写进安装目录的
 //      lms_launcher_update.cmd 短启动器，/TR 只引用该文件（~90 字符）。
 ipcMain.handle('run_update', async (): Promise<void> => {
+  stopGpuStats(); // app.exit 不触发 will-quit：先停 GPU 采样，防 powershell 采样子进程孤儿常驻（与 exit_app 同模式，stop() 幂等）
   const installDir = dataDir();
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip（与 download_update 一致）
   const ps1 = join(installDir, 'lms-launcher-update.ps1');
