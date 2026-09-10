@@ -725,7 +725,7 @@ describe('App GPU card mount', () => {
     // 首帧未到达：占位与数据态位置结构一致（用户 2026-09-10 指定）——标题占位 "–"、四格占位、‹ › 禁用，无圆点
     expect(gpuEl.querySelector('.gpu-title')!.textContent).toBe('–');
     // 只查可见层（两层结构：当前层 0 + 隐藏备用层 1，见 GpuModule 槽位不变量）
-    expect([...gpuEl.querySelectorAll('.gpu-layer:not(.gpu-layer--off) .gpu-val')].map((el) => el.textContent)).toEqual(['–', '– / –', '– / –', '– / –']);
+    expect([...gpuEl.querySelectorAll('.gpu-layer:not(.gpu-layer--off) .gpu-val')].map((el) => el.textContent)).toEqual(['– / –', '– / –', '– / –', '–']);
     expect(gpuEl.querySelectorAll('.gpu-nav-btn[disabled]').length).toBe(2);
     expect(gpuEl.querySelectorAll('.dot').length).toBe(0);
     w.unmount();

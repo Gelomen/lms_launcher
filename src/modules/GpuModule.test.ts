@@ -25,7 +25,7 @@ const GPU_C: GpuStats = { luid: '0x0003be77_00000000', name: 'AMD Radeon RX 7900
 function fire(gpus: GpuStats[]): void {
   gpuHandlers.at(-1)!({ gpus: gpus as unknown[] });
 }
-// 四格数值（当前层）：利用率 / 专用 / 合计（组件层 = 专用 + 共享）/ 共享
+// 四格数值（当前层）：专用 / 共享 / 合计（组件层 = 专用 + 共享）/ 利用率（顺序 2026-09-10 用户调整）
 function cellTexts(w: any): string[] {
   return w.findAll('.gpu-layer:not(.gpu-layer--off) .gpu-val').map((v: any) => v.text());
 }
@@ -42,13 +42,13 @@ function layerTitle(w: any, i: number): string {
 const waitFrame = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
 
 describe('GpuModule 首帧与数据', () => {
-  it('首帧未到达：占位与数据态位置结构一致（标题 "–"、利用率 "–"、内存格 "– / –"、‹ › 渲染但禁用、无圆点）——用户 2026-09-10 指定', async () => {
+  it('首帧未到达：占位与数据态位置结构一致（标题 "–"、GPU 利用率 "–"、内存格 "– / –"、‹ › 渲染但禁用、无圆点）——用户 2026-09-10 指定', async () => {
     mockLms();
     const w = mount(GpuModule);
     await flush();
     expect(w.find('h2').text()).toBe('GPU 信息');
     expect(w.find('.gpu-title').text()).toBe('–'); // 卡名（含占位 "–"）左右居中由 CSS 承担（.gpu-title text-align:center，2026-09-10）
-    expect(cellTexts(w)).toEqual(['–', '– / –', '– / –', '– / –']);
+    expect(cellTexts(w)).toEqual(['– / –', '– / –', '– / –', '–']); // 专用 / 共享 / 合计 / GPU 利用率
     expect(w.findAll('.dot').length).toBe(0);
     // ‹ › 恒渲染（内容区恒预留 32px 让位），首帧不可点击
     const left = w.find('.gpu-nav-btn--left');
@@ -67,7 +67,7 @@ describe('GpuModule 首帧与数据', () => {
     fire([GPU_A, GPU_B]);
     await flush();
     expect(w.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
-    expect(cellTexts(w)).toEqual(['28 %', '22.0 / 24.0 GB', '23.0 / 72.0 GB', '1.0 / 48.0 GB']);
+    expect(cellTexts(w)).toEqual(['22.0 / 24.0 GB', '1.0 / 48.0 GB', '23.0 / 72.0 GB', '28 %']);
     w.unmount();
   });
 
@@ -78,7 +78,7 @@ describe('GpuModule 首帧与数据', () => {
     fire([GPU_B]);
     await flush();
     // GPU_B：dedicatedUsed=0 → '–'；dedicatedTotal=0 → '–'
-    expect(cellTexts(w)).toEqual(['5 %', '– / –', '2.0 / 48.0 GB', '2.0 / 48.0 GB']);
+    expect(cellTexts(w)).toEqual(['– / –', '2.0 / 48.0 GB', '2.0 / 48.0 GB', '5 %']);
     w.unmount();
   });
 
@@ -88,7 +88,7 @@ describe('GpuModule 首帧与数据', () => {
     await flush();
     fire([{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 10, dedicatedUsed: 1610612736, dedicatedTotal: 24 * GB, sharedUsed: 22 * GB + 880 * 1048576, sharedTotal: 48 * GB }]);
     await flush();
-    expect(cellTexts(w)).toEqual(['10 %', '1.5 / 24.0 GB', '24.4 / 72.0 GB', '22.9 / 48.0 GB']);
+    expect(cellTexts(w)).toEqual(['1.5 / 24.0 GB', '22.9 / 48.0 GB', '24.4 / 72.0 GB', '10 %']);
     w.unmount();
   });
 });
