@@ -150,7 +150,7 @@ function posClass(x: -1 | 0 | 1): string {
                首帧（无数据）恒渲染占位（用户 2026-09-10：标题 "–"、利用率 "–"、内存格 "– / –"，
                与数据态位置结构完全一致——内容区恒预留 32px 让位，见 .gpu-body） -->
           <div class="gpu-title-row">
-            <span class="gpu-title">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
+            <span class="gpu-title" :class="{ 'gpu-title--ph': !cur(l.cardIndex) }">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
           </div>
           <div class="gpu-grid">
             <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">{{ util(l.cardIndex) }}</span></div>

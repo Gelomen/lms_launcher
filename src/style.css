@@ -554,6 +554,9 @@ body {
   display: block; font-size: var(--fs-body); font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 首帧占位破折号左右居中（用户 2026-09-10）：内容区两侧让位对称（32px + 16px），
+   居中对齐内容区即卡片几何中心；数据态卡名保持左对齐不变 */
+.gpu-title--ph { text-align: center; }
 .gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
 .gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gpu-val { font-size: var(--fs-body); font-weight: 600; color: var(--text); white-space: nowrap; }

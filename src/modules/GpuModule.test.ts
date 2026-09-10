@@ -48,6 +48,7 @@ describe('GpuModule 首帧与数据', () => {
     await flush();
     expect(w.find('h2').text()).toBe('GPU 信息');
     expect(w.find('.gpu-title').text()).toBe('–');
+    expect(w.find('.gpu-title').classes()).toContain('gpu-title--ph'); // 占位破折号左右居中（用户 2026-09-10）
     expect(cellTexts(w)).toEqual(['–', '– / –', '– / –', '– / –']);
     expect(w.findAll('.dot').length).toBe(0);
     // ‹ › 恒渲染（内容区恒预留 32px 让位），首帧不可点击
