@@ -722,8 +722,8 @@ describe('App GPU card mount', () => {
     const gpuEl = gridItems[2].querySelector('.module-gpu') as HTMLElement;
     expect(gpuEl).not.toBeNull();
     expect(gpuEl.querySelector('h2')!.textContent).toBe('GPU 信息');
-    // 首帧未到达：占位 …（无圆点）
-    expect(gpuEl.querySelector('.gpu-title')!.textContent).toBe('…');
+    // 首帧未到达：卡片主体留空（用户 2026-09-10 指定去掉 "…" 占位，无圆点）
+    expect(gpuEl.querySelector('.gpu-title')).toBeNull();
     expect(gpuEl.querySelectorAll('.dot').length).toBe(0);
     w.unmount();
   });

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// GpuModule 单测（spec 2026-09-09-gpu-card-design §7）：
-// 首帧占位 / 数据到达四格 + 合计行 / 单卡无按钮单点实心 / 多卡 N 点当前实心其余空心 / 模运算绕回。
+// GpuModule 单测（spec 2026-09-09-gpu-card-design §7；2026-09-10 首帧占位改为留空，
+// 见 docs/superpowers/changes/2026-09-10-gpu-first-frame-no-placeholder.md）：
+// 首帧留空 / 数据到达四格 + 合计行 / 单卡无按钮单点实心 / 多卡 N 点当前实心其余空心 / 模运算绕回。
 // formatGb fixture 与 src-main/gpu-stats.test.ts 同一组数值（两份实现防漂移）。
 import { describe, it, expect } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
@@ -41,13 +42,13 @@ function layerTitle(w: any, i: number): string {
 const waitFrame = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
 
 describe('GpuModule 首帧与数据', () => {
-  it('首帧未到达：标题与四格显示占位 …，无圆点、无 ‹ › 按钮', async () => {
+  it('首帧未到达：卡片主体留空（无标题、无四格、无圆点、无 ‹ › 按钮）——用户 2026-09-10 指定去掉 "…" 占位（布局唯一，杜绝多卡判定后 32px 让位跳位）', async () => {
     mockLms();
     const w = mount(GpuModule);
     await flush();
     expect(w.find('h2').text()).toBe('GPU 信息');
-    expect(w.find('.gpu-title').text()).toBe('…');
-    expect(cellTexts(w)).toEqual(['…', '…', '…', '…']);
+    expect(w.find('.gpu-title').exists()).toBe(false);
+    expect(cellTexts(w)).toEqual([]);
     expect(w.findAll('.dot').length).toBe(0);
     expect(w.findAll('.gpu-nav-btn').length).toBe(0);
     w.unmount();

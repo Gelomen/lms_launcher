@@ -144,18 +144,9 @@ function posClass(x: -1 | 0 | 1): string {
               <div class="gpu-cell"><span class="label">共享 GPU 内存</span><span class="gpu-val">{{ mem(cur(l.cardIndex)!.sharedUsed, cur(l.cardIndex)!.sharedTotal) }}</span></div>
             </div>
           </template>
-          <template v-else>
-            <!-- 首帧数据到达前：标题与四格 "…"（层内占位），无圆点 -->
-            <div class="gpu-title-row">
-              <span class="gpu-title">…</span>
-            </div>
-            <div class="gpu-grid">
-              <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">…</span></div>
-              <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">…</span></div>
-              <div class="gpu-cell"><span class="label">GPU 内存</span><span class="gpu-val">…</span></div>
-              <div class="gpu-cell"><span class="label">共享 GPU 内存</span><span class="gpu-val">…</span></div>
-            </div>
-          </template>
+          <!-- 首帧数据到达前层内不渲染（用户 2026-09-10 指定：去掉 "…" 占位——
+               占位态尚不知卡数，无法预知 .gpu-body--nav 是否生效，数据到达且判定多卡后
+               内容区左右收窄 32px，标签/数值跳位。改为留空，布局唯一，无跳位。） -->
         </div>
         <!-- 底部指示点：N 卡 = N 点，当前实心灰、其余空心描边；纯展示不可点击（切换只走 ‹ ›） -->
         <div v-if="gpus" class="gpu-dots">
