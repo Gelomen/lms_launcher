@@ -540,9 +540,13 @@ body {
 }
 .gpu-layer--off { visibility: hidden; }
 .gpu-no-anim { transition: none; }
+/* 相邻卡片的固定间距（用户 2026-09-11 指定）= 2 × 内容边缘到卡片边缘的距离：
+   多卡时内容区左右各让出 --gpu-body--nav 的 32px，加 .card 的 --card-pad 16px = 48px，
+   间距 = 96px。屏外层停靠在 100% + 间距处而非紧贴舞台边缘，切换时滑入/滑出
+   全程保持固定间隔，settle 隐藏离场层时不再有"紧贴后突然消失"的跳变 */
 .gpu-pos-0 { transform: translateX(0); }
-.gpu-pos-l { transform: translateX(-100%); }
-.gpu-pos-r { transform: translateX(100%); }
+.gpu-pos-l { transform: translateX(calc(-100% - 2 * (32px + var(--card-pad)))); }
+.gpu-pos-r { transform: translateX(calc(100% + 2 * (32px + var(--card-pad)))); }
 .gpu-title-row { margin-bottom: 8px; }
 .gpu-title {
   display: block; font-size: var(--fs-body); font-weight: 600; color: var(--text);

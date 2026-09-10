@@ -31,7 +31,8 @@ function mem(used: number, total: number): string {
   return u + ' / ' + t + ' GB';
 }
 
-// 轮播层（spec §5.2）：两层绝对定位滑动。x: 0=中心 / 1=+100%（右侧屏外）/ -1=-100%（左侧屏外）。
+// 轮播层（spec §5.2）：两层绝对定位滑动。x: 0=中心 / 1=右侧屏外停靠位 / -1=左侧屏外停靠位
+// （停靠位 = ±(100% + 96px 固定间距)，见 style.css .gpu-pos-l/r）。
 // 槽位不变量：settle 后（静止态）当前卡恒在 0 层；点击动画期间目标层走 1 层（dir=+1 时从右滑入、
 // dir=-1 时从左滑入），0 层滑出到对侧；settle 再把当前卡归位回 0 层、闲置 1 层隐藏复位。
 interface GpuLayer { on: boolean; noAnim: boolean; cardIndex: number; x: -1 | 0 | 1 }
