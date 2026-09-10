@@ -527,8 +527,8 @@ body {
 /* 禁用态（首帧无数据 / 单卡）：灰化不可点击（与 .icon-btn:disabled 同语言） */
 .gpu-nav-btn:disabled { color: #C7CCD4; cursor: not-allowed; }
 .gpu-nav-btn:disabled:hover { color: #C7CCD4; background: transparent; }
-.gpu-nav-btn--left { left: 0; }
-.gpu-nav-btn--right { right: 0; }
+.gpu-nav-btn--left { left: -8px; }  /* 贴卡片左缘 8px（原 16px 的一半，用户 2026-09-10；仍在内容区 32px 让位之内，不压内容） */
+.gpu-nav-btn--right { right: -8px; } /* 贴卡片右缘 8px（同左） */
 /* 舞台：两层绝对定位滑动 + 底部圆点行（20px 高，层让出底部 20px）；
    flex:1 撑满 body 剩余高度，卡片被同行拉高时内容随之垂直居中 */
 /* 舞台自身不裁切：裁切上移到 .card--gpu（App.vue 给 GPU 卡的 .card 加该类，overflow:hidden），
