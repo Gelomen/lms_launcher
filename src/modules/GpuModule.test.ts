@@ -202,7 +202,7 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     await w.find('.gpu-nav-btn--right').trigger('click'); // 先 0→1，使 index=1 后 ‹ 有非 0 来源
     await nextTick(); await nextTick();
     await waitFrame();                          // 跨滑动帧（宏任务）
-    await new Promise((r) => setTimeout(r, 260)); // 等 settle（220ms 定时器自滑动帧起算）完成归位
+    await new Promise((r) => setTimeout(r, 360)); // 等 settle（306ms 定时器自滑动帧起算）完成归位
     await nextTick();
     await w.find('.gpu-nav-btn--left').trigger('click');
     await nextTick();
@@ -231,7 +231,7 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     // 0 → 1（动画在飞，不等待 settle）
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
-    await waitFrame(); // 跨滑动帧（settle 220ms 未到，动画仍在飞）
+    await waitFrame(); // 跨滑动帧（settle 306ms 未到，动画仍在飞）
     // 在飞中再点 ›：fast path 必须先取消第一击的帧定时器再归位（否则迟到的帧回调
     // 把第二击定位好的在飞层拉回 pos-0 并置 noAnim——审查点名的风险）
     await w.find('.gpu-nav-btn--right').trigger('click');
