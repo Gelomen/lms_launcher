@@ -154,7 +154,7 @@ function posClass(x: -1 | 0 | 1): string {
             <span class="gpu-title">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
           </div>
           <div class="gpu-grid">
-            <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">{{ util(l.cardIndex) }}</span></div>
+            <div class="gpu-cell"><span class="label">GPU 利用率</span><span class="gpu-val">{{ util(l.cardIndex) }}</span></div>
             <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'dedicated') }}</span></div>
             <!-- 合计行 = 专用 + 共享（组件层计算，spec §3） -->
             <div class="gpu-cell"><span class="label">GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'sum') }}</span></div>
