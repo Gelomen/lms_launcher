@@ -16,6 +16,8 @@ function mockLms(): void {
     onGpuStats: (cb: (e: { gpus: unknown[] }) => void) => { gpuHandlers.push(cb); return () => {}; },
   };
 }
+// FontAwesomeIcon 桩：‹ › 轮播按钮里用到（测试关注逻辑不关注图标渲染，与 SettingsModal.test 同惯例）
+const STUBS = { FontAwesomeIcon: true };
 
 const GB = 1073741824; // 1 GiB = 1024^3
 const GPU_A: GpuStats = { luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB };
@@ -44,7 +46,7 @@ const waitFrame = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
 describe('GpuModule 首帧与数据', () => {
   it('首帧未到达：占位与数据态位置结构一致（标题 "–"、GPU 利用率 "–"、内存格 "– / –"、‹ › 渲染但禁用、无圆点）——用户 2026-09-10 指定', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     expect(w.find('h2').exists()).toBe(false); // 卡片 h2「GPU 信息」已删除（用户 2026-09-10：卡名上位到原 h2 行=层顶行）
     expect(w.find('.gpu-title').text()).toBe('–'); // 卡名（含占位 "–"）左右居中由 CSS 承担（.gpu-title text-align:center，2026-09-10）
@@ -62,7 +64,7 @@ describe('GpuModule 首帧与数据', () => {
 
   it('数据到达：四格数值 + 合计行正确，标题 = 当前卡名（始终显示）', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A, GPU_B]);
     await flush();
@@ -73,7 +75,7 @@ describe('GpuModule 首帧与数据', () => {
 
   it('上限为 0（join 不上回退）：该格显示 –', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_B]);
     await flush();
@@ -84,7 +86,7 @@ describe('GpuModule 首帧与数据', () => {
 
   it('formatGb 副本防漂移锁定：1610612736→1.5 GB、22GB+880MiB→22.9 GB（与 src-main fixture 同组）', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 10, dedicatedUsed: 1610612736, dedicatedTotal: 24 * GB, sharedUsed: 22 * GB + 880 * 1048576, sharedTotal: 48 * GB }]);
     await flush();
@@ -96,7 +98,7 @@ describe('GpuModule 首帧与数据', () => {
 describe('GpuModule 圆点与按钮', () => {
   it('单卡：‹ › 渲染但禁用（不可点击），1 个实心点', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A]);
     await flush();
@@ -113,7 +115,7 @@ describe('GpuModule 圆点与按钮', () => {
 
   it('多卡：N 个圆点，当前实心其余空心；‹ 贴左缘 › 贴右缘', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A, GPU_B, GPU_C]);
     await flush();
@@ -135,7 +137,7 @@ describe('GpuModule 圆点与按钮', () => {
 describe('GpuModule 轮播（模运算绕回）', () => {
   it('2 卡：点 › 前进，点 ‹ 回绕', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A, GPU_B]);
     await flush();
@@ -151,7 +153,7 @@ describe('GpuModule 轮播（模运算绕回）', () => {
 
   it('3 卡：› 从末位回绕到 0；‹ 从 0 回绕到末位', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A, GPU_B, GPU_C]);
     await flush();
@@ -181,7 +183,7 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
 
   it('点 ›：目标层从右侧屏外滑入（gpu-pos-r → gpu-pos-0），当前层滑出到左（gpu-pos-0 → gpu-pos-l）', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A, GPU_B]);
     await flush();
@@ -212,7 +214,7 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
 
   it('点 ‹：方向相反（当前层 → gpu-pos-r，目标层 gpu-pos-l → gpu-pos-0）', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A, GPU_B, GPU_C]);
     await flush();
@@ -241,7 +243,7 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
 
   it('连续快速点击：以最后一次点击的目标为准，中间状态立即归位', async () => {
     mockLms();
-    const w = mount(GpuModule);
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     fire([GPU_A, GPU_B, GPU_C]);
     await flush();

@@ -38,7 +38,10 @@
   （曾改居中，用户随后改回）
 - 后续同轮微调（2026-09-10）：标签「利用率」→「GPU 利用率」；四格顺序调整为
   专用 / 共享 / GPU 内存（合计）/ GPU 利用率（2×2 行优先，spec §1 同步）；
-  列距 12→24px（利用率↔专用 间距加大）；卡片 h2「GPU 信息」删除，
+  列距 12→24px（利用率↔专用 间距加大）；‹ › 按钮图标由纯文本 ‹/›（U+2039/203A）
+  改为 FontAwesome chevron-left/chevron-right（free-regular——chevron 无 fat 样式、
+  优先 regular，用户 2026-09-10；项目 byPrefixAndName 惯例）且外移贴近卡片边缘
+  （16px→8px）；卡片 h2「GPU 信息」删除，
   卡名行（层内标题行）上移到层顶行=原 h2 所在行（.gpu-title-row flex:0 0 auto、
   .gpu-grid flex:1 + align-content:center 四格剩余空间垂直居中），卡名仍随层滑动、仍左右居中
 - 圆点仍 v-if="gpus"（卡数未知不渲染）；圆点行固定占舞台底部 20px、层内容

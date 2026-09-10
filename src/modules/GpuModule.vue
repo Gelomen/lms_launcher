@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { config } from '@fortawesome/fontawesome-svg-core';
+import { faChevronLeft, faChevronRight } from '@fortawesome/free-regular-svg-icons'; // chevron 无 fat 样式，优先 regular（用户 2026-09-10）
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { onGpuStats, type GpuStats } from '../ipc';
+
+config.autoAddCss = false;
+// 项目惯例命名（键值即 IconDefinition，前缀不具语义）；chevron-left/right 来自 free-regular
+const byPrefixAndName = { fat: { 'chevron-left': faChevronLeft, 'chevron-right': faChevronRight } };
 
 // 模块 5 · 系统 GPU 显存卡片（spec 2026-09-09-gpu-card-design §5）：
 // 数据由主进程每 ~2 秒经 gpu-stats 事件推送（onGpuStats）；多卡 ‹ › 轮播（模运算绕回）；
@@ -137,7 +144,7 @@ function posClass(x: -1 | 0 | 1): string {
     <div class="gpu-body">
       <!-- ‹ 贴卡片左边缘、› 贴右边缘（左右各占一边，纵向居中，用户指定）；恒渲染（用户 2026-09-10：
            无论单卡/多卡/首帧，内容区结构恒统一，单卡与无数据时按钮禁用不可点击） -->
-      <button type="button" class="gpu-nav-btn gpu-nav-btn--left" :disabled="!multi" aria-label="上一张卡" @click="go(-1)">‹</button>
+      <button type="button" class="gpu-nav-btn gpu-nav-btn--left" :disabled="!multi" aria-label="上一张卡" @click="go(-1)"><FontAwesomeIcon :icon="byPrefixAndName.fat['chevron-left']" /></button>
       <div class="gpu-stage">
         <div
           v-for="(l, i) in layers"
@@ -165,7 +172,7 @@ function posClass(x: -1 | 0 | 1): string {
           <span v-for="(g, i) in gpus" :key="g.luid" class="dot" :class="{ 'dot--active': i === index }" />
         </div>
       </div>
-      <button type="button" class="gpu-nav-btn gpu-nav-btn--right" :disabled="!multi" aria-label="下一张卡" @click="go(1)">›</button>
+      <button type="button" class="gpu-nav-btn gpu-nav-btn--right" :disabled="!multi" aria-label="下一张卡" @click="go(1)"><FontAwesomeIcon :icon="byPrefixAndName.fat['chevron-right']" /></button>
     </div>
   </section>
 </template>
