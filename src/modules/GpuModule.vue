@@ -13,7 +13,7 @@ function formatGb(bytes: number): string {
 }
 
 const gpus = ref<GpuStats[] | null>(null); // null = 首帧未到达
-const index = ref(0); // 当前卡下标（圆点/标题；点击立即切到目标）
+const index = ref(0); // 当前卡下标（圆点；点击立即切到目标。标题行在层内，随滑动切换，见 spec §5.1/§5.2）
 const multi = computed(() => (gpus.value?.length ?? 0) > 1);
 
 function cur(i: number): GpuStats | undefined {
@@ -125,10 +125,6 @@ function posClass(x: -1 | 0 | 1): string {
       <!-- ‹ 贴卡片左边缘、› 贴右边缘（左右各占一边，纵向居中，用户指定）；单卡不渲染 -->
       <button v-if="multi" type="button" class="gpu-nav-btn gpu-nav-btn--left" aria-label="上一张卡" @click="go(-1)">‹</button>
       <div class="gpu-stage">
-        <!-- 标题行在滑动层之外：始终显示当前卡名，点击立即切换，不跟随层滑动（spec §5.1） -->
-        <div class="gpu-title-row">
-          <span class="gpu-title">{{ gpus && gpus[index] ? gpus[index].name : '…' }}</span>
-        </div>
         <div
           v-for="(l, i) in layers"
           :key="i"
@@ -136,7 +132,10 @@ function posClass(x: -1 | 0 | 1): string {
           :class="[posClass(l.x), { 'gpu-layer--off': !l.on, 'gpu-no-anim': l.noAnim }]"
         >
           <template v-if="cur(l.cardIndex)">
-            <!-- 标题行已移到舞台级（层之外）；层内只保留四格网格（滑动内容） -->
+            <!-- 标题行在层内（用户 2026-09-11：切卡时标题跟随层滑动，不立即切换） -->
+            <div class="gpu-title-row">
+              <span class="gpu-title">{{ cur(l.cardIndex)!.name }}</span>
+            </div>
             <div class="gpu-grid">
               <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">{{ cur(l.cardIndex)!.utilization }} %</span></div>
               <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">{{ mem(cur(l.cardIndex)!.dedicatedUsed, cur(l.cardIndex)!.dedicatedTotal) }}</span></div>
@@ -146,7 +145,10 @@ function posClass(x: -1 | 0 | 1): string {
             </div>
           </template>
           <template v-else>
-            <!-- 首帧数据到达前：四格 "…"（标题行已移到舞台级显示 "…"），无圆点 -->
+            <!-- 首帧数据到达前：标题与四格 "…"（层内占位），无圆点 -->
+            <div class="gpu-title-row">
+              <span class="gpu-title">…</span>
+            </div>
             <div class="gpu-grid">
               <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">…</span></div>
               <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">…</span></div>

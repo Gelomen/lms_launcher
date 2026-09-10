@@ -31,6 +31,11 @@ function cellTexts(w: any): string[] {
 function activeDot(w: any): number {
   return w.findAll('.dot').findIndex((d: any) => d.classes().includes('dot--active'));
 }
+// 层内标题（用户 2026-09-11：标题随层滑动，不再置于舞台级立即切换）：取第 i 层内的 .gpu-title。
+// 动画期间目标恒在 1 层（槽位不变量），故目标卡标题在 layerTitle(w,1)。
+function layerTitle(w: any, i: number): string {
+  return w.findAll('.gpu-layer')[i].find('.gpu-title').text();
+}
 // 跨浏览器帧等待：滑动帧是 setTimeout(0) 宏任务（真实 Chromium 在定位帧绘制后才执行）。
 // happy-dom 无绘制概念，纯 nextTick 微任务级联不会让出事件循环、跨不了帧，必须用真实小等待观测滑动帧。
 const waitFrame = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
@@ -125,7 +130,7 @@ describe('GpuModule 轮播（模运算绕回）', () => {
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(1);
-    expect(w.find('.gpu-title').text()).toBe('Microsoft Basic Render Driver');
+    expect(layerTitle(w, 1)).toBe('Microsoft Basic Render Driver'); // 目标卡标题在目标层（1 层），随层滑入
     await w.find('.gpu-nav-btn--left').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(0);
@@ -148,7 +153,7 @@ describe('GpuModule 轮播（模运算绕回）', () => {
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(0);
-    expect(w.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
+    expect(layerTitle(w, 1)).toBe('NVIDIA GeForce RTX 4090'); // 回绕目标卡标题在目标层（1 层）
     // 0 → 2（‹ 回绕）
     await w.find('.gpu-nav-btn--left').trigger('click');
     await nextTick(); await nextTick();
@@ -237,7 +242,7 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(2);
-    expect(w.find('.gpu-title').text()).toBe('AMD Radeon RX 7900 XTX');
+    expect(layerTitle(w, 1)).toBe('AMD Radeon RX 7900 XTX'); // 目标卡标题在目标层（1 层）
     // 归位后继续滑动到 2：跨滑动帧后只有一个可见层且在 gpu-pos-0
     await waitFrame();
     const visible = w.findAll('.gpu-layer:not(.gpu-layer--off)');
