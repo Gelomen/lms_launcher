@@ -721,7 +721,7 @@ describe('App GPU card mount', () => {
     expect(gridItems[1].querySelector('.module-template')).not.toBeNull();
     const gpuEl = gridItems[2].querySelector('.module-gpu') as HTMLElement;
     expect(gpuEl).not.toBeNull();
-    expect(gpuEl.querySelector('h2')!.textContent).toBe('GPU 信息');
+    expect(gpuEl.querySelector('h2')).toBeNull(); // 卡片 h2「GPU 信息」已删除（用户 2026-09-10：卡名上位到原 h2 行=层顶行）
     // 首帧未到达：占位与数据态位置结构一致（用户 2026-09-10 指定）——标题占位 "–"、四格占位、‹ › 禁用，无圆点
     expect(gpuEl.querySelector('.gpu-title')!.textContent).toBe('–');
     // 只查可见层（两层结构：当前层 0 + 隐藏备用层 1，见 GpuModule 槽位不变量）

@@ -38,7 +38,9 @@
   （.gpu-title text-align:center、.gpu-cell text-align:center）
 - 后续同轮微调（2026-09-10）：标签「利用率」→「GPU 利用率」；四格顺序调整为
   专用 / 共享 / GPU 内存（合计）/ GPU 利用率（2×2 行优先，spec §1 同步）；
-  列距 12→24px（利用率↔专用 间距加大）
+  列距 12→24px（利用率↔专用 间距加大）；卡片 h2「GPU 信息」删除，
+  卡名行（层内标题行）上移到层顶行=原 h2 所在行（.gpu-title-row flex:0 0 auto、
+  .gpu-grid flex:1 + align-content:center 四格剩余空间垂直居中），卡名仍随层滑动、仍左右居中
 - 圆点仍 v-if="gpus"（卡数未知不渲染）；圆点行固定占舞台底部 20px、层内容
   在其上方垂直居中（.gpu-layer bottom:20px），圆点从无到有不推动四格位置
 - 单卡机代价：内容区比原实现永久窄 64px（无按钮的 32px 空边），换取全部

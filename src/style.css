@@ -536,7 +536,7 @@ body {
 .gpu-stage { position: relative; min-height: 150px; flex: 1; }
 .gpu-layer {
   position: absolute; top: 0; left: 0; right: 0; bottom: 20px;
-  display: flex; flex-direction: column; justify-content: center; /* 内容（标题行+四格）舞台内垂直居中 */
+  display: flex; flex-direction: column; /* 层顶行 = 卡名（原 h2 行），四格在剩余空间垂直居中（用户 2026-09-10） */
   transition: transform 400ms ease-out; /* 原 200ms 的 0.5 倍速（用户 2026-09-11：200/0.5=400ms） */
   will-change: transform;
 }
@@ -549,7 +549,10 @@ body {
 .gpu-pos-0 { transform: translateX(0); }
 .gpu-pos-l { transform: translateX(calc(-100% - 2 * (32px + var(--card-pad)))); }
 .gpu-pos-r { transform: translateX(calc(100% + 2 * (32px + var(--card-pad)))); }
-.gpu-title-row { margin-bottom: 8px; }
+/* 卡名行 = 层顶行（原卡片 h2「GPU 信息」所在行，用户 2026-09-10 删除 h2 后卡名上位）；
+   四格在剩余空间内垂直居中（.gpu-grid flex:1 + align-content:center） */
+.gpu-title-row { flex: 0 0 auto; margin-bottom: 8px; }
+.gpu-grid { flex: 1; align-content: center; }
 .gpu-title {
   display: block; font-size: var(--fs-body); font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

@@ -46,7 +46,7 @@ describe('GpuModule 首帧与数据', () => {
     mockLms();
     const w = mount(GpuModule);
     await flush();
-    expect(w.find('h2').text()).toBe('GPU 信息');
+    expect(w.find('h2').exists()).toBe(false); // 卡片 h2「GPU 信息」已删除（用户 2026-09-10：卡名上位到原 h2 行=层顶行）
     expect(w.find('.gpu-title').text()).toBe('–'); // 卡名（含占位 "–"）左右居中由 CSS 承担（.gpu-title text-align:center，2026-09-10）
     expect(cellTexts(w)).toEqual(['– / –', '– / –', '– / –', '–']); // 专用 / 共享 / 合计 / GPU 利用率
     expect(w.findAll('.dot').length).toBe(0);

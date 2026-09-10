@@ -134,7 +134,6 @@ function posClass(x: -1 | 0 | 1): string {
 
 <template>
   <section class="module module-gpu">
-    <h2>GPU 信息</h2>
     <div class="gpu-body">
       <!-- ‹ 贴卡片左边缘、› 贴右边缘（左右各占一边，纵向居中，用户指定）；恒渲染（用户 2026-09-10：
            无论单卡/多卡/首帧，内容区结构恒统一，单卡与无数据时按钮禁用不可点击） -->
@@ -146,10 +145,10 @@ function posClass(x: -1 | 0 | 1): string {
           class="gpu-layer"
           :class="[posClass(l.x), { 'gpu-layer--off': !l.on, 'gpu-no-anim': l.noAnim }]"
         >
-          <!-- 标题行在层内（用户 2026-09-11：切卡时标题跟随层滑动，不立即切换）；
-               首帧（无数据）恒渲染占位（用户 2026-09-10：标题 "–"、利用率 "–"、内存格 "– / –"，
-               与数据态位置结构完全一致——内容区恒预留 32px 让位，见 .gpu-body）；
-               卡名恒左右居中（用户 2026-09-10：占位与数据态均与卡片居中，见 .gpu-title） -->
+          <!-- 标题行 = 层顶行（原卡片 h2「GPU 信息」所在行，用户 2026-09-10 删除 h2 后卡名上位）；
+               切卡时标题跟随层滑动（用户 2026-09-11），不立即切换；
+               首帧（无数据）恒渲染占位 "–"，与数据态位置结构完全一致——内容区恒预留 32px
+               让位（见 .gpu-body）；卡名恒左右居中（用户 2026-09-10，.gpu-title） -->
           <div class="gpu-title-row">
             <span class="gpu-title">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
           </div>
