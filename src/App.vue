@@ -324,7 +324,8 @@ function onExitClose(): void {
       </div>
       <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>
       <!-- 系统 GPU（2026-09 挪位）：模板卡片右侧的独立列，与模板卡顶对齐 -->
-      <div class="card"><GpuModule /></div>
+      <!-- card--gpu：裁切容器，切卡动画屏外层内容裁在卡片边框处（用户 2026-09-10 指定） -->
+      <div class="card card--gpu"><GpuModule /></div>
     </section>
     <section class="log-area">
       <LogPanel :buckets="logBuckets" @clear="onLogClear" />

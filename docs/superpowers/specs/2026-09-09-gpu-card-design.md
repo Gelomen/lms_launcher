@@ -133,6 +133,7 @@ export interface GpuStats {
 
 - 复用 .card 容器；内部新增 scoped 类：.gpu-title-row、.gpu-nav-btn / .gpu-nav-btn--left / .gpu-nav-btn--right、.gpu-grid、.gpu-dots、.dot / .dot--active
 - 圆点 8px，实心 fill: var(--gray-...)（取现有调色板变量）；空心为同色 1.5px 描边、透明填充
+- 裁切容器 = GPU 卡的 .card（App.vue 给该类加 .card--gpu，overflow:hidden）：滑动动画期间 ±100% 屏外层的四格内容裁在**卡片边框**处（而非内容区）（用户 2026-09-10 两轮指定，见 docs/superpowers/changes/2026-09-10-gpu-slide-overflow-fix.md）
 
 ## 6. 不做的事（YAGNI）
 

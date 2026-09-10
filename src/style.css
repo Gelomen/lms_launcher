@@ -99,6 +99,10 @@ body {
   padding: var(--card-pad);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); /* 极浅阴影 */
 }
+/* GPU 卡片裁切容器：overflow:hidden 让切卡动画的屏外层裁在卡片边框处（用户 2026-09-10 指定）；
+   圆角继承 --radius-card，滑入内容在角部也被圆角裁掉 */
+.card--gpu { overflow: hidden; }
+
 /* ---- 按钮 ---- */
 .btn {
   border-radius: var(--radius-btn);
@@ -506,6 +510,8 @@ body {
 .update-pill--busy { background: #C4B5FD; color: #fff; cursor: pointer; }
 /* ---- GPU 显存卡片（spec 2026-09-09-gpu-card-design §5.3）---- */
 /* 卡片左右边缘各一个 ‹ ›（多卡）；有按钮时内容区左右各让出按钮宽度，不与内容重叠 */
+/* 裁切边界（用户指定 2026-09-10）：滑动动画的屏外层内容裁在**卡片边框**处（蓝线），
+   由 .card--gpu（App.vue 给 GPU 卡加类，overflow:hidden）承担；舞台自身不裁切 */
 /* 卡片内容上下居中（用户指定 2026-09）：section→body→stage 逐层 flex 列拉伸，
    层内容在舞台内垂直居中——四格（利用率/专用/GPU 内存/共享）不再顶住卡片标题 */
 .module-gpu { height: 100%; display: flex; flex-direction: column; } /* 填满 .card（grid 拉伸到同行最高） */
@@ -523,6 +529,8 @@ body {
 .gpu-nav-btn--right { right: 0; }
 /* 舞台：两层绝对定位滑动 + 底部圆点行（20px 高，层让出底部 20px）；
    flex:1 撑满 body 剩余高度，卡片被同行拉高时内容随之垂直居中 */
+/* 舞台自身不裁切：裁切上移到 .card--gpu（App.vue 给 GPU 卡的 .card 加该类，overflow:hidden），
+   这样 ±100% 屏外层的层内容裁在卡片边框处而非内容区（用户 2026-09-10 指定） */
 .gpu-stage { position: relative; min-height: 150px; flex: 1; }
 .gpu-layer {
   position: absolute; top: 0; left: 0; right: 0; bottom: 20px;
