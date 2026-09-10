@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { config } from '@fortawesome/fontawesome-svg-core';
-import { faChevronLeft, faChevronRight } from '@fortawesome/free-regular-svg-icons'; // chevron 无 fat 样式，优先 regular（用户 2026-09-10）
+import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons'; // chevron 仅存在于 solid 集（regular 集无此图标，FA Free 事实，非风格选择）
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { onGpuStats, type GpuStats } from '../ipc';
 
 config.autoAddCss = false;
-// 项目惯例命名（键值即 IconDefinition，前缀不具语义）；chevron-left/right 来自 free-regular
+// 项目惯例命名（键值即 IconDefinition，前缀不具语义）；chevron-left/right 来自 free-solid
 const byPrefixAndName = { fat: { 'chevron-left': faChevronLeft, 'chevron-right': faChevronRight } };
 
 // 模块 5 · 系统 GPU 显存卡片（spec 2026-09-09-gpu-card-design §5）：
