@@ -1,7 +1,7 @@
 # GPU 显存卡片 设计规格
 
-日期：2026-09-09
-状态：待用户审查
+日期：2026-09-09（2026-09-10 修订 §2.2/§8：专用上限改 NVML，精确对齐任务管理器）
+状态：已实现（2026-09-09 通过审查并落地；2026-09-10 修订专用上限数据源）
 
 ## 1. 目标
 
@@ -33,25 +33,29 @@
 - LUID 大小写不统一（见过 0x0000EDFF 与 0x0000edff），匹配前统一转小写
 - 属性/计数器名恒为英文，不受系统语言影响
 
-### 2.2 静态层（启动时一次，DXGI）
+### 2.2 静态层（启动时一次，DXGI 枚举 + NVML 专用上限）
 
-专用/共享**上限**没有公开文档化的标准接口（任务管理器内部用 D3DKMT，未逆向成功——D3DKMTQueryVideoMemoryInfo 参数校验在本机失败 0xC000000D，且函数表按名导出需 PE 解析，路径脆弱，放弃）。最终选 **DXGI**，一次调用同时拿到 LUID + 卡名 + 上限，天然解决多卡关联：
+专用/共享**上限**没有公开文档化的标准接口（任务管理器内部用 D3DKMT，未逆向成功——D3DKMTQueryVideoMemoryInfo 参数校验在本机失败 0xC000000D，且函数表按名导出需 PE 解析，路径脆弱，放弃；2026-09-10 用正确结构体布局重验仍失败，维持放弃结论）。**DXGI** 负责一次调用拿到 LUID + 卡名 + 共享上限（天然解决多卡关联）；**专用上限**额外从 **NVML**（`nvml.dll`，`nvmlDeviceGetMemoryInfo.Total`）取值——它与任务管理器 VidMm 的 budget 同源（4090 实测两者均为 25757220864 B），而 DXGI `DedicatedVideoMemory` 是扣掉驱动保留区后的可分配量（少 ~450 MB），是原 23.6 vs 24.0 偏差的根因（变更见 `docs/superpowers/changes/2026-09-10-gpu-dedicated-total-nvml.md`）：
+
+- 专用上限匹配：NVML 卡名（`nvmlDeviceGetName`，ASCII）与 DXGI 卡名（`Description`）`Trim()` 后精确匹配；DXGI 专用值为 0（软件渲染器等）且 NVML 无同名卡时也回退 0，不误套
+- 跨厂商：AMD/Intel 机器无 `nvml.dll`（或 NVML 初始化失败）→ 专用上限自动回退 DXGI 值，共享上限恒取 DXGI，无厂商分支
+- NVML 仅参与静态层（启动一次），不引入轮询开销
 
 - CreateDXGIFactory1（IID 770aae78-f26f-4dba-a829-253c83d1b387 = IDXGIFactory1）→ EnumAdapters1（factory vtable slot 12）逐卡枚举 → IDXGIAdapter::GetDesc（slot 8）
 - DXGI_ADAPTER_DESC 真实布局（304 字节，字段类型猜错会越界崩溃，已踩坑验证）：WCHAR Description[128]、UINT VendorId/DeviceId/SubSysId/Revision、SIZE_T(8 字节) DedicatedVideoMemory/DedicatedSystemMemory/SharedSystemMemory、LUID AdapterLuid
 - 返回：卡名（英文全称）、专用上限、共享上限、LUID
 
-实测输出（开发机）：
+实测输出（开发机，2026-09-10 更新；LUID 随机器/驱动变化，仅示例）：
 
 | LUID | 卡名 | 专用上限 | 共享上限 |
 |---|---|---|---|
-| 0x0000edff | NVIDIA GeForce RTX 4090 | 25310527488 B（23.57 GiB） | 51208310784 B（47.7 GiB） |
-| 0x00010f23 | Microsoft Basic Render Driver | 0 | 51208310784 B |
+| 0x00010e4e | NVIDIA GeForce RTX 4090 | 25757220864 B（24.0 GiB，NVML） | 51208310784 B（47.7 GiB，DXGI） |
+| 0x00012919 | Microsoft Basic Render Driver | 0（DXGI，NVML 无同名卡） | 51208310784 B |
 
 - 跨厂商：NVIDIA/AMD/Intel 通用（VendorId 区分：0x10DE / 0x1002 / 0x8086），无厂商分支
 - 上限为静态值，启动查一次并缓存；动态层 LUID 集合与静态层不一致时（热插拔，罕见）重查一次（限频 30 秒）
 - 容错：DXGI 查询失败时，卡名回退 "GPU 序号"、上限回退 0（UI 显示 "–"），动态数据照常
-- 已知偏差：DXGI 专用上限比任务管理器显示值低（4090：23.57 vs 24.0，驱动保留区所致），验收口径见 §8
+- 专用上限取 NVML（VidMm budget 同源）→ 4090 与任务管理器逐位一致（24.0）；无 NVML 的机器回退 DXGI 值（仍比任务管理器低 ~450 MB 驱动保留区），验收口径见 §8
 
 ### 2.3 合并规则（跨机器通用性）
 
@@ -157,6 +161,6 @@ export interface GpuStats {
 - 开发机（双 LUID）npm run dev 启动：卡片显示两颗卡、可轮播切换
 - 与任务管理器「性能 → GPU」页逐字段对照：
   - 利用率、专用/共享/合计的 used 值：一致（±1 位小数舍入）
-  - 专用/共享 total 值：≤ 0.5 GB 偏差（已知：DXGI 上限比任务管理器低，4090 为 23.6 vs 24.0）
+  - 专用/共享 total 值：与任务管理器一致（专用上限取 NVML = VidMm budget 同源，4090 实测 24.0 逐位一致；无 NVML 的机器回退 DXGI 值，容差 ≤ 0.5 GB 驱动保留区偏差）
 - 单卡机器逻辑由单测覆盖（mergeGpuStats 单卡用例 + 组件单卡用例）
 - npm test 全绿；npm run build 通过
