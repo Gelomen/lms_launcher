@@ -31,6 +31,20 @@ function mem(used: number, total: number): string {
   return u + ' / ' + t + ' GB';
 }
 
+// 首帧（数据未到达）占位（用户 2026-09-10：占位与数据态位置结构必须一致）：
+// 利用率显示 '–'，三个内存格显示 '– / –'（mem(0,0) 自然产出，无单位）。
+function util(i: number): string {
+  const g = cur(i);
+  return g ? g.utilization + ' %' : '–';
+}
+function memOf(i: number, kind: 'dedicated' | 'shared' | 'sum'): string {
+  const g = cur(i);
+  if (!g) return '– / –';
+  if (kind === 'dedicated') return mem(g.dedicatedUsed, g.dedicatedTotal);
+  if (kind === 'shared') return mem(g.sharedUsed, g.sharedTotal);
+  return mem(g.dedicatedUsed + g.sharedUsed, g.dedicatedTotal + g.sharedTotal); // 合计行（spec §3）
+}
+
 // 轮播层（spec §5.2）：两层绝对定位滑动。x: 0=中心 / 1=右侧屏外停靠位 / -1=左侧屏外停靠位
 // （停靠位 = ±(100% + 96px 固定间距)，见 style.css .gpu-pos-l/r）。
 // 槽位不变量：settle 后（静止态）当前卡恒在 0 层；点击动画期间目标层走 1 层（dir=+1 时从右滑入、
@@ -121,9 +135,10 @@ function posClass(x: -1 | 0 | 1): string {
 <template>
   <section class="module module-gpu">
     <h2>GPU 信息</h2>
-    <div class="gpu-body" :class="{ 'gpu-body--nav': multi }">
-      <!-- ‹ 贴卡片左边缘、› 贴右边缘（左右各占一边，纵向居中，用户指定）；单卡不渲染 -->
-      <button v-if="multi" type="button" class="gpu-nav-btn gpu-nav-btn--left" aria-label="上一张卡" @click="go(-1)">‹</button>
+    <div class="gpu-body">
+      <!-- ‹ 贴卡片左边缘、› 贴右边缘（左右各占一边，纵向居中，用户指定）；恒渲染（用户 2026-09-10：
+           无论单卡/多卡/首帧，内容区结构恒统一，单卡与无数据时按钮禁用不可点击） -->
+      <button type="button" class="gpu-nav-btn gpu-nav-btn--left" :disabled="!multi" aria-label="上一张卡" @click="go(-1)">‹</button>
       <div class="gpu-stage">
         <div
           v-for="(l, i) in layers"
@@ -131,29 +146,26 @@ function posClass(x: -1 | 0 | 1): string {
           class="gpu-layer"
           :class="[posClass(l.x), { 'gpu-layer--off': !l.on, 'gpu-no-anim': l.noAnim }]"
         >
-          <template v-if="cur(l.cardIndex)">
-            <!-- 标题行在层内（用户 2026-09-11：切卡时标题跟随层滑动，不立即切换） -->
-            <div class="gpu-title-row">
-              <span class="gpu-title">{{ cur(l.cardIndex)!.name }}</span>
-            </div>
-            <div class="gpu-grid">
-              <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">{{ cur(l.cardIndex)!.utilization }} %</span></div>
-              <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">{{ mem(cur(l.cardIndex)!.dedicatedUsed, cur(l.cardIndex)!.dedicatedTotal) }}</span></div>
-              <!-- 合计行 = 专用 + 共享（组件层计算，spec §3） -->
-              <div class="gpu-cell"><span class="label">GPU 内存</span><span class="gpu-val">{{ mem(cur(l.cardIndex)!.dedicatedUsed + cur(l.cardIndex)!.sharedUsed, cur(l.cardIndex)!.dedicatedTotal + cur(l.cardIndex)!.sharedTotal) }}</span></div>
-              <div class="gpu-cell"><span class="label">共享 GPU 内存</span><span class="gpu-val">{{ mem(cur(l.cardIndex)!.sharedUsed, cur(l.cardIndex)!.sharedTotal) }}</span></div>
-            </div>
-          </template>
-          <!-- 首帧数据到达前层内不渲染（用户 2026-09-10 指定：去掉 "…" 占位——
-               占位态尚不知卡数，无法预知 .gpu-body--nav 是否生效，数据到达且判定多卡后
-               内容区左右收窄 32px，标签/数值跳位。改为留空，布局唯一，无跳位。） -->
+          <!-- 标题行在层内（用户 2026-09-11：切卡时标题跟随层滑动，不立即切换）；
+               首帧（无数据）恒渲染占位（用户 2026-09-10：标题 "–"、利用率 "–"、内存格 "– / –"，
+               与数据态位置结构完全一致——内容区恒预留 32px 让位，见 .gpu-body） -->
+          <div class="gpu-title-row">
+            <span class="gpu-title">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
+          </div>
+          <div class="gpu-grid">
+            <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">{{ util(l.cardIndex) }}</span></div>
+            <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'dedicated') }}</span></div>
+            <!-- 合计行 = 专用 + 共享（组件层计算，spec §3） -->
+            <div class="gpu-cell"><span class="label">GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'sum') }}</span></div>
+            <div class="gpu-cell"><span class="label">共享 GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'shared') }}</span></div>
+          </div>
         </div>
         <!-- 底部指示点：N 卡 = N 点，当前实心灰、其余空心描边；纯展示不可点击（切换只走 ‹ ›） -->
         <div v-if="gpus" class="gpu-dots">
           <span v-for="(g, i) in gpus" :key="g.luid" class="dot" :class="{ 'dot--active': i === index }" />
         </div>
       </div>
-      <button v-if="multi" type="button" class="gpu-nav-btn gpu-nav-btn--right" aria-label="下一张卡" @click="go(1)">›</button>
+      <button type="button" class="gpu-nav-btn gpu-nav-btn--right" :disabled="!multi" aria-label="下一张卡" @click="go(1)">›</button>
     </div>
   </section>
 </template>

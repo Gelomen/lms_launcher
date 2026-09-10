@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// GpuModule 单测（spec 2026-09-09-gpu-card-design §7；2026-09-10 首帧占位改为留空，
-// 见 docs/superpowers/changes/2026-09-10-gpu-first-frame-no-placeholder.md）：
-// 首帧留空 / 数据到达四格 + 合计行 / 单卡无按钮单点实心 / 多卡 N 点当前实心其余空心 / 模运算绕回。
+// GpuModule 单测（spec 2026-09-09-gpu-card-design §7；2026-09-10 首帧占位恢复——占位与数据态
+// 位置结构恒一致，内容区恒预留 32px 让位、‹ › 恒渲染，见 docs/superpowers/changes/2026-09-10-gpu-first-frame-placeholder.md）：
+// 首帧占位（– / – / –）/ 数据到达四格 + 合计行 / 单卡按钮禁用单点实心 / 多卡 N 点当前实心其余空心 / 模运算绕回。
 // formatGb fixture 与 src-main/gpu-stats.test.ts 同一组数值（两份实现防漂移）。
 import { describe, it, expect } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
@@ -42,15 +42,21 @@ function layerTitle(w: any, i: number): string {
 const waitFrame = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
 
 describe('GpuModule 首帧与数据', () => {
-  it('首帧未到达：卡片主体留空（无标题、无四格、无圆点、无 ‹ › 按钮）——用户 2026-09-10 指定去掉 "…" 占位（布局唯一，杜绝多卡判定后 32px 让位跳位）', async () => {
+  it('首帧未到达：占位与数据态位置结构一致（标题 "–"、利用率 "–"、内存格 "– / –"、‹ › 渲染但禁用、无圆点）——用户 2026-09-10 指定', async () => {
     mockLms();
     const w = mount(GpuModule);
     await flush();
     expect(w.find('h2').text()).toBe('GPU 信息');
-    expect(w.find('.gpu-title').exists()).toBe(false);
-    expect(cellTexts(w)).toEqual([]);
+    expect(w.find('.gpu-title').text()).toBe('–');
+    expect(cellTexts(w)).toEqual(['–', '– / –', '– / –', '– / –']);
     expect(w.findAll('.dot').length).toBe(0);
-    expect(w.findAll('.gpu-nav-btn').length).toBe(0);
+    // ‹ › 恒渲染（内容区恒预留 32px 让位），首帧不可点击
+    const left = w.find('.gpu-nav-btn--left');
+    const right = w.find('.gpu-nav-btn--right');
+    expect(left.exists()).toBe(true);
+    expect(right.exists()).toBe(true);
+    expect(left.attributes('disabled')).toBeDefined();
+    expect(right.attributes('disabled')).toBeDefined();
     w.unmount();
   });
 
@@ -88,13 +94,18 @@ describe('GpuModule 首帧与数据', () => {
 });
 
 describe('GpuModule 圆点与按钮', () => {
-  it('单卡：无 ‹ › 按钮，1 个实心点', async () => {
+  it('单卡：‹ › 渲染但禁用（不可点击），1 个实心点', async () => {
     mockLms();
     const w = mount(GpuModule);
     await flush();
     fire([GPU_A]);
     await flush();
-    expect(w.findAll('.gpu-nav-btn').length).toBe(0);
+    const left = w.find('.gpu-nav-btn--left');
+    const right = w.find('.gpu-nav-btn--right');
+    expect(left.exists()).toBe(true);
+    expect(right.exists()).toBe(true);
+    expect(left.attributes('disabled')).toBeDefined();
+    expect(right.attributes('disabled')).toBeDefined();
     expect(w.findAll('.dot').length).toBe(1);
     expect(w.findAll('.dot')[0].classes()).toContain('dot--active');
     w.unmount();

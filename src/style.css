@@ -515,8 +515,7 @@ body {
 /* 卡片内容上下居中（用户指定 2026-09）：section→body→stage 逐层 flex 列拉伸，
    层内容在舞台内垂直居中——四格（利用率/专用/GPU 内存/共享）不再顶住卡片标题 */
 .module-gpu { height: 100%; display: flex; flex-direction: column; } /* 填满 .card（grid 拉伸到同行最高） */
-.gpu-body { position: relative; flex: 1; display: flex; flex-direction: column; }
-.gpu-body--nav { padding: 0 32px; }
+.gpu-body { position: relative; flex: 1; display: flex; flex-direction: column; padding: 0 32px; /* 恒预留 32px 按钮让位（用户 2026-09-10：首帧占位与数据态位置结构一致，‹ › 恒渲染，单卡/无数据时禁用） */ }
 .gpu-nav-btn {
   position: absolute; top: 50%; transform: translateY(-50%);
   width: 26px; height: 26px; padding: 0;
@@ -525,6 +524,9 @@ body {
   color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer;
 }
 .gpu-nav-btn:hover { color: var(--text); background: #F6F7F8; }
+/* 禁用态（首帧无数据 / 单卡）：灰化不可点击（与 .icon-btn:disabled 同语言） */
+.gpu-nav-btn:disabled { color: #C7CCD4; cursor: not-allowed; }
+.gpu-nav-btn:disabled:hover { color: #C7CCD4; background: transparent; }
 .gpu-nav-btn--left { left: 0; }
 .gpu-nav-btn--right { right: 0; }
 /* 舞台：两层绝对定位滑动 + 底部圆点行（20px 高，层让出底部 20px）；
@@ -541,7 +543,7 @@ body {
 .gpu-layer--off { visibility: hidden; }
 .gpu-no-anim { transition: none; }
 /* 相邻卡片的固定间距（用户 2026-09-11 指定）= 2 × 内容边缘到卡片边缘的距离：
-   多卡时内容区左右各让出 --gpu-body--nav 的 32px，加 .card 的 --card-pad 16px = 48px，
+   内容区左右各让出 .gpu-body 恒定的 32px，加 .card 的 --card-pad 16px = 48px，
    间距 = 96px。屏外层停靠在 100% + 间距处而非紧贴舞台边缘，切换时滑入/滑出
    全程保持固定间隔，settle 隐藏离场层时不再有"紧贴后突然消失"的跳变 */
 .gpu-pos-0 { transform: translateX(0); }
