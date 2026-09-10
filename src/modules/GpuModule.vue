@@ -42,7 +42,7 @@ const layers = ref<GpuLayer[]>([
 ]);
 
 const animating = ref(false);
-const SETTLE_MS = 306; // 286ms 过渡（原 200ms 的 0.7 倍速，用户 2026-09-11）+ 20ms 余量，自滑动帧执行起算（定位帧可能迟到 ~16ms）
+const SETTLE_MS = 440; // 400ms 过渡（原 200ms 的 0.5 倍速，用户 2026-09-11）+ 40ms 余量，自滑动帧执行起算（定位帧可能迟到 ~16ms）
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
 let frameTimer: ReturnType<typeof setTimeout> | null = null; // 待执行的滑动帧（setTimeout 宏任务）
 
@@ -78,7 +78,7 @@ function go(dir: 1 | -1): void {
   // 用 setTimeout(0) 宏任务推迟到绘制之后执行（1 层 → 0，0 层 → 反方向屏外），
   // 目标卡才可见地 100%→0 滑入（spec §5.2）。纯 nextTick 微任务链会在同一次
   // 绘制前排空，两帧合并 → 目标卡直接弹出（审查重要#1）。settle 在滑动帧回调内
-  // 挂出：306ms 自滑动开始起算，保证在过渡结束之后归位——当前卡归回 0 层、
+  // 挂出：440ms 自滑动开始起算，保证在过渡结束之后归位——当前卡归回 0 层、
   // 闲置 1 层隐藏复位。数据刷新不触发本路径（只有点击触发）。
   frameTimer = setTimeout(() => {
     frameTimer = null;

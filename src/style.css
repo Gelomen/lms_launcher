@@ -535,7 +535,7 @@ body {
 .gpu-layer {
   position: absolute; top: 0; left: 0; right: 0; bottom: 20px;
   display: flex; flex-direction: column; justify-content: center; /* 内容（标题行+四格）舞台内垂直居中 */
-  transition: transform 286ms ease-out; /* 原 200ms 的 0.7 倍速（用户 2026-09-11：200/0.7≈286ms，先试慢速） */
+  transition: transform 400ms ease-out; /* 原 200ms 的 0.5 倍速（用户 2026-09-11：200/0.5=400ms） */
   will-change: transform;
 }
 .gpu-layer--off { visibility: hidden; }
