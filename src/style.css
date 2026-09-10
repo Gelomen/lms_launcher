@@ -555,7 +555,7 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   text-align: center; /* 卡名恒左右居中（用户 2026-09-10：占位 "–" 与数据态卡名均与卡片几何中心对齐——内容区让位对称 32px + 16px） */
 }
-.gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; /* 列距 12→24（用户 2026-09-10：增加左右两列间距） */ }
 .gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: center; /* 标签与数值恒左右居中对齐（用户 2026-09-10） */ }
 .gpu-val { font-size: var(--fs-body); font-weight: 600; color: var(--text); white-space: nowrap; }
 .gpu-dots {
