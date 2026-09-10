@@ -148,9 +148,10 @@ function posClass(x: -1 | 0 | 1): string {
         >
           <!-- 标题行在层内（用户 2026-09-11：切卡时标题跟随层滑动，不立即切换）；
                首帧（无数据）恒渲染占位（用户 2026-09-10：标题 "–"、利用率 "–"、内存格 "– / –"，
-               与数据态位置结构完全一致——内容区恒预留 32px 让位，见 .gpu-body） -->
+               与数据态位置结构完全一致——内容区恒预留 32px 让位，见 .gpu-body）；
+               卡名恒左右居中（用户 2026-09-10：占位与数据态均与卡片居中，见 .gpu-title） -->
           <div class="gpu-title-row">
-            <span class="gpu-title" :class="{ 'gpu-title--ph': !cur(l.cardIndex) }">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
+            <span class="gpu-title">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
           </div>
           <div class="gpu-grid">
             <div class="gpu-cell"><span class="label">利用率</span><span class="gpu-val">{{ util(l.cardIndex) }}</span></div>

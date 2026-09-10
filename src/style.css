@@ -553,12 +553,10 @@ body {
 .gpu-title {
   display: block; font-size: var(--fs-body); font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: center; /* 卡名恒左右居中（用户 2026-09-10：占位 "–" 与数据态卡名均与卡片几何中心对齐——内容区让位对称 32px + 16px） */
 }
-/* 首帧占位破折号左右居中（用户 2026-09-10）：内容区两侧让位对称（32px + 16px），
-   居中对齐内容区即卡片几何中心；数据态卡名保持左对齐不变 */
-.gpu-title--ph { text-align: center; }
 .gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
-.gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: center; /* 标签与数值恒左右居中对齐（用户 2026-09-10） */ }
 .gpu-val { font-size: var(--fs-body); font-weight: 600; color: var(--text); white-space: nowrap; }
 .gpu-dots {
   position: absolute; bottom: 0; left: 0; right: 0; height: 20px;
