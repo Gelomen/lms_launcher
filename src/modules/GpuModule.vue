@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { config } from '@fortawesome/fontawesome-svg-core';
 import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons'; // chevron 仅存在于 solid 集（regular 集无此图标，FA Free 事实，非风格选择）
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
@@ -117,6 +117,7 @@ function go(dir: 1 | -1): void {
       layers.value[1].x = 0;
       layers.value[1].noAnim = true;
       settleTimer = null;
+      nextTick(() => drawAllCharts());
     }, SETTLE_MS);
   }, 0);
 }
@@ -152,15 +153,85 @@ function updateGpuHistory(gpus: GpuStats[]): void {
   }
 }
 
+function drawChart(canvas: HTMLCanvasElement, history: number[]): void {
+  const dpr = window.devicePixelRatio || 1;
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+  
+  if (history.length < 2) return;
+  
+  const stepX = width / (BUFFER_SIZE - 1);
+  
+  // Fill area
+  ctx.beginPath();
+  ctx.moveTo(0, height);
+  for (let i = 0; i < history.length; i++) {
+    const x = i * stepX;
+    const y = height - (history[i] / 100) * height;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo((history.length - 1) * stepX, height);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(124, 77, 255, 0.25)';
+  ctx.fill();
+  
+  // Top line
+  ctx.beginPath();
+  for (let i = 0; i < history.length; i++) {
+    const x = i * stepX;
+    const y = height - (history[i] / 100) * height;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = 'rgba(124, 77, 255, 1)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawAllCharts(): void {
+  if (!gpus.value) return;
+  
+  for (const layer of layers.value) {
+    const layerIndex = layers.value.indexOf(layer);
+    const canvas = chartCanvases.get(layerIndex);
+    if (!canvas) continue;
+    
+    const gpu = gpus.value[layer.cardIndex];
+    if (!gpu) continue;
+    
+    const history = gpuHistory.get(gpu.luid) || [];
+    drawChart(canvas, history);
+  }
+}
+
+let resizeObserver: ResizeObserver | null = null;
+
 let unsub: (() => void) | null = null;
 onMounted(() => {
   unsub = onGpuStats((e) => {
     gpus.value = e.gpus as GpuStats[];
     updateGpuHistory(e.gpus as GpuStats[]);
-    // Drawing will be added in Task 4
+    nextTick(() => drawAllCharts());
+  });
+  
+  resizeObserver = new ResizeObserver(() => {
+    drawAllCharts();
+  });
+  document.querySelectorAll('.gpu-chart').forEach((el) => {
+    resizeObserver!.observe(el);
   });
 });
 onUnmounted(() => {
+  if (resizeObserver) resizeObserver.disconnect();
   if (unsub) unsub();
   if (frameTimer !== null) clearTimeout(frameTimer);
   if (settleTimer !== null) clearTimeout(settleTimer);
