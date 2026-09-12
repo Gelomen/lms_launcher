@@ -306,13 +306,21 @@ describe('GpuModule GPU memory usage chart', () => {
     // Access gpuHistory through component instance
     const gpuHistory = (w.vm as any).gpuHistory;
     expect(gpuHistory).toBeDefined();
-    expect(gpuHistory.get('test-gpu-1')).toEqual([50]);
+    // Pre-filled with 30 zeros, then 50 pushed (shifts first 0 off) → 29 zeros + 50
+    let hist = gpuHistory.get('test-gpu-1');
+    expect(hist).toHaveLength(30);
+    expect(hist[29]).toBe(50);
+    expect(hist.slice(0, 29)).toEqual(new Array(29).fill(0));
     
-    // Fire again with different value: history should grow
+    // Fire again with different value
     testGpu.utilization = 75;
     fire([testGpu]);
     await flush();
-    expect(gpuHistory.get('test-gpu-1')).toEqual([50, 75]);
+    hist = gpuHistory.get('test-gpu-1');
+    expect(hist).toHaveLength(30);
+    expect(hist[28]).toBe(50);
+    expect(hist[29]).toBe(75);
+    expect(hist.slice(0, 28)).toEqual(new Array(28).fill(0));
     
     w.unmount();
   });
@@ -364,7 +372,8 @@ describe('GpuModule GPU memory usage chart', () => {
     await flush();
     
     const gpuHistory = (w.vm as any).gpuHistory;
-    expect(gpuHistory.get('test-gpu-over')).toEqual([100]); // clamped to 100
+    const hist = gpuHistory.get('test-gpu-over');
+    expect(hist[29]).toBe(100); // clamped to 100
     
     w.unmount();
   });
@@ -388,8 +397,7 @@ describe('GpuModule GPU memory usage chart', () => {
     
     const gpuHistory = (w.vm as any).gpuHistory;
     const history = gpuHistory.get('test-gpu-zero');
-    // utilization is always tracked regardless of dedicatedTotal
-    expect(history).toEqual([42]);
+    expect(history[29]).toBe(42); // utilization is always tracked
     
     w.unmount();
   });

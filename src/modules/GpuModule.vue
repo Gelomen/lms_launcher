@@ -165,6 +165,16 @@ function drawChart(canvas: HTMLCanvasElement, history: number[]): void {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, width, height);
   
+  // X axis (bottom) and Y axis (left) in light gray
+  ctx.strokeStyle = '#E5E7EB';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, height - 0.5);
+  ctx.lineTo(width, height - 0.5);
+  ctx.moveTo(0.5, 0);
+  ctx.lineTo(0.5, height);
+  ctx.stroke();
+  
   if (history.length < 2) return;
   
   // 任务管理器风格：最新数据始终在最右侧 (x=width)，旧数据向左延伸
