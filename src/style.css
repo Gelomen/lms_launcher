@@ -575,10 +575,10 @@ body {
 .gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; /* 标签与数值左对齐（用户 2026-09-10 改回；卡名仍居中，见 .gpu-title） */ }
 .gpu-val { font-size: var(--fs-body); font-weight: 600; color: var(--text); white-space: nowrap; }
 .gpu-dots {
-  position: absolute; bottom: 0; left: 0; right: 0; height: 20px;
+  position: absolute; bottom: -10px; left: 0; right: 0; height: 20px;
   display: flex; align-items: center; justify-content: center; gap: 6px;
   padding-top: 4px;
-  padding-bottom: 8px;
+  padding-bottom: 13px;
 }
 /* 圆点 8px：当前 = 实心灰（--muted）；其余 = 同色 1.5px 描边、透明填充 */
 .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); background: transparent; }
