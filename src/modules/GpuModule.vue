@@ -140,7 +140,8 @@ const BUFFER_SIZE = 30;
 function updateGpuHistory(gpus: GpuStats[]): void {
   for (const g of gpus) {
     if (!gpuHistory.has(g.luid)) {
-      gpuHistory.set(g.luid, []);
+      // 初始填满 0，使图表立即占满整个时间轴（spec: 默认未获取数据时绘制 0）
+      gpuHistory.set(g.luid, new Array(BUFFER_SIZE).fill(0));
     }
     const history = gpuHistory.get(g.luid)!;
     history.push(Math.min(100, Math.max(0, g.utilization)));
