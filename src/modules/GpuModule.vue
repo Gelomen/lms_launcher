@@ -169,25 +169,30 @@ function drawChart(canvas: HTMLCanvasElement, history: number[]): void {
   
   if (history.length < 2) return;
   
+  // 任务管理器风格：最新数据始终在最右侧 (x=width)，旧数据向左延伸
+  // history[i]: i=0 最旧, i=n-1 最新
+  // 坐标映射：x = width - (n - 1 - i) * stepX
+  //   i=n-1(最新) → x=width(最右)；i=0(最旧) → x=width-(n-1)*stepX
   const stepX = width / (BUFFER_SIZE - 1);
+  const n = history.length;
   
-  // Fill area
+  // Fill area: 从最旧数据点底部开始，沿折线到最新，再闭合到最右底部
   ctx.beginPath();
-  ctx.moveTo(0, height);
-  for (let i = 0; i < history.length; i++) {
-    const x = i * stepX;
+  ctx.moveTo(width - (n - 1) * stepX, height);
+  for (let i = 0; i < n; i++) {
+    const x = width - (n - 1 - i) * stepX;
     const y = height - (history[i] / 100) * height;
     ctx.lineTo(x, y);
   }
-  ctx.lineTo((history.length - 1) * stepX, height);
+  ctx.lineTo(width, height);
   ctx.closePath();
   ctx.fillStyle = 'rgba(124, 77, 255, 0.25)';
   ctx.fill();
   
   // Top line
   ctx.beginPath();
-  for (let i = 0; i < history.length; i++) {
-    const x = i * stepX;
+  for (let i = 0; i < n; i++) {
+    const x = width - (n - 1 - i) * stepX;
     const y = height - (history[i] / 100) * height;
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
