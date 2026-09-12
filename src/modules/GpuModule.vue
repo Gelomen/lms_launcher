@@ -124,9 +124,41 @@ function go(dir: 1 | -1): void {
 // 卡数组长度变化（热插拔，罕见）：index 越界钳回 0
 watch(() => gpus.value?.length ?? 0, (n) => { if (index.value >= n) index.value = 0; });
 
+// Chart canvas references (indexed by layer index)
+const chartCanvases = new Map<number, HTMLCanvasElement>();
+function setChartCanvas(layerIndex: number, el: unknown): void {
+  if (el instanceof HTMLCanvasElement) {
+    chartCanvases.set(layerIndex, el);
+  }
+}
+
+// Per-GPU memory usage history (indexed by luid, max 30 points = 60 seconds)
+const gpuHistory = new Map<string, number[]>();
+const BUFFER_SIZE = 30;
+
+function updateGpuHistory(gpus: GpuStats[]): void {
+  for (const g of gpus) {
+    if (!gpuHistory.has(g.luid)) {
+      gpuHistory.set(g.luid, []);
+    }
+    const history = gpuHistory.get(g.luid)!;
+    if (g.dedicatedTotal > 0) {
+      const pct = (g.dedicatedUsed / g.dedicatedTotal) * 100;
+      history.push(Math.min(100, Math.max(0, pct)));
+      while (history.length > BUFFER_SIZE) {
+        history.shift();
+      }
+    }
+  }
+}
+
 let unsub: (() => void) | null = null;
 onMounted(() => {
-  unsub = onGpuStats((e) => { gpus.value = e.gpus as GpuStats[]; }); // 数据刷新不打断动画
+  unsub = onGpuStats((e) => {
+    gpus.value = e.gpus as GpuStats[];
+    updateGpuHistory(e.gpus as GpuStats[]);
+    // Drawing will be added in Task 4
+  });
 });
 onUnmounted(() => {
   if (unsub) unsub();
@@ -158,6 +190,9 @@ function posClass(x: -1 | 0 | 1): string {
                让位（见 .gpu-body）；卡名恒左右居中（用户 2026-09-10，.gpu-title） -->
           <div class="gpu-title-row">
             <span class="gpu-title">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
+          </div>
+          <div class="gpu-chart">
+            <canvas :ref="(el) => setChartCanvas(i, el)" />
           </div>
           <div class="gpu-grid">
             <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'dedicated') }}</span></div>
