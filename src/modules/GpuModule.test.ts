@@ -285,18 +285,18 @@ describe('GpuModule GPU memory usage chart', () => {
     w.unmount();
   });
 
-  it('gpuHistory tracks usage percentage correctly (used/total * 100, clamped 0-100)', async () => {
+  it('gpuHistory tracks GPU utilization correctly (clamped 0-100)', async () => {
     mockLms();
     const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     
-    // Fire with known values: 10GB used / 20GB total = 50%
+    // Fire with known utilization value: 50%
     const testGpu: GpuStats = {
       luid: 'test-gpu-1',
       name: 'Test GPU 1',
-      utilization: 0,
-      dedicatedUsed: 10 * GB,
-      dedicatedTotal: 20 * GB,
+      utilization: 50,
+      dedicatedUsed: 0,
+      dedicatedTotal: 0,
       sharedUsed: 0,
       sharedTotal: 0,
     };
@@ -308,10 +308,11 @@ describe('GpuModule GPU memory usage chart', () => {
     expect(gpuHistory).toBeDefined();
     expect(gpuHistory.get('test-gpu-1')).toEqual([50]);
     
-    // Fire again: history should grow
+    // Fire again with different value: history should grow
+    testGpu.utilization = 75;
     fire([testGpu]);
     await flush();
-    expect(gpuHistory.get('test-gpu-1')).toEqual([50, 50]);
+    expect(gpuHistory.get('test-gpu-1')).toEqual([50, 75]);
     
     w.unmount();
   });
@@ -344,18 +345,18 @@ describe('GpuModule GPU memory usage chart', () => {
     w.unmount();
   });
 
-  it('gpuHistory clamps percentage to 0-100 range', async () => {
+  it('gpuHistory clamps utilization to 0-100 range', async () => {
     mockLms();
     const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     
-    // Over-100% case: used > total (edge case)
+    // Over-100% case: utilization > 100 (edge case)
     const overGpu: GpuStats = {
       luid: 'test-gpu-over',
       name: 'Test GPU Over',
-      utilization: 0,
-      dedicatedUsed: 15 * GB,
-      dedicatedTotal: 10 * GB,
+      utilization: 150,
+      dedicatedUsed: 0,
+      dedicatedTotal: 0,
       sharedUsed: 0,
       sharedTotal: 0,
     };
@@ -368,16 +369,16 @@ describe('GpuModule GPU memory usage chart', () => {
     w.unmount();
   });
 
-  it('updateGpuHistory skips GPUs with dedicatedTotal = 0', async () => {
+  it('updateGpuHistory records utilization regardless of dedicatedTotal', async () => {
     mockLms();
     const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
     
-    // Fire with dedicatedTotal = 0 (like GPU_B fixture)
+    // Fire with dedicatedTotal = 0 but utilization present
     fire([{ 
       luid: 'test-gpu-zero', 
       name: 'Test GPU Zero', 
-      utilization: 0, 
+      utilization: 42, 
       dedicatedUsed: 0, 
       dedicatedTotal: 0, 
       sharedUsed: 1 * GB, 
@@ -387,8 +388,8 @@ describe('GpuModule GPU memory usage chart', () => {
     
     const gpuHistory = (w.vm as any).gpuHistory;
     const history = gpuHistory.get('test-gpu-zero');
-    // Should be undefined or empty since dedicatedTotal = 0
-    expect(history === undefined || history.length === 0).toBe(true);
+    // utilization is always tracked regardless of dedicatedTotal
+    expect(history).toEqual([42]);
     
     w.unmount();
   });

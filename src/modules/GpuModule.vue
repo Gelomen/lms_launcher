@@ -133,7 +133,7 @@ function setChartCanvas(layerIndex: number, el: unknown): void {
   }
 }
 
-// Per-GPU memory usage history (indexed by luid, max 30 points = 60 seconds)
+// Per-GPU utilization history (indexed by luid, max 30 points = 60 seconds)
 const gpuHistory = new Map<string, number[]>();
 const BUFFER_SIZE = 30;
 
@@ -143,12 +143,9 @@ function updateGpuHistory(gpus: GpuStats[]): void {
       gpuHistory.set(g.luid, []);
     }
     const history = gpuHistory.get(g.luid)!;
-    if (g.dedicatedTotal > 0) {
-      const pct = (g.dedicatedUsed / g.dedicatedTotal) * 100;
-      history.push(Math.min(100, Math.max(0, pct)));
-      while (history.length > BUFFER_SIZE) {
-        history.shift();
-      }
+    history.push(Math.min(100, Math.max(0, g.utilization)));
+    while (history.length > BUFFER_SIZE) {
+      history.shift();
     }
   }
 }
