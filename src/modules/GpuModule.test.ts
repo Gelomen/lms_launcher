@@ -265,3 +265,131 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     w.unmount();
   });
 });
+
+describe('GpuModule GPU memory usage chart', () => {
+  it('canvas elements render in each GPU layer after data arrives', async () => {
+    mockLms();
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
+    await flush();
+    fire([GPU_A, GPU_B]);
+    await flush();
+    // Each layer should have a canvas inside .gpu-chart
+    const layers = w.findAll('.gpu-layer');
+    expect(layers.length).toBe(2); // 2 layers always rendered
+    for (const layer of layers) {
+      const chart = layer.find('.gpu-chart');
+      expect(chart.exists()).toBe(true);
+      const canvas = chart.find('canvas');
+      expect(canvas.exists()).toBe(true);
+    }
+    w.unmount();
+  });
+
+  it('gpuHistory tracks usage percentage correctly (used/total * 100, clamped 0-100)', async () => {
+    mockLms();
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
+    await flush();
+    
+    // Fire with known values: 10GB used / 20GB total = 50%
+    const testGpu: GpuStats = {
+      luid: 'test-gpu-1',
+      name: 'Test GPU 1',
+      utilization: 0,
+      dedicatedUsed: 10 * GB,
+      dedicatedTotal: 20 * GB,
+      sharedUsed: 0,
+      sharedTotal: 0,
+    };
+    fire([testGpu]);
+    await flush();
+    
+    // Access gpuHistory through component instance
+    const gpuHistory = (w.vm as any).gpuHistory;
+    expect(gpuHistory).toBeDefined();
+    expect(gpuHistory.get('test-gpu-1')).toEqual([50]);
+    
+    // Fire again: history should grow
+    fire([testGpu]);
+    await flush();
+    expect(gpuHistory.get('test-gpu-1')).toEqual([50, 50]);
+    
+    w.unmount();
+  });
+
+  it('gpuHistory buffer does not exceed 30 entries', async () => {
+    mockLms();
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
+    await flush();
+    
+    const testGpu: GpuStats = {
+      luid: 'test-gpu-2',
+      name: 'Test GPU 2',
+      utilization: 0,
+      dedicatedUsed: 5 * GB,
+      dedicatedTotal: 10 * GB,
+      sharedUsed: 0,
+      sharedTotal: 0,
+    };
+    
+    // Fire 35 times - buffer should cap at 30
+    for (let i = 0; i < 35; i++) {
+      fire([testGpu]);
+      await flush();
+    }
+    
+    const gpuHistory = (w.vm as any).gpuHistory;
+    const history = gpuHistory.get('test-gpu-2');
+    expect(history.length).toBe(30);
+    
+    w.unmount();
+  });
+
+  it('gpuHistory clamps percentage to 0-100 range', async () => {
+    mockLms();
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
+    await flush();
+    
+    // Over-100% case: used > total (edge case)
+    const overGpu: GpuStats = {
+      luid: 'test-gpu-over',
+      name: 'Test GPU Over',
+      utilization: 0,
+      dedicatedUsed: 15 * GB,
+      dedicatedTotal: 10 * GB,
+      sharedUsed: 0,
+      sharedTotal: 0,
+    };
+    fire([overGpu]);
+    await flush();
+    
+    const gpuHistory = (w.vm as any).gpuHistory;
+    expect(gpuHistory.get('test-gpu-over')).toEqual([100]); // clamped to 100
+    
+    w.unmount();
+  });
+
+  it('updateGpuHistory skips GPUs with dedicatedTotal = 0', async () => {
+    mockLms();
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
+    await flush();
+    
+    // Fire with dedicatedTotal = 0 (like GPU_B fixture)
+    fire([{ 
+      luid: 'test-gpu-zero', 
+      name: 'Test GPU Zero', 
+      utilization: 0, 
+      dedicatedUsed: 0, 
+      dedicatedTotal: 0, 
+      sharedUsed: 1 * GB, 
+      sharedTotal: 10 * GB 
+    }]);
+    await flush();
+    
+    const gpuHistory = (w.vm as any).gpuHistory;
+    const history = gpuHistory.get('test-gpu-zero');
+    // Should be undefined or empty since dedicatedTotal = 0
+    expect(history === undefined || history.length === 0).toBe(true);
+    
+    w.unmount();
+  });
+});
