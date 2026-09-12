@@ -533,7 +533,7 @@ body {
    flex:1 撑满 body 剩余高度，卡片被同行拉高时内容随之垂直居中 */
 /* 舞台自身不裁切：裁切上移到 .card--gpu（App.vue 给 GPU 卡的 .card 加该类，overflow:hidden），
    这样 ±100% 屏外层的层内容裁在卡片边框处而非内容区（用户 2026-09-10 指定） */
-.gpu-stage { position: relative; min-height: 150px; flex: 1; }
+.gpu-stage { position: relative; min-height: 190px; flex: 1; }
 .gpu-layer {
   position: absolute; top: 0; left: 0; right: 0; bottom: 20px;
   display: flex; flex-direction: column; /* 层顶行 = 卡名（原 h2 行），四格在剩余空间垂直居中（用户 2026-09-10） */
@@ -551,19 +551,35 @@ body {
 .gpu-pos-r { transform: translateX(calc(100% + 2 * (32px + var(--card-pad)))); }
 /* 卡名行 = 层顶行（原卡片 h2「GPU 信息」所在行，用户 2026-09-10 删除 h2 后卡名上位）；
    四格在剩余空间内垂直居中（.gpu-grid flex:1 + align-content:center） */
-.gpu-title-row { flex: 0 0 auto; margin-bottom: 8px; }
+.gpu-title-row { flex: 0 0 auto; margin-bottom: 4px; }
+.gpu-chart {
+  width: 100%;
+  height: 65px;
+  margin-bottom: 8px;
+  flex: 0 0 auto;
+  border: 1px solid #E5E7EB;
+  border-radius: 4px;
+  background: #FAFAFA;
+}
+.gpu-chart canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 .gpu-grid { flex: 1; align-content: center; }
 .gpu-title {
   display: block; font-size: var(--fs-body); font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   text-align: center; /* 卡名恒左右居中（用户 2026-09-10：占位 "–" 与数据态卡名均与卡片几何中心对齐——内容区让位对称 32px + 16px） */
 }
-.gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; /* 列距 12→24（用户 2026-09-10：增加左右两列间距） */ }
+.gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; /* 列距 12→24（用户 2026-09-10：增加左右两列间距） */ }
 .gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; /* 标签与数值左对齐（用户 2026-09-10 改回；卡名仍居中，见 .gpu-title） */ }
 .gpu-val { font-size: var(--fs-body); font-weight: 600; color: var(--text); white-space: nowrap; }
 .gpu-dots {
   position: absolute; bottom: 0; left: 0; right: 0; height: 20px;
   display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding-top: 4px;
+  padding-bottom: 8px;
 }
 /* 圆点 8px：当前 = 实心灰（--muted）；其余 = 同色 1.5px 描边、透明填充 */
 .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); background: transparent; }
