@@ -521,9 +521,9 @@ body {
   width: 26px; height: 26px; padding: 0;
   display: flex; align-items: center; justify-content: center;
   border: none; border-radius: 6px; background: transparent;
-  color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer;
+  color: #C7CCD4; font-size: 16px; line-height: 1; cursor: pointer;
 }
-.gpu-nav-btn:hover { color: var(--text); }
+.gpu-nav-btn:hover { color: var(--primary); }
 /* 禁用态（首帧无数据 / 单卡）：灰化不可点击（与 .icon-btn:disabled 同语言） */
 .gpu-nav-btn:disabled { color: #C7CCD4; cursor: not-allowed; }
 .gpu-nav-btn:disabled:hover { color: #C7CCD4; background: transparent; }
@@ -581,8 +581,8 @@ body {
   padding-bottom: 13px;
 }
 /* 圆点 8px：当前 = 实心灰（--muted）；其余 = 同色 1.5px 描边、透明填充 */
-.dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); background: transparent; }
-.dot--active { background: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--primary); background: transparent; }
+.dot--active { background: var(--primary); }
 
 
 
