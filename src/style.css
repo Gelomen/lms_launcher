@@ -515,7 +515,7 @@ body {
 /* 卡片内容上下居中（用户指定 2026-09）：section→body→stage 逐层 flex 列拉伸，
    层内容在舞台内垂直居中——四格（利用率/专用/GPU 内存/共享）不再顶住卡片标题 */
 .module-gpu { height: 100%; display: flex; flex-direction: column; } /* 填满 .card（grid 拉伸到同行最高） */
-.gpu-body { position: relative; flex: 1; display: flex; flex-direction: column; padding: 0 32px; /* 恒预留 32px 按钮让位（用户 2026-09-10：首帧占位与数据态位置结构一致，‹ › 恒渲染，单卡/无数据时禁用） */ }
+.gpu-body { position: relative; flex: 1; display: flex; flex-direction: column; padding: 0 8px; /* 内容区左右各 8px（2026-09-11：增大标题可显示宽度） */ }
 .gpu-nav-btn {
   position: absolute; top: 50%; transform: translateY(-50%);
   width: 26px; height: 26px; padding: 0;
