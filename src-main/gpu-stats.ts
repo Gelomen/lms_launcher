@@ -82,6 +82,13 @@ export function parseGpuStatsJson(raw: string): GpuDynamic[] {
   return [...map.values()];
 }
 
+// 过滤非物理 GPU（如 Microsoft Basic Render Driver - 无专用显存的软件渲染器）
+function isPhysicalGpu(gpu: GpuStats): boolean {
+  // MBR 驱动等软件渲染器 dedicatedTotal 为 0
+  if (gpu.dedicatedTotal === 0) return false;
+  return true;
+}
+
 // 合并规则（spec §2.3）：卡列表以动态层为准、保持动态层顺序；静态层按小写 LUID join 补
 // 卡名 + 上限；join 不上 → 回退命名 "GPU 序号"（按动态层下标 +1）+ 上限 0（UI 显示 "–"）；
 // 仅静态层存在的 LUID 被过滤（不显示，避免虚拟/遗留适配器空卡噪音）。
@@ -98,7 +105,7 @@ export function mergeGpuStats(dyn: GpuDynamic[], statics: GpuStatic[]): GpuStats
       sharedUsed: d.sharedUsed,
       sharedTotal: s ? s.sharedTotal : 0,
     };
-  });
+  }).filter(isPhysicalGpu);
 }
 
 // 判断是否为独显（离散 GPU）：名称含 NVIDIA/AMD/Radeon，或专用显存 > 1 GiB

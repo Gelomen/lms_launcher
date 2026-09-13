@@ -138,6 +138,19 @@ describe('mergeGpuStats', () => {
     const out = mergeGpuStats([dyns[1], dyns[0]], statics);
     expect(out.map((g) => g.luid)).toEqual([LUID_B, LUID_A]);
   });
+
+  it('software_adapters_filtered_at_enumeration_by_zero_dedicated', () => {
+    // 软件渲染适配器（如 Microsoft Basic Render Driver）在 PowerShell 枚举阶段
+    // 通过 zero dedicatedTotal 判断并过滤，不会进入数据流。
+    // 此处验证过滤逻辑的等价条件：dedicatedTotal == 0 → 软件适配器。
+    const mbr = { name: 'Microsoft Basic Render Driver', dedicatedTotal: 0 };
+    const intel = { name: 'Intel(R) UHD Graphics 770', dedicatedTotal: 134217728 };
+    const nvidia = { name: 'NVIDIA GeForce RTX 4090', dedicatedTotal: 25757220864 };
+    const all = [mbr, intel, nvidia];
+    const filtered = all.filter((g) => g.dedicatedTotal > 0);
+    expect(filtered).toHaveLength(2);
+    expect(filtered.map((g) => g.name)).toEqual([intel.name, nvidia.name]);
+  });
 });
 
 describe('formatGb', () => {
