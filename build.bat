@@ -8,13 +8,30 @@ rem llama-server.exe is NOT force-killed by name: it also backs the local LLM an
 rem may run independently of the launcher. Only a lms_launcher.exe that is still
 rem running is terminated, together with its OWN child tree (taskkill /T), so a
 rem standalone llama-server is left untouched.
-tasklist /FI "IMAGENAME eq lms_launcher.exe" 2>NUL ^| find /I "lms_launcher.exe" >NUL
-if not errorlevel 1 (
-  echo [build]   lms_launcher.exe is still running - terminating it and its child tree...
-  for /f "tokens=2" %%L in ('tasklist /FI "IMAGENAME eq lms_launcher.exe" /FO CSV /NH') do (
-    taskkill /F /T /PID %%L >NUL 2>&1
-  )
+rem Loop until lms_launcher.exe is gone, or give up after kill_max attempts.
+rem Uses PowerShell for reliable process detection and kill.
+set "kill_wait=0"
+set "kill_max=30"
+:kill_loop
+powershell -NoProfile -Command "Get-Process -Name lms_launcher -ErrorAction SilentlyContinue" >NUL 2>&1
+if errorlevel 1 goto kill_done
+set /a kill_wait+=1
+if %kill_wait% gtr %kill_max% goto kill_timeout
+if %kill_wait% equ 1 (
+  echo [build]   lms_launcher.exe found - terminating it and its child tree...
+  powershell -NoProfile -Command "Get-Process -Name lms_launcher -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.Id -Force }"
+) else (
+  echo [build]   still running, retrying...
 )
+timeout /t 1 /nobreak >NUL
+goto kill_loop
+:kill_done
+goto kill_after
+:kill_timeout
+echo [build]   WARNING: lms_launcher.exe could not be killed after %kill_max% attempts.
+echo [build]   Please close it manually and re-run this script.
+exit /b 1
+:kill_after
 echo.
 
 echo [build] Building renderer + main process...
