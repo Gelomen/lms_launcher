@@ -550,10 +550,11 @@ body {
 .gpu-pos-l { transform: translateX(calc(-100% - 2 * (32px + var(--card-pad)))); }
 .gpu-pos-r { transform: translateX(calc(100% + 2 * (32px + var(--card-pad)))); }
 /* 卡名行 = 层顶行（原卡片 h2「GPU 信息」所在行，用户 2026-09-10 删除 h2 后卡名上位）；
-   四格在剩余空间内垂直居中（.gpu-grid flex:1 + align-content:center） */
+   四格整体在卡片内水平垂直居中（margin:auto） */
 .gpu-title-row { flex: 0 0 auto; margin-bottom: 4px; }
 .gpu-chart {
-  width: 100%;
+  width: calc(100% - 20px);
+  margin: 0 auto;
   height: 65px;
   margin-bottom: 8px;
   flex: 0 0 auto;
@@ -565,7 +566,7 @@ body {
   height: 100%;
   display: block;
 }
-.gpu-grid { flex: 1; align-content: center; }
+
 .gpu-title {
   display: block; font-size: var(--fs-body); font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -576,7 +577,7 @@ body {
   font-weight: 400;
   margin-right: 4px;
 }
-.gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; /* 列距 12→24（用户 2026-09-10：增加左右两列间距） */ }
+.gpu-grid { margin: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; /* 列距 12→24（用户 2026-09-10：增加左右两列间距） */ }
 .gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; /* 标签与数值左对齐（用户 2026-09-10 改回；卡名仍居中，见 .gpu-title） */ }
 .gpu-val { font-size: var(--fs-body); font-weight: 600; color: var(--text); white-space: nowrap; }
 .gpu-dots {

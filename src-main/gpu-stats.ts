@@ -177,7 +177,8 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
         try {
           const trimmed = out.trim();
           statics = JSON.parse(trimmed) as GpuStatic[];
-          log('GPU 静态查询成功：' + statics.length + ' 张卡 → ' + statics.map(s => s.name).join(', '));
+          const withMem = statics.filter(s => s.dedicatedTotal > 0);
+          log('GPU 静态查询成功：' + withMem.length + ' 张卡 → ' + withMem.map(s => s.name).join(', '));
         } catch {
           log('GPU 静态查询结果解析失败（卡名/上限回退占位值），原始输出：' + out.trim().slice(0, 200));
         }
