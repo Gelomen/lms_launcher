@@ -285,7 +285,10 @@ function posClass(x: -1 | 0 | 1): string {
                首帧（无数据）恒渲染占位 "–"，与数据态位置结构完全一致——内容区恒预留 32px
                让位（见 .gpu-body）；卡名恒左右居中（用户 2026-09-10，.gpu-title） -->
           <div class="gpu-title-row">
-            <span class="gpu-title">{{ cur(l.cardIndex)?.name ?? '–' }}</span>
+            <span v-if="cur(l.cardIndex)" class="gpu-title">
+              <span class="gpu-title-index">#GPU {{ cur(l.cardIndex).dxgiIndex }}</span> <span class="gpu-title-name">{{ cur(l.cardIndex).name }}</span>
+            </span>
+            <span v-else class="gpu-title">–</span>
           </div>
           <div class="gpu-chart">
             <canvas :ref="(el) => setChartCanvas(i, el)" />

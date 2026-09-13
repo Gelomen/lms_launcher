@@ -110,8 +110,8 @@ describe('mergeGpuStats', () => {
 
   it('static_missing_falls_back_to_indexed_name_and_zero_totals', () => {
     expect(mergeGpuStats(dyns, [])).toEqual([
-      { luid: LUID_A, name: 'GPU 1', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 0, sharedUsed: 1 * GB, sharedTotal: 0 },
-      { luid: LUID_B, name: 'GPU 2', utilization: 5, dedicatedUsed: 0, dedicatedTotal: 0, sharedUsed: 2 * GB, sharedTotal: 0 },
+      { luid: LUID_A, name: 'GPU 1', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 0, sharedUsed: 1 * GB, sharedTotal: 0, dxgiIndex: 0 },
+      { luid: LUID_B, name: 'GPU 2', utilization: 5, dedicatedUsed: 0, dedicatedTotal: 0, sharedUsed: 2 * GB, sharedTotal: 0, dxgiIndex: 1 },
     ]);
   });
 

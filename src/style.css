@@ -569,7 +569,12 @@ body {
 .gpu-title {
   display: block; font-size: var(--fs-body); font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  text-align: center; /* 卡名恒左右居中（用户 2026-09-10：占位 "–" 与数据态卡名均与卡片几何中心对齐——内容区让位对称 32px + 16px） */
+  text-align: center;
+}
+.gpu-title-index {
+  color: #8B8E96;
+  font-weight: 400;
+  margin-right: 4px;
 }
 .gpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; /* 列距 12→24（用户 2026-09-10：增加左右两列间距） */ }
 .gpu-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; /* 标签与数值左对齐（用户 2026-09-10 改回；卡名仍居中，见 .gpu-title） */ }

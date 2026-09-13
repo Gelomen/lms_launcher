@@ -16,6 +16,7 @@ export interface GpuStatic {
   name: string;
   dedicatedTotal: number; // 字节
   sharedTotal: number;    // 字节
+  dxgiIndex: number;      // Task Manager 中的 GPU 编号（DXGI 枚举顺序）
 }
 export interface GpuStats {
   luid: string;
@@ -25,6 +26,7 @@ export interface GpuStats {
   dedicatedTotal: number;
   sharedUsed: number;
   sharedTotal: number;
+  dxgiIndex: number; // Task Manager 中的 GPU 编号
 }
 
 // 计数器实例名格式（spec §2.1）：
@@ -103,6 +105,7 @@ export function mergeGpuStats(dyn: GpuDynamic[], statics: GpuStatic[]): GpuStats
       dedicatedTotal: dedTotal,
       sharedUsed: d.sharedUsed,
       sharedTotal: s ? s.sharedTotal : 0,
+      dxgiIndex: s ? s.dxgiIndex : i,
     });
   });
   return result;
@@ -149,14 +152,18 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
   let lastRespawn = 0;
   let respawnTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const psArgs = (mode: string): string[] =>
-    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Mode', mode];
+  const psArgs = (mode: string): string[] => {
+    if (mode === 'static') {
+      return ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', `& '${scriptPath}' -Mode static`];
+    }
+    return ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath];
+  };
 
   function queryStatic(): void {
     lastStaticQuery = Date.now();
     let p: ChildProcess;
     try {
-      p = spawn('powershell.exe', psArgs('static'));
+      p = spawn('pwsh', psArgs('static'));
     } catch (e) {
       log('GPU 静态查询启动失败：' + (e instanceof Error ? e.message : String(e)));
       return;
@@ -168,9 +175,11 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
       if (stopped) return;
       if (code === 0) {
         try {
-          statics = JSON.parse(out.trim()) as GpuStatic[];
+          const trimmed = out.trim();
+          statics = JSON.parse(trimmed) as GpuStatic[];
+          log('GPU 静态查询成功：' + statics.length + ' 张卡 → ' + statics.map(s => s.name).join(', '));
         } catch {
-          log('GPU 静态查询结果解析失败（卡名/上限回退占位值）');
+          log('GPU 静态查询结果解析失败（卡名/上限回退占位值），原始输出：' + out.trim().slice(0, 200));
         }
       } else {
         log('GPU 静态查询异常退出 code=' + code + '（卡名/上限回退占位值）');

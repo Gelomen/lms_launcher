@@ -1,7 +1,8 @@
 # gpu-counters.ps1 —— GPU 卡片数据脚本（spec 2026-09-09-gpu-card-design §2/§3）
-#   -Mode static  ：一次性 DXGI 枚举（卡名 + 专用/共享上限 + LUID）；专用上限优先 NVML
-#                   （与任务管理器 VidMm budget 同源，比 DXGI 高 ~450MB 驱动保留），无 nvml.dll
-#                   / 无匹配卡时回退 DXGI 值；stdout 输出单行 JSON 数组（契约不变）
+#   -Mode static  ：一次性 DXGI 枚举（卡名 + 专用/共享上限 + LUID）+ WMI Win32_VideoController
+#                   排序（与任务管理器 GPU 编号一致）；专用上限优先 NVML（与任务管理器
+#                   VidMm budget 同源，比 DXGI 高 ~450MB 驱动保留），无 nvml.dll / 无匹配卡时
+#                   回退 DXGI 值；stdout 输出单行 JSON 数组（契约不变）
 #   -Mode dynamic ：常驻 2 秒循环，采样 \GPU Adapter Memory(*) 与 \GPU Engine(*)\Utilization Percentage，
 #                   每轮 stdout 输出单行 JSON：{"ded":{"实例名":字节},"shr":{...},"eng":{"实例名":0-100}}
 # 无参数 = dynamic。stdout 只写 JSON；诊断信息一律走 stderr。
@@ -152,8 +153,9 @@ public static class GpuStaticProbe
             var sb = new StringBuilder();
             sb.Append("[");
             bool first = true;
-            foreach (var d in dx)
+            for (int j = 0; j < dx.Count; j++)
             {
+                var d = dx[j];
                 string luidStr = string.Format("0x{0:x8}_{1:x8}", (uint)d.LuidLow, d.LuidHigh);
                 string rawName = d.Description == null ? "" : d.Description.Trim();
                 ulong ded = d.DedicatedVideoMemory;
@@ -195,7 +197,48 @@ public static class GpuStaticProbe
     [DllImport("kernel32.dll")] static extern IntPtr GetProcAddress(IntPtr h, string n);
 }
 "@
-    [GpuStaticProbe]::Run()
+    $dxgiResult = [GpuStaticProbe]::Run()
+    $adapters = ConvertFrom-Json $dxgiResult
+
+    # Get WMI Win32_VideoController order (matches Task Manager GPU numbering)
+    try {
+        $wmiDevices = Get-CimInstance Win32_VideoController | Where-Object { $_.Name -and $_.Name -ne '' }
+        $result = @()
+        $i = 0
+        foreach ($wmi in $wmiDevices) {
+            # Find matching DXGI adapter by name
+            $match = $adapters | Where-Object { $_.name -eq $wmi.Name }
+            if ($match) {
+                $obj = [PSCustomObject]@{
+                    luid = $match.luid
+                    name = $match.name
+                    dedicatedTotal = $match.dedicatedTotal
+                    sharedTotal = $match.sharedTotal
+                    dxgiIndex = $i
+                }
+                $result += $obj
+            }
+            $i++
+        }
+        # Include any DXGI adapters not found in WMI (shouldn't happen, but defensive)
+        foreach ($dx in $adapters) {
+            if (-not ($result | Where-Object { $_.luid -eq $dx.luid })) {
+                $obj = [PSCustomObject]@{
+                    luid = $dx.luid
+                    name = $dx.name
+                    dedicatedTotal = $dx.dedicatedTotal
+                    sharedTotal = $dx.sharedTotal
+                    dxgiIndex = $i
+                }
+                $result += $obj
+                $i++
+            }
+        }
+        $result | ConvertTo-Json -Compress
+    } catch {
+        # Fallback: output DXGI order if WMI fails
+        $dxgiResult
+    }
     exit 0
 }
 

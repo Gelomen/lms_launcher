@@ -20,9 +20,9 @@ function mockLms(): void {
 const STUBS = { FontAwesomeIcon: true };
 
 const GB = 1073741824; // 1 GiB = 1024^3
-const GPU_A: GpuStats = { luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB };
-const GPU_B: GpuStats = { luid: '0x00010f23_00000000', name: 'Microsoft Basic Render Driver', utilization: 5, dedicatedUsed: 0, dedicatedTotal: 0, sharedUsed: 2 * GB, sharedTotal: 48 * GB };
-const GPU_C: GpuStats = { luid: '0x0003be77_00000000', name: 'AMD Radeon RX 7900 XTX', utilization: 50, dedicatedUsed: 16 * GB, dedicatedTotal: 20 * GB, sharedUsed: 1 * GB, sharedTotal: 32 * GB };
+const GPU_A: GpuStats = { luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB, dxgiIndex: 0 };
+const GPU_B: GpuStats = { luid: '0x00010f23_00000000', name: 'Microsoft Basic Render Driver', utilization: 5, dedicatedUsed: 0, dedicatedTotal: 0, sharedUsed: 2 * GB, sharedTotal: 48 * GB, dxgiIndex: 1 };
+const GPU_C: GpuStats = { luid: '0x0003be77_00000000', name: 'AMD Radeon RX 7900 XTX', utilization: 50, dedicatedUsed: 16 * GB, dedicatedTotal: 20 * GB, sharedUsed: 1 * GB, sharedTotal: 32 * GB, dxgiIndex: 2 };
 
 function fire(gpus: GpuStats[]): void {
   gpuHandlers.at(-1)!({ gpus: gpus as unknown[] });
@@ -68,7 +68,7 @@ describe('GpuModule 首帧与数据', () => {
     await flush();
     fire([GPU_A, GPU_B]);
     await flush();
-    expect(w.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
+    expect(w.find('.gpu-title').text()).toBe('#GPU 0 NVIDIA GeForce RTX 4090');
     expect(cellTexts(w)).toEqual(['22.0 / 24.0 GB', '1.0 / 48.0 GB', '23.0 / 72.0 GB', '28 %']);
     w.unmount();
   });
@@ -88,7 +88,7 @@ describe('GpuModule 首帧与数据', () => {
     mockLms();
     const w = mount(GpuModule, { global: { stubs: STUBS } });
     await flush();
-    fire([{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 10, dedicatedUsed: 1610612736, dedicatedTotal: 24 * GB, sharedUsed: 22 * GB + 880 * 1048576, sharedTotal: 48 * GB }]);
+    fire([{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 10, dedicatedUsed: 1610612736, dedicatedTotal: 24 * GB, sharedUsed: 22 * GB + 880 * 1048576, sharedTotal: 48 * GB, dxgiIndex: 0 }]);
     await flush();
     expect(cellTexts(w)).toEqual(['1.5 / 24.0 GB', '22.9 / 48.0 GB', '24.4 / 72.0 GB', '10 %']);
     w.unmount();
@@ -144,7 +144,7 @@ describe('GpuModule 轮播（模运算绕回）', () => {
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(1);
-    expect(layerTitle(w, 1)).toBe('Microsoft Basic Render Driver'); // 目标卡标题在目标层（1 层），随层滑入
+    expect(layerTitle(w, 1)).toBe('#GPU 1 Microsoft Basic Render Driver'); // 目标卡标题在目标层（1 层），随层滑入
     await w.find('.gpu-nav-btn--left').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(0);
@@ -167,7 +167,7 @@ describe('GpuModule 轮播（模运算绕回）', () => {
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(0);
-    expect(layerTitle(w, 1)).toBe('NVIDIA GeForce RTX 4090'); // 回绕目标卡标题在目标层（1 层）
+    expect(layerTitle(w, 1)).toBe('#GPU 0 NVIDIA GeForce RTX 4090'); // 回绕目标卡标题在目标层（1 层）
     // 0 → 2（‹ 回绕）
     await w.find('.gpu-nav-btn--left').trigger('click');
     await nextTick(); await nextTick();
@@ -256,7 +256,7 @@ describe('GpuModule 滑动动画（只断言层 transform 类名切换，不测�
     await w.find('.gpu-nav-btn--right').trigger('click');
     await nextTick(); await nextTick();
     expect(activeDot(w)).toBe(2);
-    expect(layerTitle(w, 1)).toBe('AMD Radeon RX 7900 XTX'); // 目标卡标题在目标层（1 层）
+    expect(layerTitle(w, 1)).toBe('#GPU 2 AMD Radeon RX 7900 XTX'); // 目标卡标题在目标层（1 层）
     // 归位后继续滑动到 2：跨滑动帧后只有一个可见层且在 gpu-pos-0
     await waitFrame();
     const visible = w.findAll('.gpu-layer:not(.gpu-layer--off)');
@@ -299,6 +299,7 @@ describe('GpuModule GPU memory usage chart', () => {
       dedicatedTotal: 0,
       sharedUsed: 0,
       sharedTotal: 0,
+      dxgiIndex: 0,
     };
     fire([testGpu]);
     await flush();
@@ -338,6 +339,7 @@ describe('GpuModule GPU memory usage chart', () => {
       dedicatedTotal: 10 * GB,
       sharedUsed: 0,
       sharedTotal: 0,
+      dxgiIndex: 1,
     };
     
     // Fire 35 times - buffer should cap at 30
@@ -367,6 +369,7 @@ describe('GpuModule GPU memory usage chart', () => {
       dedicatedTotal: 0,
       sharedUsed: 0,
       sharedTotal: 0,
+      dxgiIndex: 0,
     };
     fire([overGpu]);
     await flush();
@@ -391,7 +394,8 @@ describe('GpuModule GPU memory usage chart', () => {
       dedicatedUsed: 0, 
       dedicatedTotal: 0, 
       sharedUsed: 1 * GB, 
-      sharedTotal: 10 * GB 
+      sharedTotal: 10 * GB,
+      dxgiIndex: 0
     }]);
     await flush();
     

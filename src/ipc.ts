@@ -9,6 +9,7 @@ export interface GpuStats {
   dedicatedTotal: number;
   sharedUsed: number;
   sharedTotal: number;
+  dxgiIndex: number; // Task Manager 中的 GPU 编号
 }
 declare global {
   interface Window {

@@ -735,11 +735,11 @@ describe('App GPU card mount', () => {
     const { w } = mountApp();
     await flush();
     const GB = 1073741824;
-    gpuStatsHandlers.at(-1)!({ gpus: [{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB }] });
+    gpuStatsHandlers.at(-1)!({ gpus: [{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB, dxgiIndex: 0 }] });
     await flush();
     const gpuCard = w.find('.grid > .card:nth-child(3)'); // 第三列直接子级 = GPU 卡
     expect(gpuCard.find('.module-gpu').exists()).toBe(true);
-    expect(gpuCard.find('.gpu-title').text()).toBe('NVIDIA GeForce RTX 4090');
+    expect(gpuCard.find('.gpu-title').text()).toBe('#GPU 0 NVIDIA GeForce RTX 4090');
     expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 / 24.0 GB');
     w.unmount();
   });
