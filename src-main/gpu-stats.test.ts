@@ -1,7 +1,7 @@
 // 纯函数单测（spec 2026-09-09-gpu-card-design §7）：parseGpuStatsJson / mergeGpuStats / formatGb。
 // fixture 与渲染端 GpuModule.test.ts 的 formatGb 断言共用同一组数值（防两份实现漂移）。
 import { describe, it, expect } from 'vitest';
-import { parseGpuStatsJson, mergeGpuStats, formatGb, canonicalLuid } from './gpu-stats';
+import { parseGpuStatsJson, mergeGpuStats, formatGb, canonicalLuid, isDiscreteGpu } from './gpu-stats';
 import type { GpuDynamic, GpuStatic } from './gpu-stats';
 
 const GB = 1073741824; // 1 GiB = 1024^3
@@ -167,5 +167,23 @@ describe('canonicalLuid', () => {
   });
   it('returns_lowercase_input_when_not_two_hex8_segments', () => {
     expect(canonicalLuid('not-a-luid')).toBe('not-a-luid');
+  });
+});
+
+describe('isDiscreteGpu', () => {
+  it('nvidia_card_is_discrete', () => {
+    expect(isDiscreteGpu({ name: 'NVIDIA GeForce RTX 4090', dedicatedTotal: 24 * GB })).toBe(true);
+  });
+  it('amd_radeon_card_is_discrete_by_name', () => {
+    expect(isDiscreteGpu({ name: 'AMD Radeon RX 7900 XTX', dedicatedTotal: 24 * GB })).toBe(true);
+  });
+  it('intel_iGPU_is_not_discrete', () => {
+    expect(isDiscreteGpu({ name: 'Intel(R) UHD Graphics', dedicatedTotal: 128 * 1024 * 1024 })).toBe(false);
+  });
+  it('unknown_name_large_dedicated_is_discrete_by_size', () => {
+    expect(isDiscreteGpu({ name: 'Unknown GPU', dedicatedTotal: 8 * GB })).toBe(true);
+  });
+  it('unknown_name_no_dedicated_is_not_discrete', () => {
+    expect(isDiscreteGpu({ name: 'Unknown GPU', dedicatedTotal: 0 })).toBe(false);
   });
 });

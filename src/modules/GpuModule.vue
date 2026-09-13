@@ -21,6 +21,7 @@ function formatGb(bytes: number): string {
 
 const gpus = ref<GpuStats[] | null>(null); // null = 首帧未到达
 const index = ref(0); // 当前卡下标（圆点；点击立即切到目标。标题行在层内，随滑动切换，见 spec §5.1/§5.2）
+let initialIndexSet = false; // 首帧数据到达时是否已设置默认独显索引
 const multi = computed(() => (gpus.value?.length ?? 0) > 1);
 
 function cur(i: number): GpuStats | undefined {
@@ -231,8 +232,19 @@ let resizeObserver: ResizeObserver | null = null;
 let unsub: (() => void) | null = null;
 onMounted(() => {
   unsub = onGpuStats((e) => {
-    gpus.value = e.gpus as GpuStats[];
-    updateGpuHistory(e.gpus as GpuStats[]);
+    const stats = e.gpus as GpuStats[];
+    gpus.value = stats;
+    // 首帧数据到达：默认显示第一个独显（若有），否则保持第一个 GPU
+    if (!initialIndexSet) {
+      initialIndexSet = true;
+      const discreteIdx = stats.findIndex(g => g.name.toLowerCase().includes('nvidia') || g.name.toLowerCase().includes('amd') || g.name.toLowerCase().includes('radeon') || g.dedicatedTotal > 1073741824);
+      if (discreteIdx >= 0) {
+        index.value = discreteIdx;
+        // 同步轮播层位置到目标卡
+        layers.value[0].cardIndex = discreteIdx;
+      }
+    }
+    updateGpuHistory(stats);
     nextTick(() => drawAllCharts());
   });
   

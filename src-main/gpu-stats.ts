@@ -101,6 +101,14 @@ export function mergeGpuStats(dyn: GpuDynamic[], statics: GpuStatic[]): GpuStats
   });
 }
 
+// 判断是否为独显（离散 GPU）：名称含 NVIDIA/AMD/Radeon，或专用显存 > 1 GiB
+// （核显通常无专用显存或仅有少量预留，如 128 MiB）
+export function isDiscreteGpu(gpu: { name: string; dedicatedTotal: number }): boolean {
+  const name = gpu.name.toLowerCase();
+  if (name.includes('nvidia') || name.includes('amd') || name.includes('radeon')) return true;
+  return gpu.dedicatedTotal > 1073741824;
+}
+
 // 字节 → "22.7 GB"（1024 进制，1 位小数，对齐任务管理器）；bytes ≤ 0 → "–"（上限回退 0 的占位）
 export function formatGb(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '–';
