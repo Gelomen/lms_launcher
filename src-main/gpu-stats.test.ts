@@ -98,13 +98,13 @@ describe('mergeGpuStats', () => {
   const dyns = [dyn(LUID_A, 22 * GB, 1 * GB, 28), dyn(LUID_B, 0, 2 * GB, 5)];
   const statics: GpuStatic[] = [
     { luid: LUID_A, name: 'NVIDIA GeForce RTX 4090', dedicatedTotal: 24 * GB, sharedTotal: 48 * GB },
-    { luid: LUID_B, name: 'Microsoft Basic Render Driver', dedicatedTotal: 0, sharedTotal: 48 * GB },
+    { luid: LUID_B, name: 'Intel(R) UHD Graphics', dedicatedTotal: 134217728, sharedTotal: 48 * GB },
   ];
 
   it('joins_static_name_and_totals_by_lowercase_luid', () => {
     expect(mergeGpuStats(dyns, statics)).toEqual([
       { luid: LUID_A, name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB },
-      { luid: LUID_B, name: 'Microsoft Basic Render Driver', utilization: 5, dedicatedUsed: 0, dedicatedTotal: 0, sharedUsed: 2 * GB, sharedTotal: 48 * GB },
+      { luid: LUID_B, name: 'Intel(R) UHD Graphics', utilization: 5, dedicatedUsed: 0, dedicatedTotal: 134217728, sharedUsed: 2 * GB, sharedTotal: 48 * GB },
     ]);
   });
 
