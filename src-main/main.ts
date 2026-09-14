@@ -9,13 +9,17 @@ import { parseGgufHeader, estimateUsedBytes } from './vram';
 import { ProcessState } from './process';
 import { startGpuStats } from './gpu-stats';
 import { checkLlamaInstall, installCheckMessage } from './llama-check';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 
 // 更新调度任务名（schtasks）：2026-09-05 探针矩阵（.temp/decisive4~11）证明本机 Electron 子进程
 // 无论 detached / 非 detached / cmd 包裹 / windowsHide / 双叉 / VBS 均无法既真正执行脚本又
 // 在 app.exit 后存活；只有任务计划程序（svchost 发起，与应用无父子关系）两条都满足。
 const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
+import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
+import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
+import { downloadAndInstallLlama, verifyLlamaInstall } from './llama-update-download';
+import type { LlamaUpdateConfig } from './config';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
 import { downloadToFile } from './update-download';
@@ -585,6 +589,165 @@ function replayUpdateLog(): void {
   if (!win || !win.webContents.isLoading()) { sendAll(); return; }
   win.webContents.once('did-finish-load', sendAll);
 }
+// ---------- llama.cpp 更新 IPC（Task 5） ----------
+// check_llama_update：比较本地 llama.cpp 版本与 GitHub 最新 release
+ipcMain.handle('check_llama_update', async (_e, opts: { include_pre_release?: boolean }): Promise<
+  | { success: true; status: 'up-to-date' | 'update-available' | 'unknown'; localVersion?: LlamaVersion; remoteVersion?: string; versionOptions?: Array<{ label: string; downloadUrl: string }>; cudaDlls?: Array<{ version: string; downloadUrl: string }> }
+  | { success: false; error: string }
+> => {
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+
+  // llama_dir 为空 → unconfigured
+  if (cfg.llama_dir.trim().length === 0) {
+    return { success: false, error: 'unconfigured' };
+  }
+
+  // 构建代理 URL
+  const proxy = cfg.proxy_host && cfg.proxy_port
+    ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
+    : undefined;
+
+  // 确定 include_pre_release：参数覆盖配置
+  const includePreRelease = opts?.include_pre_release ?? cfg.llama_update?.include_pre_release ?? false;
+
+  // 获取本地版本
+  let localVersion: LlamaVersion | null = null;
+  try {
+    const exePath = join(cfg.llama_dir.trim(), 'llama-server.exe');
+    const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const output = (result.stdout || result.stderr || '').trim();
+    localVersion = parseLlamaVersion(output);
+    emitLog(`[lms_launcher] llama.cpp · 本地版本：${output || '未检测到'}`, 'sys');
+  } catch (err) {
+    emitLog(`[lms_launcher] llama.cpp · 获取本地版本失败：${err instanceof Error ? err.message : String(err)}`, 'sys');
+  }
+
+  // 获取远程 release 信息
+  const remoteInfo = await fetchLlamaReleaseInfo(includePreRelease, proxy);
+  if (!remoteInfo) {
+    const proxyNote = proxy ? `（代理 ${proxy}）` : '';
+    emitLog(`[lms_launcher] llama.cpp · 获取远程版本失败${proxyNote}`, 'sys');
+    return { success: false, error: 'failed to fetch remote release info' };
+  }
+
+  // 比较版本
+  const status = compareLlamaVersions(localVersion, remoteInfo.tag);
+  emitLog(`[lms_launcher] llama.cpp · 版本检查：${status}（本地 ${localVersion ? (localVersion.version || `b${localVersion.build}`) : '未知'} vs 远程 ${remoteInfo.tag}）`, 'sys');
+
+  return {
+    success: true,
+    status,
+    localVersion: localVersion ?? undefined,
+    remoteVersion: remoteInfo.tag,
+    versionOptions: remoteInfo.versionOptions,
+    cudaDlls: remoteInfo.cudaDlls,
+  };
+});
+
+// get_llama_local_version：获取本地 llama.cpp 版本
+ipcMain.handle('get_llama_local_version', async (): Promise<
+  { success: true; version: LlamaVersion } | { success: false; error: string }
+> => {
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+
+  if (cfg.llama_dir.trim().length === 0) {
+    return { success: false, error: 'unconfigured' };
+  }
+
+  try {
+    const exePath = join(cfg.llama_dir.trim(), 'llama-server.exe');
+    const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const output = (result.stdout || result.stderr || '').trim();
+    const version = parseLlamaVersion(output);
+    if (!version) {
+      return { success: false, error: `无法解析版本输出：${output}` };
+    }
+    emitLog(`[lms_launcher] llama.cpp · 本地版本：${output}`, 'sys');
+    return { success: true, version };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    emitLog(`[lms_launcher] llama.cpp · 获取本地版本失败：${msg}`, 'sys');
+    return { success: false, error: msg };
+  }
+});
+
+// download_llama_update：下载并安装 llama.cpp 更新
+ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string; cuda_dlls_url?: string }): Promise<
+  { success: true } | { success: false; error: string }
+> => {
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+
+  if (cfg.llama_dir.trim().length === 0) {
+    return { success: false, error: 'unconfigured' };
+  }
+
+  const proxy = cfg.proxy_host && cfg.proxy_port
+    ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
+    : undefined;
+
+  emitLog(`[lms_launcher] llama.cpp · 开始下载更新：${opts.download_url}`, 'sys');
+
+  const result = await downloadAndInstallLlama({
+    downloadUrl: opts.download_url,
+    cudaDllsUrl: opts.cuda_dlls_url,
+    targetDir: cfg.llama_dir.trim(),
+    proxy,
+    onProgress: (percent, stage) => {
+      const win = mainWin();
+      if (win) win.webContents.send('llama_update_progress', { percent, stage });
+    },
+  });
+
+  if (!result.success) {
+    emitLog(`[lms_launcher] llama.cpp · 下载/安装失败：${result.error}`, 'sys');
+    return { success: false, error: result.error ?? 'unknown error' };
+  }
+
+  // 安装完成后验证
+  emitLog('[lms_launcher] llama.cpp · 验证安装...', 'sys');
+  const verifyResult = await verifyLlamaInstall(cfg.llama_dir.trim(), 'latest');
+  if (verifyResult.success) {
+    emitLog(`[lms_launcher] llama.cpp · 安装完成：${verifyResult.actualVersion}`, 'sys');
+  } else {
+    emitLog(`[lms_launcher] llama.cpp · 安装验证失败：${verifyResult.error}`, 'sys');
+    return { success: false, error: `verify failed: ${verifyResult.error}` };
+  }
+
+  return { success: true };
+});
+
+// set_llama_update_config：设置 llama.cpp 更新配置
+ipcMain.handle('set_llama_update_config', async (_e, opts: { last_version_type?: string; include_pre_release?: boolean }): Promise<
+  { success: true } | { success: false; error: string }
+> => {
+  try {
+    const [cp] = yamlPaths();
+    const cfg = appConfigLoad(cp);
+
+    if (!cfg.llama_update) cfg.llama_update = {};
+    if (opts.last_version_type !== undefined) cfg.llama_update.last_version_type = opts.last_version_type;
+    if (opts.include_pre_release !== undefined) cfg.llama_update.include_pre_release = opts.include_pre_release;
+
+    appConfigSave(cp, cfg);
+    emitLog('[lms_launcher] llama.cpp · 更新配置已保存', 'sys');
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    emitLog(`[lms_launcher] llama.cpp · 保存更新配置失败：${msg}`, 'sys');
+    return { success: false, error: msg };
+  }
+});
+
+// get_llama_update_config：获取 llama.cpp 更新配置
+ipcMain.handle('get_llama_update_config', (): { success: true; config: LlamaUpdateConfig } => {
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+  return { success: true, config: cfg.llama_update ?? {} };
+});
+
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
