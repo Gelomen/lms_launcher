@@ -4,6 +4,17 @@
 // 事件契约：action(index, kind) / close。关闭 × 只发 close（不中断下载——下载在主进程）。
 // 视觉语言同 TemplateModal：全局 .modal-overlay 遮罩 + 320px 白底 12px 圆角卡片 +
 // 32px 标题栏（标题居中，右上角 × 关闭 hover 红底白字）+ 内容区 padding 16px。
+// Task 7 扩展：新增 llama.cpp 更新区域（版本选择器 + 下载进度）
+
+import { ref, onMounted, onBeforeUnmount } from 'vue';
+import {
+  checkLlamaUpdate,
+  getLlamaLocalVersion,
+  downloadLlamaUpdate,
+  setLlamaUpdateConfig,
+  getLlamaUpdateConfig,
+} from '../llama-update-client';
+import { onLlamaUpdateProgress } from '../ipc';
 
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
 type Item = {
@@ -22,7 +33,129 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'action', index: number, kind: string): void;
   (e: 'close'): void;
+  // Task 7: llama.cpp 更新进度事件（供外层更新 items 数组中的 pct）
+  (e: 'llama-progress', pct: number): void;
+  // Task 7: llama.cpp 更新完成事件
+  (e: 'llama-complete', success: boolean, error?: string): void;
 }>();
+
+// Task 7: llama.cpp 更新状态
+const llamaLocalVersion = ref<string>('');
+const llamaRemoteVersion = ref<string>('');
+const llamaUpdateStatus = ref<'up-to-date' | 'update-available' | 'unknown' | 'error'>('unknown');
+const llamaVersionOptions = ref<Array<{ label: string; downloadUrl: string; cudaDllsUrl?: string }>>([]);
+const llamaSelectedOptionIndex = ref(0);
+const llamaDownloading = ref(false);
+const llamaDownloadPct = ref(0);
+const llamaDownloadStage = ref('');
+const llamaError = ref('');
+const llamaConfigLoading = ref(false);
+let llamaProgressCleanup: (() => void) | null = null;
+
+// Task 7: 检查 llama.cpp 更新
+async function checkLlamaUpdateInternal() {
+  try {
+    // 先获取本地版本
+    const localResult = await getLlamaLocalVersion();
+    if (localResult.success && localResult.version) {
+      llamaLocalVersion.value = localResult.version.version;
+    }
+
+    // 获取更新配置
+    llamaConfigLoading.value = true;
+    const configResult = await getLlamaUpdateConfig();
+    llamaConfigLoading.value = false;
+
+    // 检查远程更新
+    const result = await checkLlamaUpdate(configResult.config?.include_pre_release ?? false);
+    if (result.success) {
+      llamaUpdateStatus.value = result.status ?? 'unknown';
+      if (result.remoteVersion) {
+        llamaRemoteVersion.value = result.remoteVersion;
+      }
+      if (result.versionOptions && result.versionOptions.length > 0) {
+        llamaVersionOptions.value = result.versionOptions.map(opt => ({
+          label: opt.label,
+          downloadUrl: opt.downloadUrl,
+          // cudaDllsUrl 需要关联 cudaDlls
+          cudaDllsUrl: undefined,
+        }));
+        // 如果有 cudaDlls，关联到第一个选项
+        if (result.cudaDlls && result.cudaDlls.length > 0) {
+          llamaVersionOptions.value[0].cudaDllsUrl = result.cudaDlls[0].downloadUrl;
+        }
+      }
+    } else {
+      llamaUpdateStatus.value = 'error';
+      llamaError.value = result.error ?? '未知错误';
+    }
+  } catch (e) {
+    llamaUpdateStatus.value = 'error';
+    llamaError.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+// Task 7: 下载 llama.cpp 更新
+async function downloadLlamaUpdateInternal() {
+  const option = llamaVersionOptions.value[llamaSelectedOptionIndex.value];
+  if (!option) return;
+
+  llamaDownloading.value = true;
+  llamaDownloadPct.value = 0;
+  llamaError.value = '';
+
+  try {
+    const result = await downloadLlamaUpdate(option.downloadUrl, option.cudaDllsUrl);
+    if (result.success) {
+      // 更新成功，保存配置
+      await setLlamaUpdateConfig({ last_version_type: option.label });
+      emit('llama-complete', true);
+      // 重新检查更新状态
+      await checkLlamaUpdateInternal();
+    } else {
+      llamaError.value = result.error ?? '下载失败';
+      emit('llama-complete', false, result.error);
+    }
+  } catch (e) {
+    llamaError.value = e instanceof Error ? e.message : String(e);
+    emit('llama-complete', false, llamaError.value);
+  } finally {
+    llamaDownloading.value = false;
+  }
+}
+
+// Task 7: 监听 llama.cpp 下载进度
+function setupLlamaProgressListener() {
+  if (llamaProgressCleanup) {
+    llamaProgressCleanup();
+  }
+  llamaProgressCleanup = onLlamaUpdateProgress((e) => {
+    llamaDownloadPct.value = e.percent;
+    llamaDownloadStage.value = e.stage;
+    emit('llama-progress', e.percent);
+  });
+}
+
+// Task 7: 清理进度监听器
+function cleanupLlamaProgressListener() {
+  if (llamaProgressCleanup) {
+    llamaProgressCleanup();
+    llamaProgressCleanup = null;
+  }
+}
+
+onMounted(() => {
+  // 检查是否有 llama.cpp item，如果有则开始检查更新
+  const hasLlamaItem = props.items.some(item => item.name === 'llama.cpp');
+  if (hasLlamaItem) {
+    checkLlamaUpdateInternal();
+    setupLlamaProgressListener();
+  }
+});
+
+onBeforeUnmount(() => {
+  cleanupLlamaProgressListener();
+});
 
 // 七态按钮映射：phase → 按钮文案 / 事件 kind / 是否禁用
 // idle=检查更新 / checking=检查中...(禁用) / available=下载更新 / downloading=下载中 NN%(禁用)
@@ -141,6 +274,55 @@ function textGradientStyle(item: Item): string | undefined {
                 <span v-if="item.phase === 'downloading'" class="update-row__fill" :style="fillStyle(item)"></span>
                 <span class="update-row__label" :style="textGradientStyle(item)">{{ btnLabel(item) }}</span>
               </button>
+            </div>
+          </div>
+
+          <!-- Task 7: llama.cpp 更新区域 -->
+          <div class="update-row llama-section" v-if="llamaUpdateStatus !== 'unknown'">
+            <div class="llama-info">
+              <span class="update-row__name">llama.cpp</span>
+              <span v-if="llamaLocalVersion" class="llama-version">本地: v{{ llamaLocalVersion }}</span>
+            </div>
+            <div class="llama-status" v-if="llamaUpdateStatus === 'up-to-date'">
+              <span class="llama-up-to-date">已是最新版本</span>
+            </div>
+            <div class="llama-update-available" v-else-if="llamaUpdateStatus === 'update-available'">
+              <span class="llama-new-version">新版本: v{{ llamaRemoteVersion }}</span>
+              <!-- 版本选项选择器 -->
+              <select
+                v-if="llamaVersionOptions.length > 0"
+                class="llama-version-select"
+                :value="llamaSelectedOptionIndex"
+                @change="llamaSelectedOptionIndex = Number(($event.target as HTMLSelectElement).value)"
+                :disabled="llamaDownloading"
+              >
+                <option v-for="(opt, idx) in llamaVersionOptions" :key="idx" :value="idx">
+                  {{ opt.label }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="btn btn-primary"
+                :class="{ 'update-row__btn-progress': llamaDownloading }"
+                :disabled="llamaDownloading"
+                @click="downloadLlamaUpdateInternal()"
+              >
+                <span v-if="llamaDownloading" class="update-row__fill" :style="`width: ${llamaDownloadPct}%;`"></span>
+                <span v-if="llamaDownloading" class="update-row__label" :style="`background-image: linear-gradient(to right, #fff ${llamaDownloadPct}%, var(--muted) ${llamaDownloadPct}%);`">
+                  下载中 {{ llamaDownloadPct }}%
+                </span>
+                <span v-else>更新 llama.cpp</span>
+              </button>
+            </div>
+            <div class="llama-error" v-else-if="llamaUpdateStatus === 'error'">
+              <span class="update-row__error">{{ llamaError || '检查更新失败' }}</span>
+            </div>
+            <!-- 下载进度条 -->
+            <div v-if="llamaDownloading" class="llama-download-progress">
+              <div class="llama-progress-bar">
+                <div class="llama-progress-fill" :style="`width: ${llamaDownloadPct}%;`"></div>
+              </div>
+              <span class="llama-progress-stage">{{ llamaDownloadStage }}</span>
             </div>
           </div>
         </div>
@@ -268,5 +450,77 @@ function textGradientStyle(item: Item): string | undefined {
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
+}
+
+/* Task 7: llama.cpp 更新区域样式 */
+.llama-section {
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.llama-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.llama-version {
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.llama-status {
+  width: 100%;
+  margin-top: 4px;
+}
+.llama-up-to-date {
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.llama-update-available {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.llama-new-version {
+  font-size: var(--fs-label);
+  color: var(--primary);
+}
+.llama-version-select {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: var(--fs-label);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--text);
+}
+.llama-error {
+  width: 100%;
+  margin-top: 4px;
+}
+.llama-download-progress {
+  width: 100%;
+  margin-top: 4px;
+}
+.llama-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.llama-progress-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+.llama-progress-stage {
+  display: block;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin-top: 2px;
 }
 </style>
