@@ -20,6 +20,7 @@ declare global {
       onTrayExitRequest: (cb: () => void) => () => void;
       onWinMaxChanged: (cb: (e: { maximized: boolean }) => void) => () => void;
       onUpdateDownloadProgress: (cb: (e: { pct: number }) => void) => () => void;
+      onLlamaUpdateProgress: (cb: (e: { percent: number; stage: string }) => void) => () => void;
       onTrayUpdateRequest: (cb: () => void) => () => void;
       onTraySettingsRequest: (cb: () => void) => () => void;
       onGpuStats: (cb: (e: { gpus: GpuStats[] }) => void) => () => void;
@@ -49,6 +50,10 @@ export function onWinMaxChanged(cb: (e: { maximized: boolean }) => void): () => 
 
 export function onUpdateDownloadProgress(cb: (e: { pct: number }) => void): () => void {
   return window.lms.onUpdateDownloadProgress(cb);
+}
+
+export function onLlamaUpdateProgress(cb: (e: { percent: number; stage: string }) => void): () => void {
+  return window.lms.onLlamaUpdateProgress(cb);
 }
 
 export function onTrayUpdateRequest(cb: () => void): () => void {
