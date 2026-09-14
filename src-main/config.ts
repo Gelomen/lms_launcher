@@ -216,6 +216,18 @@ export function defaultParams(): ParamsFile {
   };
 }
 
+/**
+ * 保存 llama.cpp 安装目录（2026-09-14 修复）。
+ * load→改→save 增量保存：旧 save_llama_dir 用全新 {llama_dir} 对象 appConfigSave
+ * 全量重写 yaml，把 proxy_host/proxy_port/vram_total_gb/llama_update 全部清空。
+ */
+export function saveLlamaDir(p: string, dir: string): AppConfig {
+  const cfg = appConfigLoad(p);
+  cfg.llama_dir = (dir ?? '').trim();
+  appConfigSave(p, cfg);
+  return cfg;
+}
+
 /** 保存代理设置（端口走字符串，由主进程校验防注入）；两参均空 = 清除代理 */
 export function saveProxy(p: string, host: string, port: string): AppConfig {
   const cfg = appConfigLoad(p);

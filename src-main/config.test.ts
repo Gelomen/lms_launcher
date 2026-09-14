@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds, saveProxy } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir } from './config';
 import { tmpPath, rm, writeText, jp } from './test-utils';
 
 describe('config.ts', () => {
@@ -336,6 +336,47 @@ describe('saveProxy', () => {
     expect(() => saveProxy(p, 'h', '0')).toThrow('端口须为 1–65535');
     expect(() => saveProxy(p, 'h', '99999')).toThrow('端口须为 1–65535');
     expect(() => saveProxy(p, 'h', 'abc')).toThrow('端口须为 1–65535');
+    rm(p);
+  });
+});
+
+describe('saveLlamaDir', () => {
+  it('save 后 llama_dir 持久化（trim）', () => {
+    const p = tmpPath('savedir_ok.yaml');
+    rm(p);
+    saveLlamaDir(p, ' C:\\llama ');
+    expect(appConfigLoad(p).llama_dir).toBe('C:\\llama');
+    rm(p);
+  });
+
+  it('增量保存：不破坏 proxy / vram_total_gb / llama_update 字段', () => {
+    // 2026-09-14 bug 回归：旧 save_llama_dir 用全新 {llama_dir} 对象 appConfigSave
+    // 全量重写 yaml → proxy_host/proxy_port/vram_total_gb/llama_update 全被清空。
+    // 修复后必须 load→改→save，其余字段原样保留。
+    const p = tmpPath('savedir_preserve.yaml');
+    rm(p);
+    appConfigSave(p, {
+      llama_dir: 'C:\\old',
+      vram_total_gb: 24,
+      proxy_host: '127.0.0.1',
+      proxy_port: 10808,
+      llama_update: { last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: true },
+    });
+    saveLlamaDir(p, 'C:\\new');
+    const cfg = appConfigLoad(p);
+    expect(cfg.llama_dir).toBe('C:\\new');
+    expect(cfg.vram_total_gb).toBe(24);
+    expect(cfg.proxy_host).toBe('127.0.0.1');
+    expect(cfg.proxy_port).toBe(10808);
+    expect(cfg.llama_update).toEqual({ last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: true });
+    rm(p);
+  });
+
+  it('文件不存在 → 首次创建并写入', () => {
+    const p = tmpPath('savedir_missing.yaml');
+    rm(p);
+    saveLlamaDir(p, 'D:\\llama');
+    expect(appConfigLoad(p).llama_dir).toBe('D:\\llama');
     rm(p);
   });
 });

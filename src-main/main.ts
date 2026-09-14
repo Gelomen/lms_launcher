@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'ele
 import { trayTooltipText } from './tray-tooltip';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
@@ -199,8 +199,9 @@ ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
   return 'ok';
 });
 ipcMain.handle('save_llama_dir', (_e, dir: string): void => {
-  const [p] = yamlPaths();
-  appConfigSave(p, { llama_dir: dir.trim() });
+  // 增量保存（2026-09-14 修复）：旧实现 appConfigSave(p, {llama_dir}) 全量重写 yaml，
+  // 会清空 proxy_host/proxy_port/vram_total_gb/llama_update 等无关字段
+  saveLlamaDir(yamlPaths()[0], dir);
 });
 ipcMain.handle('validate_dir', (_e, dir: string): boolean => {
   return existsSync(join(dir, 'llama-server.exe'));
