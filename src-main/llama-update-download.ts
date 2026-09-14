@@ -2,7 +2,7 @@
 // 下载 Windows zip 包（支持代理与进度回调），解压到目标目录，
 // 可选下载 CUDA DLLs，并运行 llama-server --version 验证安装。
 
-import { AdmZip } from 'adm-zip';
+import AdmZip from 'adm-zip';
 import { spawnSync } from 'node:child_process';
 import { createWriteStream, existsSync, rmSync } from 'node:fs';
 import { Readable, Transform } from 'node:stream';
