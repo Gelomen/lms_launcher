@@ -34,6 +34,13 @@ exit /b 1
 :kill_after
 echo.
 
+echo [build] Installing dependencies...
+call npm install
+if errorlevel 1 (
+  echo [build] FAILED: npm install exited with an error.
+  exit /b 1
+)
+
 echo [build] Building renderer + main process...
 call npm run build
 if errorlevel 1 (
