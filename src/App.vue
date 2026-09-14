@@ -45,7 +45,12 @@ const updateState = ref<{ phase: UpdatePhase; version: string; pct: number; erro
   phase: 'idle', version: '', pct: 0, errorText: '',
 });
 // 状态行：恒单行，数据驱动便于扩展（UpdateModal items 契约）
-const updateItems = computed(() => [{ name: 'LMS 启动器', ...updateState.value }]);
+// llama.cpp item：仅作为信号项（phase 无实际作用，UpdateModal 内部管理 llama 状态）；
+// 如果 llama_dir 未配置，UpdateModal 内部检查会失败并显示错误信息
+const updateItems = computed(() => [
+  { name: 'LMS 启动器', ...updateState.value },
+  { name: 'llama.cpp', phase: 'idle', version: '', pct: 0, errorText: '' },
+]);
 // 最近一次失败类型：error 态「重试」据此分流（check 失败→重发 check；download 失败→重发 download）
 const lastFailure = ref<'check' | 'download'>('check');
 // check_update IPC 返回类型（与 main.ts UpdateCheckResult 一致）
@@ -183,6 +188,20 @@ onMounted(async () => {
   // 设置（2026-10-01 update-proxy-settings）：托盘「设置」→ SettingsModal
   unsubs.push(onTraySettingsRequest(() => { settingsOpen.value = true; }));
 });
+
+// llama.cpp 更新进度事件（由 UpdateModal emit，此处仅记录到日志）
+function onLlamaProgress(pct: number): void {
+  // 进度条 UI 已在 UpdateModal 内部渲染，此处无需额外操作
+}
+
+// llama.cpp 更新完成事件
+function onLlamaComplete(success: boolean, error?: string): void {
+  if (success) {
+    appendSys('llama.cpp 更新完成');
+  } else {
+    appendSys('llama.cpp 更新失败 · ' + (error ?? '未知错误'));
+  }
+}
 onUnmounted(() => { for (const u of unsubs) u(); });
 
 function onTemplateChanged(): void {
@@ -334,8 +353,10 @@ function onExitClose(): void {
     <ConfirmDialog :open="exitConfirm" title="退出程序" message="将停止 llama-server 并退出，是否确认？" tone="primary"
       @confirm="onExitConfirmed" @close="onExitClose" />
     <!-- 检查更新弹窗（七态由 updateState 驱动；action 事件由 onUpdateAction 分流） -->
+    <!-- llama.cpp 更新区域由 UpdateModal 内部管理（Task 7）；此处仅添加 llama event handlers -->
     <UpdateModal :open="updateOpen" :items="updateItems"
-      @action="onUpdateAction" @close="() => (updateOpen = false)" />
+      @action="onUpdateAction" @close="() => (updateOpen = false)"
+      @llama-progress="onLlamaProgress" @llama-complete="onLlamaComplete" />
     <!-- 设置弹窗（2026-10-01 update-proxy-settings）：托盘「设置」入口；close/saved 均关弹窗 -->
     <SettingsModal :open="settingsOpen" @close="settingsOpen = false" @saved="settingsOpen = false" />
   </main>

@@ -23,6 +23,8 @@ const trayUpdateHandlers: Array<() => void> = [];
 let traySettingsHandlers: Array<() => void> = [];
 // GPU 卡片（spec 2026-09-09-gpu-card-design）：gpu-stats 推送事件桥
 const gpuStatsHandlers: Array<(e: { gpus: unknown[] }) => void> = [];
+// llama.cpp 更新进度事件桥（Task 8）：UpdateModal 内通过 ipc.onLlamaUpdateProgress 订阅
+const llamaUpdateProgressHandlers: Array<(e: { percent: number; stage: string }) => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
@@ -35,6 +37,7 @@ vi.mock('./ipc', () => ({
   onUpdateDownloadProgress: (fn: (e: { pct: number }) => void) => { updateProgressHandlers.push(fn); return () => {}; },
   onTrayUpdateRequest: (fn: () => void) => { trayUpdateHandlers.push(fn); return () => {}; },
   onTraySettingsRequest: (fn: () => void) => { traySettingsHandlers.push(fn); return () => {}; },
+  onLlamaUpdateProgress: (fn: (e: { percent: number; stage: string }) => void) => { llamaUpdateProgressHandlers.push(fn); return () => {}; },
   onGpuStats: (fn: (e: { gpus: unknown[] }) => void) => { gpuStatsHandlers.push(fn); return () => {} },
 }));
 
