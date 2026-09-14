@@ -1,7 +1,18 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 
-export interface AppConfig { llama_dir: string; vram_total_gb?: number; proxy_host?: string; proxy_port?: number }
+export interface LlamaUpdateConfig {
+  last_version_type?: string;
+  include_pre_release?: boolean;
+}
+
+export interface AppConfig {
+  llama_dir: string;
+  vram_total_gb?: number;
+  proxy_host?: string;
+  proxy_port?: number;
+  llama_update?: LlamaUpdateConfig;
+}
 export interface ParamsFile {
   params: Record<string, string>;
   required: string[];
@@ -21,7 +32,7 @@ function normalizeEntry(entry: { desc?: string; name?: string; values: Record<st
   return entry.desc !== undefined ? { name: entry.desc, values: entry.values } : { values: entry.values };
 }
 
-const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '' };
+const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '', llama_update: { last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: false } };
 
 function parseYaml(path: string, s: string, name: string): unknown {
   let parsed: unknown;
@@ -43,7 +54,13 @@ export function appConfigLoad(path: string): AppConfig {
     const s = readFileSync(path, 'utf8');
     if (s.trim().length === 0) return EMPTY_APP_CONFIG;
     const parsed = parseYaml(path, s, 'lms_launcher.yaml') as Partial<AppConfig> | null;
-    return { llama_dir: parsed?.llama_dir ?? '', vram_total_gb: parsed?.vram_total_gb, proxy_host: parsed?.proxy_host, proxy_port: parsed?.proxy_port };
+    return {
+      llama_dir: parsed?.llama_dir ?? '',
+      vram_total_gb: parsed?.vram_total_gb,
+      proxy_host: parsed?.proxy_host,
+      proxy_port: parsed?.proxy_port,
+      llama_update: parsed?.llama_update,
+    };
   } catch {
     return EMPTY_APP_CONFIG;
   }
