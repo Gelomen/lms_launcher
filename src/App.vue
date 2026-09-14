@@ -45,11 +45,9 @@ const updateState = ref<{ phase: UpdatePhase; version: string; pct: number; erro
   phase: 'idle', version: '', pct: 0, errorText: '',
 });
 // 状态行：恒单行，数据驱动便于扩展（UpdateModal items 契约）
-// llama.cpp item：仅作为信号项（phase 无实际作用，UpdateModal 内部管理 llama 状态）；
-// 如果 llama_dir 未配置，UpdateModal 内部检查会失败并显示错误信息
+// llama.cpp 更新由 UpdateModal 内部管理，不再作为信号项传入
 const updateItems = computed(() => [
   { name: 'LMS 启动器', ...updateState.value },
-  { name: 'llama.cpp', phase: 'idle', version: '', pct: 0, errorText: '' },
 ]);
 // 最近一次失败类型：error 态「重试」据此分流（check 失败→重发 check；download 失败→重发 download）
 const lastFailure = ref<'check' | 'download'>('check');

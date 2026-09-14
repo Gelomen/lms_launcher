@@ -138,15 +138,28 @@ export async function downloadAndInstallLlama({
 }
 
 /**
+ * 从下载 URL 推导 release tag。
+ * URL 格式：https://github.com/ggml-org/llama.cpp/releases/download/<tag>/<file>.zip
+ *
+ * @returns tag（如 "b10955" 或 "v0.4.0"），格式不匹配时返回 null
+ */
+export function deriveTagFromDownloadUrl(url: string): string | null {
+  const m = url.match(/releases\/download\/([^/]+)\/[^/]+$/);
+  return m ? m[1] : null;
+}
+
+/**
  * 验证 llama.cpp 安装：检查 llama-server.exe 存在并运行 --version。
  *
  * @param targetDir - llama.cpp 安装目录
- * @param expectedTag - 预期的版本 tag（如 "v0.4.0" 或 "b10952"）
+ * @param expectedTag - 预期的版本 tag（如 "v0.4.0" 或 "b10952"）；缺省时
+ *   只验证 exe 存在且版本输出可解析（2026-09-14 修复：旧实现硬编码传 'latest'
+ *   导致验证恒失败；现由调用方从下载 URL 推导真实 tag）
  * @returns 验证结果
  */
 export async function verifyLlamaInstall(
   targetDir: string,
-  expectedTag: string
+  expectedTag?: string
 ): Promise<{ success: boolean; actualVersion?: string; error?: string }> {
   const exePath = join(targetDir, 'llama-server.exe');
 
@@ -193,11 +206,13 @@ export async function verifyLlamaInstall(
       actualVersionStr = output;
     }
 
-    // 比较版本 tag
-    const expectedClean = expectedTag.replace(/^v/, '');
+    // 比较版本 tag（expectedTag 缺省时：版本可解析即通过）
+    const expectedClean = expectedTag ? expectedTag.replace(/^v/, '') : null;
     let success = false;
 
-    if (expectedClean.startsWith('b')) {
+    if (!expectedClean) {
+      success = true;
+    } else if (expectedClean.startsWith('b')) {
       // Build 号比较
       const expectedBuild = parseInt(expectedClean.slice(1), 10);
       const actualBuild = parsed.build;

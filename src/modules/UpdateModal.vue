@@ -6,7 +6,7 @@
 // 32px 标题栏（标题居中，右上角 × 关闭 hover 红底白字）+ 内容区 padding 16px。
 // Task 7 扩展：新增 llama.cpp 更新区域（版本选择器 + 下载进度）
 
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onBeforeUnmount } from 'vue';
 import {
   checkLlamaUpdate,
   getLlamaLocalVersion,
@@ -40,9 +40,11 @@ const emit = defineEmits<{
 }>();
 
 // Task 7: llama.cpp 更新状态
+// 本地版本显示文本（2026-09-14 修复）：dev 构建显示 b 号（与 nightly tag 同格式），
+// 正式版显示 vX.Y.Z；避免旧契约下 localResult.version.version 的 undefined 显示
 const llamaLocalVersion = ref<string>('');
 const llamaRemoteVersion = ref<string>('');
-const llamaUpdateStatus = ref<'up-to-date' | 'update-available' | 'unknown' | 'error'>('unknown');
+const llamaUpdateStatus = ref<'up-to-date' | 'update-available' | 'unknown' | 'error' | 'unconfigured'>('unknown');
 const llamaVersionOptions = ref<Array<{ label: string; downloadUrl: string; cudaDllsUrl?: string }>>([]);
 const llamaSelectedOptionIndex = ref(0);
 const llamaDownloading = ref(false);
@@ -58,7 +60,11 @@ async function checkLlamaUpdateInternal() {
     // 先获取本地版本
     const localResult = await getLlamaLocalVersion();
     if (localResult.success && localResult.version) {
-      llamaLocalVersion.value = localResult.version.version;
+      const v = localResult.version;
+      // 有 build 号（nightly/dev）→ 显示 b 号，与远端 tag 同格式便于肉眼比较
+      llamaLocalVersion.value = v.build !== undefined
+        ? `b${v.build}`
+        : v.version ? `v${v.version}` : '';
     }
 
     // 获取更新配置
@@ -66,28 +72,30 @@ async function checkLlamaUpdateInternal() {
     const configResult = await getLlamaUpdateConfig();
     llamaConfigLoading.value = false;
 
-    // 检查远程更新
-    const result = await checkLlamaUpdate(configResult.config?.include_pre_release ?? false);
+    // 检查远程更新（include_pre_release 缺省 true：llama.cpp 的 stable release 无 Windows 资产，nightly 是唯一可下载来源）
+    const result = await checkLlamaUpdate(configResult.config?.include_pre_release ?? true);
     if (result.success) {
       llamaUpdateStatus.value = result.status ?? 'unknown';
       if (result.remoteVersion) {
         llamaRemoteVersion.value = result.remoteVersion;
       }
       if (result.versionOptions && result.versionOptions.length > 0) {
+        // cudaDllsUrl 已由主进程按 release body 行内关联解析（2026-09-14 修复：
+        // 旧实现把所有 DLLs 塞给第一个选项 → CPU 版下载时误装 CUDA DLLs）
         llamaVersionOptions.value = result.versionOptions.map(opt => ({
           label: opt.label,
           downloadUrl: opt.downloadUrl,
-          // cudaDllsUrl 需要关联 cudaDlls
-          cudaDllsUrl: undefined,
+          cudaDllsUrl: opt.cudaDllsUrl,
         }));
-        // 如果有 cudaDlls，关联到第一个选项
-        if (result.cudaDlls && result.cudaDlls.length > 0) {
-          llamaVersionOptions.value[0].cudaDllsUrl = result.cudaDlls[0].downloadUrl;
-        }
       }
     } else {
-      llamaUpdateStatus.value = 'error';
-      llamaError.value = result.error ?? '未知错误';
+      // 区分 unconfigured 和一般错误
+      if (result.error === 'unconfigured') {
+        llamaUpdateStatus.value = 'unconfigured';
+      } else {
+        llamaUpdateStatus.value = 'error';
+        llamaError.value = result.error ?? '未知错误';
+      }
     }
   } catch (e) {
     llamaUpdateStatus.value = 'error';
@@ -144,14 +152,32 @@ function cleanupLlamaProgressListener() {
   }
 }
 
-onMounted(() => {
-  // 检查是否有 llama.cpp item，如果有则开始检查更新
-  const hasLlamaItem = props.items.some(item => item.name === 'llama.cpp');
-  if (hasLlamaItem) {
-    checkLlamaUpdateInternal();
-    setupLlamaProgressListener();
-  }
-});
+// 每次打开弹窗都重新检查（2026-09-14 bug 修复）：
+// 组件恒常驻挂载（App.vue 仅 v-if 遮罩），若只在 onMounted 检查一次，
+// 用户在会话运行中才选定 llama.cpp 安装目录时，那次一次性检查发生在
+// llama_dir 仍为空 → 状态永久卡 'unconfigured'（提示「请先选择安装目录」且无按钮）。
+// 故监听 open：打开时重置状态并重新检查 + (重)挂进度监听；关闭时清理监听。
+watch(
+  () => props.open,
+  (open) => {
+    if (open) {
+      // 重置状态，避免上一轮残留（如旧的 unconfigured / error / 下载进度）
+      llamaUpdateStatus.value = 'unknown';
+      llamaLocalVersion.value = '';
+      llamaRemoteVersion.value = '';
+      llamaVersionOptions.value = [];
+      llamaSelectedOptionIndex.value = 0;
+      llamaDownloadPct.value = 0;
+      llamaDownloadStage.value = '';
+      llamaError.value = '';
+      checkLlamaUpdateInternal();
+      setupLlamaProgressListener();
+    } else {
+      cleanupLlamaProgressListener();
+    }
+  },
+  { immediate: true },
+);
 
 onBeforeUnmount(() => {
   cleanupLlamaProgressListener();
@@ -281,13 +307,16 @@ function textGradientStyle(item: Item): string | undefined {
           <div class="update-row llama-section" v-if="llamaUpdateStatus !== 'unknown'">
             <div class="llama-info">
               <span class="update-row__name">llama.cpp</span>
-              <span v-if="llamaLocalVersion" class="llama-version">本地: v{{ llamaLocalVersion }}</span>
+              <span v-if="llamaLocalVersion" class="llama-version">本地: {{ llamaLocalVersion }}</span>
             </div>
-            <div class="llama-status" v-if="llamaUpdateStatus === 'up-to-date'">
+            <div class="llama-unconfigured" v-if="llamaUpdateStatus === 'unconfigured'">
+              <span class="llama-unconfigured-hint">请先在主界面选择 llama.cpp 安装目录</span>
+            </div>
+            <div class="llama-status" v-else-if="llamaUpdateStatus === 'up-to-date'">
               <span class="llama-up-to-date">已是最新版本</span>
             </div>
             <div class="llama-update-available" v-else-if="llamaUpdateStatus === 'update-available'">
-              <span class="llama-new-version">新版本: v{{ llamaRemoteVersion }}</span>
+              <span class="llama-new-version">新版本: {{ llamaRemoteVersion }}</span>
               <!-- 版本选项选择器 -->
               <select
                 v-if="llamaVersionOptions.length > 0"
@@ -496,6 +525,10 @@ function textGradientStyle(item: Item): string | undefined {
   border-radius: 4px;
   background: var(--card);
   color: var(--text);
+}
+.llama-unconfigured-hint {
+  font-size: var(--fs-label);
+  color: var(--muted);
 }
 .llama-error {
   width: 100%;

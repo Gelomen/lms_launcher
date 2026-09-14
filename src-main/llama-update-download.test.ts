@@ -8,7 +8,10 @@ const { mockAdmZip, mockExistsSync, mockRmSync, mockSpawnSync } = vi.hoisted(() 
   mockSpawnSync: vi.fn(),
 }));
 
+// CJS interop：实现里 `import AdmZip from 'adm-zip'` 取 default 导出，
+// 旧 mock 只给具名 AdmZip 缺 default → 下载必抛 vitest interop 错误（2026-09-14 修复，预存 2 例失败的根因）
 vi.mock('adm-zip', () => ({
+  default: mockAdmZip,
   AdmZip: mockAdmZip,
 }));
 
@@ -25,9 +28,11 @@ vi.mock('node:child_process', () => ({
   spawnSync: mockSpawnSync,
 }));
 
-import { downloadAndInstallLlama, verifyLlamaInstall } from './llama-update-download';
+import { downloadAndInstallLlama, verifyLlamaInstall, deriveTagFromDownloadUrl } from './llama-update-download';
 
 function makeMockResponse() {
+  // headers 必须是带 .get 的 Headers 形态（生产代码 res.headers.get('content-length')），
+  // 旧 mock 用 Map 缺 .get → 下载必抛 TypeError（2026-09-14 修复，预存 2 例失败的根因）
   return {
     ok: true,
     status: 200,
@@ -37,7 +42,9 @@ function makeMockResponse() {
         controller.close();
       },
     }),
-    headers: new Map([['content-length', '3']]),
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'content-length' ? '3' : null),
+    },
   };
 }
 
@@ -112,6 +119,55 @@ describe('verifyLlamaInstall', () => {
 
     expect(result.success).toBe(true);
     expect(result.actualVersion).toBe('b10952');
+  });
+});
+
+describe('deriveTagFromDownloadUrl', () => {
+  it('从 GitHub 下载 URL 提取 nightly tag', () => {
+    expect(deriveTagFromDownloadUrl(
+      'https://github.com/ggml-org/llama.cpp/releases/download/b10955/llama-b10955-bin-win-cpu-x64.zip'
+    )).toBe('b10955');
+  });
+
+  it('从 GitHub 下载 URL 提取 stable tag', () => {
+    expect(deriveTagFromDownloadUrl(
+      'https://github.com/ggml-org/llama.cpp/releases/download/v0.4.0/llama-bin-win-cpu-x64.zip'
+    )).toBe('v0.4.0');
+  });
+
+  it('非 GitHub release URL 返回 null', () => {
+    expect(deriveTagFromDownloadUrl('https://example.com/llama.zip')).toBeNull();
+  });
+});
+
+describe('verifyLlamaInstall · 无 expectedTag（2026-09-14 修复）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('无 tag 时版本可解析即通过（替代旧硬编码 \'latest\' 的兜底）', async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: 'version: 0.3.0-dev (build 10679, commit 50f068fff)\nbuilt with Clang 20.1.8 for Windows x86_64',
+      stderr: '',
+    });
+
+    const result = await verifyLlamaInstall('/path/to/llama');
+    expect(result.success).toBe(true);
+    expect(result.actualVersion).toBe('b10679');
+  });
+
+  it('无 tag 时版本不可解析仍失败', async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: 'garbage output',
+      stderr: '',
+    });
+
+    const result = await verifyLlamaInstall('/path/to/llama');
+    expect(result.success).toBe(false);
   });
 });
 

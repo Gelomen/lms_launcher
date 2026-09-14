@@ -3,14 +3,17 @@ import { invoke } from './ipc';
 
 export type LlamaUpdateStatus = 'up-to-date' | 'update-available' | 'unknown';
 
+// 与主进程 LlamaVersion 契约一致（2026-09-14 修复：旧契约 {version, commit} 与主进程不匹配）
 export interface LlamaVersion {
-  version: string;
-  commit: string | null;
+  type: 'release' | 'prerelease';
+  version?: string;   // 如 '0.3.0'（dev 构建也带，type 区分）
+  build?: number;     // 如 10679
 }
 
 export interface VersionOption {
   label: string;
   downloadUrl: string;
+  cudaDllsUrl?: string;   // 行内关联的 CUDA DLLs 下载链接
 }
 
 export interface CudaDll {
@@ -50,7 +53,9 @@ export interface LlamaDownloadResult {
   error?: string;
 }
 
-export function checkLlamaUpdate(includePreRelease = false): Promise<LlamaUpdateCheckResult> {
+// 默认包含 nightly：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、无 Windows 二进制，
+// 只看 stable 永远找不到可下载版本（2026-09-14 bug 根因之一）。
+export function checkLlamaUpdate(includePreRelease = true): Promise<LlamaUpdateCheckResult> {
   return invoke('check_llama_update', { include_pre_release: includePreRelease });
 }
 

@@ -4,9 +4,26 @@
 // 弹窗经 <Teleport to="body"> 渲染，故在 document 层级断言 DOM（同 TemplateModal.test 风格）。
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import UpdateModal from './UpdateModal.vue';
+
+// Mock window.lms for UpdateModal tests
+beforeEach(() => {
+  window.lms = {
+    invoke: vi.fn(async () => ({})),
+    onLogLine: () => () => {},
+    onProcessExit: () => () => {},
+    onTrayExitRequest: () => () => {},
+    onWinMaxChanged: () => () => {},
+    onUpdateDownloadProgress: () => () => {},
+    onLlamaUpdateProgress: () => () => {},
+    onTrayUpdateRequest: () => () => {},
+    onTraySettingsRequest: () => () => {},
+    onGpuStats: () => () => {},
+  };
+});
 
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
 type Item = { name: string; phase: Phase; version?: string; pct?: number; errorText?: string };
@@ -184,6 +201,116 @@ describe('UpdateModal', () => {
   it('open=false: 不渲染（DOM 无 update-modal）', () => {
     const w = mountModal({ open: false });
     expect(document.querySelector('.update-modal')).toBeNull();
+    w.unmount();
+  });
+});
+
+// ---- Task 7 回归：llama.cpp 更新状态需在每次「打开弹窗」时重新检查 ----
+// 根因（2026-09-14 bug）：UpdateModal 恒常驻挂载，旧逻辑仅在 onMounted 检查一次。
+// 用户在会话运行中才在主界面选定 llama.cpp 安装目录 → 那次一次性检查发生在
+// llama_dir 为空时 → 状态永久卡在 'unconfigured' → 重新打开弹窗不重新检查，
+// 仍提示「请先在主界面选择 llama.cpp 安装目录」且无按钮。
+describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
+  // 持久 invoke mock：同一 vi.fn 实例贯穿 open→false→true，用 mockImplementation 切换主进程返回值
+  let invokeMock: ReturnType<typeof vi.fn>;
+  function countCheckCalls(): number {
+    return invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update').length;
+  }
+
+  it('首次打开：llama_dir 未配置 → 显示「请先在主界面选择 llama.cpp 安装目录」且无按钮', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(document.querySelector('.llama-unconfigured-hint')?.textContent?.trim())
+      .toBe('请先在主界面选择 llama.cpp 安装目录');
+    // unconfigured 态有意无动作按钮（仅提示）
+    expect(document.querySelector('.llama-section .btn-primary')).toBeNull();
+    w.unmount();
+  });
+
+  // 2026-09-14 bug 回归：本地版本显示。主进程返回真实解析结果
+  // { type: 'prerelease', version: '0.3.0', build: 10679 }（旧契约 {version, commit} 已废弃），
+  // 旧代码 localResult.version.version 虽能取到 '0.3.0'，但模板拼 'v' 前缀 + 远端 tag 是 b 号，
+  // 显示必须不出现 undefined 且体现 build 号（b10679）。
+  it('本地 dev 构建版本显示 build 号且不出现 undefined', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b10955',
+        versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }],
+      };
+      if (cmd === 'get_llama_local_version') return {
+        success: true,
+        version: { type: 'prerelease', version: '0.3.0', build: 10679 },
+      };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    const localEl = document.querySelector('.llama-version');
+    expect(localEl).not.toBeNull();
+    expect(localEl!.textContent).not.toContain('undefined');
+    expect(localEl!.textContent).toContain('10679');
+    // 远端是 nightly b 号 tag：显示不应出现 undefined
+    const newEl = document.querySelector('.llama-new-version');
+    expect(newEl).not.toBeNull();
+    expect(newEl!.textContent).toContain('b10955');
+    expect(newEl!.textContent).not.toContain('undefined');
+    w.unmount();
+  });
+
+  it('关闭后再打开：llama_dir 已配置 → 重新执行检查，状态刷新（提示消失）', async () => {
+    // 阶段 1：未配置
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(document.querySelector('.llama-unconfigured-hint')).not.toBeNull();
+    const callsBeforeReopen = countCheckCalls();
+    expect(callsBeforeReopen).toBeGreaterThan(0);
+
+    // 阶段 2：用户已在主界面选定目录 → 主进程返回 up-to-date
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { version: '1', commit: null } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+
+    // 关闭 → 重新打开
+    await w.setProps({ open: false });
+    await nextTick();
+    await w.setProps({ open: true });
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    // 重新打开后必须再次执行 check_llama_update
+    expect(countCheckCalls()).toBeGreaterThan(callsBeforeReopen);
+    // 旧的 unconfigured 提示应消失（状态已刷新为 up-to-date）
+    expect(document.querySelector('.llama-unconfigured-hint')).toBeNull();
+    expect(document.querySelector('.llama-up-to-date')?.textContent?.trim()).toBe('已是最新版本');
     w.unmount();
   });
 });

@@ -18,7 +18,7 @@ const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
 import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
-import { downloadAndInstallLlama, verifyLlamaInstall } from './llama-update-download';
+import { downloadAndInstallLlama, verifyLlamaInstall, deriveTagFromDownloadUrl } from './llama-update-download';
 import type { LlamaUpdateConfig } from './config';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
@@ -608,8 +608,10 @@ ipcMain.handle('check_llama_update', async (_e, opts: { include_pre_release?: bo
     ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
     : undefined;
 
-  // 确定 include_pre_release：参数覆盖配置
-  const includePreRelease = opts?.include_pre_release ?? cfg.llama_update?.include_pre_release ?? false;
+  // 确定 include_pre_release：参数覆盖配置。
+  // 默认 true（2026-09-14 修复）：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、
+  // 无任何 Windows 二进制，只看 stable 永远找不到可下载版本 → 恒「获取远程版本失败」。
+  const includePreRelease = opts?.include_pre_release ?? cfg.llama_update?.include_pre_release ?? true;
 
   // 获取本地版本
   let localVersion: LlamaVersion | null = null;
@@ -706,9 +708,10 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     return { success: false, error: result.error ?? 'unknown error' };
   }
 
-  // 安装完成后验证
+  // 安装完成后验证（2026-09-14 修复：旧实现硬编码 'latest' 作为期望 tag，永远匹配不上 → 验证恒失败）
   emitLog('[lms_launcher] llama.cpp · 验证安装...', 'sys');
-  const verifyResult = await verifyLlamaInstall(cfg.llama_dir.trim(), 'latest');
+  const verifyTag = deriveTagFromDownloadUrl(opts.download_url);
+  const verifyResult = await verifyLlamaInstall(cfg.llama_dir.trim(), verifyTag ?? undefined);
   if (verifyResult.success) {
     emitLog(`[lms_launcher] llama.cpp · 安装完成：${verifyResult.actualVersion}`, 'sys');
   } else {

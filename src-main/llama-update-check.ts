@@ -8,30 +8,60 @@ import { type LlamaVersion } from './llama-update-version';
 const GITHUB_API_URL =
   'https://api.github.com/repos/ggml-org/llama.cpp/releases';
 
+/** 单个下载选项（含行内关联的 CUDA DLLs 链接） */
+export interface VersionOption {
+  label: string;
+  downloadUrl: string;
+  cudaDllsUrl?: string;
+}
+
 /**
  * 从 GitHub release body（markdown）中解析 Windows 下载链接。
- * body 格式示例：
- *   - Windows x64 (CPU): [download](https://...)
- *   - Windows x64 (CUDA 12): [download](https://...)
- *   - CUDA DLLs (12.6): [download](https://...)
+ *
+ * 真实 body 格式（2026-09 实测，b10955）：
+ *   - [Windows x64 (CPU)](https://github.com/ggml-org/llama.cpp/releases/download/b10955/llama-b10955-bin-win-cpu-x64.zip)
+ *   - [Windows x64 (CUDA 12)](<url>) - [CUDA 12.4 DLLs](<url>)   ← DLLs 链接内联在同一行
+ *
+ * 同时保留旧格式（"- Windows x64 (CPU): [download](url)"）兼容。
  *
  * @returns 解析结果，无 Windows 链接时返回 null
  */
 export function parseReleaseBody(body: string): {
-  versionOptions: Array<{ label: string; downloadUrl: string }>;
+  versionOptions: VersionOption[];
   cudaDlls?: Array<{ version: string; downloadUrl: string }>;
 } | null {
   if (typeof body !== 'string' || body.length === 0) return null;
 
-  const versionOptions: Array<{ label: string; downloadUrl: string }> = [];
+  const versionOptions: VersionOption[] = [];
   const cudaDlls: Array<{ version: string; downloadUrl: string }> = [];
 
   const lines = body.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // 先检查 CUDA DLLs 行（避免 "Windows x64 (CUDA 12)" 被误匹配）
-    // 格式："- CUDA DLLs (12.6): [download](url)"
+    // 真实格式："- [Windows x64 (CPU)](url)"，可选行尾 " - [CUDA 12.4 DLLs](url)"
+    const realMatch = trimmed.match(
+      /^\s*[-*]?\s*\[(Windows\s+[^\]]+)\]\(([^)\s]+)\)\s*(?:-\s*\[(?:CUDA\s+)?([^\]]*DLLs[^\]]*)\]\(([^)\s]+)\))?/i
+    );
+    if (realMatch) {
+      const option: VersionOption = {
+        label: realMatch[1].trim(),
+        downloadUrl: realMatch[2].trim(),
+      };
+      // 行内 DLLs："[CUDA 12.4 DLLs](url)" → 关联到本选项 + 平铺列表
+      if (realMatch[4]) {
+        option.cudaDllsUrl = realMatch[4].trim();
+        const versionMatch = realMatch[3].match(/(\d+(?:\.\d+)?)/);
+        cudaDlls.push({
+          version: versionMatch ? versionMatch[1] : 'unknown',
+          downloadUrl: realMatch[4].trim(),
+        });
+      }
+      versionOptions.push(option);
+      continue;
+    }
+
+    // 旧格式："- CUDA DLLs (12.6): [download](url)"（独立行）
     const cudaMatch = trimmed.match(
       /^\s*[-*]?\s*(CUDA\s+DLLs[^:]*?):\s*(?:\[.*?\]\(([^)]+)\)|https:\/\/([^)\s]+))/i
     );
@@ -47,8 +77,7 @@ export function parseReleaseBody(body: string): {
       continue;
     }
 
-    // 匹配 markdown 列表项或普通行中的 Windows 下载链接
-    // 格式："- Windows x64 (CPU): [download](url)" 或 "Windows x64 (CPU): https://..."
+    // 旧格式："- Windows x64 (CPU): [download](url)" 或 "Windows x64 (CPU): https://..."
     const winMatch = trimmed.match(
       /^\s*[-*]?\s*(Windows[^:]+?):\s*(?:\[.*?\]\(([^)]+)\)|https:\/\/([^)\s]+))/i
     );
@@ -63,7 +92,7 @@ export function parseReleaseBody(body: string): {
   if (versionOptions.length === 0 && cudaDlls.length === 0) return null;
 
   const result: {
-    versionOptions: Array<{ label: string; downloadUrl: string }>;
+    versionOptions: VersionOption[];
     cudaDlls?: Array<{ version: string; downloadUrl: string }>;
   } = { versionOptions };
 
@@ -128,9 +157,16 @@ export function compareLlamaVersions(
 }
 
 /**
- * 获取 llama.cpp 最新的 release 信息。
+ * 获取 llama.cpp 最新的可用 release 信息。
  *
- * @param includePreRelease 是否包含预发布版本
+ * 2026-09-14 bug 修复：llama.cpp 的 stable release（vX.Y.Z）只有 nightly-tag.txt
+ * 资产、没有任何 Windows 二进制 → 旧实现「includePreRelease=false 只取 stable」
+ * 解析 body 必然失败 → 恒返回 null → UI 报「获取远程版本失败」。
+ * 新行为：按列表顺序取第一个 body 中能解析出 Windows 下载链接的 release
+ * （stable 无链接时自动兜底到后续 nightly），includePreRelease=false 时
+ * 仅在「选中的 release 可解析」的前提下跳过 prerelease。
+ *
+ * @param includePreRelease 是否优先使用预发布版本（nightly）
  * @param proxy 代理 URL（可选），如 "http://127.0.0.1:7890"
  * @returns 最新 release 信息，失败时返回 null
  */
@@ -139,7 +175,7 @@ export async function fetchLlamaReleaseInfo(
   proxy?: string
 ): Promise<{
   tag: string;
-  versionOptions: Array<{ label: string; downloadUrl: string }>;
+  versionOptions: VersionOption[];
   cudaDlls?: Array<{ version: string; downloadUrl: string }>;
   publishedAt: string;
 } | null> {
@@ -170,25 +206,29 @@ export async function fetchLlamaReleaseInfo(
     const releases = await response.json();
     if (!Array.isArray(releases) || releases.length === 0) return null;
 
-    // 筛选：includePreRelease=false 时只取非预发布
-    let target: typeof releases[0] | null = null;
-    for (const release of releases) {
-      if (!includePreRelease && release.prerelease) continue;
-      target = release;
-      break;
-    }
+    // 按列表顺序找第一个「body 能解析出 Windows 下载链接」的 release。
+    // 第一轮：includePreRelease=false 时跳过 prerelease；
+    // 第二轮（兜底）：stable 无任何 Windows 链接时放宽到 prerelease（nightly），
+    // 保证用户总能拿到可下载版本（2026-09-14 bug 的根因修复）。
+    const scan = (skipPrerelease: boolean): { release: (typeof releases)[0]; parsed: NonNullable<ReturnType<typeof parseReleaseBody>> } | null => {
+      for (const release of releases) {
+        if (skipPrerelease && release.prerelease) continue;
+        const parsed = parseReleaseBody(release.body || '');
+        if (parsed && parsed.versionOptions.length > 0) {
+          return { release, parsed };
+        }
+      }
+      return null;
+    };
 
-    if (!target) return null;
-
-    // 解析 body 获取下载链接
-    const parsed = parseReleaseBody(target.body || '');
-    if (!parsed) return null;
+    const picked = scan(!includePreRelease) ?? scan(false);
+    if (!picked) return null;
 
     return {
-      tag: target.tag_name,
-      versionOptions: parsed.versionOptions,
-      cudaDlls: parsed.cudaDlls,
-      publishedAt: target.published_at,
+      tag: picked.release.tag_name,
+      versionOptions: picked.parsed.versionOptions,
+      cudaDlls: picked.parsed.cudaDlls,
+      publishedAt: picked.release.published_at,
     };
   } catch {
     return null;

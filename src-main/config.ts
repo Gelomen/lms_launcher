@@ -32,7 +32,9 @@ function normalizeEntry(entry: { desc?: string; name?: string; values: Record<st
   return entry.desc !== undefined ? { name: entry.desc, values: entry.values } : { values: entry.values };
 }
 
-const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '', llama_update: { last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: false } };
+// include_pre_release 默认 true（2026-09-14 修复）：llama.cpp 的 stable release
+// 只有 nightly-tag.txt 资产、无 Windows 二进制，nightly 才是唯一可下载来源。
+const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '', llama_update: { last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: true } };
 
 function parseYaml(path: string, s: string, name: string): unknown {
   let parsed: unknown;
