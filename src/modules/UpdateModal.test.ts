@@ -217,7 +217,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     return invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update').length;
   }
 
-  it('首次打开：llama_dir 未配置 → 显示「请先在主界面选择 llama.cpp 安装目录」且无按钮', async () => {
+  it('首次打开：llama_dir 未配置 → 整个 llama.cpp 区域不显示（仅检查到更新才显示）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
       if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
@@ -229,10 +229,9 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    expect(document.querySelector('.llama-unconfigured-hint')?.textContent?.trim())
-      .toBe('请先在主界面选择 llama.cpp 安装目录');
-    // unconfigured 态有意无动作按钮（仅提示）
-    expect(document.querySelector('.llama-section .btn-primary')).toBeNull();
+    // 未配置目录 → 无更新可显示：整个 llama.cpp 区域（含提示文字与按钮）都不渲染
+    expect(document.querySelector('.llama-section')).toBeNull();
+    expect(document.querySelector('.llama-unconfigured-hint')).toBeNull();
     w.unmount();
   });
 
@@ -286,7 +285,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    expect(document.querySelector('.llama-unconfigured-hint')).not.toBeNull();
+    expect(document.querySelector('.llama-section')).toBeNull();
     const callsBeforeReopen = countCheckCalls();
     expect(callsBeforeReopen).toBeGreaterThan(0);
 
@@ -308,9 +307,59 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
 
     // 重新打开后必须再次执行 check_llama_update
     expect(countCheckCalls()).toBeGreaterThan(callsBeforeReopen);
-    // 旧的 unconfigured 提示应消失（状态已刷新为 up-to-date）
-    expect(document.querySelector('.llama-unconfigured-hint')).toBeNull();
-    expect(document.querySelector('.llama-up-to-date')?.textContent?.trim()).toBe('已是最新版本');
+    // 刷新后状态为 up-to-date → llama.cpp 区域仍不显示（仅 update-available 才显示）
+    expect(document.querySelector('.llama-section')).toBeNull();
+    expect(document.querySelector('.llama-up-to-date')).toBeNull();
+    w.unmount();
+  });
+  // 2026-09 需求：llama.cpp 区域仅在「检查到更新（update-available）」时显示；
+  // up-to-date / unconfigured / error 一律隐藏（弹窗默认只有 LMS 启动器一行）。
+  it('up-to-date 隐藏；检查到更新才显示新版本与「更新 llama.cpp」按钮', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 已是最新 → 区域隐藏
+    expect(document.querySelector('.llama-section')).toBeNull();
+
+    // 重新打开且检查到更新 → 区域显示（版本号 + 选择器 + 更新按钮）
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b10955',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' },
+          { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/c.zip', cudaDllsUrl: 'https://example.com/dlls.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    await w.setProps({ open: false });
+    await nextTick();
+    await w.setProps({ open: true });
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    expect(document.querySelector('.llama-section')).not.toBeNull();
+    expect(document.querySelector('.llama-new-version')?.textContent?.trim()).toBe('新版本: b10955');
+    const select = document.querySelector('.llama-version-select') as HTMLSelectElement | null;
+    expect(select).not.toBeNull();
+    expect(select!.options.length).toBe(2);
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent?.trim()).toBe('更新 llama.cpp');
+    expect(btn!.disabled).toBe(false);
     w.unmount();
   });
 });

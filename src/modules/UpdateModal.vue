@@ -303,19 +303,14 @@ function textGradientStyle(item: Item): string | undefined {
             </div>
           </div>
 
-          <!-- Task 7: llama.cpp 更新区域 -->
-          <div class="update-row llama-section" v-if="llamaUpdateStatus !== 'unknown'">
+          <!-- Task 7: llama.cpp 更新区域（2026-09 需求：仅「检查到更新 update-available」才显示；
+               unconfigured / up-to-date / error / unknown 一律不渲染，弹窗默认只有 LMS 启动器一行） -->
+          <div class="update-row llama-section" v-if="llamaUpdateStatus === 'update-available'">
             <div class="llama-info">
               <span class="update-row__name">llama.cpp</span>
               <span v-if="llamaLocalVersion" class="llama-version">本地: {{ llamaLocalVersion }}</span>
             </div>
-            <div class="llama-unconfigured" v-if="llamaUpdateStatus === 'unconfigured'">
-              <span class="llama-unconfigured-hint">请先在主界面选择 llama.cpp 安装目录</span>
-            </div>
-            <div class="llama-status" v-else-if="llamaUpdateStatus === 'up-to-date'">
-              <span class="llama-up-to-date">已是最新版本</span>
-            </div>
-            <div class="llama-update-available" v-else-if="llamaUpdateStatus === 'update-available'">
+            <div class="llama-update-available">
               <span class="llama-new-version">新版本: {{ llamaRemoteVersion }}</span>
               <!-- 版本选项选择器 -->
               <select
@@ -342,9 +337,8 @@ function textGradientStyle(item: Item): string | undefined {
                 </span>
                 <span v-else>更新 llama.cpp</span>
               </button>
-            </div>
-            <div class="llama-error" v-else-if="llamaUpdateStatus === 'error'">
-              <span class="update-row__error">{{ llamaError || '检查更新失败' }}</span>
+              <!-- 下载失败原因（error 态不再整区显示，失败信息行内红字保留） -->
+              <span v-if="llamaError && !llamaDownloading" class="update-row__error">{{ llamaError }}</span>
             </div>
             <!-- 下载进度条 -->
             <div v-if="llamaDownloading" class="llama-download-progress">
@@ -498,14 +492,6 @@ function textGradientStyle(item: Item): string | undefined {
   font-size: var(--fs-label);
   color: var(--muted);
 }
-.llama-status {
-  width: 100%;
-  margin-top: 4px;
-}
-.llama-up-to-date {
-  font-size: var(--fs-label);
-  color: var(--muted);
-}
 .llama-update-available {
   width: 100%;
   display: flex;
@@ -525,14 +511,6 @@ function textGradientStyle(item: Item): string | undefined {
   border-radius: 4px;
   background: var(--card);
   color: var(--text);
-}
-.llama-unconfigured-hint {
-  font-size: var(--fs-label);
-  color: var(--muted);
-}
-.llama-error {
-  width: 100%;
-  margin-top: 4px;
 }
 .llama-download-progress {
   width: 100%;
