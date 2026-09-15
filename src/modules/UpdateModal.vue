@@ -2,7 +2,7 @@
 // UpdateModal：检查更新弹窗（计划 task-2；规格 docs/superpowers/specs/2026-09-01-update-modal-design.md）
 // 纯渲染层：七态状态机由外层（App）持有 → 本组件 props 驱动（open=false 不渲染）；
 // 事件契约：action(index, kind) / close。关闭 × 只发 close（不中断下载——下载在主进程）。
-// 视觉语言同 TemplateModal：全局 .modal-overlay 遮罩 + 320px 白底 12px 圆角卡片 +
+// 视觉语言同 TemplateModal：全局 .modal-overlay 遮罩 + 440px 白底 12px 圆角卡片 +
 // 32px 标题栏（标题居中，右上角 × 关闭 hover 红底白字）+ 内容区 padding 16px。
 // Task 7 扩展：新增 llama.cpp 更新区域（版本选择器 + 下载进度）
 
@@ -292,6 +292,9 @@ function llamaBtnLabel(): string {
   return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value);
 }
 function llamaBtnDisabled(): boolean {
+  // 2026-09-15 需求：未选择安装目录（unconfigured）时按钮置灰不可点——
+  // 此时检查只会再得到 unconfigured，无意义；用户在主界面选目录后重开弹窗即恢复可点
+  if (llamaUpdateStatus.value === 'unconfigured') return true;
   return LLAMA_BUTTONS[llamaPhase.value].disabled;
 }
 function onLlamaBtn(): void {
@@ -325,7 +328,7 @@ function llamaMiddle(): { kind: string; text: string } | null {
 }
 
 // llama.cpp 名称行下方提示行（2026-09 优化）：unconfigured 灰字提示 / error 红字，
-// 整行完整显示（允许换行，长提示不再被 320px 卡片宽度截断）
+// 整行完整显示（允许换行，长提示不再被卡片宽度截断）
 function llamaBelow(): { kind: string; text: string } | null {
   switch (llamaUpdateStatus.value) {
     case 'unconfigured':
@@ -395,22 +398,8 @@ function llamaBelow(): { kind: string; text: string } | null {
                 "
               >{{ llamaMiddle()?.text }}</span>
             </div>
-            <!-- 名称行下方提示行（2026-09 优化）：未配置灰字提示 / 错误红字，整行完整显示（可换行） -->
-            <div v-if="llamaBelow() !== null" class="llama-below"
-              :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
-            >{{ llamaBelow()?.text }}</div>
-            <!-- 版本选项选择器：仅检查到更新且有选项时出现（独立成行，避免与状态文字挤占行宽） -->
-            <select
-              v-if="llamaUpdateStatus === 'update-available' && llamaVersionOptions.length > 0"
-              class="llama-version-select"
-              :value="llamaSelectedOptionIndex"
-              @change="llamaSelectedOptionIndex = Number(($event.target as HTMLSelectElement).value)"
-              :disabled="llamaDownloading"
-            >
-              <option v-for="(opt, idx) in llamaVersionOptions" :key="idx" :value="idx">
-                {{ opt.label }}
-              </option>
-            </select>
+            <!-- 2026-09-15 布局修复：按钮容器紧跟名称行（.llama-info）置于第一行，与「llama.cpp」文字同行；
+                 原先排在整行独占的 .llama-below 提示行之后，未配置/出错态会被挤到下一行、与名称不同行（截图 bug）。 -->
             <div class="update-row__action">
               <!-- 七态按钮（复用全局 .update-row .btn 尺寸规则）：idle/up-to-date=检查更新 / checking=检查中...(禁用)
                    / available=更新 llama.cpp / downloading=下载中 NN%(禁用) / error=重试 -->
@@ -427,6 +416,22 @@ function llamaBelow(): { kind: string; text: string } | null {
                 >{{ llamaBtnLabel() }}</span>
               </button>
             </div>
+            <!-- 名称行下方提示行（2026-09 优化）：未配置灰字提示 / 错误红字，整行完整显示（可换行） -->
+            <div v-if="llamaBelow() !== null" class="llama-below"
+              :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
+            >{{ llamaBelow()?.text }}</div>
+            <!-- 版本选项选择器：仅检查到更新且有选项时出现（独立成行，避免与状态文字挤占行宽） -->
+            <select
+              v-if="llamaUpdateStatus === 'update-available' && llamaVersionOptions.length > 0"
+              class="llama-version-select"
+              :value="llamaSelectedOptionIndex"
+              @change="llamaSelectedOptionIndex = Number(($event.target as HTMLSelectElement).value)"
+              :disabled="llamaDownloading"
+            >
+              <option v-for="(opt, idx) in llamaVersionOptions" :key="idx" :value="idx">
+                {{ opt.label }}
+              </option>
+            </select>
             <!-- 下载进度条 -->
             <div v-if="llamaDownloading" class="llama-download-progress">
               <div class="llama-progress-bar">
@@ -442,9 +447,10 @@ function llamaBelow(): { kind: string; text: string } | null {
 </template>
 
 <style scoped>
-/* 320px 白底 12px 圆角卡片（同 TemplateModal 卡片语言） */
+/* 440px 白底 12px 圆角卡片（同 TemplateModal 卡片语言；2026-09 优化：320px 太窄，
+   llama.cpp 行「本地: bNNNNN」+「新版本: …」与按钮之间空间不足被截断，加宽至 440px） */
 .update-card {
-  width: 320px;
+  width: 440px;
   background: var(--card);
   border-radius: var(--radius-card);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); /* 与 TemplateModal 全局 .card 卡片阴影一致 */
@@ -503,7 +509,8 @@ function llamaBelow(): { kind: string; text: string } | null {
   flex: none;
 }
 .update-row__middle {
-  flex: 1;
+  flex: 1; /* 2026-09 优化：撑满名称与按钮之间的空间，text-align:center 使提示文字居中（标题/按钮位置不变） */
+  min-width: 0;
   font-size: var(--fs-label);
   text-align: center;
   overflow: hidden;
@@ -602,7 +609,6 @@ function llamaBelow(): { kind: string; text: string } | null {
 }
 .llama-below--error { color: var(--danger); }
 .llama-section .update-row__middle {
-  text-align: left; /* 中段状态文字左对齐跟随「本地:」，不居中（与 LMS 行居中语义区分） */
   overflow: hidden;
   text-overflow: ellipsis;
 }

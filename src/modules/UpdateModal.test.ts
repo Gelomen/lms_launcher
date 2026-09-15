@@ -230,14 +230,99 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
     // 2026-09 需求：llama.cpp 行恒显示；未配置目录 → 提示文字（2026-09 优化：名称行下方独立一行，
-    // .llama-below，可换行完整显示）+ 可点的「检查更新」按钮
+    // .llama-below，可换行完整显示）+「检查更新」按钮
+    // 2026-09-15 需求：未选择安装目录时按钮置灰不可点（无法检查，点了只会再得到 unconfigured）
     expect(document.querySelector('.llama-section')).not.toBeNull();
     expect(document.querySelector('.llama-below')?.textContent?.trim())
       .toBe('请先在主界面选择 llama.cpp 安装目录');
     const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
     expect(btn).not.toBeNull();
     expect(btn!.textContent?.trim()).toBe('检查更新');
-    expect(btn!.disabled).toBe(false);
+    expect(btn!.disabled).toBe(true);
+    w.unmount();
+  });
+
+  // 2026-09-15 需求：未配置态按钮置灰不可点；用户选定目录后重新打开 → 按钮恢复可点
+  it('unconfigured：「检查更新」按钮置灰禁用；重新打开（目录已配置）后恢复可点', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const btn = () => document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn()!.disabled).toBe(true);
+    expect(btn()!.textContent?.trim()).toBe('检查更新');
+
+    // 用户已在主界面选定目录 → 主进程返回 up-to-date → 重开后按钮恢复可点
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { version: '1', commit: null } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    await w.setProps({ open: false });
+    await nextTick();
+    await w.setProps({ open: true });
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(document.querySelector('.llama-below')).toBeNull();
+    expect(btn()!.disabled).toBe(false);
+    expect(btn()!.textContent?.trim()).toBe('检查更新');
+    w.unmount();
+  });
+
+  // 2026-09-15 布局回归：未配置/出错时 .llama-below 提示行以 width:100% 独占整行，
+  // 若按钮容器（.update-row__action）排在提示行之后会被挤到下一行，与「llama.cpp」文字不同行（截图 bug）。
+  // 按钮容器必须是名称行 .llama-info 的直接后继兄弟，恒与名称同处第一行。
+  it('布局：llama.cpp 行「检查更新」按钮与名称文字同处第一行（不被 .llama-below 挤到下一行）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const section = document.querySelector('.llama-section');
+    expect(section).not.toBeNull();
+    const action = section!.querySelector(':scope > .update-row__action');
+    const info = section!.querySelector(':scope > .llama-info');
+    const below = section!.querySelector(':scope > .llama-below');
+    expect(action).not.toBeNull();
+    expect(below).not.toBeNull();
+    // 按钮容器紧跟名称行 → 同一 flex 行；提示行在按钮之后独占下一行
+    expect(action!.previousElementSibling).toBe(info);
+    expect(info!.nextElementSibling).toBe(action);
+    expect(action!.nextElementSibling).toBe(below);
+    w.unmount();
+  });
+
+  it('布局：error 态「重试」按钮同样与名称文字同处第一行', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: false, error: 'failed to fetch remote release info' };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const section = document.querySelector('.llama-section');
+    const action = section!.querySelector(':scope > .update-row__action');
+    const info = section!.querySelector(':scope > .llama-info');
+    expect(action!.previousElementSibling).toBe(info);
     w.unmount();
   });
 
