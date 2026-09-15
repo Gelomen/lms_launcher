@@ -376,10 +376,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
 
-    const localEl = document.querySelector('.llama-version');
-    expect(localEl).not.toBeNull();
-    expect(localEl!.textContent).not.toContain('undefined');
-    expect(localEl!.textContent).toContain('10679');
+    // 2026-09-15 优化：发现新版本时本地版本号不再显示，只保留「新版本: bNNNNN」
+    expect(document.querySelector('.llama-version')).toBeNull();
     // 远端是 nightly b 号 tag：显示不应出现 undefined
     const newEl = document.querySelector('.llama-new-version');
     expect(newEl).not.toBeNull();
@@ -451,6 +449,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     expect(document.querySelector('.llama-section')).not.toBeNull();
     expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
     expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
+    // 2026-09-15 优化：up-to-date 时本地版本号照常显示（仅发现新版本时隐藏）
+    expect(document.querySelector('.llama-version')?.textContent).toContain('b10679');
 
     // 重新打开且检查到更新 → 区域显示（版本号 + 选择器 + 更新按钮）
     invokeMock.mockImplementation(async (cmd: string) => {

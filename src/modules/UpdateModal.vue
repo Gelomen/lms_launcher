@@ -387,7 +387,8 @@ function llamaBelow(): { kind: string; text: string } | null {
           <div class="update-row llama-section">
             <div class="llama-info">
               <span class="update-row__name">llama.cpp</span>
-              <span v-if="llamaLocalVersion" class="llama-version">本地: {{ llamaLocalVersion }}</span>
+              <!-- 发现新版本（update-available）时隐藏本地版本号，只保留「新版本: …」（2026-09-15 优化） -->
+              <span v-if="llamaLocalVersion && llamaUpdateStatus !== 'update-available'" class="llama-version">本地: {{ llamaLocalVersion }}</span>
               <!-- 中段状态文字（已最新灰字/新版本紫字），与 LMS 启动器行同语言 -->
               <span
                 v-if="llamaMiddle() !== null"
