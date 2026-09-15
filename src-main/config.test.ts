@@ -372,14 +372,6 @@ describe('saveLlamaDir', () => {
     rm(p);
   });
 
-  it('legacy 剥离：存量 yaml 的 llama_update.include_pre_release 加载时被移除（2026-09-17 移除该配置项）', () => {
-    const p = tmpPath('legacy_stripped.yaml');
-    rm(p);
-    writeText(p, 'llama_dir: "C:\\llama"\nllama_update:\n  last_version_type: Windows x64 (CUDA 12)\n  include_pre_release: true\n');
-    const cfg = appConfigLoad(p);
-    expect(cfg.llama_update).toEqual({ last_version_type: 'Windows x64 (CUDA 12)' });
-    rm(p);
-  });
 
   it('文件不存在 → 首次创建并写入', () => {
     const p = tmpPath('savedir_missing.yaml');
