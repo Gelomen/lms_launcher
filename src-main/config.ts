@@ -3,7 +3,6 @@ import { parse, stringify as dump } from 'yaml';
 
 export interface LlamaUpdateConfig {
   last_version_type?: string;
-  include_pre_release?: boolean;
 }
 
 export interface AppConfig {
@@ -32,9 +31,7 @@ function normalizeEntry(entry: { desc?: string; name?: string; values: Record<st
   return entry.desc !== undefined ? { name: entry.desc, values: entry.values } : { values: entry.values };
 }
 
-// include_pre_release 默认 true（2026-09-14 修复）：llama.cpp 的 stable release
-// 只有 nightly-tag.txt 资产、无 Windows 二进制，nightly 才是唯一可下载来源。
-const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '', llama_update: { last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: true } };
+const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '', llama_update: { last_version_type: 'Windows x64 (CUDA 12)' } }; // 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）
 
 function parseYaml(path: string, s: string, name: string): unknown {
   let parsed: unknown;
@@ -56,12 +53,16 @@ export function appConfigLoad(path: string): AppConfig {
     const s = readFileSync(path, 'utf8');
     if (s.trim().length === 0) return EMPTY_APP_CONFIG;
     const parsed = parseYaml(path, s, 'lms_launcher.yaml') as Partial<AppConfig> | null;
+    // 2026-09-17：include_pre_release 已移除（stable 无 Windows 包，恒查 nightly）；
+    // 存量 yaml 里残留该字段 → 加载时剥离，避免随后续保存原样重写
+    const lu = parsed?.llama_update;
+    if (lu && 'include_pre_release' in lu) delete lu.include_pre_release;
     return {
       llama_dir: parsed?.llama_dir ?? '',
       vram_total_gb: parsed?.vram_total_gb,
       proxy_host: parsed?.proxy_host,
       proxy_port: parsed?.proxy_port,
-      llama_update: parsed?.llama_update,
+      llama_update: lu,
     };
   } catch {
     return EMPTY_APP_CONFIG;

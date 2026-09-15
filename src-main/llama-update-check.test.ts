@@ -88,7 +88,7 @@ describe('fetchLlamaReleaseInfo', () => {
       json: vi.fn().mockResolvedValue([mockRelease]),
     }));
 
-    const result = await fetchLlamaReleaseInfo(false);
+    const result = await fetchLlamaReleaseInfo();
     expect(result).not.toBeNull();
     expect(result!.tag).toBe('b10952');
     expect(result!.publishedAt).toBe('2025-01-01T00:00:00Z');
@@ -102,10 +102,10 @@ describe('fetchLlamaReleaseInfo', () => {
   // 无任何 Windows 下载链接 → 旧实现（includePreRelease=false 只取 stable）必然 null →
   // UI 报「获取远程版本失败」。新行为：选中的 release body 解析不出 Windows 链接时，
   // 兜底取后续可解析的 release（即 nightly b 号），保证用户总能拿到可下载版本。
-  // 2026-09-17 行为修正：includePreRelease=false 时 stable 无 Windows 链接 → 返回 null（报错），
-  // 不再静默兜底到 nightly——取消勾选后若仍拿到 b 号版本，勾选框形同虚设（用户反馈的 bug）。
-  // （此前此用例断言「兜底到 nightly」，即 2026-09-14 修复引入的静默放宽，语义与勾选框矛盾。）
-  it('stable 无 Windows 链接且 includePreRelease=false → { error: no-windows-assets }（不静默兜底 nightly）', async () => {
+  // 2026-09-14 bug 核心回归：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、
+  // 无任何 Windows 下载链接 → 恒查 pre-release（nightly）：stable 无链接时取 nightly b 号，
+  // 保证用户总能拿到可下载版本。
+  it('stable 无 Windows 链接时取 nightly（恒查 pre-release，可解析即可下载）', async () => {
     const stableRelease = {
       tag_name: 'v0.4.1',
       prerelease: false,
@@ -124,14 +124,16 @@ describe('fetchLlamaReleaseInfo', () => {
       json: vi.fn().mockResolvedValue([stableRelease, nightlyRelease]),
     }));
 
-    const result = await fetchLlamaReleaseInfo(false);
-    expect(result).toEqual({ error: 'no-windows-assets' });
+    const result = await fetchLlamaReleaseInfo();
+    expect(result).not.toBeNull();
+    expect(result!.tag).toBe('b10955');
+    expect(result!.versionOptions).toHaveLength(4);
 
     vi.unstubAllGlobals();
   });
 
-  // stable 有 Windows 链接时（未来上游若提供）includePreRelease=false 正常取 stable
-  it('includePreRelease=false 且 stable 有 Windows 链接 → 取 stable 不取 nightly', async () => {
+  // stable 有 Windows 链接时（未来上游若提供）取列表首位 stable，不越位到后续 nightly
+  it('stable 有 Windows 链接时取 stable（列表顺序优先，不跳过）', async () => {
     const stableRelease = {
       tag_name: 'v0.5.0',
       prerelease: false,
@@ -147,17 +149,17 @@ describe('fetchLlamaReleaseInfo', () => {
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue([nightlyRelease, stableRelease]),
+      json: vi.fn().mockResolvedValue([stableRelease, nightlyRelease]),
     }));
 
-    const result = await fetchLlamaReleaseInfo(false);
+    const result = await fetchLlamaReleaseInfo();
     expect(result).not.toBeNull();
     expect(result!.tag).toBe('v0.5.0');
 
     vi.unstubAllGlobals();
   });
 
-  it('includePreRelease=true 时优先取列表首位的 nightly', async () => {
+  it('列表首位是 nightly 时直接取 nightly（含 prerelease 扫描）', async () => {
     const stableRelease = {
       tag_name: 'v0.4.0',
       prerelease: false,
@@ -176,7 +178,7 @@ describe('fetchLlamaReleaseInfo', () => {
       json: vi.fn().mockResolvedValue([nightlyRelease, stableRelease]),
     }));
 
-    const result = await fetchLlamaReleaseInfo(true);
+    const result = await fetchLlamaReleaseInfo();
     expect(result).not.toBeNull();
     expect(result!.tag).toBe('b10955');
 

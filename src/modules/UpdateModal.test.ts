@@ -519,21 +519,14 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     w.unmount();
   });
 
-  // 2026-09-17 补漏（计划 task-7 步骤 3 约定：版本选择下拉框 + pre-release 勾选框（第二行））：
-  // 此前只实现了版本下拉框，include_pre_release 配置链路（config 默认 true + IPC 参数覆盖）齐全，
-  // 但弹窗中无勾选框 UI，用户无法关闭「包含 pre-release（nightly）版本」检查。
-  // 契约：
-  // - 安装目录已配置（非 unconfigured）时勾选框显示于 llama.cpp 区域第二行；未配置时不显示
-  //   （此时检查按钮本身置灰，勾选无意义；且保持未配置态 DOM 布局回归测试不变）
-  // - 打开弹窗时勾选态 = 已持久化配置 llama_update.include_pre_release（缺省 true），
-  //   首次检查以同一值发起
-  // - 切换勾选框 → 持久化 set_llama_update_config({ include_pre_release }) 并以新值重新检查
-  // - 下载中勾选框禁用（避免下载与配置切换竞争）
-  it('pre-release 勾选框：已配置时显示于第二行，勾选态跟随配置，首次检查携带配置值', async () => {
+  // 2026-09-17 定稿：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅
+  // nightly-tag.txt，2026-09-17 实测 v0.4.1），nightly（b 号）是唯一可下载来源，恒查 pre-release，
+  // 无需用户开关。回归契约：DOM 无勾选框；check_llama_update 不带 include_pre_release 参数；
+  // 也不再读取 get_llama_update_config（该 IPC 仅主进程内部/其他用途，弹窗不依赖）。
+  it('恒查 pre-release：无勾选框 UI，检查不带 include_pre_release 参数', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
       if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { include_pre_release: true } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -541,71 +534,16 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    const box = document.querySelector('.llama-prerelease input[type="checkbox"]') as HTMLInputElement | null;
-    expect(box).not.toBeNull();
-    expect(box!.checked).toBe(true);
-    expect(box!.disabled).toBe(false);
-    // 勾选框行（.llama-prerelease）在 llama.cpp 区域内独占一行（width:100% 换行），且位于名称行之后
-    const row = document.querySelector('.llama-prerelease');
-    expect(row).not.toBeNull();
-    const section = document.querySelector('.llama-section');
-    expect(section!.contains(row)).toBe(true);
-    // 首次检查携带配置值 true
+    // 勾选框已移除
+    expect(document.querySelector('.llama-prerelease')).toBeNull();
+    expect(document.querySelector('.llama-section input[type="checkbox"]')).toBeNull();
+    // 检查正常发起，且不带 include_pre_release 参数
     const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
     expect(checkCalls.length).toBeGreaterThan(0);
-    expect(checkCalls[0][1]).toEqual({ include_pre_release: true });
-    w.unmount();
-  });
-
-  it('pre-release 勾选框：未配置安装目录时不显示（保持未配置态 DOM 布局）', async () => {
-    invokeMock = vi.fn(async (cmd: string) => {
-      if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
-      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
-      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
-      return {};
-    });
-    window.lms.invoke = invokeMock as any;
-    const w = mountModal();
-    await nextTick();
-    await new Promise((r) => setTimeout(r, 0));
-    await nextTick();
-    expect(document.querySelector('.llama-section')).not.toBeNull();
-    expect(document.querySelector('.llama-prerelease')).toBeNull();
-    w.unmount();
-  });
-
-  it('pre-release 勾选框：切换为勾选 → 持久化配置并以 include_pre_release=true 重新检查', async () => {
-    invokeMock = vi.fn(async (cmd: string) => {
-      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { include_pre_release: false } };
-      return {};
-    });
-    window.lms.invoke = invokeMock as any;
-    const w = mountModal();
-    await nextTick();
-    await new Promise((r) => setTimeout(r, 0));
-    await nextTick();
-    const box = document.querySelector('.llama-prerelease input[type="checkbox"]') as HTMLInputElement | null;
-    expect(box).not.toBeNull();
-    expect(box!.checked).toBe(false); // 配置 false → 未勾选
-    const checkCallsBefore = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update').length;
-
-    box!.checked = true;
-    box!.dispatchEvent(new Event('change'));
-    await nextTick();
-    await new Promise((r) => setTimeout(r, 0));
-    await nextTick();
-
-    // 持久化：set_llama_update_config({ include_pre_release: true })
-    const setCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'set_llama_update_config');
-    expect(setCalls.length).toBe(1);
-    expect(setCalls[0][1]).toEqual({ include_pre_release: true });
-    // 重新检查：第二次 check 携带 true
-    const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
-    expect(checkCalls.length).toBe(checkCallsBefore + 1);
-    expect(checkCalls[checkCalls.length - 1][1]).toEqual({ include_pre_release: true });
-    expect(box!.checked).toBe(true);
+    expect(checkCalls[0][1]).toBeUndefined();
+    // 弹窗不再读取更新配置
+    const configCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config');
+    expect(configCalls.length).toBe(0);
     w.unmount();
   });
 });

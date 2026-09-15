@@ -360,7 +360,7 @@ describe('saveLlamaDir', () => {
       vram_total_gb: 24,
       proxy_host: '127.0.0.1',
       proxy_port: 10808,
-      llama_update: { last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: true },
+      llama_update: { last_version_type: 'Windows x64 (CUDA 12)' },
     });
     saveLlamaDir(p, 'C:\\new');
     const cfg = appConfigLoad(p);
@@ -368,7 +368,16 @@ describe('saveLlamaDir', () => {
     expect(cfg.vram_total_gb).toBe(24);
     expect(cfg.proxy_host).toBe('127.0.0.1');
     expect(cfg.proxy_port).toBe(10808);
-    expect(cfg.llama_update).toEqual({ last_version_type: 'Windows x64 (CUDA 12)', include_pre_release: true });
+    expect(cfg.llama_update).toEqual({ last_version_type: 'Windows x64 (CUDA 12)' });
+    rm(p);
+  });
+
+  it('legacy 剥离：存量 yaml 的 llama_update.include_pre_release 加载时被移除（2026-09-17 移除该配置项）', () => {
+    const p = tmpPath('legacy_stripped.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: "C:\\llama"\nllama_update:\n  last_version_type: Windows x64 (CUDA 12)\n  include_pre_release: true\n');
+    const cfg = appConfigLoad(p);
+    expect(cfg.llama_update).toEqual({ last_version_type: 'Windows x64 (CUDA 12)' });
     rm(p);
   });
 

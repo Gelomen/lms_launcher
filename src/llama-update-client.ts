@@ -39,8 +39,8 @@ export interface LlamaLocalVersionResult {
 
 export interface LlamaUpdateConfig {
   last_version_type?: string;
-  include_pre_release?: boolean;
 }
+// 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）
 
 export interface LlamaUpdateConfigResult {
   success: boolean;
@@ -53,10 +53,10 @@ export interface LlamaDownloadResult {
   error?: string;
 }
 
-// 默认包含 nightly：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、无 Windows 二进制，
-// 只看 stable 永远找不到可下载版本（2026-09-14 bug 根因之一）。
-export function checkLlamaUpdate(includePreRelease = true): Promise<LlamaUpdateCheckResult> {
-  return invoke('check_llama_update', { include_pre_release: includePreRelease });
+// 恒查 pre-release（nightly）：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、无 Windows
+// 二进制（2026-09-14 bug 根因），nightly 是唯一可下载来源（2026-09-17 定稿移除 includePreRelease 开关）。
+export function checkLlamaUpdate(): Promise<LlamaUpdateCheckResult> {
+  return invoke('check_llama_update');
 }
 
 export function getLlamaLocalVersion(): Promise<LlamaLocalVersionResult> {

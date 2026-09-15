@@ -592,7 +592,7 @@ function replayUpdateLog(): void {
 }
 // ---------- llama.cpp 更新 IPC（Task 5） ----------
 // check_llama_update：比较本地 llama.cpp 版本与 GitHub 最新 release
-ipcMain.handle('check_llama_update', async (_e, opts: { include_pre_release?: boolean }): Promise<
+ipcMain.handle('check_llama_update', async (_e): Promise<
   | { success: true; status: 'up-to-date' | 'update-available' | 'unknown'; localVersion?: LlamaVersion; remoteVersion?: string; versionOptions?: Array<{ label: string; downloadUrl: string }>; cudaDlls?: Array<{ version: string; downloadUrl: string }> }
   | { success: false; error: string }
 > => {
@@ -609,10 +609,9 @@ ipcMain.handle('check_llama_update', async (_e, opts: { include_pre_release?: bo
     ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
     : undefined;
 
-  // 确定 include_pre_release：参数覆盖配置。
-  // 默认 true（2026-09-14 修复）：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、
-  // 无任何 Windows 二进制，只看 stable 永远找不到可下载版本 → 恒「获取远程版本失败」。
-  const includePreRelease = opts?.include_pre_release ?? cfg.llama_update?.include_pre_release ?? true;
+  // 2026-09-17：恒查 pre-release（nightly）——llama.cpp 的 stable release 只有
+  // nightly-tag.txt 资产、无 Windows 二进制（2026-09-14 修复；2026-09-17 定稿移除
+  // include_pre_release 开关与 UI 勾选框，nightly 是唯一可下载来源）。
 
   // 获取本地版本
   let localVersion: LlamaVersion | null = null;
@@ -627,17 +626,11 @@ ipcMain.handle('check_llama_update', async (_e, opts: { include_pre_release?: bo
   }
 
   // 获取远程 release 信息
-  const remoteInfo = await fetchLlamaReleaseInfo(includePreRelease, proxy);
+  const remoteInfo = await fetchLlamaReleaseInfo(proxy);
   if (!remoteInfo) {
     const proxyNote = proxy ? `（代理 ${proxy}）` : '';
     emitLog(`[lms_launcher] llama.cpp · 获取远程版本失败${proxyNote}`, 'sys');
     return { success: false, error: 'failed to fetch remote release info' };
-  }
-  // 哨兵：取消勾选 pre-release 后 stable 没有 Windows 下载包（llama.cpp stable 仅发 nightly-tag.txt，
-  // 2026-09 实测）→ 明确报错引导用户勾选 pre-release，不再静默兜底 nightly（2026-09-17 修正）
-  if ('error' in remoteInfo) {
-    emitLog('[lms_launcher] llama.cpp · stable 版本没有 Windows 下载包（需 pre-release/nightly）', 'sys');
-    return { success: false, error: 'stable 版本没有 Windows 下载包，请勾选 pre-release 后重试' };
   }
 
   // 比较版本
@@ -730,7 +723,7 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
 });
 
 // set_llama_update_config：设置 llama.cpp 更新配置
-ipcMain.handle('set_llama_update_config', async (_e, opts: { last_version_type?: string; include_pre_release?: boolean }): Promise<
+ipcMain.handle('set_llama_update_config', async (_e, opts: { last_version_type?: string }): Promise<
   { success: true } | { success: false; error: string }
 > => {
   try {
@@ -739,7 +732,7 @@ ipcMain.handle('set_llama_update_config', async (_e, opts: { last_version_type?:
 
     if (!cfg.llama_update) cfg.llama_update = {};
     if (opts.last_version_type !== undefined) cfg.llama_update.last_version_type = opts.last_version_type;
-    if (opts.include_pre_release !== undefined) cfg.llama_update.include_pre_release = opts.include_pre_release;
+    // 2026-09-17：include_pre_release 已移除（恒查 nightly）
 
     appConfigSave(cp, cfg);
     emitLog('[lms_launcher] llama.cpp · 更新配置已保存', 'sys');
