@@ -458,7 +458,7 @@ function llamaBelow(): { kind: string; text: string } | null {
                 :disabled="llamaDownloading"
                 @change="llamaIncludePreRelease = ($event.target as HTMLInputElement).checked; void onLlamaPreReleaseChange()"
               />
-              <span>包含 pre-release（nightly）版本</span>
+              <span>pre-release</span>
             </label>
             <!-- 名称行下方提示行（2026-09 优化）：未配置灰字提示 / 错误红字，整行完整显示（可换行） -->
             <div v-if="llamaBelow() !== null" class="llama-below"
