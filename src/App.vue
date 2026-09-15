@@ -181,8 +181,14 @@ onMounted(async () => {
   unsubs.push(onUpdateDownloadProgress((e) => {
     updateState.value = { ...updateState.value, phase: 'downloading', pct: e.pct };
   }));
-  // §E 入口统一：托盘「检查更新」→ 只开弹窗（不再 re-check、不弹旧确认框）
-  unsubs.push(onTrayUpdateRequest(() => { updateOpen.value = true; }));
+  // 入口统一：托盘「检查更新」→ 开弹窗 + 自动 re-check LMS 启动器行（2026-09-15 契约变更：
+  // 与 llama.cpp 行「打开即自动检查」对齐——启动时静默检查之后发布的新版本，重开弹窗立即可见）。
+  // downloading 态跳过 re-check：不打断在途更新流程（runCheck 会把状态机打回 checking）。
+  unsubs.push(onTrayUpdateRequest(() => {
+    updateOpen.value = true;
+    if (updateState.value.phase === 'downloading') return;
+    void runCheck();
+  }));
   // 设置（2026-10-01 update-proxy-settings）：托盘「设置」→ SettingsModal
   unsubs.push(onTraySettingsRequest(() => { settingsOpen.value = true; }));
 });
