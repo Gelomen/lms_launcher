@@ -52,6 +52,10 @@ const llamaDownloadPct = ref(0);
 const llamaDownloadStage = ref('');
 const llamaError = ref('');
 const llamaConfigLoading = ref(false);
+// pre-release（nightly）勾选框（计划 task-7 步骤 3「第二行」约定，2026-09-17 补漏）：
+// 勾选态跟随持久化配置 llama_update.include_pre_release（缺省 true）；切换 → 持久化并以新值重新检查。
+// 此前只实现了版本下拉框，include_pre_release 后端链路（config 默认 true + IPC 参数覆盖）齐全但无 UI 入口。
+const llamaIncludePreRelease = ref(true);
 // llama.cpp 行按钮独立七态（2026-09 需求：llama.cpp 行恒显示，按钮默认「检查更新」；
 // 与 LMS 启动器行同一套 BUTTONS 映射复用文案/禁用逻辑）
 const llamaPhase = ref<Phase>('idle');
@@ -71,13 +75,27 @@ async function checkLlamaUpdateInternal() {
         : v.version ? `v${v.version}` : '';
     }
 
-    // 获取更新配置
+    // 获取更新配置；勾选框初始态跟随持久化配置（缺省 true）
     llamaConfigLoading.value = true;
     const configResult = await getLlamaUpdateConfig();
     llamaConfigLoading.value = false;
+    llamaIncludePreRelease.value = configResult.config?.include_pre_release ?? true;
+    await runLlamaUpdateCheck();
+  } catch (e) {
+    llamaUpdateStatus.value = 'error';
+    llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaPhase.value = 'error';
+  }
+}
 
+// 执行远程检查（含结果落态）：检查值取当前勾选框态。
+// 独立成函数供两条路径复用：打开弹窗（配置→勾选态→检查）与勾选框切换（持久化→直接以新值检查，
+// 不再读回配置，避免尚未落盘的旧配置覆盖勾选态）。
+async function runLlamaUpdateCheck() {
+  llamaPhase.value = 'checking';
+  try {
     // 检查远程更新（include_pre_release 缺省 true：llama.cpp 的 stable release 无 Windows 资产，nightly 是唯一可下载来源）
-    const result = await checkLlamaUpdate(configResult.config?.include_pre_release ?? true);
+    const result = await checkLlamaUpdate(llamaIncludePreRelease.value);
     if (result.success) {
       llamaUpdateStatus.value = result.status ?? 'unknown';
       if (result.remoteVersion) {
@@ -113,6 +131,18 @@ async function checkLlamaUpdateInternal() {
     llamaError.value = e instanceof Error ? e.message : String(e);
     llamaPhase.value = 'error';
   }
+}
+
+// pre-release 勾选框切换（计划 task-7 步骤 3「第二行」）：
+// 先持久化 include_pre_release（失败不阻断），再以新值重新检查——不走 checkLlamaUpdateInternal，
+// 避免重新读回配置时把刚改的勾选态覆盖回旧值
+async function onLlamaPreReleaseChange(): Promise<void> {
+  try {
+    await setLlamaUpdateConfig({ include_pre_release: llamaIncludePreRelease.value });
+  } catch {
+    // 持久化失败：不阻断重新检查，下次打开弹窗时会再读回配置
+  }
+  await runLlamaUpdateCheck();
 }
 
 // Task 7: 下载 llama.cpp 更新
@@ -417,6 +447,19 @@ function llamaBelow(): { kind: string; text: string } | null {
                 >{{ llamaBtnLabel() }}</span>
               </button>
             </div>
+            <!-- pre-release（nightly）勾选框行：计划 task-7 步骤 3 约定「版本选择下拉框和 pre-release 勾选框（第二行）」，
+                 2026-09-17 补漏。安装目录未配置（unconfigured）时不显示——此时检查按钮本身置灰，勾选无意义；
+                 已配置后显示（width:100% 独占换行），勾选态跟随持久化配置（缺省 true），
+                 切换 → set_llama_update_config 持久化并以新值重新检查；下载中禁用避免竞争 -->
+            <label v-if="llamaUpdateStatus !== 'unconfigured'" class="llama-prerelease">
+              <input
+                type="checkbox"
+                :checked="llamaIncludePreRelease"
+                :disabled="llamaDownloading"
+                @change="llamaIncludePreRelease = ($event.target as HTMLInputElement).checked; void onLlamaPreReleaseChange()"
+              />
+              <span>包含 pre-release（nightly）版本</span>
+            </label>
             <!-- 名称行下方提示行（2026-09 优化）：未配置灰字提示 / 错误红字，整行完整显示（可换行） -->
             <div v-if="llamaBelow() !== null" class="llama-below"
               :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
@@ -622,6 +665,24 @@ function llamaBelow(): { kind: string; text: string } | null {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* pre-release 勾选框行（2026-09-17 补漏，计划 task-7 步骤 3「第二行」）：width:100% 独占换行，
+   与 .llama-below / .llama-version-select 同一「第二行」语言；字号同 12px 标签，12px 复选框 */
+.llama-prerelease {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-label);
+  color: var(--text);
+  cursor: pointer;
+}
+.llama-prerelease input[type="checkbox"] {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  flex: none;
+}
+.llama-prerelease:has(input:disabled) { cursor: default; color: var(--muted); }
 .llama-version-select {
   width: 100%;
   padding: 4px 8px;
