@@ -465,8 +465,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     w.unmount();
   });
   // 2026-09 需求：llama.cpp 行恒显示（弹窗打开即见）；检查到更新（update-available）后
-  // 中段显示新版本号 + 版本选择器，按钮切换为「更新 llama.cpp」。
-  it('up-to-date 恒显示「已是最新版本」；检查到更新后显示新版本与「更新 llama.cpp」按钮', async () => {
+  // 中段显示新版本号 + 版本选择器，按钮切换为「下载更新」（与 LMS 启动器行同文案）。
+  it('up-to-date 恒显示「已是最新版本」；检查到更新后显示新版本与「下载更新」按钮', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
       if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
@@ -514,7 +514,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     expect(select!.options.length).toBe(2);
     const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
     expect(btn).not.toBeNull();
-    expect(btn!.textContent?.trim()).toBe('更新 llama.cpp');
+    expect(btn!.textContent?.trim()).toBe('下载更新');
     expect(btn!.disabled).toBe(false);
     w.unmount();
   });

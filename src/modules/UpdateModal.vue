@@ -278,11 +278,11 @@ function textGradientStyle(item: Item): string | undefined {
 }
 
 // ---- llama.cpp 行按钮（2026-09 需求：llama.cpp 行恒显示，按钮默认「检查更新」；
-//      与 LMS 启动器行同一套七态语言，仅 available 文案换成「更新 llama.cpp」）----
+//      与 LMS 启动器行同一套七态语言，available 文案同为「下载更新」）----
 const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: boolean }> = {
   idle:         { label: () => '检查更新',           disabled: false },
   checking:     { label: () => '检查中...',          disabled: true },
-  available:    { label: () => '更新 llama.cpp',     disabled: false },
+  available:    { label: () => '下载更新',           disabled: false },
   downloading:  { label: (p) => `下载中 ${Math.floor(p)}%`, disabled: true },
   ready:        { label: () => '检查更新',           disabled: false }, // llama 无 ready 态（覆盖安装无需重启），仅保映射完整
   error:        { label: () => '重试',               disabled: false },
@@ -383,7 +383,7 @@ function llamaBelow(): { kind: string; text: string } | null {
           </div>
 
           <!-- Task 7: llama.cpp 更新区域（2026-09 需求：llama.cpp 行恒显示，打开弹窗即见，
-               按钮默认「检查更新」；检查到更新后中段显示新版本 + 版本选择器，按钮切换「更新 llama.cpp」） -->
+               按钮默认「检查更新」；检查到更新后中段显示新版本 + 版本选择器，按钮切换「下载更新」） -->
           <div class="update-row llama-section">
             <div class="llama-info">
               <span class="update-row__name">llama.cpp</span>
@@ -403,7 +403,7 @@ function llamaBelow(): { kind: string; text: string } | null {
                  原先排在整行独占的 .llama-below 提示行之后，未配置/出错态会被挤到下一行、与名称不同行（截图 bug）。 -->
             <div class="update-row__action">
               <!-- 七态按钮（复用全局 .update-row .btn 尺寸规则）：idle/up-to-date=检查更新 / checking=检查中...(禁用)
-                   / available=更新 llama.cpp / downloading=下载中 NN%(禁用) / error=重试 -->
+                   / available=下载更新 / downloading=下载中 NN%(禁用) / error=重试 -->
               <button
                 type="button"
                 class="btn btn-primary"
