@@ -102,9 +102,12 @@ describe('fetchLlamaReleaseInfo', () => {
   // 无任何 Windows 下载链接 → 旧实现（includePreRelease=false 只取 stable）必然 null →
   // UI 报「获取远程版本失败」。新行为：选中的 release body 解析不出 Windows 链接时，
   // 兜底取后续可解析的 release（即 nightly b 号），保证用户总能拿到可下载版本。
-  it('stable 无 Windows 链接时兜底到 nightly（includePreRelease=false 也能返回结果）', async () => {
+  // 2026-09-17 行为修正：includePreRelease=false 时 stable 无 Windows 链接 → 返回 null（报错），
+  // 不再静默兜底到 nightly——取消勾选后若仍拿到 b 号版本，勾选框形同虚设（用户反馈的 bug）。
+  // （此前此用例断言「兜底到 nightly」，即 2026-09-14 修复引入的静默放宽，语义与勾选框矛盾。）
+  it('stable 无 Windows 链接且 includePreRelease=false → { error: no-windows-assets }（不静默兜底 nightly）', async () => {
     const stableRelease = {
-      tag_name: 'v0.4.0',
+      tag_name: 'v0.4.1',
       prerelease: false,
       published_at: '2026-09-04T00:00:00Z',
       body: 'This is a tag-only release. See nightly releases for binaries.',
@@ -122,9 +125,34 @@ describe('fetchLlamaReleaseInfo', () => {
     }));
 
     const result = await fetchLlamaReleaseInfo(false);
+    expect(result).toEqual({ error: 'no-windows-assets' });
+
+    vi.unstubAllGlobals();
+  });
+
+  // stable 有 Windows 链接时（未来上游若提供）includePreRelease=false 正常取 stable
+  it('includePreRelease=false 且 stable 有 Windows 链接 → 取 stable 不取 nightly', async () => {
+    const stableRelease = {
+      tag_name: 'v0.5.0',
+      prerelease: false,
+      published_at: '2026-09-04T00:00:00Z',
+      body: '- [Windows x64 (CPU)](https://github.com/ggml-org/llama.cpp/releases/download/v0.5.0/llama-v0.5.0-bin-win-cpu-x64.zip)',
+    };
+    const nightlyRelease = {
+      tag_name: 'b10955',
+      prerelease: true,
+      published_at: '2026-09-10T00:00:00Z',
+      body: REAL_B10955_BODY,
+    };
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue([nightlyRelease, stableRelease]),
+    }));
+
+    const result = await fetchLlamaReleaseInfo(false);
     expect(result).not.toBeNull();
-    expect(result!.tag).toBe('b10955');
-    expect(result!.versionOptions).toHaveLength(4);
+    expect(result!.tag).toBe('v0.5.0');
 
     vi.unstubAllGlobals();
   });

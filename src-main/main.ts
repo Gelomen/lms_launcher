@@ -633,6 +633,12 @@ ipcMain.handle('check_llama_update', async (_e, opts: { include_pre_release?: bo
     emitLog(`[lms_launcher] llama.cpp · 获取远程版本失败${proxyNote}`, 'sys');
     return { success: false, error: 'failed to fetch remote release info' };
   }
+  // 哨兵：取消勾选 pre-release 后 stable 没有 Windows 下载包（llama.cpp stable 仅发 nightly-tag.txt，
+  // 2026-09 实测）→ 明确报错引导用户勾选 pre-release，不再静默兜底 nightly（2026-09-17 修正）
+  if ('error' in remoteInfo) {
+    emitLog('[lms_launcher] llama.cpp · stable 版本没有 Windows 下载包（需 pre-release/nightly）', 'sys');
+    return { success: false, error: 'stable 版本没有 Windows 下载包，请勾选 pre-release 后重试' };
+  }
 
   // 比较版本
   const status = compareLlamaVersions(localVersion, remoteInfo.tag);

@@ -162,14 +162,20 @@ export function compareLlamaVersions(
  * 2026-09-14 bug 修复：llama.cpp 的 stable release（vX.Y.Z）只有 nightly-tag.txt
  * 资产、没有任何 Windows 二进制 → 旧实现「includePreRelease=false 只取 stable」
  * 解析 body 必然失败 → 恒返回 null → UI 报「获取远程版本失败」。
- * 新行为：按列表顺序取第一个 body 中能解析出 Windows 下载链接的 release
- * （stable 无链接时自动兜底到后续 nightly），includePreRelease=false 时
- * 仅在「选中的 release 可解析」的前提下跳过 prerelease。
+ * 2026-09-17 行为修正：includePreRelease=false 时**不再静默兜底到 nightly**——
+ * 勾选框取消后若仍返回 b 号（nightly）版本，勾选框形同虚设（用户反馈的 bug）。
+ * 新行为：按列表顺序取第一个 body 中能解析出 Windows 下载链接的 release；
+ * includePreRelease=false 时跳过 prerelease，stable 无 Windows 链接 → 返回 null
+ * （调用方映射为「stable 版本没有 Windows 下载包，请勾选 pre-release」，由用户显式
+ * 重新勾选 nightly 后才能继续更新；includePreRelease=true 兜底逻辑不变）。
  *
- * @param includePreRelease 是否优先使用预发布版本（nightly）
+ * @param includePreRelease 是否包含预发布版本（nightly）
  * @param proxy 代理 URL（可选），如 "http://127.0.0.1:7890"
  * @returns 最新 release 信息，失败时返回 null
  */
+/** 哨兵错误：列表中没有可解析出 Windows 下载链接的 release（stable 仅 nightly-tag.txt 等场景） */
+export const NO_WINDOWS_ASSETS = 'no-windows-assets';
+
 export async function fetchLlamaReleaseInfo(
   includePreRelease: boolean,
   proxy?: string
@@ -178,7 +184,7 @@ export async function fetchLlamaReleaseInfo(
   versionOptions: VersionOption[];
   cudaDlls?: Array<{ version: string; downloadUrl: string }>;
   publishedAt: string;
-} | null> {
+} | { error: typeof NO_WINDOWS_ASSETS } | null> {
   try {
     const url = `${GITHUB_API_URL}?per_page=5`;
 
@@ -207,9 +213,10 @@ export async function fetchLlamaReleaseInfo(
     if (!Array.isArray(releases) || releases.length === 0) return null;
 
     // 按列表顺序找第一个「body 能解析出 Windows 下载链接」的 release。
-    // 第一轮：includePreRelease=false 时跳过 prerelease；
-    // 第二轮（兜底）：stable 无任何 Windows 链接时放宽到 prerelease（nightly），
-    // 保证用户总能拿到可下载版本（2026-09-14 bug 的根因修复）。
+    // includePreRelease=false 时跳过 prerelease（nightly），stable 无 Windows 链接 →
+    // 直接返回 null（2026-09-17 修正：不再兜底 nightly，让勾选框语义生效）。
+    // includePreRelease=true 时不跳过 prerelease——llama.cpp 的 Windows 二进制
+    // 实际只有 nightly（b 号）发布，stable 仅 nightly-tag.txt（2026-09-14 bug 根因）。
     const scan = (skipPrerelease: boolean): { release: (typeof releases)[0]; parsed: NonNullable<ReturnType<typeof parseReleaseBody>> } | null => {
       for (const release of releases) {
         if (skipPrerelease && release.prerelease) continue;
@@ -221,8 +228,8 @@ export async function fetchLlamaReleaseInfo(
       return null;
     };
 
-    const picked = scan(!includePreRelease) ?? scan(false);
-    if (!picked) return null;
+    const picked = scan(!includePreRelease);
+    if (!picked) return { error: NO_WINDOWS_ASSETS };
 
     return {
       tag: picked.release.tag_name,
