@@ -310,19 +310,30 @@ function onLlamaBtn(): void {
   }
 }
 
-// llama.cpp 行中段状态文字（hint=未配置灰字 / latest=已最新灰字 / version=新版本紫字 / error=红字）
+// llama.cpp 行中段状态文字（latest=已最新灰字 / version=新版本紫字）
+// 未配置提示与错误文字不再占中段（2026-09 优化：移到名称行下方独立一行完整显示，
+// 可换行、无省略号截断）→ 见 llamaBelow()
 function llamaMiddle(): { kind: string; text: string } | null {
   switch (llamaUpdateStatus.value) {
-    case 'unconfigured':
-      return { kind: 'hint', text: '请先在主界面选择 llama.cpp 安装目录' };
     case 'up-to-date':
       return { kind: 'latest', text: '已是最新版本' };
     case 'update-available':
       return { kind: 'version', text: '新版本: ' + (llamaRemoteVersion.value || '') };
+    default:
+      return null; // unknown（检查中）/ unconfigured / error：中段留白
+  }
+}
+
+// llama.cpp 名称行下方提示行（2026-09 优化）：unconfigured 灰字提示 / error 红字，
+// 整行完整显示（允许换行，长提示不再被 320px 卡片宽度截断）
+function llamaBelow(): { kind: string; text: string } | null {
+  switch (llamaUpdateStatus.value) {
+    case 'unconfigured':
+      return { kind: 'hint', text: '请先在主界面选择 llama.cpp 安装目录' };
     case 'error':
       return { kind: 'error', text: llamaError.value || '检查更新失败' };
     default:
-      return null; // unknown（检查中）：中段留白
+      return null;
   }
 }
 </script>
@@ -374,17 +385,20 @@ function llamaMiddle(): { kind: string; text: string } | null {
             <div class="llama-info">
               <span class="update-row__name">llama.cpp</span>
               <span v-if="llamaLocalVersion" class="llama-version">本地: {{ llamaLocalVersion }}</span>
-              <!-- 中段状态文字（未配置/已最新/新版本/错误），与 LMS 启动器行同语言 -->
+              <!-- 中段状态文字（已最新灰字/新版本紫字），与 LMS 启动器行同语言 -->
               <span
                 v-if="llamaMiddle() !== null"
                 class="update-row__middle llama-middle"
                 :class="
                   llamaMiddle()?.kind === 'version' ? 'llama-new-version'
-                  : llamaMiddle()?.kind === 'error' ? 'update-row__error'
                   : 'llama-state-text'
                 "
               >{{ llamaMiddle()?.text }}</span>
             </div>
+            <!-- 名称行下方提示行（2026-09 优化）：未配置灰字提示 / 错误红字，整行完整显示（可换行） -->
+            <div v-if="llamaBelow() !== null" class="llama-below"
+              :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
+            >{{ llamaBelow()?.text }}</div>
             <!-- 版本选项选择器：仅检查到更新且有选项时出现（独立成行，避免与状态文字挤占行宽） -->
             <select
               v-if="llamaUpdateStatus === 'update-available' && llamaVersionOptions.length > 0"
@@ -575,6 +589,18 @@ function llamaMiddle(): { kind: string; text: string } | null {
   font-size: var(--fs-label);
   color: var(--primary);
 }
+/* 名称行下方提示行（2026-09 优化）：.llama-section 为 flex-wrap:wrap 布局，
+   width:100% 使其独占换行到名称行下方；长提示（如「请先在主界面选择 llama.cpp 安装目录」）
+   允许换行完整显示，不再受名称行剩余宽度截断 */
+.llama-below {
+  width: 100%;
+  font-size: var(--fs-label);
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+  color: var(--muted);
+}
+.llama-below--error { color: var(--danger); }
 .llama-section .update-row__middle {
   text-align: left; /* 中段状态文字左对齐跟随「本地:」，不居中（与 LMS 行居中语义区分） */
   overflow: hidden;

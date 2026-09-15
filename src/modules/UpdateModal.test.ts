@@ -229,14 +229,40 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 2026-09 需求：llama.cpp 行恒显示；未配置目录 → 提示文字 + 可点的「检查更新」按钮
+    // 2026-09 需求：llama.cpp 行恒显示；未配置目录 → 提示文字（2026-09 优化：名称行下方独立一行，
+    // .llama-below，可换行完整显示）+ 可点的「检查更新」按钮
     expect(document.querySelector('.llama-section')).not.toBeNull();
-    expect(document.querySelector('.llama-state-text')?.textContent?.trim())
+    expect(document.querySelector('.llama-below')?.textContent?.trim())
       .toBe('请先在主界面选择 llama.cpp 安装目录');
     const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
     expect(btn).not.toBeNull();
     expect(btn!.textContent?.trim()).toBe('检查更新');
     expect(btn!.disabled).toBe(false);
+    w.unmount();
+  });
+
+  // 2026-09 优化回归：检查失败（error 态）的红色错误文字也移到名称行下方独立一行，
+  // 不再占用中段（.llama-middle 不渲染），中段「已是最新版本/新版本」位置不受影响。
+  it('error 态：红色错误文字显示在名称行下方 .llama-below--error，中段留空', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: false, error: 'failed to fetch remote release info' };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const below = document.querySelector('.llama-below');
+    expect(below).not.toBeNull();
+    expect(below!.classList.contains('llama-below--error')).toBe(true);
+    expect(below!.textContent?.trim()).toBe('failed to fetch remote release info');
+    // 错误文字不再占中段
+    expect(document.querySelector('.llama-section .llama-middle')).toBeNull();
+    // 按钮为「重试」
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('重试');
     w.unmount();
   });
 
@@ -291,7 +317,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
     expect(document.querySelector('.llama-section')).not.toBeNull();
-    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('请先在主界面选择 llama.cpp 安装目录');
+    expect(document.querySelector('.llama-below')?.textContent?.trim()).toBe('请先在主界面选择 llama.cpp 安装目录');
     const callsBeforeReopen = countCheckCalls();
     expect(callsBeforeReopen).toBeGreaterThan(0);
 
