@@ -217,7 +217,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     return invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update').length;
   }
 
-  it('首次打开：llama_dir 未配置 → 整个 llama.cpp 区域不显示（仅检查到更新才显示）', async () => {
+  it('首次打开：llama_dir 未配置 → llama.cpp 行恒显示，提示文字 + 可点「检查更新」按钮', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
       if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
@@ -229,9 +229,14 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 未配置目录 → 无更新可显示：整个 llama.cpp 区域（含提示文字与按钮）都不渲染
-    expect(document.querySelector('.llama-section')).toBeNull();
-    expect(document.querySelector('.llama-unconfigured-hint')).toBeNull();
+    // 2026-09 需求：llama.cpp 行恒显示；未配置目录 → 提示文字 + 可点的「检查更新」按钮
+    expect(document.querySelector('.llama-section')).not.toBeNull();
+    expect(document.querySelector('.llama-state-text')?.textContent?.trim())
+      .toBe('请先在主界面选择 llama.cpp 安装目录');
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent?.trim()).toBe('检查更新');
+    expect(btn!.disabled).toBe(false);
     w.unmount();
   });
 
@@ -285,7 +290,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    expect(document.querySelector('.llama-section')).toBeNull();
+    expect(document.querySelector('.llama-section')).not.toBeNull();
+    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('请先在主界面选择 llama.cpp 安装目录');
     const callsBeforeReopen = countCheckCalls();
     expect(callsBeforeReopen).toBeGreaterThan(0);
 
@@ -307,14 +313,18 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
 
     // 重新打开后必须再次执行 check_llama_update
     expect(countCheckCalls()).toBeGreaterThan(callsBeforeReopen);
-    // 刷新后状态为 up-to-date → llama.cpp 区域仍不显示（仅 update-available 才显示）
-    expect(document.querySelector('.llama-section')).toBeNull();
-    expect(document.querySelector('.llama-up-to-date')).toBeNull();
+    // 刷新后状态为 up-to-date → llama.cpp 行恒显示，「已是最新版本」+ 可点「检查更新」
+    expect(document.querySelector('.llama-section')).not.toBeNull();
+    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent?.trim()).toBe('检查更新');
+    expect(btn!.disabled).toBe(false);
     w.unmount();
   });
-  // 2026-09 需求：llama.cpp 区域仅在「检查到更新（update-available）」时显示；
-  // up-to-date / unconfigured / error 一律隐藏（弹窗默认只有 LMS 启动器一行）。
-  it('up-to-date 隐藏；检查到更新才显示新版本与「更新 llama.cpp」按钮', async () => {
+  // 2026-09 需求：llama.cpp 行恒显示（弹窗打开即见）；检查到更新（update-available）后
+  // 中段显示新版本号 + 版本选择器，按钮切换为「更新 llama.cpp」。
+  it('up-to-date 恒显示「已是最新版本」；检查到更新后显示新版本与「更新 llama.cpp」按钮', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
       if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
@@ -326,8 +336,10 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 已是最新 → 区域隐藏
-    expect(document.querySelector('.llama-section')).toBeNull();
+    // 已是最新 → 行恒显示「已是最新版本」+「检查更新」按钮
+    expect(document.querySelector('.llama-section')).not.toBeNull();
+    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
 
     // 重新打开且检查到更新 → 区域显示（版本号 + 选择器 + 更新按钮）
     invokeMock.mockImplementation(async (cmd: string) => {

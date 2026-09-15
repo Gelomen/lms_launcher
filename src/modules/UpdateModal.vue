@@ -52,10 +52,14 @@ const llamaDownloadPct = ref(0);
 const llamaDownloadStage = ref('');
 const llamaError = ref('');
 const llamaConfigLoading = ref(false);
+// llama.cpp 行按钮独立七态（2026-09 需求：llama.cpp 行恒显示，按钮默认「检查更新」；
+// 与 LMS 启动器行同一套 BUTTONS 映射复用文案/禁用逻辑）
+const llamaPhase = ref<Phase>('idle');
 let llamaProgressCleanup: (() => void) | null = null;
 
 // Task 7: 检查 llama.cpp 更新
 async function checkLlamaUpdateInternal() {
+  llamaPhase.value = 'checking'; // 按钮切换「检查中...」并禁用，同 LMS 启动器行语义
   try {
     // 先获取本地版本
     const localResult = await getLlamaLocalVersion();
@@ -88,18 +92,26 @@ async function checkLlamaUpdateInternal() {
           cudaDllsUrl: opt.cudaDllsUrl,
         }));
       }
+      // 按钮态随检查结论切换：可用 → 下载更新（点击即下载）；已是最新 → 检查更新；
+      // 未知/失败 → 重试（kind='retry'，重发检查）
+      llamaPhase.value = result.status === 'update-available' ? 'available'
+        : result.status === 'up-to-date' ? 'up-to-date'
+        : 'error';
     } else {
       // 区分 unconfigured 和一般错误
       if (result.error === 'unconfigured') {
         llamaUpdateStatus.value = 'unconfigured';
+        llamaPhase.value = 'idle'; // 未配置目录：按钮保持「检查更新」可点（重新检查）
       } else {
         llamaUpdateStatus.value = 'error';
         llamaError.value = result.error ?? '未知错误';
+        llamaPhase.value = 'error'; // 红字错误 + 「重试」
       }
     }
   } catch (e) {
     llamaUpdateStatus.value = 'error';
     llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaPhase.value = 'error';
   }
 }
 
@@ -109,6 +121,7 @@ async function downloadLlamaUpdateInternal() {
   if (!option) return;
 
   llamaDownloading.value = true;
+  llamaPhase.value = 'downloading';
   llamaDownloadPct.value = 0;
   llamaError.value = '';
 
@@ -122,10 +135,12 @@ async function downloadLlamaUpdateInternal() {
       await checkLlamaUpdateInternal();
     } else {
       llamaError.value = result.error ?? '下载失败';
+      llamaPhase.value = 'error'; // 下载失败 → 「重试」（重发检查，同步主进程状态）
       emit('llama-complete', false, result.error);
     }
   } catch (e) {
     llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaPhase.value = 'error';
     emit('llama-complete', false, llamaError.value);
   } finally {
     llamaDownloading.value = false;
@@ -170,6 +185,7 @@ watch(
       llamaDownloadPct.value = 0;
       llamaDownloadStage.value = '';
       llamaError.value = '';
+      llamaPhase.value = 'idle'; // 行恒显示：按钮回到「检查更新」，随后进入 checking
       checkLlamaUpdateInternal();
       setupLlamaProgressListener();
     } else {
@@ -260,6 +276,55 @@ function textGradientStyle(item: Item): string | undefined {
   const p = Math.floor(item.pct ?? 0);
   return `background-image: linear-gradient(to right, #fff ${p}%, var(--muted) ${p}%);`;
 }
+
+// ---- llama.cpp 行按钮（2026-09 需求：llama.cpp 行恒显示，按钮默认「检查更新」；
+//      与 LMS 启动器行同一套七态语言，仅 available 文案换成「更新 llama.cpp」）----
+const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: boolean }> = {
+  idle:         { label: () => '检查更新',           disabled: false },
+  checking:     { label: () => '检查中...',          disabled: true },
+  available:    { label: () => '更新 llama.cpp',     disabled: false },
+  downloading:  { label: (p) => `下载中 ${Math.floor(p)}%`, disabled: true },
+  ready:        { label: () => '检查更新',           disabled: false }, // llama 无 ready 态（覆盖安装无需重启），仅保映射完整
+  error:        { label: () => '重试',               disabled: false },
+  'up-to-date': { label: () => '检查更新',           disabled: false },
+};
+function llamaBtnLabel(): string {
+  return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value);
+}
+function llamaBtnDisabled(): boolean {
+  return LLAMA_BUTTONS[llamaPhase.value].disabled;
+}
+function onLlamaBtn(): void {
+  switch (llamaPhase.value) {
+    case 'idle':
+    case 'up-to-date':
+    case 'error':
+    case 'ready':
+      void checkLlamaUpdateInternal(); // 检查 / 重试均重发检查（重试=重新同步主进程状态）
+      break;
+    case 'available':
+      void downloadLlamaUpdateInternal();
+      break;
+    default:
+      break; // checking / downloading 已禁用，不可点
+  }
+}
+
+// llama.cpp 行中段状态文字（hint=未配置灰字 / latest=已最新灰字 / version=新版本紫字 / error=红字）
+function llamaMiddle(): { kind: string; text: string } | null {
+  switch (llamaUpdateStatus.value) {
+    case 'unconfigured':
+      return { kind: 'hint', text: '请先在主界面选择 llama.cpp 安装目录' };
+    case 'up-to-date':
+      return { kind: 'latest', text: '已是最新版本' };
+    case 'update-available':
+      return { kind: 'version', text: '新版本: ' + (llamaRemoteVersion.value || '') };
+    case 'error':
+      return { kind: 'error', text: llamaError.value || '检查更新失败' };
+    default:
+      return null; // unknown（检查中）：中段留白
+  }
+}
 </script>
 
 <template>
@@ -303,42 +368,50 @@ function textGradientStyle(item: Item): string | undefined {
             </div>
           </div>
 
-          <!-- Task 7: llama.cpp 更新区域（2026-09 需求：仅「检查到更新 update-available」才显示；
-               unconfigured / up-to-date / error / unknown 一律不渲染，弹窗默认只有 LMS 启动器一行） -->
-          <div class="update-row llama-section" v-if="llamaUpdateStatus === 'update-available'">
+          <!-- Task 7: llama.cpp 更新区域（2026-09 需求：llama.cpp 行恒显示，打开弹窗即见，
+               按钮默认「检查更新」；检查到更新后中段显示新版本 + 版本选择器，按钮切换「更新 llama.cpp」） -->
+          <div class="update-row llama-section">
             <div class="llama-info">
               <span class="update-row__name">llama.cpp</span>
               <span v-if="llamaLocalVersion" class="llama-version">本地: {{ llamaLocalVersion }}</span>
+              <!-- 中段状态文字（未配置/已最新/新版本/错误），与 LMS 启动器行同语言 -->
+              <span
+                v-if="llamaMiddle() !== null"
+                class="update-row__middle llama-middle"
+                :class="
+                  llamaMiddle()?.kind === 'version' ? 'llama-new-version'
+                  : llamaMiddle()?.kind === 'error' ? 'update-row__error'
+                  : 'llama-state-text'
+                "
+              >{{ llamaMiddle()?.text }}</span>
             </div>
-            <div class="llama-update-available">
-              <span class="llama-new-version">新版本: {{ llamaRemoteVersion }}</span>
-              <!-- 版本选项选择器 -->
-              <select
-                v-if="llamaVersionOptions.length > 0"
-                class="llama-version-select"
-                :value="llamaSelectedOptionIndex"
-                @change="llamaSelectedOptionIndex = Number(($event.target as HTMLSelectElement).value)"
-                :disabled="llamaDownloading"
-              >
-                <option v-for="(opt, idx) in llamaVersionOptions" :key="idx" :value="idx">
-                  {{ opt.label }}
-                </option>
-              </select>
+            <!-- 版本选项选择器：仅检查到更新且有选项时出现（独立成行，避免与状态文字挤占行宽） -->
+            <select
+              v-if="llamaUpdateStatus === 'update-available' && llamaVersionOptions.length > 0"
+              class="llama-version-select"
+              :value="llamaSelectedOptionIndex"
+              @change="llamaSelectedOptionIndex = Number(($event.target as HTMLSelectElement).value)"
+              :disabled="llamaDownloading"
+            >
+              <option v-for="(opt, idx) in llamaVersionOptions" :key="idx" :value="idx">
+                {{ opt.label }}
+              </option>
+            </select>
+            <div class="update-row__action">
+              <!-- 七态按钮（复用全局 .update-row .btn 尺寸规则）：idle/up-to-date=检查更新 / checking=检查中...(禁用)
+                   / available=更新 llama.cpp / downloading=下载中 NN%(禁用) / error=重试 -->
               <button
                 type="button"
                 class="btn btn-primary"
-                :class="{ 'update-row__btn-progress': llamaDownloading }"
-                :disabled="llamaDownloading"
-                @click="downloadLlamaUpdateInternal()"
+                :class="{ 'update-row__btn-progress': llamaPhase === 'downloading' }"
+                :disabled="llamaBtnDisabled()"
+                @click="onLlamaBtn()"
               >
-                <span v-if="llamaDownloading" class="update-row__fill" :style="`width: ${llamaDownloadPct}%;`"></span>
-                <span v-if="llamaDownloading" class="update-row__label" :style="`background-image: linear-gradient(to right, #fff ${llamaDownloadPct}%, var(--muted) ${llamaDownloadPct}%);`">
-                  下载中 {{ llamaDownloadPct }}%
-                </span>
-                <span v-else>更新 llama.cpp</span>
+                <span v-if="llamaPhase === 'downloading'" class="update-row__fill" :style="`width: ${Math.floor(llamaDownloadPct)}%;`"></span>
+                <span class="update-row__label"
+                  :style="llamaPhase === 'downloading' ? `background-image: linear-gradient(to right, #fff ${Math.floor(llamaDownloadPct)}%, var(--muted) ${Math.floor(llamaDownloadPct)}%);` : undefined"
+                >{{ llamaBtnLabel() }}</span>
               </button>
-              <!-- 下载失败原因（error 态不再整区显示，失败信息行内红字保留） -->
-              <span v-if="llamaError && !llamaDownloading" class="update-row__error">{{ llamaError }}</span>
             </div>
             <!-- 下载进度条 -->
             <div v-if="llamaDownloading" class="llama-download-progress">
@@ -475,10 +548,11 @@ function textGradientStyle(item: Item): string | undefined {
   -webkit-text-fill-color: transparent;
 }
 
-/* Task 7: llama.cpp 更新区域样式 */
+/* Task 7: llama.cpp 更新区域样式（2026-09：行恒显示，布局与 LMS 启动器行一致——
+   第一行 名称 | 本地版本 | 中段状态文字 | 按钮（右贴缘）；更新可用时下方独立成行放版本选择器；
+   下载时再下方放进度条） */
 .llama-section {
-  flex-direction: column;
-  align-items: flex-start;
+  flex-wrap: wrap;
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
@@ -486,22 +560,25 @@ function textGradientStyle(item: Item): string | undefined {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 .llama-version {
   font-size: var(--fs-label);
   color: var(--muted);
 }
-.llama-update-available {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
+.llama-state-text {
+  font-size: var(--fs-label);
+  color: var(--muted);
 }
 .llama-new-version {
   font-size: var(--fs-label);
   color: var(--primary);
+}
+.llama-section .update-row__middle {
+  text-align: left; /* 中段状态文字左对齐跟随「本地:」，不居中（与 LMS 行居中语义区分） */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .llama-version-select {
   width: 100%;
