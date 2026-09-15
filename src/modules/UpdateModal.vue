@@ -588,6 +588,15 @@ function llamaBelow(): { kind: string; text: string } | null {
 .llama-version {
   font-size: var(--fs-label);
   color: var(--muted);
+  /* 2026-09-16 修复：flex:1 + 居中——检查中（checking）期间中段 .llama-middle 不渲染，
+     本地版本号若仅贴名称左对齐会显得不居中（截图 bug）；自身占据 .llama-info 剩余空间
+     并水平居中后，各态（含检查中）视觉一致 */
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .llama-state-text {
   font-size: var(--fs-label);

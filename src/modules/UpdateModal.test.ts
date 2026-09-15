@@ -326,6 +326,39 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     w.unmount();
   });
 
+  // 2026-09-16 布局回归：检查中（checking）期间本地版本号文字紧贴名称左对齐，未居中（截图 bug）。
+  // 根因：.llama-info 内中段 .llama-middle 仅 up-to-date/update-available 态渲染，
+  // checking 期间返回 null 不占位；.llama-version 无 flex 伸展 → 无法居中。
+  // 修复契约：.llama-version 自身 flex:1 + text-align:center，在任意态（含检查中）都占据
+  // 名称与按钮之间的剩余空间并水平居中。
+  it('布局：检查中（checking）期间本地版本号文字居中于名称与按钮之间', async () => {
+    // check_llama_update 永不 resolve → 本地版本已取到、检查仍 pending（截图状态：按钮「检查中...」+「本地: b10679」）
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return new Promise(() => {}); // 挂起
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 截图状态：按钮「检查中...」禁用 + 本地版本号仍显示
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn!.textContent?.trim()).toBe('检查中...');
+    expect(btn!.disabled).toBe(true);
+    const local = document.querySelector('.llama-version');
+    expect(local).not.toBeNull();
+    expect(local!.textContent).toContain('b10679');
+    // 居中能力来自 CSS（happy-dom 不注入 SFC 样式）：.llama-version 必须自带 flex:1 + text-align:center，
+    // 才能在 checking 期间（中段不渲染）占据 .llama-info 剩余空间并居中——直接读源码断言防规则误删
+    const src = readFileSync(resolve(__dirname, 'UpdateModal.vue'), 'utf-8');
+    const m = src.match(/\.llama-version\s*\{[^}]*flex:\s*1;[^}]*text-align:\s*center/);
+    expect(m).not.toBeNull();
+    w.unmount();
+  });
+
   // 2026-09 优化回归：检查失败（error 态）的红色错误文字也移到名称行下方独立一行，
   // 不再占用中段（.llama-middle 不渲染），中段「已是最新版本/新版本」位置不受影响。
   it('error 态：红色错误文字显示在名称行下方 .llama-below--error，中段留空', async () => {
