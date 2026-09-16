@@ -597,13 +597,20 @@ function llamaBelow(): { kind: string; text: string } | null {
   align-items: center;
   gap: 8px;
 }
+/* 2026-09-16 布局修复（截图 bug）：两行中段提示文字（「已是最新版本 …」）未与弹窗居中对齐。
+   根因：名称列自然宽（「LMS 启动器」~78px /「llama.cpp」~63px）与按钮列（七态恒 99.03px）不对称——
+   中段 flex:1 只居中于「名称..按钮」之间，几何中心偏卡片中心 (99.03−名称宽)/2（截图实测 LMS 行
+   偏左 ~13px、llama.cpp 行偏左 ~20px）。修复：名称列定宽 = 按钮 min-width（99.03px；现有名称均
+   短于该宽，左对齐观感不变）→ 名称列与按钮列等宽对称，中段 flex:1 的几何中心恰为卡片中心，两行同时居中。 */
 .update-row__name {
   font-size: var(--fs-body);
   color: var(--text);
   flex: none;
+  width: 99.03px; /* = 按钮 min-width（.update-row .btn 同值）：两列对称 → 中段居中于卡片中心 */
 }
 .update-row__middle {
-  flex: 1; /* 2026-09 优化：撑满名称与按钮之间的空间，text-align:center 使提示文字居中（标题/按钮位置不变） */
+  flex: 1; /* 2026-09 优化：撑满名称与按钮之间的整段空间（名称 flex:none 恒自然宽），
+             text-align:center 使提示文字对齐卡片中心（标题/按钮位置不变） */
   min-width: 0;
   font-size: var(--fs-label);
   text-align: center;
@@ -679,6 +686,14 @@ function llamaBelow(): { kind: string; text: string } | null {
   min-width: 0;
 }
 /* 2026-09-16：.llama-version（「本地: bNNNNN」）span 及其居中样式删除——本地版本号并入 up-to-date 中段 */
+/* 2026-09-16 布局修复（截图 bug）：llama.cpp 行中段嵌套在 .llama-info 内，须占满「名称..按钮」
+   整段并允许收缩（基类 .update-row__middle 的 flex:1/min-width:0 在 flex 容器 .llama-info 内
+   对 .llama-info 的剩余空间生效，此处显式重申，防 .llama-info 结构变更时静默失效）；
+   名称列已定宽 99.03px 与按钮列对称 → 占满后的几何中心恰为卡片中心 */
+.llama-info .update-row__middle {
+  flex: 1;
+  min-width: 0;
+}
 .llama-state-text {
   font-size: var(--fs-label);
   color: var(--muted);

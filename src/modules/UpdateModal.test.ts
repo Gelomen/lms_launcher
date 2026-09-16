@@ -216,6 +216,34 @@ describe('UpdateModal', () => {
     expect(m![1]).toContain('border-top-left-radius: var(--radius-card)');
     expect(m![1]).toContain('border-top-right-radius: var(--radius-card)');
   });
+
+  // 2026-09-16 布局回归（截图 bug）：两行中段提示文字（「已是最新版本 0.2.0」/「已是最新版本 bNNNNN」）
+  // 未与弹窗居中对齐——LMS 行偏左 ~13px、llama.cpp 行偏左 ~20px（截图像素实测）。
+  // 根因：名称列自然宽（「LMS 启动器」~78px /「llama.cpp」~63px）与按钮列（七态恒 99.03px）不对称，
+  // 中段 flex:1 只居中于「名称..按钮」之间，几何中心偏卡片中心 (99.03−名称宽)/2。
+  // 契约：名称列定宽 = 按钮 min-width 99.03px（左右两列等宽对称）→ 中段几何中心恰为卡片中心，
+  // 两行同时居中；llama.cpp 行中段另需 .llama-info 内 flex:1 + min-width:0（占满可收缩）。
+  it('布局：名称列定宽 99.03px 与按钮列对称 → 两行中段文字对齐卡片中心', () => {
+    const src = readFileSync(resolve(__dirname, 'UpdateModal.vue'), 'utf-8');
+    // 名称列：flex:none 定宽 99.03px（与 .update-row .btn 的 min-width 同值）
+    const nameRule = src.match(/\.update-row__name\s*\{[^}]*\}/);
+    expect(nameRule).not.toBeNull();
+    expect(nameRule![0]).toContain('flex: none');
+    expect(nameRule![0]).toContain('width: 99.03px');
+    // 按钮列 min-width 基准保持 99.03px（名称列宽必须与其一致才对称）
+    const btnRule = src.match(/\.update-row \.btn\s*\{[^}]*\}/);
+    expect(btnRule).not.toBeNull();
+    expect(btnRule![0]).toContain('min-width: 99.03px');
+    // llama.cpp 行中段：.llama-info 内 flex:1 占满 + min-width:0 可收缩
+    const infoMiddle = src.match(/\.llama-info \.update-row__middle\s*\{[^}]*\}/);
+    expect(infoMiddle).not.toBeNull();
+    expect(infoMiddle![0]).toContain('flex: 1');
+    expect(infoMiddle![0]).toContain('min-width: 0');
+    const info = src.match(/\.llama-info\s*\{([^}]*)\}/);
+    expect(info).not.toBeNull();
+    expect(info![1]).toContain('flex: 1');
+    expect(info![1]).toContain('min-width: 0');
+  });
 });
 
 // ---- Task 7 回归：llama.cpp 更新状态需在每次「打开弹窗」时重新检查 ----
