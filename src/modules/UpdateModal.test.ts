@@ -339,15 +339,11 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     w.unmount();
   });
 
-  // 2026-09-16 布局回归：检查中（checking）期间本地版本号文字紧贴名称左对齐，未居中（截图 bug）。
-  // 根因：.llama-info 内中段 .llama-middle 仅 up-to-date/update-available 态渲染，
-  // checking 期间返回 null 不占位；.llama-version 无 flex 伸展 → 无法居中。
-  // 修复契约：.llama-version 自身 flex:1 + text-align:center，在任意态（含检查中）都占据
-  // 名称与按钮之间的剩余空间并水平居中。
-  it('布局：检查中（checking）期间本地版本号文字居中于名称与按钮之间', async () => {
-    // check_llama_update 永不 resolve → 本地版本已取到、检查仍 pending（截图状态：按钮「检查中...」+「本地: b10679」）
+  // 2026-09-16 需求：「本地: bNNNNN」独立 span 删除（用户反馈与中段状态文字冗余）——
+  // 本地版本号收敛到 up-to-date 中段「已是最新版本 bNNNNN」（与 LMS 启动器行「已是最新版本 0.2.0」同格式）。
+  it('「本地:」span 不再渲染；up-to-date 中段显示「已是最新版本 bNNNNN」（与 LMS 启动器行同格式）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
-      if (cmd === 'check_llama_update') return new Promise(() => {}); // 挂起
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
       if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
@@ -357,18 +353,11 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 截图状态：按钮「检查中...」禁用 + 本地版本号仍显示
-    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
-    expect(btn!.textContent?.trim()).toBe('检查中...');
-    expect(btn!.disabled).toBe(true);
-    const local = document.querySelector('.llama-version');
-    expect(local).not.toBeNull();
-    expect(local!.textContent).toContain('b10679');
-    // 居中能力来自 CSS（happy-dom 不注入 SFC 样式）：.llama-version 必须自带 flex:1 + text-align:center，
-    // 才能在 checking 期间（中段不渲染）占据 .llama-info 剩余空间并居中——直接读源码断言防规则误删
-    const src = readFileSync(resolve(__dirname, 'UpdateModal.vue'), 'utf-8');
-    const m = src.match(/\.llama-version\s*\{[^}]*flex:\s*1;[^}]*text-align:\s*center/);
-    expect(m).not.toBeNull();
+    // 本地版本号独立 span 已删除
+    expect(document.querySelector('.llama-version')).toBeNull();
+    expect(document.querySelector('.llama-section')!.textContent).not.toContain('本地:');
+    // up-to-date 中段带本地版本号（与 LMS 启动器行「已是最新版本 0.2.0」同格式）
+    expect(document.querySelector('.llama-section .llama-state-text')?.textContent?.trim()).toBe('已是最新版本 b10679');
     w.unmount();
   });
 
@@ -422,7 +411,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
 
-    // 2026-09-15 优化：发现新版本时本地版本号不再显示，只保留「新版本: bNNNNN」
+    // 2026-09-16：「本地:」独立 span 已删除（本地版本号仅 up-to-date 中段显示）
     expect(document.querySelector('.llama-version')).toBeNull();
     // 远端是 nightly b 号 tag：显示不应出现 undefined
     const newEl = document.querySelector('.llama-new-version');
@@ -468,9 +457,9 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
 
     // 重新打开后必须再次执行 check_llama_update
     expect(countCheckCalls()).toBeGreaterThan(callsBeforeReopen);
-    // 刷新后状态为 up-to-date → llama.cpp 行恒显示，「已是最新版本」+ 可点「检查更新」
+    // 刷新后状态为 up-to-date → llama.cpp 行恒显示，「已是最新版本 v1」（本地版本号，2026-09-16）+ 可点「检查更新」
     expect(document.querySelector('.llama-section')).not.toBeNull();
-    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
+    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('已是最新版本 v1');
     const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
     expect(btn).not.toBeNull();
     expect(btn!.textContent?.trim()).toBe('检查更新');
@@ -491,12 +480,12 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 已是最新 → 行恒显示「已是最新版本」+「检查更新」按钮
+    // 已是最新 → 行恒显示「已是最新版本 b10679」（2026-09-16 本地版本号并入中段）+「检查更新」按钮
     expect(document.querySelector('.llama-section')).not.toBeNull();
-    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
+    expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('已是最新版本 b10679');
     expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
-    // 2026-09-15 优化：up-to-date 时本地版本号照常显示（仅发现新版本时隐藏）
-    expect(document.querySelector('.llama-version')?.textContent).toContain('b10679');
+    // 「本地:」独立 span 已删除（版本号收敛到中段）
+    expect(document.querySelector('.llama-version')).toBeNull();
 
     // 重新打开且检查到更新 → 区域显示（版本号 + 选择器 + 更新按钮）
     invokeMock.mockImplementation(async (cmd: string) => {
@@ -714,8 +703,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     const setCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'set_llama_update_config');
     expect(setCalls.length).toBeGreaterThan(0);
     expect(w.emitted('llama-complete')?.find((e) => e[0] === true)).toBeDefined();
-    // 重查落定：已是最新 + 按钮「检查更新」
-    expect(document.querySelector('.llama-section .llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
+    // 重查落定：已是最新（本地版本号并入中段）+ 按钮「检查更新」
+    expect(document.querySelector('.llama-section .llama-state-text')?.textContent?.trim()).toBe('已是最新版本 b10997');
     expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
     w.unmount();
   });

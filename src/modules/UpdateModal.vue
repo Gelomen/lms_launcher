@@ -399,12 +399,16 @@ function onLlamaBtn(): void {
 }
 
 // llama.cpp 行中段状态文字（latest=已最新灰字 / version=新版本紫字）
+// 2026-09-16：up-to-date 中段并入本地版本号「已是最新版本 bNNNNN」（与 LMS 启动器行
+// 「已是最新版本 0.2.0」同格式）；独立「本地:」span 删除；本地版本未知时回退不带版本号
 // 未配置提示与错误文字不再占中段（2026-09 优化：移到名称行下方独立一行完整显示，
 // 可换行、无省略号截断）→ 见 llamaBelow()
 function llamaMiddle(): { kind: string; text: string } | null {
   switch (llamaUpdateStatus.value) {
     case 'up-to-date':
-      return { kind: 'latest', text: '已是最新版本' };
+      return { kind: 'latest', text: llamaLocalVersion.value
+        ? '已是最新版本 ' + llamaLocalVersion.value
+        : '已是最新版本' };
     case 'update-available':
       return { kind: 'version', text: '新版本: ' + (llamaRemoteVersion.value || '') };
     default:
@@ -478,8 +482,7 @@ function llamaBelow(): { kind: string; text: string } | null {
           <div class="update-row llama-section">
             <div class="llama-info">
               <span class="update-row__name">llama.cpp</span>
-              <!-- 发现新版本（update-available）时隐藏本地版本号，只保留「新版本: …」（2026-09-15 优化） -->
-              <span v-if="llamaLocalVersion && llamaUpdateStatus !== 'update-available'" class="llama-version">本地: {{ llamaLocalVersion }}</span>
+              <!-- 2026-09-16：「本地:」独立 span 删除——本地版本号并入 up-to-date 中段「已是最新版本 bNNNNN」（与 LMS 启动器行同格式） -->
               <!-- 中段状态文字（已最新灰字/新版本紫字），与 LMS 启动器行同语言 -->
               <span
                 v-if="llamaMiddle() !== null"
@@ -675,19 +678,7 @@ function llamaBelow(): { kind: string; text: string } | null {
   flex: 1;
   min-width: 0;
 }
-.llama-version {
-  font-size: var(--fs-label);
-  color: var(--muted);
-  /* 2026-09-16 修复：flex:1 + 居中——检查中（checking）期间中段 .llama-middle 不渲染，
-     本地版本号若仅贴名称左对齐会显得不居中（截图 bug）；自身占据 .llama-info 剩余空间
-     并水平居中后，各态（含检查中）视觉一致 */
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* 2026-09-16：.llama-version（「本地: bNNNNN」）span 及其居中样式删除——本地版本号并入 up-to-date 中段 */
 .llama-state-text {
   font-size: var(--fs-label);
   color: var(--muted);
