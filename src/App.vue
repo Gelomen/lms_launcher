@@ -174,7 +174,7 @@ onMounted(async () => {
     const r = await invoke<UpdateCheckResult>('check_update');
     if (r.available) {
       updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
-      appendSys('检查更新 · 发现新版本 v' + r.version);
+      appendSys('LMS 启动器 · 发现新版本 v' + r.version);
     }
   } catch { /* 检查失败不阻塞启动 */ }
   // 下载进度事件 → 状态机 downloading + pct
@@ -220,13 +220,13 @@ async function runCheck(): Promise<void> {
   }
   if (r.available) {
     lastFailure.value = 'check'; // 非失败动作不清空也无妨，保持显式
-    appendSys('检查更新 · 发现新版本 v' + r.version);
+    appendSys('LMS 启动器 · 发现新版本 v' + r.version);
     updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
     return;
   }
   switch (r.status) {
     case 'up-to-date':
-      appendSys('检查更新 · 当前已是最新版本');
+      appendSys('LMS 启动器 · 当前已是最新版本');
       updateState.value = { phase: 'up-to-date', version: r.version ?? '', pct: 0, errorText: '' };
       break;
     case 'error':
@@ -242,7 +242,7 @@ async function runCheck(): Promise<void> {
 
 async function runDownload(): Promise<void> {
   updateState.value = { ...updateState.value, phase: 'downloading', pct: 0, errorText: '' };
-  appendSys('开始下载新版本…');
+  appendSys('LMS 启动器 · 开始下载新版本…');
   let r: { ok: boolean; reason?: string };
   try {
     r = await invoke<{ ok: boolean; reason?: string }>('download_update');
@@ -252,7 +252,7 @@ async function runDownload(): Promise<void> {
     return;
   }
   if (r.ok) {
-    appendSys('新版本下载完成');
+    appendSys('LMS 启动器 · 下载完成');
     updateState.value = { ...updateState.value, phase: 'ready', errorText: '' };
     return;
   }
@@ -263,7 +263,7 @@ async function runDownload(): Promise<void> {
     return;
   }
   lastFailure.value = 'download';
-  appendSys('更新下载失败 · ' + (r.reason ?? '未知错误'));
+  appendSys('LMS 启动器 · 更新下载失败 · ' + (r.reason ?? '未知错误'));
   updateState.value = { ...updateState.value, phase: 'error', errorText: r.reason ?? '未知错误' };
 }
 
@@ -290,7 +290,7 @@ function onExitConfirmed(): void {
   invoke(action === 'run_update' ? 'run_update' : 'exit_app')
     .catch((e) => {
       if (action === 'run_update') {
-        appendSys('启动更新失败 · ' + errMsg(e));
+        appendSys('LMS 启动器 · 启动更新失败 · ' + errMsg(e));
         updateState.value = { ...updateState.value, phase: 'ready', errorText: errMsg(e) };
       }
     })

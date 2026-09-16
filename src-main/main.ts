@@ -424,12 +424,12 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
       headers: { 'User-Agent': 'lms_launcher' },
     });
     if (!res.ok) {
-      emitLog('[lms_launcher] 检查更新失败：HTTP ' + res.status + proxyNote, 'sys');
+      emitLog('[lms_launcher] LMS 启动器 · 检查更新失败：HTTP ' + res.status + proxyNote, 'sys');
       return { available: false, status: 'error' };
     }
     const info = parseLatestRelease(await res.json());
     if (!info) {
-      emitLog('[lms_launcher] 检查更新失败：无法解析 release 信息' + proxyNote, 'sys');
+      emitLog('[lms_launcher] LMS 启动器 · 检查更新失败：无法解析 release 信息' + proxyNote, 'sys');
       return { available: false, status: 'error' };
     }
     const cur = app.getVersion();
@@ -440,7 +440,7 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
     pendingUpdate = info;
     return { available: true, status: 'update-available', version: info.tag };
   } catch (e) {
-    emitLog('[lms_launcher] 检查更新失败：' + (e instanceof Error ? e.message : String(e)) + proxyNote, 'sys');
+    emitLog('[lms_launcher] LMS 启动器 · 检查更新失败：' + (e instanceof Error ? e.message : String(e)) + proxyNote, 'sys');
     return { available: false, status: 'error' };
   } finally {
     clearTimeout(timer);
@@ -453,7 +453,7 @@ ipcMain.handle('download_update', async (): Promise<
 > => {
   if (!pendingUpdate) return { ok: false, reason: '尚无更新任务（请先检查更新）' };
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip
-  emitLog('[lms_launcher] 更新 · 开始下载：' + pendingUpdate.zipUrl, 'sys');
+  emitLog('[lms_launcher] LMS 启动器 · 更新 · 开始下载：' + pendingUpdate.zipUrl, 'sys');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 600000); // 10 分钟超时
   const [dp] = yamlPaths();
@@ -472,7 +472,7 @@ ipcMain.handle('download_update', async (): Promise<
       dest: zipPath,
       signal: ctrl.signal,
       onProgress: (pct) => { mainWin()?.webContents.send('update-download-progress', { pct }); },
-      onRetry: (a) => { emitLog('[lms_launcher] 更新 · 写入被系统拒绝（EPERM，多为杀毒实时扫描锁文件），稍后重试（第 ' + (a + 1) + ' 次尝试）', 'sys'); },
+      onRetry: (a) => { emitLog('[lms_launcher] LMS 启动器 · 更新 · 写入被系统拒绝（EPERM，多为杀毒实时扫描锁文件），稍后重试（第 ' + (a + 1) + ' 次尝试）', 'sys'); },
     });
     // 完整性校验（spec 2026-09-05-download-integrity-check-design）：
     // 1) Content-Length 比对（截断/断流的流也会 done:true → 靠此拦截半成品）
@@ -489,15 +489,15 @@ ipcMain.handle('download_update', async (): Promise<
     });
     if (!integrity.ok) {
       try { unlinkSync(zipPath); } catch { /* 残留由下次下载覆盖 */ }
-      emitLog('[lms_launcher] 更新 · ' + integrity.reason, 'sys');
+      emitLog('[lms_launcher] LMS 启动器 · 更新 · ' + integrity.reason, 'sys');
       return { ok: false, reason: integrity.reason ?? '校验失败' };
     }
-    emitLog('[lms_launcher] 更新 · 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB' + (pendingUpdate.digest ? '（SHA-256 校验通过）' : ''), 'sys');
+    emitLog('[lms_launcher] LMS 启动器 · 更新 · 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB' + (pendingUpdate.digest ? '（SHA-256 校验通过）' : ''), 'sys');
     return { ok: true, zipPath, size };
   } catch (e) {
     try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
     const msg = e instanceof Error ? e.message : String(e);
-    emitLog('[lms_launcher] 更新 · 下载失败：' + msg + proxyNote, 'sys');
+    emitLog('[lms_launcher] LMS 启动器 · 更新 · 下载失败：' + msg + proxyNote, 'sys');
     return { ok: false, reason: msg };
   } finally {
     clearTimeout(timer);
@@ -521,7 +521,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   if (!existsSync(ps1) || !existsSync(zipPath)) {
     throw new Error('更新文件缺失（lms-launcher-update.ps1 / lms-launcher-update.zip）');
   }
-  emitLog('[lms_launcher] 更新 · 已启动更新脚本，应用即将退出', 'sys');
+  emitLog('[lms_launcher] LMS 启动器 · 更新 · 已启动更新脚本，应用即将退出', 'sys');
   const updateLogPath = join(installDir, 'lms_launcher_update.log');
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
   // 短启动器：ASCII + CRLF，每次更新重建（ps1/zip 路径不变，内容幂等）。
@@ -549,7 +549,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   } catch (e) {
     const errText = (e instanceof Error ? e.message : String(e))
       .split('\n').map((l) => l.trim()).filter(Boolean).slice(-3).join(' | ');
-    emitLog('[lms_launcher] 更新失败：计划任务创建/触发失败（' + errText + '）', 'sys');
+    emitLog('[lms_launcher] LMS 启动器 · 更新失败：计划任务创建/触发失败（' + errText + '）', 'sys');
     try {
       appendFileSync(updateLogPath, stamp + ' [ERROR] [node] schtasks 失败：' + errText + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
@@ -570,7 +570,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
 function cleanStaleUpdateTask(): void {
   try {
     execSync('schtasks /Delete /F /TN "' + UPDATE_TASK_NAME + '"', { stdio: 'ignore' });
-    emitLog('[lms_launcher] 更新 · 已清理残留计划任务 ' + UPDATE_TASK_NAME, 'sys');
+    emitLog('[lms_launcher] LMS 启动器 · 更新 · 已清理残留计划任务 ' + UPDATE_TASK_NAME, 'sys');
   } catch { /* 任务不存在 / schtasks 不可用：均无影响 */ }
 }
 // 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
