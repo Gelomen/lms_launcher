@@ -203,6 +203,19 @@ describe('UpdateModal', () => {
     expect(document.querySelector('.update-modal')).toBeNull();
     w.unmount();
   });
+
+  // 2026-09-16 回归：卡片左上/右上圆角丢失（截图 bug）。
+  // 根因：bf9698f 移除 .update-card 的 overflow:hidden（防裁剪 Dropdown 向下展开的弹层）后，
+  // 卡片顶缘 .update-head 背景与卡片同色、自身无圆角 → 左上角直（右上角仅由 .update-close
+  // 自身 border-top-right-radius 兜底）。修复契约：.update-head 自身带 border-top-left-radius
+  // 与 border-top-right-radius（不恢复卡片 overflow:hidden，否则 Dropdown 弹层再被裁）。
+  it('布局：.update-head 自带顶部左右圆角（卡片去掉 overflow:hidden 后顶缘圆角不丢）', () => {
+    const src = readFileSync(resolve(__dirname, 'UpdateModal.vue'), 'utf-8');
+    const m = src.match(/\.update-head\s*\{([^}]*)\}/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toContain('border-top-left-radius: var(--radius-card)');
+    expect(m![1]).toContain('border-top-right-radius: var(--radius-card)');
+  });
 });
 
 // ---- Task 7 回归：llama.cpp 更新状态需在每次「打开弹窗」时重新检查 ----

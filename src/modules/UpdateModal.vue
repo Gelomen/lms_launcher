@@ -465,11 +465,15 @@ function llamaBelow(): { kind: string; text: string } | null {
   border-radius: var(--radius-card);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); /* 与 TemplateModal 全局 .card 卡片阴影一致 */
   /* 2026-09：overflow:hidden 移除——llama.cpp Windows 版本下拉贴近卡片底部，
-     向下展开的 .dropdown-panel 会被卡片圆角裁切；圆角由 .update-close 自身
-     border-top-right-radius 兜底，内容区 padding 16px 无贴角元素，移除无副作用 */
+     向下展开的 .dropdown-panel 会被卡片圆角裁切；圆角改由顶缘 .update-head
+     （顶部左右双圆角）+ .update-close（border-top-right-radius 同值）兜底，
+     内容区 padding 16px 无贴角元素，移除无副作用（2026-09-16 补 .update-head 左上圆角回归修复） */
 }
 
-/* 32px 标题栏：标题居中；右上角 × 关闭（角形占满标题栏高，同 .modal-close） */
+/* 32px 标题栏：标题居中；右上角 × 关闭（角形占满标题栏高，同 .modal-close）。
+   2026-09-16 圆角回归修复：卡片 overflow:hidden 移除后（bf9698f，防裁剪 Dropdown 弹层），
+   顶缘圆角必须由标题栏自身兜底——左上 + 右上均补 border-*-top-*-radius；
+   左上角无其他元素覆盖（右上角由 .update-close 同值圆角对齐），内容区 padding 16px 无贴角元素。 */
 .update-head {
   position: relative;
   height: 32px;
@@ -477,6 +481,8 @@ function llamaBelow(): { kind: string; text: string } | null {
   align-items: center;
   background: var(--card);
   border-bottom: 1px solid var(--border);
+  border-top-left-radius: var(--radius-card);  /* 卡片左上角兜底（不恢复卡片 overflow:hidden） */
+  border-top-right-radius: var(--radius-card); /* 与 .update-close 的 border-top-right-radius 同值对齐 */
 }
 .update-title {
   flex: 1;
