@@ -1,7 +1,7 @@
 # 变更：llama.cpp 更新两阶段化（下载不停服，下载完成后「停止并更新」）
 
 日期：2026-09-17
-状态：已实施，含二轮真机修复（npm test 439 全绿；npm run build 通过）
+状态：已实施，含二轮/三轮真机修复（npm test 443 全绿；npm run build 通过）
 
 ## 背景与用户诉求
 
@@ -93,6 +93,34 @@ llama_dir；Windows 上运行中的 `llama-server.exe` 锁住其加载的 `ggml-
 二轮测试：`llamaLockProbeFiles` 2 例（动态清单含 ggml-cuda.dll / 目录不可读退化）、
 UpdateModal busy 重入 1 例（失败 → 「停止并更新」可再次点击，install 被调 2 次）；
 原「install 失败」用例改为非占用错误（verify failed → 「重试」）。npm test 439 全绿；build 通过。
+
+## 三轮修复（同日，真机复测反馈）
+
+真机复测日志：
+
+```
+llama.cpp · 开始下载更新：.../releases/download/b10999/llama-b10999-bin-win-cuda-13.4-x64.zip
+llama.cpp · 下载失败：Download failed: HTTP 404
+```
+
+根因（证据链，GitHub API 时间戳）：llama.cpp nightly 工作流**先建 release**（body 已写好全部
+下载链接，b10999 于 12:31:41Z 发布），**再逐个上传资产**（win-cuda-13.4 于 12:34:35Z 才上传完，
+全部资产 12:35:06Z 才结束）。用户在窗口内检查到 b10999 并立即下载 → GitHub 对尚未就位的资产
+返回 404（release 存在、资产缺失）。用户随后浏览器能打开同一链接 + 该资产 `download_count=0`
+互证「链接有效、当时未就位」。非代理问题、非 URL 解析问题。
+
+修复：
+
+- `downloadLlamaZip` 主包经新函数 `downloadZipWith404Retry` 下载：**404 自动重试**——间隔
+  `retryAfterMs`（默认 15s）× 最多 3 次，每次重试前 `onRetry(attempt)` 回调；重试耗尽仍 404 →
+  友好错误「HTTP 404——该版本的下载资产可能还在上传（nightly 发布后资产需几分钟陆续就位，稍后
+  重试即可）；若持续 404 请检查代理设置」。其他状态码（500 等）不重试、原错误通道保留（避免
+  掩盖代理/网络真因）；仅主包重试（dlls 上传序靠前，404 罕见）。
+- `download_llama_update`（main.ts）接 `onRetry` → sys 日志「下载 404——该版本资产可能还在
+  上传，等待 N/3 次重试...」；`downloadAndInstallLlama` 透传 `retryAfterMs`（测试加速用）。
+
+三轮测试：+3（404 重试后成功且 onRetry 恰 1 次 / 404 持续耗尽 → 友好错误且 onRetry 恰 3 次 /
+非 404 不重试立即失败）；原「download fails 404」用例更新为重试耗尽断言（443 = 439 + 3 + 1 更新）。npm test 443 全绿；build 通过。
 
 ## 边界与取舍
 

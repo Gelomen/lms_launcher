@@ -202,7 +202,9 @@ describe('downloadAndInstallLlama', () => {
     expect(mockRmSync).toHaveBeenCalled();
   });
 
-  it('should return error when download fails', async () => {
+  it('should return error when download fails（404 持续 → 重试耗尽的友好错误）', async () => {
+    // 2026-09-17 三轮：404 会触发自动重试（nightly 资产滞后），重试耗尽后报友好错误；
+    // 经 downloadLlamaZip 的 retryAfterMs 加速（10ms）避免真实 15s 等待
     (global.fetch as any).mockResolvedValue({
       ok: false,
       status: 404,
@@ -212,10 +214,12 @@ describe('downloadAndInstallLlama', () => {
     const result = await downloadAndInstallLlama({
       downloadUrl: 'https://example.com/missing.zip',
       targetDir: '/path/to/llama',
+      retryAfterMs: 10,
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Download failed: HTTP 404');
+    expect(result.error).toContain('404');
+    expect(result.error).toContain('可能还在上传');
   });
 
   it('should handle CUDA DLLs download', async () => {
@@ -370,6 +374,61 @@ describe('downloadLlamaZip（只下载，不触碰目标目录）', () => {
     });
     expect(dl.ok).toBe(false);
     expect(mockRmSync).toHaveBeenCalledTimes(2);
+  });
+
+  // 2026-09-17 三轮：nightly 资产滞后于 release body（body 先写好全部下载链接，
+  // 资产随后逐个上传，win-cuda-13.4 是最后之一，约 3 分钟窗口）→ 窗口内点下载必 404。
+  // 修复：主包 404 自动重试等待资产就位；重试期间通过 onRetry 回调透出等待状态。
+  it('主包 404（资产还在上传）→ 自动重试，资产就位后成功', async () => {
+    // retryAfterMs: 10 —— 真实 10ms 延迟（不用 fake timers：ReadableStream 真实 I/O 与其不兼容）
+    (global.fetch as any) = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 404, body: null })
+      .mockResolvedValue(makeMockResponse());
+    const onRetry = vi.fn();
+    const dl = await downloadLlamaZip({
+      downloadUrl: 'https://github.com/ggml-org/llama.cpp/releases/download/b10999/llama-b10999-bin-win-cuda-13.4-x64.zip',
+      retryAfterMs: 10,
+      onRetry,
+    });
+    expect(dl.ok).toBe(true);
+    expect(onRetry).toHaveBeenCalledTimes(1); // 一次 404 → 一次重试提示
+  });
+
+  it('404 持续（重试次数用尽）→ 友好错误（资产可能还在上传/检查代理）', async () => {
+    (global.fetch as any) = vi.fn().mockResolvedValue({ ok: false, status: 404, body: null });
+    const onRetry = vi.fn();
+    const dl = await downloadLlamaZip({
+      downloadUrl: 'https://github.com/ggml-org/llama.cpp/releases/download/b10999/llama-b10999-bin-win-cuda-13.4-x64.zip',
+      retryAfterMs: 10,
+      onRetry,
+    });
+    expect(dl.ok).toBe(false);
+    if (!dl.ok) {
+      expect(dl.error).toContain('404'); // 原始状态码仍可见
+      expect(dl.error).toContain('可能还在上传'); // 友好根因提示
+    }
+    expect(onRetry).toHaveBeenCalledTimes(3); // 最多重试 3 次
+  });
+
+  it('非 404 错误（500）不重试，立即失败', async () => {
+    (global.fetch as any).mockResolvedValue({ ok: false, status: 500, body: null });
+    const dl = await downloadLlamaZip({
+      downloadUrl: 'https://example.com/llama.zip',
+      onRetry: vi.fn(),
+    });
+    expect(dl.ok).toBe(false);
+    if (!dl.ok) expect(dl.error).toContain('Download failed: HTTP 500'); // 原错误通道保留
+  });
+
+  it('首次即 200 → 无重试', async () => {
+    (global.fetch as any).mockImplementation(() => Promise.resolve(makeMockResponse()));
+    const onRetry = vi.fn();
+    const dl = await downloadLlamaZip({
+      downloadUrl: 'https://example.com/llama.zip',
+      onRetry,
+    });
+    expect(dl.ok).toBe(true);
+    expect(onRetry).not.toHaveBeenCalled();
   });
 });
 

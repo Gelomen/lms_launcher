@@ -98,14 +98,16 @@ export async function downloadAndInstallLlama({
   targetDir,
   proxy,
   onProgress,
+  retryAfterMs,
 }: {
   downloadUrl: string;
   cudaDllsUrl?: string;
   targetDir: string;
   proxy?: string;
   onProgress?: (percent: number, stage: 'download' | 'extract' | 'dlls') => void;
+  retryAfterMs?: number;
 }): Promise<{ success: boolean; error?: string }> {
-  const dl = await downloadLlamaZip({ downloadUrl, cudaDllsUrl, proxy, onProgress });
+  const dl = await downloadLlamaZip({ downloadUrl, cudaDllsUrl, proxy, onProgress, retryAfterMs });
   if (!dl.ok) return { success: false, error: dl.error };
   try {
     onProgress?.(0, 'extract');
@@ -178,6 +180,8 @@ export function findLockedFiles(dir: string, filenames: string[]): string[] {
  * 若 llama-server 正在运行则 DLL 被锁 → EBUSY。拆分为下载/安装两阶段后，
  * 下载期间不影响运行中的服务；安装前由调用方确认服务已停止。
  *
+ * @param retryAfterMs 404 重试间隔（ms），默认 15000（测试可传小值）
+ * @param onRetry 404 重试前回调（供上层记日志/提示「等待资产就位」）
  * @returns ok 时携带 zip 路径；失败时携带 error
  */
 export async function downloadLlamaZip({
@@ -185,11 +189,15 @@ export async function downloadLlamaZip({
   cudaDllsUrl,
   proxy,
   onProgress,
+  retryAfterMs,
+  onRetry,
 }: {
   downloadUrl: string;
   cudaDllsUrl?: string;
   proxy?: string;
   onProgress?: (percent: number, stage: 'download' | 'extract' | 'dlls') => void;
+  retryAfterMs?: number;
+  onRetry?: (attempt: number) => void;
 }): Promise<
   | { ok: true; zipPath: string; dlZipPath?: string }
   | { ok: false; error: string }
@@ -197,7 +205,7 @@ export async function downloadLlamaZip({
   const zipPath = join(tmpdir(), 'llama-cpp-download-' + Date.now() + '.zip');
   const dlZipPath = join(tmpdir(), 'llama-cpp-dlls-' + Date.now() + '.zip');
   try {
-    await downloadZip(downloadUrl, zipPath, proxy, onProgress);
+    await downloadZipWith404Retry(downloadUrl, zipPath, proxy, onProgress, retryAfterMs, onRetry);
     if (cudaDllsUrl) {
       onProgress?.(0, 'dlls');
       await downloadZip(cudaDllsUrl, dlZipPath, proxy, onProgress);
@@ -225,6 +233,48 @@ export function extractLlamaZips(
     return { success: true };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 下载主包，404 自动重试（2026-09-17 三轮：nightly 资产滞后修复）。
+ *
+ * 根因：llama.cpp nightly 工作流**先创建 release（body 已含全部下载链接），
+ * 再逐个上传资产**，全部上传完成约需 3 分钟（b10999 实测：release 12:31:41 发布，
+ * win-cuda-13.4 资产 12:34:35 才上传完）。窗口内点击下载 → GitHub 对尚未就位的资产
+ * 返回 404（release 存在但资产缺失）。浏览器稍后能打开同一链接即为佐证。
+ *
+ * 策略：主包 404 → 间隔 retryAfterMs（默认 15s）重试，最多 3 次；仍 404 →
+ * 友好错误（提示资产可能还在上传 + 检查代理）。其他状态码（500 等）立即失败，
+ * 不走重试（可能是代理/网络问题，重试无意义且掩盖真因）。
+ * 仅主包重试：dlls 包上传序靠前，404 罕见，失败走原错误通道。
+ */
+async function downloadZipWith404Retry(
+  url: string,
+  dest: string,
+  proxy?: string,
+  onProgress?: (pct: number, stage: 'download' | 'extract' | 'dlls') => void,
+  retryAfterMs?: number,
+  onRetry?: (attempt: number) => void
+): Promise<void> {
+  const waitMs = retryAfterMs ?? 15000;
+  const maxAttempts = 4; // 1 次原始请求 + 3 次重试
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await downloadZip(url, dest, proxy, onProgress);
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const isTransient404 = msg.includes('Download failed: HTTP 404');
+      if (!isTransient404) throw e;
+      if (attempt >= maxAttempts) {
+        throw new Error(
+          '下载失败：HTTP 404——该版本的下载资产可能还在上传（nightly 发布后资产需几分钟陆续就位，稍后重试即可）；若持续 404 请检查代理设置'
+        );
+      }
+      onRetry?.(attempt);
+      await new Promise<void>((r) => setTimeout(r, waitMs));
+    }
   }
 }
 

@@ -709,6 +709,13 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
       const win = mainWin();
       if (win) win.webContents.send('llama_update_progress', { percent, stage });
     },
+    // 2026-09-17 三轮：404 自动重试（nightly 资产滞后于 release body，上传需数分钟）
+    onRetry: (attempt) => {
+      emitLog(
+        `[lms_launcher] llama.cpp · 下载 404——该版本资产可能还在上传（nightly 发布后资产陆续就位），等待 ${attempt}/3 次重试...`,
+        'sys'
+      );
+    },
   });
 
   if (!dl.ok) {
