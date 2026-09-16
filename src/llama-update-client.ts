@@ -31,11 +31,9 @@ export interface LlamaUpdateCheckResult {
   error?: string;
 }
 
-export interface LlamaLocalVersionResult {
-  success: boolean;
-  version?: LlamaVersion;
-  error?: string;
-}
+// 2026-09-16：LlamaLocalVersionResult 与 getLlamaLocalVersion 删除——渲染端不再单独查询
+// 本地版本（会与主进程 check_llama_update 内部查询各落一条「本地版本」日志 → 去重），
+// 本地版本统一由 check_llama_update 返回的 localVersion 字段提供。
 
 export interface LlamaUpdateConfig {
   last_version_type?: string;
@@ -70,10 +68,6 @@ export interface LlamaPendingDownload {
 // 二进制（2026-09-14 bug 根因），nightly 是唯一可下载来源（2026-09-17 定稿移除 includePreRelease 开关）。
 export function checkLlamaUpdate(): Promise<LlamaUpdateCheckResult> {
   return invoke('check_llama_update');
-}
-
-export function getLlamaLocalVersion(): Promise<LlamaLocalVersionResult> {
-  return invoke('get_llama_local_version');
 }
 
 export function downloadLlamaUpdate(downloadUrl: string, cudaDllsUrl?: string): Promise<LlamaDownloadResult> {

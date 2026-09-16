@@ -261,7 +261,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('首次打开：llama_dir 未配置 → llama.cpp 行恒显示，提示文字 + 可点「检查更新」按钮', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
-      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -287,7 +286,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('unconfigured：「检查更新」按钮置灰禁用；重新打开（目录已配置）后恢复可点', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
-      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -303,7 +301,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     // 用户已在主界面选定目录 → 主进程返回 up-to-date → 重开后按钮恢复可点
     invokeMock.mockImplementation(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { version: '1', commit: null } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -325,7 +322,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('布局：llama.cpp 行「检查更新」按钮与名称文字同处第一行（不被 .llama-below 挤到下一行）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
-      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -351,7 +347,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('布局：error 态「重试」按钮同样与名称文字同处第一行', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'failed to fetch remote release info' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -371,8 +366,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   // 本地版本号收敛到 up-to-date 中段「已是最新版本 bNNNNN」（与 LMS 启动器行「已是最新版本 0.2.0」同格式）。
   it('「本地:」span 不再渲染；up-to-date 中段显示「已是最新版本 bNNNNN」（与 LMS 启动器行同格式）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
-      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      // 2026-09-16：本地版本由 check 返回的 localVersion 提供（不再单独调 get_llama_local_version）
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date', localVersion: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -394,7 +389,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('error 态：红色错误文字显示在名称行下方 .llama-below--error，中段留空', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'failed to fetch remote release info' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -426,10 +420,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
         remoteVersion: 'b10955',
         versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }],
       };
-      if (cmd === 'get_llama_local_version') return {
-        success: true,
-        version: { type: 'prerelease', version: '0.3.0', build: 10679 },
-      };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -453,7 +443,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     // 阶段 1：未配置
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: false, error: 'unconfigured' };
-      if (cmd === 'get_llama_local_version') return { success: false, error: 'unconfigured' };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -467,10 +456,9 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     const callsBeforeReopen = countCheckCalls();
     expect(callsBeforeReopen).toBeGreaterThan(0);
 
-    // 阶段 2：用户已在主界面选定目录 → 主进程返回 up-to-date
+    // 阶段 2：用户已在主界面选定目录 → 主进程返回 up-to-date（localVersion 随 check 返回）
     invokeMock.mockImplementation(async (cmd: string) => {
-      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { version: '1', commit: null } };
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date', localVersion: { version: '1' } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -498,8 +486,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   // 中段显示新版本号 + 版本选择器，按钮切换为「下载更新」（与 LMS 启动器行同文案）。
   it('up-to-date 恒显示「已是最新版本」；检查到更新后显示新版本与「下载更新」按钮', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
-      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date', localVersion: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -526,7 +513,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
           { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/c.zip', cudaDllsUrl: 'https://example.com/dlls.zip' },
         ],
       };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
@@ -567,7 +553,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
         remoteVersion: 'b10955',
         versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }],
       };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'download_llama_update') return new Promise((r) => { downloadResolve = r; }); // 挂起 → 停留 downloading
       return {};
     });
@@ -614,7 +599,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('恒查 pre-release：无勾选框 UI，检查不带 include_pre_release 参数', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -648,7 +632,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
         remoteVersion: 'b10997',
         versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }],
       };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       // 主进程判定：下载完成，但 llama-server 运行中 → 包已暂存
       if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
       if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: [] };
@@ -686,7 +669,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     let pendingDownloaded = false; // 模拟主进程：下载完成（installed=false）后才存在暂存包
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
       if (cmd === 'install_llama_update') return new Promise((r) => { installResolve = r; }); // 挂起 → 可断言安装中禁用
       if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: [] };
@@ -718,8 +700,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     // 放行安装成功 → 保存配置 + llama-complete(true) + 重查落 up-to-date
     installResolve!({ success: true });
     invokeMock.mockImplementation(async (cmd: string) => {
-      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10997 } };
+      // 安装成功后重查：主进程返回更新后的本地版本（随 check 的 localVersion 字段）
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date', localVersion: { type: 'prerelease', build: 10997 } };
       if (cmd === 'get_pending_llama_download') return { pending: false, serverRunning: false, lockedFiles: [] };
       return {};
     });
@@ -741,7 +723,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     let pendingDownloaded = false; // 模拟主进程：下载完成后才存在暂存包
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
       if (cmd === 'install_llama_update') return { success: false, error: 'verify failed: llama-server 未找到' };
       if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: [] };
@@ -780,7 +761,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     let pendingDownloaded = false;
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
       if (cmd === 'install_llama_update') return { success: false, busy: true, error: '目标文件仍被占用（llama.cpp 进程可能未完全退出），请关闭外部启动的 llama.cpp 进程后重试' };
       if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: ['ggml-cuda.dll'] };
@@ -819,7 +799,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('adopt：打开弹窗时主进程有暂存包且服务已停 → 直接「停止并更新」（跳过重新下载）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_pending_llama_download') return { pending: true, serverRunning: false, lockedFiles: [] };
       return {};
     });
@@ -846,7 +825,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   it('无暂存包时打开弹窗 → 不误入 stop-update（adopt 默认安全）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'get_pending_llama_download') return { pending: false, serverRunning: false, lockedFiles: [] };
       return {};
     });
@@ -872,6 +850,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
       if (cmd === 'check_llama_update') return {
         success: true,
         status: 'up-to-date',
+        localVersion: { type: 'prerelease', build: 11001 },
         remoteVersion: 'b11001',
         versionOptions: [
           { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
@@ -879,7 +858,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
           { label: 'Windows x64 (Vulkan)', downloadUrl: 'https://example.com/vk.zip' },
         ],
       };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 11001 } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -917,7 +895,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
           { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/cuda13-dlls.zip' },
         ],
       };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 11001 } };
       if (cmd === 'download_llama_update') return new Promise((r) => { downloadResolve = r; }); // 挂起 → 停留 downloading
       return {};
     });
@@ -958,11 +935,55 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     downloadResolve({ success: true, installed: true }); // 收尾：放行挂起的下载 promise
   });
 
+  // ---- 2026-09-16：本地版本日志去重 ----
+  // 根因：checkLlamaUpdateInternal 先单独 invoke get_llama_local_version 取本地版本
+  // （主进程跑一次 llama-server --version 并落一条完整「本地版本」日志），随后
+  // invoke check_llama_update——主进程检查内部又跑一次 --version 再落一条 →
+  // 检查更新完毕后日志区出现两条完全相同的「本地版本」日志。
+  // 契约：渲染端不再单独调用 get_llama_local_version；本地版本显示改由
+  // check_llama_update 返回的 localVersion 字段派生（主进程同一查询只落一条日志）。
+  it('日志去重：渲染端不再单独调 get_llama_local_version；中段本地版本改由 check 返回的 localVersion 派生', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'up-to-date',
+        localVersion: { type: 'prerelease', version: '0.4.1-dev', build: 11002 },
+      };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 本地版本查询接口不再被调用（主进程每次检查只跑一次 --version → 只落一条日志）
+    const localCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_local_version');
+    expect(localCalls.length).toBe(0);
+    // up-to-date 中段「已是最新版本」版本号由 check 返回的 localVersion 派生（b 号优先，与旧显示一致）
+    expect(document.querySelector('.llama-section .llama-state-text')?.textContent?.trim()).toBe('已是最新版本 b11002');
+    w.unmount();
+  });
+
+  it('日志去重：check 未返回 localVersion → 中段回退「已是最新版本」不带版本号（不出现 undefined）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_local_version').length).toBe(0);
+    expect(document.querySelector('.llama-section .llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
+    expect(document.querySelector('.llama-section')!.textContent).not.toContain('undefined');
+    w.unmount();
+  });
+
   // 回归守护：up-to-date 但主进程未返回版本选项（异常/旧版本契约）→ 不渲染下拉、按钮保持「检查更新」
   it('up-to-date 无版本选项：不渲染下拉，按钮保持「检查更新」', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
-      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 11001 } };
       return {};
     });
     window.lms.invoke = invokeMock as any;

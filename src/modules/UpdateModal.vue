@@ -11,7 +11,9 @@ import { ref, watch, onBeforeUnmount } from 'vue';
 import Dropdown from '../components/Dropdown.vue';
 import {
   checkLlamaUpdate,
-  getLlamaLocalVersion,
+  // 2026-09-16：getLlamaLocalVersion 移除——渲染端不再单独调 get_llama_local_version
+  // （主进程检查内部已查本地版本并落日志，单独再查会重复落一条「本地版本」日志）；
+  // 本地版本显示统一改由 check_llama_update 返回的 localVersion 派生
   downloadLlamaUpdate,
   setLlamaUpdateConfig,
   // 2026-09-17 两阶段更新：下载完成后判定服务运行 → 「停止并更新」
@@ -46,7 +48,9 @@ const emit = defineEmits<{
 
 // Task 7: llama.cpp 更新状态
 // 本地版本显示文本（2026-09-14 修复）：dev 构建显示 b 号（与 nightly tag 同格式），
-// 正式版显示 vX.Y.Z；避免旧契约下 localResult.version.version 的 undefined 显示
+// 正式版显示 vX.Y.Z；避免旧契约下 localResult.version.version 的 undefined 显示。
+// 2026-09-16：取值来源改为 check_llama_update 返回的 localVersion（原单独调用
+// get_llama_local_version 会与主进程检查内部查询各落一条「本地版本」日志 → 去重）
 const llamaLocalVersion = ref<string>('');
 const llamaRemoteVersion = ref<string>('');
 const llamaUpdateStatus = ref<'up-to-date' | 'update-available' | 'unknown' | 'error' | 'unconfigured'>('unknown');
@@ -68,16 +72,10 @@ let llamaProgressCleanup: (() => void) | null = null;
 async function checkLlamaUpdateInternal() {
   llamaPhase.value = 'checking'; // 按钮切换「检查中...」并禁用，同 LMS 启动器行语义
   try {
-    // 先获取本地版本
-    const localResult = await getLlamaLocalVersion();
-    if (localResult.success && localResult.version) {
-      const v = localResult.version;
-      // 有 build 号（nightly/dev）→ 显示 b 号，与远端 tag 同格式便于肉眼比较
-      llamaLocalVersion.value = v.build !== undefined
-        ? `b${v.build}`
-        : v.version ? `v${v.version}` : '';
-    }
-
+    // 2026-09-16：检查前的 get_llama_local_version 单独调用删除——主进程 check_llama_update
+    // 内部已执行 llama-server --version 并落一条「本地版本」日志；再单独调一次会执行两次
+    // --version、落两条相同的「本地版本」日志（用户反馈的日志重复）。本地版本显示统一
+    // 由 runLlamaUpdateCheck 从 check 返回的 localVersion 派生（同一次查询）。
     await runLlamaUpdateCheck();
   } catch (e) {
     llamaUpdateStatus.value = 'error';
@@ -95,6 +93,15 @@ async function runLlamaUpdateCheck() {
     const result = await checkLlamaUpdate();
     if (result.success) {
       llamaUpdateStatus.value = result.status ?? 'unknown';
+      // 2026-09-16：本地版本显示改由 check 返回的 localVersion 派生（与主进程日志同一查询，
+      // 不再单独 invoke get_llama_local_version）；b 号优先显示（与远端 nightly tag 同格式），
+      // 无 build 号显示 vX.Y.Z；主进程未返回 → 空串（up-to-date 中段回退不带版本号）
+      if (result.localVersion) {
+        const v = result.localVersion;
+        llamaLocalVersion.value = v.build !== undefined
+          ? `b${v.build}`
+          : v.version ? `v${v.version}` : '';
+      }
       if (result.remoteVersion) {
         llamaRemoteVersion.value = result.remoteVersion;
       }

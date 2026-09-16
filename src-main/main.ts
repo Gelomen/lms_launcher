@@ -651,33 +651,10 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
   };
 });
 
-// get_llama_local_version：获取本地 llama.cpp 版本
-ipcMain.handle('get_llama_local_version', async (): Promise<
-  { success: true; version: LlamaVersion } | { success: false; error: string }
-> => {
-  const [cp] = yamlPaths();
-  const cfg = appConfigLoad(cp);
-
-  if (cfg.llama_dir.trim().length === 0) {
-    return { success: false, error: 'unconfigured' };
-  }
-
-  try {
-    const exePath = join(cfg.llama_dir.trim(), 'llama-server.exe');
-    const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
-    const output = (result.stdout || result.stderr || '').trim();
-    const version = parseLlamaVersion(output);
-    if (!version) {
-      return { success: false, error: `无法解析版本输出：${output}` };
-    }
-    emitLog(`[lms_launcher] llama.cpp · 本地版本：${output}`, 'sys');
-    return { success: true, version };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    emitLog(`[lms_launcher] llama.cpp · 获取本地版本失败：${msg}`, 'sys');
-    return { success: false, error: msg };
-  }
-});
+// 2026-09-16：get_llama_local_version 接口删除——渲染端不再单独调用它取本地版本
+// （原实现与 check_llama_update 内部各自执行一次 llama-server --version 并各落一条
+// 相同的「本地版本」日志 → 日志区重复）。本地版本统一由 check_llama_update 返回的
+// localVersion 字段提供（同一查询，只落一条日志）。
 
 // download_llama_update：只下载 llama.cpp 更新 zip（2026-09-17 修复 EBUSY）。
 // 旧实现在下载后立即解压覆盖 llama_dir，运行中的 llama-server 锁住 DLL → EBUSY。
