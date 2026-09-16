@@ -193,11 +193,6 @@ onMounted(async () => {
   unsubs.push(onTraySettingsRequest(() => { settingsOpen.value = true; }));
 });
 
-// llama.cpp 更新进度事件（由 UpdateModal emit，此处仅记录到日志）
-function onLlamaProgress(pct: number): void {
-  // 进度条 UI 已在 UpdateModal 内部渲染，此处无需额外操作
-}
-
 // llama.cpp 更新完成事件
 function onLlamaComplete(success: boolean, error?: string): void {
   if (success) {
@@ -360,7 +355,7 @@ function onExitClose(): void {
     <!-- llama.cpp 更新区域由 UpdateModal 内部管理（Task 7）；此处仅添加 llama event handlers -->
     <UpdateModal :open="updateOpen" :items="updateItems"
       @action="onUpdateAction" @close="() => (updateOpen = false)"
-      @llama-progress="onLlamaProgress" @llama-complete="onLlamaComplete" />
+      @llama-complete="onLlamaComplete" />
     <!-- 设置弹窗（2026-10-01 update-proxy-settings）：托盘「设置」入口；close/saved 均关弹窗 -->
     <SettingsModal :open="settingsOpen" @close="settingsOpen = false" @saved="settingsOpen = false" />
   </main>

@@ -537,6 +537,59 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     w.unmount();
   });
 
+  // 2026-09-16 优化：llama.cpp 行按钮下方的独立细进度条（.llama-download-progress：细条 +
+  // "download" 阶段文字）删除——按钮本身即进度条（「下载中 NN%」+ 左侧紫填充），细条与阶段文字冗余。
+  // 回归契约：下载中（downloading）时 DOM 无 .llama-download-progress / .llama-progress-bar /
+  // .llama-progress-stage；按钮仍渲染填充节点与「下载中 NN%」文案（进度不丢失，仅收敛到按钮内）。
+  it('downloading：llama.cpp 行无独立细进度条与阶段文字；按钮本身即进度条（填充 + 「下载中 NN%」）', async () => {
+    let downloadResolve: (v: unknown) => void;
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b10955',
+        versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }],
+      };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'download_llama_update') return new Promise((r) => { downloadResolve = r; }); // 挂起 → 停留 downloading
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 检查到更新 → 点击「下载更新」进入 downloading
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent?.trim()).toBe('下载更新');
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 独立细进度条与阶段文字已删除
+    expect(document.querySelector('.llama-download-progress')).toBeNull();
+    expect(document.querySelector('.llama-progress-bar')).toBeNull();
+    expect(document.querySelector('.llama-progress-stage')).toBeNull();
+    // 按钮本身即进度条：禁用 + 「下载中 0%」+ 紫填充节点（无进度事件时 pct=0）
+    const b = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(b!.textContent?.trim()).toBe('下载中 0%');
+    expect(b!.disabled).toBe(true);
+    const fill = b!.querySelector('.update-row__fill') as HTMLElement | null;
+    expect(fill).not.toBeNull();
+    expect(fill!.style.width).toBe('0%');
+    w.unmount();
+    downloadResolve({ success: true }); // 收尾：放行挂起的下载 promise
+  });
+
+  // 同源回归：细进度条的 CSS 定义一并删除（防模板删了样式残留的死代码）
+  it('源码回归：UpdateModal.vue 不再包含 llama 细进度条的模板与样式', () => {
+    const src = readFileSync(resolve(__dirname, 'UpdateModal.vue'), 'utf-8');
+    expect(src).not.toContain('llama-download-progress');
+    expect(src).not.toContain('llama-progress-bar');
+    expect(src).not.toContain('llama-progress-stage');
+  });
+
   // 2026-09-17 定稿：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅
   // nightly-tag.txt，2026-09-17 实测 v0.4.1），nightly（b 号）是唯一可下载来源，恒查 pre-release，
   // 无需用户开关。回归契约：DOM 无勾选框；check_llama_update 不带 include_pre_release 参数；

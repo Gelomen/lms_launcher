@@ -35,8 +35,6 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'action', index: number, kind: string): void;
   (e: 'close'): void;
-  // Task 7: llama.cpp 更新进度事件（供外层更新 items 数组中的 pct）
-  (e: 'llama-progress', pct: number): void;
   // Task 7: llama.cpp 更新完成事件
   (e: 'llama-complete', success: boolean, error?: string): void;
 }>();
@@ -51,7 +49,6 @@ const llamaVersionOptions = ref<Array<{ label: string; downloadUrl: string; cuda
 const llamaSelectedOptionIndex = ref(0);
 const llamaDownloading = ref(false);
 const llamaDownloadPct = ref(0);
-const llamaDownloadStage = ref('');
 const llamaError = ref('');
 // 2026-09-17：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅 nightly-tag.txt，
 // 2026-09-17 实测 v0.4.1），nightly（b 号）是唯一可下载来源，故恒查 pre-release，无需用户开关。
@@ -165,8 +162,6 @@ function setupLlamaProgressListener() {
   }
   llamaProgressCleanup = onLlamaUpdateProgress((e) => {
     llamaDownloadPct.value = e.percent;
-    llamaDownloadStage.value = e.stage;
-    emit('llama-progress', e.percent);
   });
 }
 
@@ -194,7 +189,6 @@ watch(
       llamaVersionOptions.value = [];
       llamaSelectedOptionIndex.value = 0;
       llamaDownloadPct.value = 0;
-      llamaDownloadStage.value = '';
       llamaError.value = '';
       llamaPhase.value = 'idle'; // 行恒显示：按钮回到「检查更新」，随后进入 checking
       checkLlamaUpdateInternal();
@@ -442,13 +436,6 @@ function llamaBelow(): { kind: string; text: string } | null {
               :disabled="llamaDownloading"
               @update:value="(v: string) => { llamaSelectedOptionIndex = Number(v); }"
             />
-            <!-- 下载进度条 -->
-            <div v-if="llamaDownloading" class="llama-download-progress">
-              <div class="llama-progress-bar">
-                <div class="llama-progress-fill" :style="`width: ${llamaDownloadPct}%;`"></div>
-              </div>
-              <span class="llama-progress-stage">{{ llamaDownloadStage }}</span>
-            </div>
           </div>
         </div>
       </div>
@@ -588,8 +575,8 @@ function llamaBelow(): { kind: string; text: string } | null {
 }
 
 /* Task 7: llama.cpp 更新区域样式（2026-09：行恒显示，布局与 LMS 启动器行一致——
-   第一行 名称 | 本地版本 | 中段状态文字 | 按钮（右贴缘）；更新可用时下方独立成行放版本选择器；
-   下载时再下方放进度条） */
+   第一行 名称 | 本地版本 | 中段状态文字 | 按钮（右贴缘）；更新可用时下方独立成行放版本选择器。
+   2026-09-16 优化：下载进度收敛到按钮本身（紫填充 + 「下载中 NN%」），不再有独立细进度条） */
 .llama-section {
   flex-wrap: wrap;
   padding-top: 8px;
@@ -640,27 +627,7 @@ function llamaBelow(): { kind: string; text: string } | null {
   text-overflow: ellipsis;
 }
 /* 2026-09 视觉统一：Windows 版本下拉改共享 Dropdown 组件（全局 .select-trigger/.dropdown-panel 样式），
-   原生 <select> 的 .llama-version-select 样式已删除 */
-.llama-download-progress {
-  width: 100%;
-  margin-top: 4px;
-}
-.llama-progress-bar {
-  width: 100%;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.llama-progress-fill {
-  height: 100%;
-  background: var(--primary);
-  transition: width 0.2s ease;
-}
-.llama-progress-stage {
-  display: block;
-  font-size: var(--fs-label);
-  color: var(--muted);
-  margin-top: 2px;
-}
+   原生 <select> 的 .llama-version-select 样式已删除。
+   2026-09-16 优化：按钮下方独立细进度条（细条 + 阶段文字）删除——
+   按钮本身即进度条（「下载中 NN%」+ 左侧紫填充），细条与阶段文字冗余。 */
 </style>
