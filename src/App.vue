@@ -198,7 +198,7 @@ function onLlamaComplete(success: boolean, error?: string): void {
   if (success) {
     appendSys('llama.cpp 更新完成');
   } else {
-    appendSys('llama.cpp 更新失败 · ' + (error ?? '未知错误'));
+    appendSys('llama.cpp 更新失败 · ' + (error ?? '未知错误') + '，稍后再试');
   }
 }
 onUnmounted(() => { for (const u of unsubs) u(); });

@@ -723,7 +723,9 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
   });
 
   if (!dl.ok) {
-    emitLog(`[lms_launcher] llama.cpp · 下载失败：${dl.error}`, 'sys');
+    // 2026-09-16：下载失败日志收敛为「更新失败，稍后再试」——dl.error 全文（404 友好错误等）
+    // 已随 llama-complete 事件进渲染端「llama.cpp 更新失败 · …」行，此处重复且超长，简化之。
+    emitLog('[lms_launcher] llama.cpp · 更新失败，稍后再试', 'sys');
     return { success: false, error: dl.error };
   }
 
