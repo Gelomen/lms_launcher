@@ -1,7 +1,7 @@
 # 变更：llama.cpp 更新两阶段化（下载不停服，下载完成后「停止并更新」）
 
 日期：2026-09-17
-状态：已实施（npm test 436 全绿；npm run build 通过）
+状态：已实施，含二轮真机修复（npm test 439 全绿；npm run build 通过）
 
 ## 背景与用户诉求
 
@@ -68,7 +68,33 @@ llama_dir；Windows 上运行中的 `llama-server.exe` 锁住其加载的 `ggml-
     无数字，实测推算约 77px），既有「七态按钮同尺寸」回归用例保持有效。
 - `src-main/preload.ts`：`invoke` 为通用透传，新 IPC 无需白名单变更。
 
-### 边界与取舍
+### 二轮修复（同日，真机复测反馈）
+
+真机复测日志：
+
+```
+[lms_launcher] llama.cpp · 安装失败：EBUSY: resource busy or locked, open 'D:\AI\llama-cpp\ggml-cuda.dll'
+```
+
+两处缺陷：
+
+1. **占用探测清单漏 CUDA 变体**：`['llama-server.exe', 'ggml-base.dll']` 未覆盖
+   `ggml-cuda.dll`——用户运行的是 **CUDA 版** llama-server，锁的是 CUDA 变体 DLL，
+   探测不命中 → 安装阶段裸露 EBUSY。
+   **修复**：`llamaLockProbeFiles(dir)` 动态枚举——`llama-server.exe` + 目录内**全部** `ggml-*.dll`
+   （`readdirSync`，目录不可读时退化为仅 exe）。main.ts 三处探测点（下载后判定 / pending 查询 /
+   安装前探测）统一改用动态清单。
+2. **占用类安装失败后按钮变「重试」**：「重试」重走完整下载，但 pending 包并未失效。
+   **修复**：`installPendingLlama` 失败携带 `busy` 标记（预检命中，或解压错误含
+   EBUSY/EPERM/EACCES 的兜底判定）；`install_llama_update` IPC 透传 `busy`；
+   UpdateModal busy 分支 → 回到**「停止并更新」**（pending 保留，关闭外部进程后再点一次即可），
+   非 busy 错误才走「重试」+ 红字原因。busy 分支同样 emit 失败日志（App 侧 sys 日志可见）。
+
+二轮测试：`llamaLockProbeFiles` 2 例（动态清单含 ggml-cuda.dll / 目录不可读退化）、
+UpdateModal busy 重入 1 例（失败 → 「停止并更新」可再次点击，install 被调 2 次）；
+原「install 失败」用例改为非占用错误（verify failed → 「重试」）。npm test 439 全绿；build 通过。
+
+## 边界与取舍
 
 - **pending 只存内存**：主进程重启后暂存包路径指向的临时 zip 已失效，`pendingLlamaUpdate` 不持久化——
   重启后用户重新点「下载更新」即可（下载阶段不再受影响，可安全重下）。

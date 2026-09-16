@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Use vi.hoisted to create mocks that are available before module loads
-const { mockAdmZip, mockExistsSync, mockRmSync, mockSpawnSync, mockOpenSync, mockCloseSync } = vi.hoisted(() => ({
+const { mockAdmZip, mockExistsSync, mockRmSync, mockSpawnSync, mockOpenSync, mockCloseSync, mockReaddirSync } = vi.hoisted(() => ({
   mockAdmZip: vi.fn(),
   mockExistsSync: vi.fn(),
   mockRmSync: vi.fn(),
   mockSpawnSync: vi.fn(),
   mockOpenSync: vi.fn(),
   mockCloseSync: vi.fn(),
+  mockReaddirSync: vi.fn(),
 }));
 
 // CJS interop：实现里 `import AdmZip from 'adm-zip'` 取 default 导出，
@@ -25,6 +26,7 @@ vi.mock('node:fs', async () => {
     rmSync: mockRmSync,
     openSync: mockOpenSync,
     closeSync: mockCloseSync,
+    readdirSync: mockReaddirSync,
   };
 });
 
@@ -253,7 +255,27 @@ describe('downloadAndInstallLlama', () => {
 });
 
 // 2026-09-17 修复 EBUSY：下载/安装拆两阶段 + 文件占用探测
-import { downloadLlamaZip, extractLlamaZips, findLockedFiles } from './llama-update-download';
+import { downloadLlamaZip, extractLlamaZips, findLockedFiles, llamaLockProbeFiles } from './llama-update-download';
+
+describe('llamaLockProbeFiles（2026-09-17 二轮：动态 ggml-*.dll 清单）', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('llama-server.exe + 目录内全部 ggml-*.dll（含 CUDA 变体）', () => {
+    mockReaddirSync.mockReturnValue(['llama-server.exe', 'ggml-base.dll', 'ggml-cuda.dll', 'llama-cli.exe', 'README.md', 'ggml-metal.dll']);
+    const files = llamaLockProbeFiles('D:/AI/llama-cpp');
+    expect(files).toContain('llama-server.exe');
+    expect(files).toContain('ggml-cuda.dll'); // 二轮修复点：CUDA 变体必须命中
+    expect(files).toContain('ggml-base.dll');
+    expect(files).not.toContain('llama-cli.exe'); // 非 llama-server 的 exe 不探测
+    expect(files).not.toContain('README.md');
+    expect(files).toContain('ggml-metal.dll'); // 全部 ggml-*.dll 均纳入（残留文件被锁也是占用信号）
+  });
+
+  it('目录不可读 → 仅 llama-server.exe（不抛）', () => {
+    mockReaddirSync.mockImplementation(() => { throw new Error('ENOENT'); });
+    expect(llamaLockProbeFiles('D:/gone')).toEqual(['llama-server.exe']);
+  });
+});
 
 describe('findLockedFiles', () => {
   beforeEach(() => {

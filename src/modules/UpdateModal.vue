@@ -187,9 +187,17 @@ async function installLlamaUpdateInternal() {
       if (option) await setLlamaUpdateConfig({ last_version_type: option.label });
       emit('llama-complete', true);
       await checkLlamaUpdateInternal(); // 重查 → 通常 up-to-date
+    } else if (result.busy) {
+      // 2026-09-17 修复（二轮）：占用类失败（如 ggml-cuda.dll 被外部 CUDA 版 llama-server 锁住）
+      // → 回到「停止并更新」（pending 包仍在主进程，关闭外部进程后再点一次即可），
+      // 而不是「重试」（会重走完整下载，浪费且包并未失效）
+      llamaError.value = result.error ?? '文件仍被占用';
+      llamaStopUpdateRunning.value = true;
+      llamaPhase.value = 'stop-update';
+      emit('llama-complete', false, llamaError.value);
     } else {
       llamaError.value = result.error ?? '安装失败';
-      llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示（含「文件仍被占用」友好提示）
+      llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示
       llamaPhase.value = 'error'; // →「重试」重新走完整检查+下载流程
       emit('llama-complete', false, llamaError.value);
     }

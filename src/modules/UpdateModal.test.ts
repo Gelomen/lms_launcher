@@ -720,15 +720,14 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     w.unmount();
   });
 
-  it('stop-update 点击 → install 失败 → error 态「重试」+ 红字原因', async () => {
+  it('stop-update 点击 → 非占用类安装失败（如验证失败）→ error 态「重试」+ 红字原因', async () => {
     let pendingDownloaded = false; // 模拟主进程：下载完成后才存在暂存包
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
       if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
       if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
-      // 外部进程仍占用 → 主进程返回友好错误（不再裸露 EBUSY 堆栈）
-      if (cmd === 'install_llama_update') return { success: false, error: '文件仍被占用（ggml-base.dll），请关闭外部启动的 llama.cpp 进程后重试' };
-      if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: ['ggml-base.dll'] };
+      if (cmd === 'install_llama_update') return { success: false, error: 'verify failed: llama-server 未找到' };
+      if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: [] };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -752,8 +751,51 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     const below = document.querySelector('.llama-below') as HTMLElement | null;
     expect(below).not.toBeNull();
     expect(below!.classList.contains('llama-below--error')).toBe(true);
-    expect(below!.textContent).toContain('文件仍被占用');
+    expect(below!.textContent).toContain('verify failed');
     expect(w.emitted('llama-complete')?.find((e) => e[0] === false)).toBeDefined();
+    w.unmount();
+  });
+
+  // 2026-09-17 二轮：占用类安装失败（busy:true，如 ggml-cuda.dll 被外部 CUDA 版
+  // llama-server 锁住）→ 按钮回到「停止并更新」（pending 包保留，可再次点击），
+  // 而不是「重试」（重走完整下载）。用户场景：探测清单漏 CUDA 变体时裸露 EBUSY。
+  it('stop-update 点击 → 占用类安装失败（busy:true）→ 回到「停止并更新」可再次点击', async () => {
+    let pendingDownloaded = false;
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
+      if (cmd === 'install_llama_update') return { success: false, busy: true, error: '目标文件仍被占用（llama.cpp 进程可能未完全退出），请关闭外部启动的 llama.cpp 进程后重试' };
+      if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: ['ggml-cuda.dll'] };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    let btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn!.textContent?.trim()).toBe('停止并更新');
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    // busy 失败 → 不是「重试」，而是回到「停止并更新」（可再次点击，不重走下载）
+    const b = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(b!.textContent?.trim()).toBe('停止并更新');
+    expect(b!.disabled).toBe(false);
+    expect(w.emitted('llama-complete')?.find((e) => e[0] === false)).toBeDefined();
+    // 再次点击 → 再次发起 install_llama_update（pending 包保留）
+    b!.click();
+    await nextTick();
+    const installCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'install_llama_update');
+    expect(installCalls.length).toBe(2);
     w.unmount();
   });
 

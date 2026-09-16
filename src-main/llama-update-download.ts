@@ -4,7 +4,7 @@
 
 import AdmZip from 'adm-zip';
 import { spawnSync } from 'node:child_process';
-import { createWriteStream, existsSync, rmSync, openSync, closeSync } from 'node:fs';
+import { createWriteStream, existsSync, rmSync, openSync, closeSync, readdirSync } from 'node:fs';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { tmpdir } from 'node:os';
@@ -120,6 +120,23 @@ export async function downloadAndInstallLlama({
   } finally {
     cleanupLlamaZips(dl);
   }
+}
+
+/**
+ * llama_dir 的占用探测文件清单：llama-server.exe + 目录内全部 ggml-*.dll。
+ *
+ * 2026-09-17 修复（二轮）：旧硬编码清单 ['llama-server.exe', 'ggml-base.dll']
+ * 漏掉 ggml-cuda.dll 等 CUDA 变体——CUDA 版 llama-server 运行时锁的是 ggml-cuda.dll，
+ * 探测不到 → 安装阶段仍裸露 EBUSY。改动态枚举：任何 ggml-*.dll 被锁都能命中。
+ */
+export function llamaLockProbeFiles(dir: string): string[] {
+  const files: string[] = ['llama-server.exe'];
+  try {
+    for (const name of readdirSync(dir)) {
+      if (name.startsWith('ggml-') && name.endsWith('.dll')) files.push(name);
+    }
+  } catch { /* 目录不存在时仅探测 exe */ }
+  return files;
 }
 
 /**

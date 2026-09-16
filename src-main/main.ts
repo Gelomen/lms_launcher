@@ -18,7 +18,7 @@ const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
 import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
-import { downloadLlamaZip, extractLlamaZips, verifyLlamaInstall, deriveTagFromDownloadUrl, findLockedFiles } from './llama-update-download';
+import { downloadLlamaZip, extractLlamaZips, verifyLlamaInstall, deriveTagFromDownloadUrl, findLockedFiles, llamaLockProbeFiles } from './llama-update-download';
 import type { LlamaUpdateConfig } from './config';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
@@ -721,7 +721,7 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
   // 下载完成 → 判断 llama-server 是否运行（进程状态机 + 文件占用探测双通道：
   // 前者覆盖 launcher 托管进程；后者覆盖用户外部启动的 llama.cpp 进程）
   const dir = cfg.llama_dir.trim();
-  const locked = findLockedFiles(dir, ['llama-server.exe', 'ggml-base.dll']);
+  const locked = findLockedFiles(dir, llamaLockProbeFiles(dir));
   const running = ps.isRunning() || ps.state === 'stopping' || locked.length > 0;
 
   if (running) {
@@ -750,7 +750,7 @@ ipcMain.handle('get_pending_llama_download', (): {
   const [cp] = yamlPaths();
   const cfg = appConfigLoad(cp);
   const dir = cfg.llama_dir.trim();
-  const locked = dir.length > 0 ? findLockedFiles(dir, ['llama-server.exe', 'ggml-base.dll']) : [];
+  const locked = dir.length > 0 ? findLockedFiles(dir, llamaLockProbeFiles(dir)) : [];
   return {
     pending: pendingLlamaUpdate !== null,
     serverRunning: ps.isRunning() || ps.state === 'stopping' || locked.length > 0,
@@ -762,7 +762,9 @@ ipcMain.handle('get_pending_llama_download', (): {
 // 1. 停止 launcher 托管的 llama-server（3s 优雅 → 强杀进程树）
 // 2. 探测外部进程占用 → 友好错误（不再裸露 EBUSY 堆栈）；空闲则解压覆盖
 // 3. 运行 llama-server --version 验证（期望 tag 由下载 URL 推导）
-async function installPendingLlama(): Promise<{ success: true } | { success: false; error: string }> {
+// busy=true 表示失败原因是文件仍被占用（而非其他错误）：UI 据此回到「停止并更新」
+// （pending 包保留，用户关闭外部进程后可再次点击）；其他错误走「重试」（完整重下）。
+async function installPendingLlama(): Promise<{ success: true } | { success: false; error: string; busy?: boolean }> {
   if (!pendingLlamaUpdate) {
     return { success: false, error: 'no pending download' };
   }
@@ -782,17 +784,22 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
   }
 
   // 2. 解压覆盖（先探测外部进程占用，给出友好错误而非 EBUSY 堆栈）
-  const locked = findLockedFiles(dir, ['llama-server.exe', 'ggml-base.dll']);
+  const locked = findLockedFiles(dir, llamaLockProbeFiles(dir));
   if (locked.length > 0) {
     const names = locked.map((p) => p.split(/[\\/]/).pop()).join(', ');
     emitLog(`[lms_launcher] llama.cpp · 文件仍被占用：${names}（请关闭外部启动的 llama-server 后重试）`, 'sys');
-    return { success: false, error: `文件仍被占用（${names}），请关闭外部启动的 llama.cpp 进程后重试` };
+    return { success: false, busy: true, error: `文件仍被占用（${names}），请关闭外部启动的 llama.cpp 进程后重试` };
   }
   emitLog('[lms_launcher] llama.cpp · 开始安装更新...', 'sys');
   const ext = extractLlamaZips(pendingLlamaUpdate, dir);
   if (!ext.success) {
     emitLog(`[lms_launcher] llama.cpp · 安装失败：${ext.error}`, 'sys');
-    return { success: false, error: ext.error ?? 'unknown error' };
+    // 兜底：探测未命中但解压仍被锁（如锁定句柄在探测与解压之间出现）→ 同样视为占用
+    const errText = ext.error ?? '';
+    const busy = /EBUSY|EPERM|EACCES|resource busy|permission denied/i.test(errText);
+    return { success: false, busy, error: busy
+      ? '目标文件仍被占用（llama.cpp 进程可能未完全退出），请关闭外部启动的 llama.cpp 进程后重试'
+      : errText || 'unknown error' };
   }
 
   // 3. 验证（2026-09-14 修复：期望 tag 由下载 URL 推导，不再硬编码 'latest'）
@@ -809,8 +816,9 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
 }
 
 // install_llama_update：安装下载完成的 pending 包（「停止并更新」点击 / 外部进程退出后重试）
+// busy=true（占用类失败）→ UI 回「停止并更新」保留重入；其他错误 → 「重试」完整重下
 ipcMain.handle('install_llama_update', async (): Promise<
-  { success: true } | { success: false; error: string }
+  { success: true } | { success: false; error: string; busy?: boolean }
 > => installPendingLlama());
 
 // set_llama_update_config：设置 llama.cpp 更新配置
