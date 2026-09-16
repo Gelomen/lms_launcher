@@ -860,4 +860,118 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('下载更新');
     w.unmount();
   });
+
+  // ---- 2026-09-18：up-to-date 态也显示 Windows 版本下拉 + 按钮「下载更新」----
+  // 背景：用户要求「检查到已是最新版本时，下方也要显示各 Windows 版本的下拉菜单，允许切换版本」。
+  // 根因：旧 Dropdown v-if 仅 update-available 渲染 → up-to-date 态下拉缺失；
+  // 按钮「检查更新」点击只重查，切换变体无从下载。
+  // 契约：up-to-date + 有 versionOptions → 下拉渲染（默认选中第一项）+ 按钮「下载更新」可点；
+  // 点击 → 调 download_llama_update（携带所选选项 URL），而非 check_llama_update 重查。
+  it('up-to-date + 有版本选项：显示 Windows 版本下拉 + 按钮「下载更新」（可切换变体）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'up-to-date',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/cuda13-dlls.zip' },
+          { label: 'Windows x64 (Vulkan)', downloadUrl: 'https://example.com/vk.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 11001 } };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    // 已是最新中段不变
+    expect(document.querySelector('.llama-section .llama-state-text')?.textContent?.trim()).toBe('已是最新版本 b11001');
+    // 下拉渲染：默认选中第一项 + 3 个选项
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CPU)');
+    trigger!.click();
+    await nextTick();
+    expect(document.querySelectorAll('.llama-section .dropdown-panel li').length).toBe(3);
+    // 按钮从「检查更新」变为「下载更新」且可点
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent?.trim()).toBe('下载更新');
+    expect(btn!.disabled).toBe(false);
+    w.unmount();
+  });
+
+  it('up-to-date 点击「下载更新」：切换变体后调 download_llama_update（所选选项 URL），不重发 check', async () => {
+    let downloadResolve: (v: unknown) => void;
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'up-to-date',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/cuda13-dlls.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 11001 } };
+      if (cmd === 'download_llama_update') return new Promise((r) => { downloadResolve = r; }); // 挂起 → 停留 downloading
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    // 切换下拉到第 2 项（CUDA 13）
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    trigger!.click();
+    await nextTick();
+    const lis = document.querySelectorAll('.llama-section .dropdown-panel li');
+    (lis[1] as HTMLElement).click();
+    await nextTick();
+    // 点击「下载更新」
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    // 调用了 download_llama_update 且携带所选 CUDA 13 选项的主包 + DLLs URL
+    const dlCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'download_llama_update');
+    expect(dlCalls.length).toBe(1);
+    expect(dlCalls[0][1]).toEqual({
+      download_url: 'https://example.com/cuda13.zip',
+      cuda_dlls_url: 'https://example.com/cuda13-dlls.zip',
+    });
+    // 未重发 check_llama_update（初始检查 1 次，点击后不再增加）
+    const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
+    expect(checkCalls.length).toBe(1);
+    // 进入 downloading（按钮禁用）
+    const b = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(b!.disabled).toBe(true);
+    w.unmount();
+    downloadResolve({ success: true, installed: true }); // 收尾：放行挂起的下载 promise
+  });
+
+  // 回归守护：up-to-date 但主进程未返回版本选项（异常/旧版本契约）→ 不渲染下拉、按钮保持「检查更新」
+  it('up-to-date 无版本选项：不渲染下拉，按钮保持「检查更新」', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 11001 } };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(document.querySelector('.llama-section .select-trigger')).toBeNull();
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
+    w.unmount();
+  });
 });

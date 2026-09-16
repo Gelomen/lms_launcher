@@ -98,15 +98,15 @@ async function runLlamaUpdateCheck() {
       if (result.remoteVersion) {
         llamaRemoteVersion.value = result.remoteVersion;
       }
-      if (result.versionOptions && result.versionOptions.length > 0) {
-        // cudaDllsUrl 已由主进程按 release body 行内关联解析（2026-09-14 修复：
-        // 旧实现把所有 DLLs 塞给第一个选项 → CPU 版下载时误装 CUDA DLLs）
-        llamaVersionOptions.value = result.versionOptions.map(opt => ({
-          label: opt.label,
-          downloadUrl: opt.downloadUrl,
-          cudaDllsUrl: opt.cudaDllsUrl,
-        }));
-      }
+      // 选项表恒与最近一次检查同步：主进程未返回（异常/旧契约）→ 清空旧选项，
+      // 防止重查后残留上一轮选项导致 up-to-date 态误显下拉（2026-09-18 修复）。
+      // cudaDllsUrl 已由主进程按 release body 行内关联解析（2026-09-14 修复：
+      // 旧实现把所有 DLLs 塞给第一个选项 → CPU 版下载时误装 CUDA DLLs）
+      llamaVersionOptions.value = (result.versionOptions ?? []).map(opt => ({
+        label: opt.label,
+        downloadUrl: opt.downloadUrl,
+        cudaDllsUrl: opt.cudaDllsUrl,
+      }));
       // 按钮态随检查结论切换：可用 → 下载更新（点击即下载）；已是最新 → 检查更新；
       // 未知/失败 → 重试（kind='retry'，重发检查）
       llamaPhase.value = result.status === 'update-available' ? 'available'
@@ -370,7 +370,14 @@ const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: b
   // 2026-09-17 两阶段更新：下载完成但 llama-server 运行中 → 「停止并更新」
   'stop-update': { label: () => '停止并更新',        disabled: false },
 };
+// 2026-09-18：up-to-date 态也显示 Windows 版本下拉（允许切换变体，如 CPU/CUDA/Vulkan）→
+// 有版本选项时按钮切「下载更新」（点击即下载所选变体，覆盖安装）；
+// 无选项（主进程未返回 versionOptions 的异常情形）保持「检查更新」（点击重查）
+function llamaUpToDateHasOptions(): boolean {
+  return llamaUpdateStatus.value === 'up-to-date' && llamaVersionOptions.value.length > 0;
+}
 function llamaBtnLabel(): string {
+  if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) return '下载更新';
   return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value);
 }
 function llamaBtnDisabled(): boolean {
@@ -380,6 +387,12 @@ function llamaBtnDisabled(): boolean {
   return LLAMA_BUTTONS[llamaPhase.value].disabled;
 }
 function onLlamaBtn(): void {
+  // 2026-09-18：up-to-date + 有版本选项 → 下载所选变体（用户切换版本的主路径）；
+  // 无选项时保持旧行为（重查，重新同步主进程状态）
+  if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) {
+    void downloadLlamaUpdateInternal();
+    return;
+  }
   switch (llamaPhase.value) {
     case 'idle':
     case 'up-to-date':
@@ -515,11 +528,12 @@ function llamaBelow(): { kind: string; text: string } | null {
             <div v-if="llamaBelow() !== null" class="llama-below"
               :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
             >{{ llamaBelow()?.text }}</div>
-            <!-- 版本选项选择器：仅检查到更新且有选项时出现（独立成行，避免与状态文字挤占行宽）。
+            <!-- 版本选项选择器：检查到更新或有选项时出现（独立成行，避免与状态文字挤占行宽）。
                  2026-09 统一视觉：原生 <select> → 共享 Dropdown 组件（与 LaunchBar/TemplateModal 下拉同风格：
-                 白底卡片弹层 + .btn 触发按钮 + ▼ 指示符；选项 value 用索引字符串，选中态回写索引） -->
+                 白底卡片弹层 + .btn 触发按钮 + ▼ 指示符；选项 value 用索引字符串，选中态回写索引）
+                 2026-09-18：up-to-date 态同样渲染（用户可在已是最新时切换 Windows 变体，如 CPU/CUDA/Vulkan） -->
             <Dropdown
-              v-if="llamaUpdateStatus === 'update-available' && llamaVersionOptions.length > 0"
+              v-if="(llamaUpdateStatus === 'update-available' || llamaUpdateStatus === 'up-to-date') && llamaVersionOptions.length > 0"
               :value="String(llamaSelectedOptionIndex)"
               :options="llamaVersionOptions.map((opt, idx) => ({ value: String(idx), label: opt.label }))"
               :disabled="llamaDownloading"

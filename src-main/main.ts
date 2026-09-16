@@ -700,6 +700,10 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     : undefined;
 
   emitLog(`[lms_launcher] llama.cpp · 开始下载更新：${opts.download_url}`, 'sys');
+  // 2026-09-18：所选变体含 CUDA 时，CUDA DLLs 下载地址同样落日志（便于排查 DLLs 缺失/下载失败）
+  if (opts.cuda_dlls_url) {
+    emitLog(`[lms_launcher] llama.cpp · CUDA DLLs 下载地址：${opts.cuda_dlls_url}`, 'sys');
+  }
 
   const dl = await downloadLlamaZip({
     downloadUrl: opts.download_url,
