@@ -509,9 +509,14 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
 
     expect(document.querySelector('.llama-section')).not.toBeNull();
     expect(document.querySelector('.llama-new-version')?.textContent?.trim()).toBe('新版本: b10955');
-    const select = document.querySelector('.llama-version-select') as HTMLSelectElement | null;
-    expect(select).not.toBeNull();
-    expect(select!.options.length).toBe(2);
+    // 2026-09 视觉统一：版本选择器改共享 Dropdown 组件（.select-trigger 触发按钮 + 弹层 .dropdown-panel）
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CPU)'); // 默认选中第一项
+    trigger!.click();
+    await nextTick();
+    const liOptions = document.querySelectorAll('.llama-section .dropdown-panel li');
+    expect(liOptions.length).toBe(2);
     const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
     expect(btn).not.toBeNull();
     expect(btn!.textContent?.trim()).toBe('下载更新');

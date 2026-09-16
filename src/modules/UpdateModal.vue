@@ -7,6 +7,8 @@
 // Task 7 扩展：新增 llama.cpp 更新区域（版本选择器 + 下载进度）
 
 import { ref, watch, onBeforeUnmount } from 'vue';
+// 2026-09 视觉统一：llama.cpp Windows 版本下拉改用共享 Dropdown 组件（原生 <select> 样式与应用其他下拉不一致）
+import Dropdown from '../components/Dropdown.vue';
 import {
   checkLlamaUpdate,
   getLlamaLocalVersion,
@@ -430,18 +432,16 @@ function llamaBelow(): { kind: string; text: string } | null {
             <div v-if="llamaBelow() !== null" class="llama-below"
               :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
             >{{ llamaBelow()?.text }}</div>
-            <!-- 版本选项选择器：仅检查到更新且有选项时出现（独立成行，避免与状态文字挤占行宽） -->
-            <select
+            <!-- 版本选项选择器：仅检查到更新且有选项时出现（独立成行，避免与状态文字挤占行宽）。
+                 2026-09 统一视觉：原生 <select> → 共享 Dropdown 组件（与 LaunchBar/TemplateModal 下拉同风格：
+                 白底卡片弹层 + .btn 触发按钮 + ▼ 指示符；选项 value 用索引字符串，选中态回写索引） -->
+            <Dropdown
               v-if="llamaUpdateStatus === 'update-available' && llamaVersionOptions.length > 0"
-              class="llama-version-select"
-              :value="llamaSelectedOptionIndex"
-              @change="llamaSelectedOptionIndex = Number(($event.target as HTMLSelectElement).value)"
+              :value="String(llamaSelectedOptionIndex)"
+              :options="llamaVersionOptions.map((opt, idx) => ({ value: String(idx), label: opt.label }))"
               :disabled="llamaDownloading"
-            >
-              <option v-for="(opt, idx) in llamaVersionOptions" :key="idx" :value="idx">
-                {{ opt.label }}
-              </option>
-            </select>
+              @update:value="(v: string) => { llamaSelectedOptionIndex = Number(v); }"
+            />
             <!-- 下载进度条 -->
             <div v-if="llamaDownloading" class="llama-download-progress">
               <div class="llama-progress-bar">
@@ -464,7 +464,9 @@ function llamaBelow(): { kind: string; text: string } | null {
   background: var(--card);
   border-radius: var(--radius-card);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); /* 与 TemplateModal 全局 .card 卡片阴影一致 */
-  overflow: hidden;
+  /* 2026-09：overflow:hidden 移除——llama.cpp Windows 版本下拉贴近卡片底部，
+     向下展开的 .dropdown-panel 会被卡片圆角裁切；圆角由 .update-close 自身
+     border-top-right-radius 兜底，内容区 padding 16px 无贴角元素，移除无副作用 */
 }
 
 /* 32px 标题栏：标题居中；右上角 × 关闭（角形占满标题栏高，同 .modal-close） */
@@ -631,15 +633,8 @@ function llamaBelow(): { kind: string; text: string } | null {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.llama-version-select {
-  width: 100%;
-  padding: 4px 8px;
-  font-size: var(--fs-label);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--card);
-  color: var(--text);
-}
+/* 2026-09 视觉统一：Windows 版本下拉改共享 Dropdown 组件（全局 .select-trigger/.dropdown-panel 样式），
+   原生 <select> 的 .llama-version-select 样式已删除 */
 .llama-download-progress {
   width: 100%;
   margin-top: 4px;
