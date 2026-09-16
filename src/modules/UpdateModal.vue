@@ -14,11 +14,16 @@ import {
   getLlamaLocalVersion,
   downloadLlamaUpdate,
   setLlamaUpdateConfig,
+  // 2026-09-17 两阶段更新：下载完成后判定服务运行 → 「停止并更新」
+  getPendingLlamaDownload,
+  installLlamaUpdate,
 } from '../llama-update-client';
 // 2026-09-17：getLlamaUpdateConfig 移除——include_pre_release 开关已删（stable 无 Windows 包，恒查 nightly）
 import { onLlamaUpdateProgress } from '../ipc';
 
-type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
+// 2026-09-17 两阶段更新：新增 stop-update 态（仅 llama.cpp 行使用——下载完成但服务运行中，
+// 按钮「停止并更新」；LMS 启动器行不会进入此态，BUTTONS 保留完整映射）
+type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date' | 'stop-update';
 type Item = {
   name: string;
   phase: Phase;
@@ -50,6 +55,8 @@ const llamaSelectedOptionIndex = ref(0);
 const llamaDownloading = ref(false);
 const llamaDownloadPct = ref(0);
 const llamaError = ref('');
+// 2026-09-17 两阶段更新：stop-update 态下服务是否仍在运行（影响名称行下方提示文案）
+const llamaStopUpdateRunning = ref(false);
 // 2026-09-17：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅 nightly-tag.txt，
 // 2026-09-17 实测 v0.4.1），nightly（b 号）是唯一可下载来源，故恒查 pre-release，无需用户开关。
 // llama.cpp 行按钮独立七态（2026-09 需求：llama.cpp 行恒显示，按钮默认「检查更新」；
@@ -136,6 +143,14 @@ async function downloadLlamaUpdateInternal() {
   try {
     const result = await downloadLlamaUpdate(option.downloadUrl, option.cudaDllsUrl);
     if (result.success) {
+      // 2026-09-17 两阶段更新：主进程下载完成后判定服务运行——
+      // installed=true  → 服务未运行，已自动安装完成（等价旧行为）→ 保存配置 + 重查
+      // installed=false → 服务运行中，包已暂存 → 按钮切「停止并更新」，等用户点击
+      if (result.installed === false) {
+        llamaStopUpdateRunning.value = true; // 主进程判定服务运行中（含外部进程占用）
+        llamaPhase.value = 'stop-update';
+        return;
+      }
       // 更新成功，保存配置
       await setLlamaUpdateConfig({ last_version_type: option.label });
       emit('llama-complete', true);
@@ -143,15 +158,63 @@ async function downloadLlamaUpdateInternal() {
       await checkLlamaUpdateInternal();
     } else {
       llamaError.value = result.error ?? '下载失败';
+      llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示
       llamaPhase.value = 'error'; // 下载失败 → 「重试」（重发检查，同步主进程状态）
       emit('llama-complete', false, result.error);
     }
   } catch (e) {
     llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaUpdateStatus.value = 'error';
     llamaPhase.value = 'error';
     emit('llama-complete', false, llamaError.value);
   } finally {
     llamaDownloading.value = false;
+  }
+}
+
+// 2026-09-17 两阶段更新：「停止并更新」→ 主进程停 llama-server 后安装已下载的 pending 包
+async function installLlamaUpdateInternal() {
+  // 安装是纯本地操作（秒级），复用 downloading 视觉通道（按钮禁用 + 进度条空载）
+  llamaDownloading.value = true;
+  llamaPhase.value = 'downloading';
+  llamaDownloadPct.value = 0;
+  llamaError.value = '';
+  try {
+    const result = await installLlamaUpdate();
+    if (result.success) {
+      // 保存配置（与自动安装成功路径一致：last_version_type 记录本次所选版本类型）
+      const option = llamaVersionOptions.value[llamaSelectedOptionIndex.value];
+      if (option) await setLlamaUpdateConfig({ last_version_type: option.label });
+      emit('llama-complete', true);
+      await checkLlamaUpdateInternal(); // 重查 → 通常 up-to-date
+    } else {
+      llamaError.value = result.error ?? '安装失败';
+      llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示（含「文件仍被占用」友好提示）
+      llamaPhase.value = 'error'; // →「重试」重新走完整检查+下载流程
+      emit('llama-complete', false, llamaError.value);
+    }
+  } catch (e) {
+    llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaUpdateStatus.value = 'error';
+    llamaPhase.value = 'error';
+    emit('llama-complete', false, llamaError.value);
+  } finally {
+    llamaDownloading.value = false;
+  }
+}
+
+// 2026-09-17 两阶段更新：打开弹窗时若主进程仍有暂存的 pending 包且服务已停止
+// （典型场景：用户上次点了下载、关闭弹窗前服务已停）→ 直接进「停止并更新」，
+// 不必重新下载。pending 包存于主进程内存，重启即失，无需持久化。
+async function adoptPendingLlamaDownload() {
+  try {
+    const pending = await getPendingLlamaDownload();
+    if (pending.pending) {
+      llamaStopUpdateRunning.value = pending.serverRunning; // 服务已停（adopt 路径）→ 提示文案相应调整
+      llamaPhase.value = 'stop-update';
+    }
+  } catch {
+    // 查询失败不影响检查主流程（如 IPC 通道缺失的测试环境）
   }
 }
 
@@ -190,8 +253,11 @@ watch(
       llamaSelectedOptionIndex.value = 0;
       llamaDownloadPct.value = 0;
       llamaError.value = '';
+      llamaStopUpdateRunning.value = false;
       llamaPhase.value = 'idle'; // 行恒显示：按钮回到「检查更新」，随后进入 checking
-      checkLlamaUpdateInternal();
+      // 2026-09-17 两阶段更新：检查落定后再 adopt 暂存包，避免并发覆盖 phase——
+      // 有暂存包（安装未完成）时切「停止并更新」，跳过重新下载。
+      void checkLlamaUpdateInternal().then(() => adoptPendingLlamaDownload());
       setupLlamaProgressListener();
     } else {
       cleanupLlamaProgressListener();
@@ -215,6 +281,7 @@ const BUTTONS: Record<Phase, { label: (pct: number) => string; kind: string; dis
   ready:        { label: () => '重启应用',       kind: 'restart',  disabled: false },
   error:        { label: () => '重试',           kind: 'retry',    disabled: false },
   'up-to-date': { label: () => '检查更新',       kind: 'check',    disabled: false },
+  'stop-update': { label: () => '停止并更新',    kind: 'stop-update', disabled: false }, // 仅 llama 行使用
 };
 
 function btnLabel(item: Item): string {
@@ -292,6 +359,8 @@ const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: b
   ready:        { label: () => '检查更新',           disabled: false }, // llama 无 ready 态（覆盖安装无需重启），仅保映射完整
   error:        { label: () => '重试',               disabled: false },
   'up-to-date': { label: () => '检查更新',           disabled: false },
+  // 2026-09-17 两阶段更新：下载完成但 llama-server 运行中 → 「停止并更新」
+  'stop-update': { label: () => '停止并更新',        disabled: false },
 };
 function llamaBtnLabel(): string {
   return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value);
@@ -312,6 +381,9 @@ function onLlamaBtn(): void {
       break;
     case 'available':
       void downloadLlamaUpdateInternal();
+      break;
+    case 'stop-update':
+      void installLlamaUpdateInternal(); // 2026-09-17：停止服务并安装已下载的包
       break;
     default:
       break; // checking / downloading 已禁用，不可点
@@ -335,6 +407,12 @@ function llamaMiddle(): { kind: string; text: string } | null {
 // llama.cpp 名称行下方提示行（2026-09 优化）：unconfigured 灰字提示 / error 红字，
 // 整行完整显示（允许换行，长提示不再被卡片宽度截断）
 function llamaBelow(): { kind: string; text: string } | null {
+  // 2026-09-17 两阶段更新：stop-update 态下名称行下方灰字说明，引导用户点「停止并更新」
+  if (llamaPhase.value === 'stop-update') {
+    return { kind: 'hint', text: llamaStopUpdateRunning.value
+      ? 'llama-server 正在运行，点击「停止并更新」停止服务并完成安装'
+      : '更新包已下载完成，点击「停止并更新」完成安装' };
+  }
   switch (llamaUpdateStatus.value) {
     case 'unconfigured':
       return { kind: 'hint', text: '请先在主界面选择 llama.cpp 安装目录' };

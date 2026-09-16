@@ -617,4 +617,188 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     expect(configCalls.length).toBe(0);
     w.unmount();
   });
+
+  // ---- 2026-09-17 两阶段更新：下载完成但 llama-server 运行中 → 按钮「停止并更新」----
+  // 背景：旧实现在下载后立即解压覆盖 llama_dir，运行中的 llama-server 锁住 ggml-base.dll → EBUSY。
+  // 修复契约：下载阶段不触碰目标目录；下载完成判定服务运行——运行中则按钮切「停止并更新」
+  // （点击 → 主进程停服务 + 安装已下载的包），未运行则自动安装（用户无感知）。
+  it('stop-update：下载返回 installed=false → 按钮「停止并更新」可点 + 名称行下方灰字提示', async () => {
+    let pendingDownloaded = false; // 模拟主进程：下载完成（installed=false）后才存在暂存包
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b10997',
+        versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }],
+      };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      // 主进程判定：下载完成，但 llama-server 运行中 → 包已暂存
+      if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
+      if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: [] };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn!.textContent?.trim()).toBe('下载更新');
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    // 下载完成（服务运行中）→ 不再是 downloading，按钮切「停止并更新」
+    const b = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(b!.textContent?.trim()).toBe('停止并更新');
+    expect(b!.disabled).toBe(false);
+    // 名称行下方灰字提示（引导用户）
+    const below = document.querySelector('.llama-below') as HTMLElement | null;
+    expect(below).not.toBeNull();
+    expect(below!.classList.contains('llama-below--hint')).toBe(true);
+    expect(below!.textContent).toContain('llama-server 正在运行');
+    expect(below!.textContent).toContain('停止并更新');
+    w.unmount();
+  });
+
+  it('stop-update 点击 → 调 install_llama_update；成功后保存配置 + llama-complete(true) + 重查', async () => {
+    let installResolve: (v: unknown) => void;
+    let pendingDownloaded = false; // 模拟主进程：下载完成（installed=false）后才存在暂存包
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
+      if (cmd === 'install_llama_update') return new Promise((r) => { installResolve = r; }); // 挂起 → 可断言安装中禁用
+      if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: [] };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    let btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    // 进入 stop-update → 点击「停止并更新」
+    btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn!.textContent?.trim()).toBe('停止并更新');
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(invokeMock).toHaveBeenCalledWith('install_llama_update');
+    // 安装中复用 downloading 视觉通道（禁用 + 进度条空载 0%）
+    const installing = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(installing!.disabled).toBe(true);
+
+    // 放行安装成功 → 保存配置 + llama-complete(true) + 重查落 up-to-date
+    installResolve!({ success: true });
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10997 } };
+      if (cmd === 'get_pending_llama_download') return { pending: false, serverRunning: false, lockedFiles: [] };
+      return {};
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    const setCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'set_llama_update_config');
+    expect(setCalls.length).toBeGreaterThan(0);
+    expect(w.emitted('llama-complete')?.find((e) => e[0] === true)).toBeDefined();
+    // 重查落定：已是最新 + 按钮「检查更新」
+    expect(document.querySelector('.llama-section .llama-state-text')?.textContent?.trim()).toBe('已是最新版本');
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
+    w.unmount();
+  });
+
+  it('stop-update 点击 → install 失败 → error 态「重试」+ 红字原因', async () => {
+    let pendingDownloaded = false; // 模拟主进程：下载完成后才存在暂存包
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'download_llama_update') { pendingDownloaded = true; return { success: true, installed: false }; }
+      // 外部进程仍占用 → 主进程返回友好错误（不再裸露 EBUSY 堆栈）
+      if (cmd === 'install_llama_update') return { success: false, error: '文件仍被占用（ggml-base.dll），请关闭外部启动的 llama.cpp 进程后重试' };
+      if (cmd === 'get_pending_llama_download') return { pending: pendingDownloaded, serverRunning: true, lockedFiles: ['ggml-base.dll'] };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    let btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn!.textContent?.trim()).toBe('停止并更新');
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('重试');
+    const below = document.querySelector('.llama-below') as HTMLElement | null;
+    expect(below).not.toBeNull();
+    expect(below!.classList.contains('llama-below--error')).toBe(true);
+    expect(below!.textContent).toContain('文件仍被占用');
+    expect(w.emitted('llama-complete')?.find((e) => e[0] === false)).toBeDefined();
+    w.unmount();
+  });
+
+  it('adopt：打开弹窗时主进程有暂存包且服务已停 → 直接「停止并更新」（跳过重新下载）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'get_pending_llama_download') return { pending: true, serverRunning: false, lockedFiles: [] };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn!.textContent?.trim()).toBe('停止并更新');
+    expect(btn!.disabled).toBe(false);
+    // adopt 路径（服务已停）提示文案与运行中不同
+    const below = document.querySelector('.llama-below') as HTMLElement | null;
+    expect(below).not.toBeNull();
+    expect(below!.textContent).toContain('更新包已下载完成');
+    // 没有发起过下载（跳过重新下载）
+    expect(invokeMock.mock.calls.some((c: unknown[]) => c[0] === 'download_llama_update')).toBe(false);
+    w.unmount();
+  });
+
+  it('无暂存包时打开弹窗 → 不误入 stop-update（adopt 默认安全）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
+      if (cmd === 'get_llama_local_version') return { success: true, version: { type: 'prerelease', build: 10679 } };
+      if (cmd === 'get_pending_llama_download') return { pending: false, serverRunning: false, lockedFiles: [] };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('下载更新');
+    w.unmount();
+  });
 });

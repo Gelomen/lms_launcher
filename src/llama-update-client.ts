@@ -51,6 +51,19 @@ export interface LlamaUpdateConfigResult {
 export interface LlamaDownloadResult {
   success: boolean;
   error?: string;
+  /** 2026-09-17 两阶段更新：true=下载完且服务未运行，已自动安装完成；
+   *  false=下载完但服务运行中，包已暂存 → 调 getPendingLlamaDownload 后 UI 显示「停止并更新」 */
+  installed?: boolean;
+}
+
+/** 2026-09-17 两阶段更新：pending 包状态查询（「停止并更新」按钮的判定依据） */
+export interface LlamaPendingDownload {
+  /** 下载完成的包是否暂存在主进程内存 */
+  pending: boolean;
+  /** llama-server 是否运行（含外部进程的文件占用判定） */
+  serverRunning: boolean;
+  /** 被占用的文件名（仅文件名，不含路径） */
+  lockedFiles: string[];
 }
 
 // 恒查 pre-release（nightly）：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、无 Windows
@@ -73,4 +86,14 @@ export function setLlamaUpdateConfig(config: Partial<LlamaUpdateConfig>): Promis
 
 export function getLlamaUpdateConfig(): Promise<LlamaUpdateConfigResult> {
   return invoke('get_llama_update_config');
+}
+
+// 2026-09-17 两阶段更新：查询下载完成的 pending 包与服务运行状态
+export function getPendingLlamaDownload(): Promise<LlamaPendingDownload> {
+  return invoke('get_pending_llama_download');
+}
+
+// 2026-09-17 两阶段更新：「停止并更新」点击 → 主进程先停 llama-server 再安装 pending 包
+export function installLlamaUpdate(): Promise<{ success: boolean; error?: string }> {
+  return invoke('install_llama_update');
 }

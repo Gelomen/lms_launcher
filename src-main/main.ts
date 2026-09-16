@@ -18,7 +18,7 @@ const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
 import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
-import { downloadAndInstallLlama, verifyLlamaInstall, deriveTagFromDownloadUrl } from './llama-update-download';
+import { downloadLlamaZip, extractLlamaZips, verifyLlamaInstall, deriveTagFromDownloadUrl, findLockedFiles } from './llama-update-download';
 import type { LlamaUpdateConfig } from './config';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
@@ -40,6 +40,10 @@ const ps = new ProcessState();
 
 // 自动更新：check_update 成功后暂存 latest 信息，download_update 据此下载（内存态，重启即失）
 let pendingUpdate: LatestReleaseInfo | null = null;
+// llama.cpp 更新两阶段（2026-09-17 修复 EBUSY）：download_llama_update 只下载 zip 到临时目录
+// （不触碰 llama_dir，运行中的 llama-server 不受影响），成功后暂存 pending 等待 install_llama_update；
+// 内存态，重启即失（下载完成的包重启后丢失，需重新下载）。
+let pendingLlamaUpdate: { zipPath: string; dlZipPath?: string; tag: string | null } | null = null;
 // GPU 采样停止句柄（whenReady 内 startGpuStats 赋值；exit_app 显式调用——app.exit 不触发 will-quit）
 let stopGpuStats: () => void = () => {};
 
@@ -675,9 +679,14 @@ ipcMain.handle('get_llama_local_version', async (): Promise<
   }
 });
 
-// download_llama_update：下载并安装 llama.cpp 更新
+// download_llama_update：只下载 llama.cpp 更新 zip（2026-09-17 修复 EBUSY）。
+// 旧实现在下载后立即解压覆盖 llama_dir，运行中的 llama-server 锁住 DLL → EBUSY。
+// 现拆两阶段：本 handler 只下载到临时目录（不触碰 llama_dir，服务运行不受影响），
+// 下载完成后由调用方查询 get_pending_llama_download 决定 UI 按钮：
+// 服务运行中 → 「停止并更新」；未运行 → 直接调 install_llama_update 安装。
+// 下载完成且服务未运行时，本 handler 自动执行安装+验证（等价旧行为，无需用户二次点击）。
 ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string; cuda_dlls_url?: string }): Promise<
-  { success: true } | { success: false; error: string }
+  { success: true; installed: boolean } | { success: false; error: string }
 > => {
   const [cp] = yamlPaths();
   const cfg = appConfigLoad(cp);
@@ -692,10 +701,9 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
 
   emitLog(`[lms_launcher] llama.cpp · 开始下载更新：${opts.download_url}`, 'sys');
 
-  const result = await downloadAndInstallLlama({
+  const dl = await downloadLlamaZip({
     downloadUrl: opts.download_url,
     cudaDllsUrl: opts.cuda_dlls_url,
-    targetDir: cfg.llama_dir.trim(),
     proxy,
     onProgress: (percent, stage) => {
       const win = mainWin();
@@ -703,24 +711,107 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     },
   });
 
-  if (!result.success) {
-    emitLog(`[lms_launcher] llama.cpp · 下载/安装失败：${result.error}`, 'sys');
-    return { success: false, error: result.error ?? 'unknown error' };
+  if (!dl.ok) {
+    emitLog(`[lms_launcher] llama.cpp · 下载失败：${dl.error}`, 'sys');
+    return { success: false, error: dl.error };
   }
 
-  // 安装完成后验证（2026-09-14 修复：旧实现硬编码 'latest' 作为期望 tag，永远匹配不上 → 验证恒失败）
+  emitLog('[lms_launcher] llama.cpp · 下载完成', 'sys');
+
+  // 下载完成 → 判断 llama-server 是否运行（进程状态机 + 文件占用探测双通道：
+  // 前者覆盖 launcher 托管进程；后者覆盖用户外部启动的 llama.cpp 进程）
+  const dir = cfg.llama_dir.trim();
+  const locked = findLockedFiles(dir, ['llama-server.exe', 'ggml-base.dll']);
+  const running = ps.isRunning() || ps.state === 'stopping' || locked.length > 0;
+
+  if (running) {
+    // 服务运行中：暂存 zip，等用户点「停止并更新」→ install_llama_update
+    pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url) };
+    const reason = ps.isRunning() || ps.state === 'stopping'
+      ? 'llama-server 正在运行'
+      : `文件被占用（${locked.map((p) => p.split(/[\/\\]/).pop()).join(', ')}）`;
+    emitLog(`[lms_launcher] llama.cpp · ${reason}，停止服务后点「停止并更新」完成安装`, 'sys');
+    return { success: true, installed: false };
+  }
+
+  // 未运行：直接安装（等价旧行为——用户无感知，下载完即装完）
+  pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url) };
+  const inst = await installPendingLlama();
+  if (inst.success) return { success: true, installed: true };
+  return { success: false, error: inst.error ?? 'unknown error' };
+});
+
+// get_pending_llama_download：查询下载完成的 pending 包与服务运行状态（UI 决定「停止并更新」vs「检查更新」）
+ipcMain.handle('get_pending_llama_download', (): {
+  pending: boolean;
+  serverRunning: boolean;
+  lockedFiles: string[];
+} => {
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+  const dir = cfg.llama_dir.trim();
+  const locked = dir.length > 0 ? findLockedFiles(dir, ['llama-server.exe', 'ggml-base.dll']) : [];
+  return {
+    pending: pendingLlamaUpdate !== null,
+    serverRunning: ps.isRunning() || ps.state === 'stopping' || locked.length > 0,
+    lockedFiles: locked.map((p) => p.split(/[\\/]/).pop() ?? p),
+  };
+});
+
+// 安装 pending 包的共用逻辑（2026-09-17 两阶段更新）：
+// 1. 停止 launcher 托管的 llama-server（3s 优雅 → 强杀进程树）
+// 2. 探测外部进程占用 → 友好错误（不再裸露 EBUSY 堆栈）；空闲则解压覆盖
+// 3. 运行 llama-server --version 验证（期望 tag 由下载 URL 推导）
+async function installPendingLlama(): Promise<{ success: true } | { success: false; error: string }> {
+  if (!pendingLlamaUpdate) {
+    return { success: false, error: 'no pending download' };
+  }
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+  const dir = cfg.llama_dir.trim();
+  if (dir.length === 0) {
+    pendingLlamaUpdate = null;
+    return { success: false, error: 'unconfigured' };
+  }
+
+  // 1. 停止 launcher 托管的 llama-server（3s 优雅 → 强杀进程树）
+  if (ps.isRunning() || ps.state === 'stopping') {
+    emitLog('[lms_launcher] llama.cpp · 停止 llama-server 后更新...', 'sys', ['llama-server']);
+    await ps.stopGraceful(3);
+    emitLog('[lms_launcher] llama.cpp · llama-server 已停止', 'sys', ['llama-server']);
+  }
+
+  // 2. 解压覆盖（先探测外部进程占用，给出友好错误而非 EBUSY 堆栈）
+  const locked = findLockedFiles(dir, ['llama-server.exe', 'ggml-base.dll']);
+  if (locked.length > 0) {
+    const names = locked.map((p) => p.split(/[\\/]/).pop()).join(', ');
+    emitLog(`[lms_launcher] llama.cpp · 文件仍被占用：${names}（请关闭外部启动的 llama-server 后重试）`, 'sys');
+    return { success: false, error: `文件仍被占用（${names}），请关闭外部启动的 llama.cpp 进程后重试` };
+  }
+  emitLog('[lms_launcher] llama.cpp · 开始安装更新...', 'sys');
+  const ext = extractLlamaZips(pendingLlamaUpdate, dir);
+  if (!ext.success) {
+    emitLog(`[lms_launcher] llama.cpp · 安装失败：${ext.error}`, 'sys');
+    return { success: false, error: ext.error ?? 'unknown error' };
+  }
+
+  // 3. 验证（2026-09-14 修复：期望 tag 由下载 URL 推导，不再硬编码 'latest'）
   emitLog('[lms_launcher] llama.cpp · 验证安装...', 'sys');
-  const verifyTag = deriveTagFromDownloadUrl(opts.download_url);
-  const verifyResult = await verifyLlamaInstall(cfg.llama_dir.trim(), verifyTag ?? undefined);
-  if (verifyResult.success) {
-    emitLog(`[lms_launcher] llama.cpp · 安装完成：${verifyResult.actualVersion}`, 'sys');
-  } else {
+  const verifyResult = await verifyLlamaInstall(dir, pendingLlamaUpdate.tag ?? undefined);
+  if (!verifyResult.success) {
     emitLog(`[lms_launcher] llama.cpp · 安装验证失败：${verifyResult.error}`, 'sys');
     return { success: false, error: `verify failed: ${verifyResult.error}` };
   }
 
+  emitLog(`[lms_launcher] llama.cpp · 安装完成：${verifyResult.actualVersion}`, 'sys');
+  pendingLlamaUpdate = null;
   return { success: true };
-});
+}
+
+// install_llama_update：安装下载完成的 pending 包（「停止并更新」点击 / 外部进程退出后重试）
+ipcMain.handle('install_llama_update', async (): Promise<
+  { success: true } | { success: false; error: string }
+> => installPendingLlama());
 
 // set_llama_update_config：设置 llama.cpp 更新配置
 ipcMain.handle('set_llama_update_config', async (_e, opts: { last_version_type?: string }): Promise<

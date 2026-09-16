@@ -4,7 +4,7 @@
 
 import AdmZip from 'adm-zip';
 import { spawnSync } from 'node:child_process';
-import { createWriteStream, existsSync, rmSync } from 'node:fs';
+import { createWriteStream, existsSync, rmSync, openSync, closeSync } from 'node:fs';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { tmpdir } from 'node:os';
@@ -105,36 +105,115 @@ export async function downloadAndInstallLlama({
   proxy?: string;
   onProgress?: (percent: number, stage: 'download' | 'extract' | 'dlls') => void;
 }): Promise<{ success: boolean; error?: string }> {
-  const tmpZip = join(tmpdir(), 'llama-cpp-download-' + Date.now() + '.zip');
-  const tmpDlZip = join(tmpdir(), 'llama-cpp-dlls-' + Date.now() + '.zip');
-
+  const dl = await downloadLlamaZip({ downloadUrl, cudaDllsUrl, proxy, onProgress });
+  if (!dl.ok) return { success: false, error: dl.error };
   try {
-    // 1. 下载主 zip
-    await downloadZip(downloadUrl, tmpZip, proxy, onProgress);
-
-    // 2. 解压到目标目录
     onProgress?.(0, 'extract');
-    extractZip(tmpZip, targetDir);
-
-    // 3. 下载并解压 CUDA DLLs（如果提供）
-    if (cudaDllsUrl) {
+    extractZip(dl.zipPath, targetDir);
+    if (dl.dlZipPath) {
       onProgress?.(0, 'dlls');
-      await downloadZip(cudaDllsUrl, tmpDlZip, proxy, onProgress);
-      extractZip(tmpDlZip, targetDir);
-      rmSync(tmpDlZip, { force: true });
+      extractZip(dl.dlZipPath, targetDir);
     }
-
     return { success: true };
   } catch (e) {
-    return {
-      success: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
   } finally {
-    // 清理临时文件
-    rmSync(tmpZip, { force: true });
-    rmSync(tmpDlZip, { force: true });
+    cleanupLlamaZips(dl);
   }
+}
+
+/**
+ * 探测目标目录中的文件是否被进程锁定（Windows 上运行中的 exe 锁住其 DLL）。
+ *
+ * 2026-09-17 修复：更新解压覆盖写 EBUSY 的根因是 llama-server 正在运行。
+ * 主进程无法直接枚举文件句柄持有者，故用「以独占写模式打开」探测：
+ * 能被打开 = 空闲；EBUSY/EPERM/EACCES = 被锁。逐个文件探测并关闭句柄。
+ *
+ * @returns 被锁定的文件路径数组（空数组表示全部空闲）
+ */
+export function findLockedFiles(dir: string, filenames: string[]): string[] {
+  const locked: string[] = [];
+  for (const name of filenames) {
+    const p = join(dir, name);
+    if (!existsSync(p)) continue;
+    let fd: number | null = null;
+    try {
+      fd = openSync(p, 'a+'); // 追加写模式：不截断内容，仅验证可打开
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+        locked.push(p);
+      }
+      // 其他错误（如 ENOENT 竞态）不视为锁定
+    } finally {
+      if (fd !== null) {
+        try { closeSync(fd); } catch { /* 已关闭 */ }
+      }
+    }
+  }
+  return locked;
+}
+
+/**
+ * 仅下载 llama.cpp 更新 zip 到临时目录（不触碰目标目录）。
+ *
+ * 2026-09-17 修复：原 downloadAndInstallLlama 下载后立即解压到 llama_dir，
+ * 若 llama-server 正在运行则 DLL 被锁 → EBUSY。拆分为下载/安装两阶段后，
+ * 下载期间不影响运行中的服务；安装前由调用方确认服务已停止。
+ *
+ * @returns ok 时携带 zip 路径；失败时携带 error
+ */
+export async function downloadLlamaZip({
+  downloadUrl,
+  cudaDllsUrl,
+  proxy,
+  onProgress,
+}: {
+  downloadUrl: string;
+  cudaDllsUrl?: string;
+  proxy?: string;
+  onProgress?: (percent: number, stage: 'download' | 'extract' | 'dlls') => void;
+}): Promise<
+  | { ok: true; zipPath: string; dlZipPath?: string }
+  | { ok: false; error: string }
+> {
+  const zipPath = join(tmpdir(), 'llama-cpp-download-' + Date.now() + '.zip');
+  const dlZipPath = join(tmpdir(), 'llama-cpp-dlls-' + Date.now() + '.zip');
+  try {
+    await downloadZip(downloadUrl, zipPath, proxy, onProgress);
+    if (cudaDllsUrl) {
+      onProgress?.(0, 'dlls');
+      await downloadZip(cudaDllsUrl, dlZipPath, proxy, onProgress);
+    }
+    return { ok: true, zipPath, dlZipPath: cudaDllsUrl ? dlZipPath : undefined };
+  } catch (e) {
+    cleanupLlamaZips({ zipPath, dlZipPath });
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * 将已下载的 zip 解压到目标目录（覆盖现有文件）。
+ *
+ * @param zips  downloadLlamaZip 成功返回的 zip 路径
+ * @returns 失败时携带 error（典型：目标 DLL 被锁 → EBUSY）
+ */
+export function extractLlamaZips(
+  zips: { zipPath: string; dlZipPath?: string },
+  targetDir: string
+): { success: boolean; error?: string } {
+  try {
+    extractZip(zips.zipPath, targetDir);
+    if (zips.dlZipPath) extractZip(zips.dlZipPath, targetDir);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function cleanupLlamaZips(zips: { zipPath: string; dlZipPath?: string }): void {
+  rmSync(zips.zipPath, { force: true });
+  if (zips.dlZipPath) rmSync(zips.dlZipPath, { force: true });
 }
 
 /**
