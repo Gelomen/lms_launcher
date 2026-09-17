@@ -651,10 +651,55 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
   };
 });
 
-// 2026-09-16：get_llama_local_version 接口删除——渲染端不再单独调用它取本地版本
-// （原实现与 check_llama_update 内部各自执行一次 llama-server --version 并各落一条
-// 相同的「本地版本」日志 → 日志区重复）。本地版本统一由 check_llama_update 返回的
-// localVersion 字段提供（同一查询，只落一条日志）。
+// 2026 契约：get_llama_local_version 恢复——渲染端打开弹窗的唯一自动动作（无网络、
+// 不比对远端）：判定 llama_dir 未配置 + 显示当前本地版本。主进程执行一次
+// llama-server --version 并落一条「本地版本」日志；手动「检查更新」后本地版本显示
+// 改由 check_llama_update 返回的 localVersion 派生（该检查内部同一查询只落一条
+// 日志），本地查询与网络检查不会背靠背执行（2026-09-16 日志去重契约由此构造保证）。
+ipcMain.handle('get_llama_local_version', (_e): { success: true; localVersion?: LlamaVersion } | { success: false; error: string } => {
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+  if (cfg.llama_dir.trim().length === 0) return { success: false, error: 'unconfigured' };
+  let localVersion: LlamaVersion | null = null;
+  try {
+    const exePath = join(cfg.llama_dir.trim(), 'llama-server.exe');
+    const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const output = (result.stdout || result.stderr || '').trim();
+    localVersion = parseLlamaVersion(output);
+    emitLog(`[lms_launcher] llama.cpp · 本地版本：${output || '未检测到'}`, 'sys');
+  } catch (err) {
+    emitLog(`[lms_launcher] llama.cpp · 获取本地版本失败：${err instanceof Error ? err.message : String(err)}`, 'sys');
+  }
+  return { success: true, localVersion: localVersion ?? undefined };
+});
+
+// 2026-11 细化契约：get_llama_release_options——打开弹窗时渲染端拉取版本选项表（下拉立即可见）。
+// 只做 fetchLlamaReleaseInfo（不跑 llama-server --version、不比对版本、无 status）：日志去重
+// 不变量保持（打开时唯一「本地版本」日志行来自 get_llama_local_version；本 handler 只落一条
+// 「版本列表」日志）。最新版本 bNNNNN 的获取与本地比较仍在 check_llama_update（点击「检查更新」）。
+ipcMain.handle('get_llama_release_options', async (_e): Promise<
+  | { success: true; tag?: string; versionOptions?: Array<{ label: string; downloadUrl: string; cudaDllsUrl?: string }>; cudaDlls?: Array<{ version: string; downloadUrl: string }> }
+  | { success: false; error: string }
+> => {
+  const [cp] = yamlPaths();
+  const cfg = appConfigLoad(cp);
+  const proxy = cfg.proxy_host && cfg.proxy_port
+    ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
+    : undefined;
+  const remoteInfo = await fetchLlamaReleaseInfo(proxy);
+  if (!remoteInfo) {
+    const proxyNote = proxy ? `（代理 ${proxy}）` : '';
+    emitLog(`[lms_launcher] llama.cpp · 获取版本列表失败${proxyNote}`, 'sys');
+    return { success: false, error: 'failed to fetch remote release info' };
+  }
+  emitLog(`[lms_launcher] llama.cpp · 已获取远程版本列表（${remoteInfo.versionOptions.length} 个选项）`, 'sys');
+  return {
+    success: true,
+    tag: remoteInfo.tag,
+    versionOptions: remoteInfo.versionOptions,
+    cudaDlls: remoteInfo.cudaDlls,
+  };
+});
 
 // download_llama_update：只下载 llama.cpp 更新 zip（2026-09-17 修复 EBUSY）。
 // 旧实现在下载后立即解压覆盖 llama_dir，运行中的 llama-server 锁住 DLL → EBUSY。

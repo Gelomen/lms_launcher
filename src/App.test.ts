@@ -493,51 +493,67 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     return [...document.querySelectorAll('.update-modal .btn-primary')] as HTMLButtonElement[];
   }
 
-  // 2026-09-15 契约变更：托盘「检查更新」= 打开弹窗 + 自动 re-check LMS 启动器行（与 llama.cpp 行
-  // 「打开即自动检查」一致）；启动时静默检查之后发布的新版本，重开弹窗即见「下载更新」。
-  it('托盘「检查更新」打开弹窗并自动 re-check（启动后发布的新版本立即可见）', async () => {
+  // 2026 契约变更（2026-09-15 的「托盘开弹窗 + 自动 re-check」废止）：托盘「检查更新」/顶栏「有新版本!」
+  // = 只开弹窗，零自动检查；手动「检查更新」按钮是 LMS 启动器行的唯一检查触发（与 llama.cpp 行对齐：
+  // 打开时的自动动作仅是本地版本查询，不是网络检查）。启动静默检查之后发布的新版本，
+  // 需用户手动点「检查更新」后才可见。
+  it('托盘「检查更新」只开弹窗（零自动检查）；启动后发布的新版本需手动点「检查更新」才可见', async () => {
     const { w, ctrl } = makeUpdateMount();
     // 启动静默检查时还是最新（up-to-date 不更新 UI，行保持 idle）；随后远端发布新版
     ctrl.checkScript = [{ available: false, status: 'up-to-date', version: '1.0.0' }, AVAILABLE];
     await flush(); // onMounted 的启动静默 check_update 已发生一次（消费脚本第 1 项）
     invoke.mockClear();
-    trayUpdateHandlers.at(-1)(); // 托盘事件 → 开弹窗 + 自动 re-check
+    trayUpdateHandlers.at(-1)(); // 托盘事件 → 只开弹窗（零自动检查）
     await flush();
     expect(document.querySelector('.update-modal')).not.toBeNull();
-    // re-check 恰好新增一次 check_update，且拿到新结果 → available 态「下载更新」+ 新版号
+    // 托盘事件不得触发任何 check_update（零自动检查）
     const checks = invoke.mock.calls.filter((c) => c[0] === 'check_update');
-    expect(checks.length).toBe(1);
-    expect(updateBtns()[0].textContent).toContain('下载更新');
+    expect(checks.length).toBe(0);
+    // 行保持 idle「检查更新」；新版号不可见
+    expect(updateBtns()[0].textContent).toContain('检查更新');
     const row = (document.querySelector('.update-modal') as HTMLElement).textContent ?? '';
-    expect(row).toContain('9.9.9');
+    expect(row).not.toContain('9.9.9');
+    // 手动点「检查更新」→ check 消费新结果 → available 态「下载更新」+ 新版号
+    updateBtns()[0].click();
+    await flush();
+    expect(invoke.mock.calls.filter((c) => c[0] === 'check_update').length).toBe(1);
+    expect(updateBtns()[0].textContent).toContain('下载更新');
+    expect((document.querySelector('.update-modal') as HTMLElement).textContent ?? '').toContain('9.9.9');
     // 也不得出现旧的两步确认对话框
     expect(document.querySelector('.confirm-box')).toBeNull();
     w.unmount();
   });
 
-  it('托盘「检查更新」自动 re-check 失败 → 弹窗仍打开，行进入 error 态「重试」', async () => {
+  it('托盘「检查更新」不自动检查；手动点击失败 → 行进入 error 态「重试」', async () => {
     const { w, ctrl } = makeUpdateMount();
     ctrl.checkScript = [{ available: false, status: 'error' }]; // 所有 check 都失败
     await flush(); // 启动静默检查失败 → 静默，行保持 idle
-    trayUpdateHandlers.at(-1)(); // 开弹窗 + 自动 re-check（失败）
+    invoke.mockClear();
+    trayUpdateHandlers.at(-1)(); // 只开弹窗——零自动检查
     await flush();
     expect(document.querySelector('.update-modal')).not.toBeNull();
+    // 零自动检查 → 行保持 idle，无错误文本
+    expect(invoke.mock.calls.filter((c) => c[0] === 'check_update').length).toBe(0);
+    expect(updateBtns()[0].textContent).toContain('检查更新');
+    // 手动点「检查更新」→ 失败 → error 态：原因文本 + 「重试」按钮
+    updateBtns()[0].click();
+    await flush();
     const row = (document.querySelector('.update-modal') as HTMLElement).textContent ?? '';
     expect(row).toContain('无法连接更新服务器');
     expect(updateBtns()[0].textContent).toContain('重试');
     w.unmount();
   });
 
-  it('downloading 态托盘「检查更新」→ 只开弹窗，不 re-check（不打断在途更新流程）', async () => {
+  it('downloading 态托盘「检查更新」→ 只开弹窗，不 re-check（托盘从不自动检查，天然不打断在途流程）', async () => {
     const { w, ctrl } = makeUpdateMount();
     ctrl.checkScript = [AVAILABLE];
     await flush(); // 启动静默检查 → available
-    trayUpdateHandlers.at(-1)(); // 开弹窗 + re-check（available 态允许）
+    trayUpdateHandlers.at(-1)(); // 只开弹窗（零自动检查）
     await flush();
     updateBtns()[0].click(); // 下载更新 → download_update 在途（downloading 态）
     await flush();
     invoke.mockClear();
-    trayUpdateHandlers.at(-1)(); // 下载中再点托盘 → 只开弹窗
+    trayUpdateHandlers.at(-1)(); // 下载中再点托盘 → 仍只开弹窗
     await flush();
     expect(invoke.mock.calls.some((c) => c[0] === 'check_update')).toBe(false);
     expect(updateBtns()[0].textContent).toContain('下载中');
@@ -691,10 +707,14 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
   it('check 失败 → error 态；点「重试」→ 重新 invoke check_update', async () => {
     const { w, ctrl } = makeUpdateMount();
     ctrl.checkScript = [{ available: false, status: 'error' }];
+    await flush(); // 启动静默检查失败 → 静默，行保持 idle
+    invoke.mockClear();
+    trayUpdateHandlers.at(-1)(); // 只开弹窗（零自动检查，行保持 idle）
     await flush();
-    trayUpdateHandlers.at(-1)(); // 开弹窗 + 自动 re-check（失败 → error 态）
+    expect(updateBtns()[0].textContent).toContain('检查更新');
+    // 手动点「检查更新」失败 → error 态：原因文本 + 「重试」按钮
+    updateBtns()[0].click();
     await flush();
-    // 自动 re-check 失败 → error 态：原因文本 + 「重试」按钮
     expect(updateBtns()[0].textContent).toContain('重试');
     invoke.mockClear();
     updateBtns()[0].click(); // 重试 → 重发 check_update
@@ -703,17 +723,18 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     w.unmount();
   });
 
-  it('手动点「检查更新」失败 → error 态（与自动 re-check 同链路）', async () => {
+  it('手动点「检查更新」失败 → error 态（托盘只开弹窗，不检查）', async () => {
     const { w, ctrl } = makeUpdateMount();
-    // 脚本 3 项：启动静默检查 / 托盘自动 re-check（均 up-to-date，行保持 idle）/ 手动点击（失败）
+    // 脚本 2 项：启动静默检查（up-to-date，行保持 idle）/ 手动点击（失败）
     ctrl.checkScript = [
-      { available: false, status: 'up-to-date', version: '1.0.0' },
       { available: false, status: 'up-to-date', version: '1.0.0' },
       { available: false, status: 'error' },
     ];
     await flush();
-    trayUpdateHandlers.at(-1)(); // 自动 re-check 成功（up-to-date，行保持 idle）
+    invoke.mockClear();
+    trayUpdateHandlers.at(-1)(); // 只开弹窗（零自动检查，行保持 idle）
     await flush();
+    expect(invoke.mock.calls.filter((c) => c[0] === 'check_update').length).toBe(0);
     expect(updateBtns()[0].textContent).toContain('检查更新'); // idle 态
     updateBtns()[0].click();
     await flush();
@@ -730,12 +751,14 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
 
   it('download 失败 reason 含「尚无更新任务」→ 回落 idle 并自动重新 check', async () => {
     const { w, ctrl } = makeUpdateMount();
-    // 脚本 3 项：启动静默检查 / 托盘开弹窗的自动 re-check（新增）/ 下载失败后的自动重查
-    ctrl.checkScript = [AVAILABLE, AVAILABLE, { available: false, status: 'up-to-date', version: '1.0.0' }];
+    // 脚本 2 项：启动静默检查（available）/ 下载失败后的自动重查（托盘只开弹窗，不检查）
+    ctrl.checkScript = [AVAILABLE, { available: false, status: 'up-to-date', version: '1.0.0' }];
     await flush(); // 启动静默 check_update → available
-    trayUpdateHandlers.at(-1)(); // 开弹窗 + 自动 re-check → available
+    invoke.mockClear();
+    trayUpdateHandlers.at(-1)(); // 只开弹窗（零自动检查）
     await flush();
-    const baselineChecks = invoke.mock.calls.filter((c) => c[0] === 'check_update').length;
+    const baselineChecks = invoke.mock.calls.filter((c) => c[0] === 'check_update').length; // = 0
+    expect(baselineChecks).toBe(0);
     updateBtns()[0].click(); // 下载更新
     ctrl.download.resolve({ ok: false, reason: '尚无更新任务，请先检查更新' });
     await flush();

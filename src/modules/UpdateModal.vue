@@ -11,15 +11,17 @@ import { ref, watch, onBeforeUnmount } from 'vue';
 import Dropdown from '../components/Dropdown.vue';
 import {
   checkLlamaUpdate,
-  // 2026-09-16：getLlamaLocalVersion 移除——渲染端不再单独调 get_llama_local_version
-  // （主进程检查内部已查本地版本并落日志，单独再查会重复落一条「本地版本」日志）；
-  // 本地版本显示统一改由 check_llama_update 返回的 localVersion 派生
+  // 2026 契约：打开弹窗的自动动作——本地版本查询（无网络、不比对远端）；
+  // 检查落定后本地版本显示统一改由 check_llama_update 返回的 localVersion 派生
+  getLlamaLocalVersion,
+  // 2026-11 细化：打开时本地查询成功后追加联网拉取版本选项（下拉立即可见）；
+  // 无 --version、无版本比对（最新版本 bNNNNN 的获取与比较仅在点击「检查更新」后）
+  getLlamaReleaseOptions,
   downloadLlamaUpdate,
   setLlamaUpdateConfig,
   // 2026-09-17 两阶段更新：下载完成后判定服务运行 → 「停止并更新」
-  getPendingLlamaDownload,
   installLlamaUpdate,
-  // 2026-09-18：打开弹窗时读取 last_version_type，版本下拉默认选中上一次使用的变体
+  // 2026-09-18：手动「检查更新」时读取 last_version_type，版本下拉默认选中上一次使用的变体
   getLlamaUpdateConfig,
 } from '../llama-update-client';
 import { onLlamaUpdateProgress } from '../ipc';
@@ -50,8 +52,9 @@ const emit = defineEmits<{
 // Task 7: llama.cpp 更新状态
 // 本地版本显示文本（2026-09-14 修复）：dev 构建显示 b 号（与 nightly tag 同格式），
 // 正式版显示 vX.Y.Z；避免旧契约下 localResult.version.version 的 undefined 显示。
-// 2026-09-16：取值来源改为 check_llama_update 返回的 localVersion（原单独调用
-// get_llama_local_version 会与主进程检查内部查询各落一条「本地版本」日志 → 去重）
+// 2026 契约取值来源：打开弹窗的本地版本查询（get_llama_local_version，unknown 态显示）；
+// 检查落定后改由 check_llama_update 返回的 localVersion 派生（避免 --version 背靠背两次、
+// 「本地版本」日志落两条——本地查询与网络检查永不背靠背执行，日志去重由构造保证）
 const llamaLocalVersion = ref<string>('');
 const llamaRemoteVersion = ref<string>('');
 const llamaUpdateStatus = ref<'up-to-date' | 'update-available' | 'unknown' | 'error' | 'unconfigured'>('unknown');
@@ -73,20 +76,88 @@ const llamaStopUpdateRunning = ref(false);
 const llamaPhase = ref<Phase>('idle');
 let llamaProgressCleanup: (() => void) | null = null;
 
-// Task 7: 检查 llama.cpp 更新
+// 2026 契约：打开弹窗的唯一自动动作——本地版本查询（无网络，仅判定 unconfigured + 显示当前版本）。
+// llama_dir 未配置 → unconfigured 态（提示 + 按钮禁用）；用户在主界面选目录后重开弹窗，
+// 本查询重新执行 → 恢复（unconfigured 死锁逃生口）。成功时 status 保持 unknown（不重置、
+// 下次打开仍会查询并刷新本地版本显示）。日志去重：检查落定后本地版本显示改由 check 返回
+// 的 localVersion 派生，本地查询与网络检查永不背靠背执行。
+async function checkLlamaLocalVersionOnOpen() {
+  llamaPhase.value = 'checking'; // 按钮短暂「检查中...」（禁用）
+  try {
+    const r = await getLlamaLocalVersion();
+    if (r.success) {
+      llamaLocalVersion.value = r.localVersion?.build !== undefined
+        ? `b${r.localVersion.build}`
+        : r.localVersion?.version ? `v${r.localVersion.version}` : '';
+      // 保持 unknown：非重置语义（重开仍会查询刷新），按钮回到「检查更新」
+      llamaUpdateStatus.value = 'unknown';
+      // 2026-11 细化：目录已配置（本地查询成功）→ 追加联网拉取版本选项（下拉立即可见）。
+      // 失败静默：下拉不出现、不进入错误态（用户手动「检查更新」走完整检查恢复）。
+      // 注意：此处不比对版本、不落 status——最新 tag 的获取与本地比较只在点击「检查更新」后。
+      await fetchLlamaReleaseOptionsOnOpen();
+    } else if (r.error === 'unconfigured') {
+      llamaUpdateStatus.value = 'unconfigured';
+    } else {
+      llamaUpdateStatus.value = 'unknown'; // 查询失败 → 中段「本地版本未检测到」
+      llamaLocalVersion.value = '';
+    }
+  } catch {
+    llamaUpdateStatus.value = 'unknown';
+    llamaLocalVersion.value = '';
+  } finally {
+    llamaPhase.value = 'idle'; // 按钮回到「检查更新」（unconfigured 态由 llamaBtnDisabled 禁用）
+  }
+}
+
+// 2026-11 细化：打开弹窗时的选项拉取——只取 release 信息（versionOptions + cudaDlls），
+// 无本地 --version、无版本比对（日志去重不变量保持：打开时唯一「本地版本」日志行仍来自
+// get_llama_local_version；本拉取只落一条「版本列表」日志）。成功填充选项表 + 恢复默认
+// 选中（无配置 → 第一项），status 保持 unknown；失败静默（清空选项，下拉不渲染）。
+async function fetchLlamaReleaseOptionsOnOpen(): Promise<void> {
+  try {
+    const r = await getLlamaReleaseOptions();
+    if (r.success) {
+      llamaVersionOptions.value = (r.versionOptions ?? []).map(opt => ({
+        label: opt.label,
+        downloadUrl: opt.downloadUrl,
+        cudaDllsUrl: opt.cudaDllsUrl,
+      }));
+      applyLlamaDefaultSelection();
+    } else {
+      llamaVersionOptions.value = []; // 静默：下拉不渲染（v-if 长度条件兜底）
+    }
+  } catch {
+    llamaVersionOptions.value = []; // invoke 抛错同样静默
+  }
+}
+
+// Task 7: 检查 llama.cpp 更新（2026 契约：仅手动「检查更新」/「重试」/「切换版本」触发；
+// 打开弹窗不自动做完整检查——打开时的自动网络动作仅为选项拉取，见 watch(open)）。
 async function checkLlamaUpdateInternal() {
   llamaPhase.value = 'checking'; // 按钮切换「检查中...」并禁用，同 LMS 启动器行语义
   try {
-    // 2026-09-16：检查前的 get_llama_local_version 单独调用删除——主进程 check_llama_update
-    // 内部已执行 llama-server --version 并落一条「本地版本」日志；再单独调一次会执行两次
-    // --version、落两条相同的「本地版本」日志（用户反馈的日志重复）。本地版本显示统一
-    // 由 runLlamaUpdateCheck 从 check 返回的 localVersion 派生（同一次查询）。
     await runLlamaUpdateCheck();
   } catch (e) {
     llamaUpdateStatus.value = 'error';
     llamaError.value = e instanceof Error ? e.message : String(e);
     llamaPhase.value = 'error';
   }
+}
+
+// 2026-09-18 契约（读取时机再迁移）：仅「用户发起的检查」（手动「检查更新」/「重试」）
+// 先读 lms_launcher.yaml 的 llama_update.last_version_type 恢复下拉默认选中；
+// 下载/安装成功后的程序性重查不重读——该路径刚把本次所选 label 写回配置并同步内存值，
+// 重读会把下拉重置回磁盘上的旧值（2026 修复：重查落定后下拉须保持本次所选）。
+async function manualLlamaCheck(): Promise<void> {
+  try {
+    const r = await getLlamaUpdateConfig();
+    if (r.success && r.config?.last_version_type) {
+      llamaLastVersionType.value = r.config.last_version_type;
+    }
+  } catch {
+    // 取配置失败 → 不阻塞检查（下拉按现有内存值/第一项回退）
+  }
+  await checkLlamaUpdateInternal();
 }
 
 // 执行远程检查（含结果落态）。独立成函数供打开弹窗与下载完成后复用。
@@ -98,9 +169,10 @@ async function runLlamaUpdateCheck() {
     const result = await checkLlamaUpdate();
     if (result.success) {
       llamaUpdateStatus.value = result.status ?? 'unknown';
-      // 2026-09-16：本地版本显示改由 check 返回的 localVersion 派生（与主进程日志同一查询，
-      // 不再单独 invoke get_llama_local_version）；b 号优先显示（与远端 nightly tag 同格式），
-      // 无 build 号显示 vX.Y.Z；主进程未返回 → 空串（up-to-date 中段回退不带版本号）
+      // 2026 契约：检查落定后本地版本显示改由 check 返回的 localVersion 派生（主进程同一
+      // 查询只落一条日志；打开时的本地查询不在检查路径上重复执行）；b 号优先显示（与远端
+      // nightly tag 同格式），无 build 号显示 vX.Y.Z；主进程未返回 → 空串（up-to-date 中段
+      // 回退不带版本号，且不覆盖本地查询已显示的裸版本号）
       if (result.localVersion) {
         const v = result.localVersion;
         llamaLocalVersion.value = v.build !== undefined
@@ -242,20 +314,8 @@ async function installLlamaUpdateInternal() {
   }
 }
 
-// 2026-09-17 两阶段更新：打开弹窗时若主进程仍有暂存的 pending 包且服务已停止
-// （典型场景：用户上次点了下载、关闭弹窗前服务已停）→ 直接进「停止并更新」，
-// 不必重新下载。pending 包存于主进程内存，重启即失，无需持久化。
-async function adoptPendingLlamaDownload() {
-  try {
-    const pending = await getPendingLlamaDownload();
-    if (pending.pending) {
-      llamaStopUpdateRunning.value = pending.serverRunning; // 服务已停（adopt 路径）→ 提示文案相应调整
-      llamaPhase.value = 'stop-update';
-    }
-  } catch {
-    // 查询失败不影响检查主流程（如 IPC 通道缺失的测试环境）
-  }
-}
+// 2026 契约变更：adoptPendingLlamaDownload 删除——打开弹窗的自动动作仅为本地版本查询，
+// 不再查询/接管暂存包（stop-update 态仅由下载 installed=false / 安装 busy 进入）。
 
 // Task 7: 监听 llama.cpp 下载进度
 function setupLlamaProgressListener() {
@@ -275,41 +335,19 @@ function cleanupLlamaProgressListener() {
   }
 }
 
-// 每次打开弹窗都重新检查（2026-09-14 bug 修复）：
-// 组件恒常驻挂载（App.vue 仅 v-if 遮罩），若只在 onMounted 检查一次，
-// 用户在会话运行中才选定 llama.cpp 安装目录时，那次一次性检查发生在
-// llama_dir 仍为空 → 状态永久卡 'unconfigured'（提示「请先选择安装目录」且无按钮）。
-// 故监听 open：打开时重置状态并重新检查 + (重)挂进度监听；关闭时清理监听。
+// 2026 契约（终局）：弹窗恒常驻挂载（组件状态不随开关丢失），打开时的自动动作
+// 仅为「本地版本查询」——仅当状态为 unknown（会话首次打开）或 unconfigured（用户
+// 选完目录后重开的死锁逃生口）时执行；其它状态（checking/available/downloading/
+// stop-update/up-to-date/error）重开不重置、不重查、不 adopt——状态 + 进度 + 下拉
+// 全部保留，仅重挂进度监听。网络检查只由手动「检查更新」/「重试」/「切换版本」触发。
 watch(
   () => props.open,
   (open) => {
     if (open) {
-      // 重置状态，避免上一轮残留（如旧的 unconfigured / error / 下载进度）
-      llamaUpdateStatus.value = 'unknown';
-      llamaLocalVersion.value = '';
-      llamaRemoteVersion.value = '';
-      llamaVersionOptions.value = [];
-      llamaSelectedOptionIndex.value = 0;
-      llamaLastVersionType.value = '';
-      llamaDownloadPct.value = 0;
-      llamaError.value = '';
-      llamaStopUpdateRunning.value = false;
-      llamaPhase.value = 'idle'; // 行恒显示：按钮回到「检查更新」，随后进入 checking
-      // 2026-09-17 两阶段更新：检查落定后再 adopt 暂存包，避免并发覆盖 phase——
-      // 有暂存包（安装未完成）时切「停止并更新」，跳过重新下载。
-      // 2026-09-18：先读配置里的 last_version_type（本地 IPC，秒回），再发起检查——
-      // 检查落定时选项表就绪，runLlamaUpdateCheck 内即按配置恢复默认选中。
-      // 读配置失败不阻塞检查（下拉回退第一项）。
-      void getLlamaUpdateConfig()
-        .then((r) => {
-          if (r.success && r.config?.last_version_type) {
-            llamaLastVersionType.value = r.config.last_version_type;
-          }
-        })
-        .catch(() => { /* 取配置失败 → 默认第一项，不影响检查主流程 */ })
-        .then(() => checkLlamaUpdateInternal())
-        .then(() => adoptPendingLlamaDownload());
-      setupLlamaProgressListener();
+      if (llamaUpdateStatus.value === 'unknown' || llamaUpdateStatus.value === 'unconfigured') {
+        void checkLlamaLocalVersionOnOpen();
+      }
+      setupLlamaProgressListener(); // 重开始终重挂进度监听（监听器随关闭清理）
     } else {
       cleanupLlamaProgressListener();
     }
@@ -448,7 +486,7 @@ function onLlamaBtn(): void {
   //   一致 → 重查（「检查更新」，重新同步主进程状态）。无选项时保持旧行为（重查）。
   if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) {
     if (llamaSelectedMatchesConfig()) {
-      void checkLlamaUpdateInternal();
+      void manualLlamaCheck(); // 用户发起的检查 → 先读配置恢复默认选中再检查
     } else {
       void downloadLlamaUpdateInternal();
     }
@@ -459,7 +497,7 @@ function onLlamaBtn(): void {
     case 'up-to-date':
     case 'error':
     case 'ready':
-      void checkLlamaUpdateInternal(); // 检查 / 重试均重发检查（重试=重新同步主进程状态）
+      void manualLlamaCheck(); // 检查 / 重试均为用户发起 → 读配置 + 重发检查
       break;
     case 'available':
       void downloadLlamaUpdateInternal();
@@ -485,8 +523,13 @@ function llamaMiddle(): { kind: string; text: string } | null {
         : '已是最新版本' };
     case 'update-available':
       return { kind: 'version', text: '新版本: ' + (llamaRemoteVersion.value || '') };
+    case 'unknown':
+      // 2026 契约：打开仅本地查询（无网络检查）→ 中段显示当前本地版本（裸号灰字，
+      // 如 b10679）；查询失败/无版本号 → 「本地版本未检测到」。kind='latest' → 模板
+      // 映射为灰字 .llama-state-text（非 version 紫字）。
+      return { kind: 'latest', text: llamaLocalVersion.value || '本地版本未检测到' };
     default:
-      return null; // unknown（检查中）/ unconfigured / error：中段留白
+      return null; // unconfigured / error：中段留白（提示/红字走 llamaBelow）
   }
 }
 
@@ -594,7 +637,7 @@ function llamaBelow(): { kind: string; text: string } | null {
                  白底卡片弹层 + .btn 触发按钮 + ▼ 指示符；选项 value 用索引字符串，选中态回写索引）
                  2026-09-18：up-to-date 态同样渲染（用户可在已是最新时切换 Windows 变体，如 CPU/CUDA/Vulkan） -->
             <Dropdown
-              v-if="(llamaUpdateStatus === 'update-available' || llamaUpdateStatus === 'up-to-date') && llamaVersionOptions.length > 0"
+              v-if="['update-available', 'up-to-date', 'unknown'].includes(llamaUpdateStatus) && llamaVersionOptions.length > 0"
               :value="String(llamaSelectedOptionIndex)"
               :options="llamaVersionOptions.map((opt, idx) => ({ value: String(idx), label: opt.label }))"
               :disabled="llamaDownloading"

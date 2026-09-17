@@ -31,9 +31,15 @@ export interface LlamaUpdateCheckResult {
   error?: string;
 }
 
-// 2026-09-16：LlamaLocalVersionResult 与 getLlamaLocalVersion 删除——渲染端不再单独查询
-// 本地版本（会与主进程 check_llama_update 内部查询各落一条「本地版本」日志 → 去重），
-// 本地版本统一由 check_llama_update 返回的 localVersion 字段提供。
+// 2026 契约：打开弹窗的自动动作仅为「本地版本查询」（无网络、不比对远端）——
+// unconfigured 判定 + 当前本地版本显示（unknown 态）。检查落定后本地版本显示
+// 统一改由 check_llama_update 返回的 localVersion 派生（避免 --version 跑两次、
+// 「本地版本」日志落两条）。
+export interface LlamaLocalVersionResult {
+  success: boolean;
+  localVersion?: LlamaVersion;
+  error?: string;   // 'unconfigured'：llama_dir 未配置
+}
 
 export interface LlamaUpdateConfig {
   last_version_type?: string;
@@ -64,8 +70,30 @@ export interface LlamaPendingDownload {
   lockedFiles: string[];
 }
 
+// 2026 契约：打开弹窗的唯一自动查询——本地版本（spawn llama-server --version，
+// 主进程落一条「本地版本」日志）。llama_dir 未配置时返回 { success:false, error:'unconfigured' }。
+export function getLlamaLocalVersion(): Promise<LlamaLocalVersionResult> {
+  return invoke('get_llama_local_version');
+}
+
+// 2026-11 细化契约：打开弹窗即联网获取版本选项表（下拉立即可见）——只拉 release 信息
+// （versionOptions + cudaDlls + 最新 tag），不执行本地 --version、不做版本比对、无 status
+// （日志去重不变量：打开时唯一本地日志行仍来自 get_llama_local_version）。失败静默
+// （渲染端不进入错误态，下拉不出现，用户手动「检查更新」恢复）。
+export interface LlamaReleaseOptionsResult {
+  success: boolean;
+  versionOptions?: VersionOption[];
+  cudaDlls?: CudaDll[];
+  tag?: string;   // 最新 release tag（如 b11021）——仅供打开时的选项拉取参考，不比对
+  error?: string;
+}
+export function getLlamaReleaseOptions(): Promise<LlamaReleaseOptionsResult> {
+  return invoke('get_llama_release_options');
+}
+
 // 恒查 pre-release（nightly）：llama.cpp 的 stable release 只有 nightly-tag.txt 资产、无 Windows
 // 二进制（2026-09-14 bug 根因），nightly 是唯一可下载来源（2026-09-17 定稿移除 includePreRelease 开关）。
+// 2026 契约：最新版本 bNNNNN 的获取与本地比对只由手动「检查更新」/「重试」/「切换版本」触发。
 export function checkLlamaUpdate(): Promise<LlamaUpdateCheckResult> {
   return invoke('check_llama_update');
 }
