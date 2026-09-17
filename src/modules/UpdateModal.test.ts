@@ -838,13 +838,14 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     w.unmount();
   });
 
-  // ---- 2026-09-18：up-to-date 态也显示 Windows 版本下拉 + 按钮「下载更新」----
-  // 背景：用户要求「检查到已是最新版本时，下方也要显示各 Windows 版本的下拉菜单，允许切换版本」。
-  // 根因：旧 Dropdown v-if 仅 update-available 渲染 → up-to-date 态下拉缺失；
-  // 按钮「检查更新」点击只重查，切换变体无从下载。
-  // 契约：up-to-date + 有 versionOptions → 下拉渲染（默认选中第一项）+ 按钮「下载更新」可点；
-  // 点击 → 调 download_llama_update（携带所选选项 URL），而非 check_llama_update 重查。
-  it('up-to-date + 有版本选项：显示 Windows 版本下拉 + 按钮「下载更新」（可切换变体）', async () => {
+  // ---- 2026-09-18：up-to-date 态也显示 Windows 版本下拉；按钮文案随「选中项 vs lms_launcher.yaml 配置」切换 ----
+  // 背景：用户要求「检查到已是最新版本时，下方也要显示各 Windows 版本的下拉菜单，允许切换版本」；
+  // 后续优化：所选版本与 yaml 里 llama_update.last_version_type 一致时按钮应为「检查更新」，
+  // 不一致（用户在弹窗里切换了下拉）时为「切换版本」。
+  // 契约：up-to-date + 有 versionOptions → 下拉渲染；
+  //   选中项与配置一致（无配置 = 第一项视为一致 / 配置命中选中项）→ 按钮「检查更新」（点击重查）；
+  //   不一致 → 按钮「切换版本」（点击 → 调 download_llama_update 携带所选选项 URL，不重发 check）。
+  it('up-to-date + 有版本选项（无配置）：显示 Windows 版本下拉 + 按钮「检查更新」', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return {
         success: true,
@@ -874,15 +875,15 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     trigger!.click();
     await nextTick();
     expect(document.querySelectorAll('.llama-section .dropdown-panel li').length).toBe(3);
-    // 按钮从「检查更新」变为「下载更新」且可点
+    // 无配置（第一项视为一致）→ 按钮「检查更新」且可点
     const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
     expect(btn).not.toBeNull();
-    expect(btn!.textContent?.trim()).toBe('下载更新');
+    expect(btn!.textContent?.trim()).toBe('检查更新');
     expect(btn!.disabled).toBe(false);
     w.unmount();
   });
 
-  it('up-to-date 点击「下载更新」：切换变体后调 download_llama_update（所选选项 URL），不重发 check', async () => {
+  it('up-to-date 点击「切换版本」（切换变体后）：调 download_llama_update（所选选项 URL），不重发 check', async () => {
     let downloadResolve: (v: unknown) => void;
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return {
@@ -903,15 +904,17 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
 
-    // 切换下拉到第 2 项（CUDA 13）
+    // 切换下拉到第 2 项（CUDA 13）——与配置（无配置=第一项）不一致 → 按钮切「切换版本」
     const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
     trigger!.click();
     await nextTick();
     const lis = document.querySelectorAll('.llama-section .dropdown-panel li');
     (lis[1] as HTMLElement).click();
     await nextTick();
-    // 点击「下载更新」
+    // 按钮文案反应式切换为「切换版本」且可点；点击 → 下载所选变体（不重发 check）
     const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn!.textContent?.trim()).toBe('切换版本');
+    expect(btn!.disabled).toBe(false);
     btn!.click();
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
@@ -924,7 +927,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
       download_url: 'https://example.com/cuda13.zip',
       cuda_dlls_url: 'https://example.com/cuda13-dlls.zip',
     });
-    // 未重发 check_llama_update（初始检查 1 次，点击后不再增加）
+    // 「切换版本」直接下载，不重发 check_llama_update（初始检查 1 次，点击后不增加）
     const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
     expect(checkCalls.length).toBe(1);
     // 进入 downloading（按钮禁用）
@@ -932,6 +935,99 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     expect(b!.disabled).toBe(true);
     w.unmount();
     downloadResolve({ success: true, installed: true }); // 收尾：放行挂起的下载 promise
+  });
+
+  // ---- 2026-09-18：up-to-date 按钮随「选中项 vs yaml 配置」切换（检查更新 / 切换版本）----
+  // 契约：选中项 label 与 llama_update.last_version_type 一致 → 「检查更新」（点击重发
+  // check_llama_update，不发起下载）；不一致 → 「切换版本」（点击下载所选变体）。
+  it('up-to-date + 配置命中选中项：按钮「检查更新」；点击重发 check，不发起下载', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'up-to-date',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 配置命中 → 默认选中 CUDA 13，按钮「检查更新」
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger!.textContent).toContain('Windows x64 (CUDA 13)');
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    expect(btn!.textContent?.trim()).toBe('检查更新');
+    expect(btn!.disabled).toBe(false);
+    // 点击「检查更新」→ 重发 check（不发起 download_llama_update）
+    btn!.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
+    expect(checkCalls.length).toBe(2);
+    expect(invokeMock.mock.calls.some((c: unknown[]) => c[0] === 'download_llama_update')).toBe(false);
+    // 重查落定后按钮仍「检查更新」
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
+    w.unmount();
+  });
+
+  it('up-to-date + 配置命中后切换变体：按钮「切换版本」；点击下载所选变体，成功后回写配置并重查落回「检查更新」', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'up-to-date',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/cuda13-dlls.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'download_llama_update') return { success: true, installed: true };
+      if (cmd === 'set_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 配置命中 → 默认选中 CUDA 13，按钮「检查更新」
+    const btn = () => document.querySelector('.llama-section .btn-primary') as HTMLButtonElement;
+    expect(btn().textContent?.trim()).toBe('检查更新');
+    // 切换到 CPU（与配置不一致）→ 按钮「切换版本」
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    trigger!.click();
+    await nextTick();
+    const lis = document.querySelectorAll('.llama-section .dropdown-panel li');
+    (lis[0] as HTMLElement).click();
+    await nextTick();
+    expect(btn().textContent?.trim()).toBe('切换版本');
+    expect(btn().disabled).toBe(false);
+    // 点击「切换版本」→ 下载 CPU 变体（不重发 check）
+    btn().click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    await nextTick();
+    const dlCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'download_llama_update');
+    expect(dlCalls.length).toBe(1);
+    expect(dlCalls[0][1]).toEqual({ download_url: 'https://example.com/cpu.zip', cuda_dlls_url: undefined });
+    // 下载成功 → 回写配置 CPU
+    const setCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'set_llama_update_config');
+    expect(setCalls.length).toBe(1);
+    expect(setCalls[0][1]).toEqual({ last_version_type: 'Windows x64 (CPU)' });
+    // 重查落定：选中项与（回写后的）配置一致 → 按钮落回「检查更新」
+    expect(document.querySelector('.llama-section .select-trigger')!.textContent).toContain('Windows x64 (CPU)');
+    expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
+    w.unmount();
   });
 
   // ---- 2026-09-16：本地版本日志去重 ----
@@ -1109,16 +1205,19 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 切到 CUDA 13
+    // 切到 CUDA 13（与打开时配置不一致）→ 按钮「切换版本」
     const trigger = () => document.querySelector('.llama-section .select-trigger') as HTMLButtonElement;
     trigger().click();
     await nextTick();
     const lis = document.querySelectorAll('.llama-section .dropdown-panel li');
     (lis[1] as HTMLElement).click();
     await nextTick();
-    // 下载（up-to-date + 有选项 → 按钮「下载更新」）
-    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement;
-    btn.click();
+    // 2026-09-18 契约：无配置时初始按钮为「检查更新」（点击=重查，不下载）；
+    // 先点击重查落定（此时选中项与配置仍不一致 → 按钮「切换版本」），再点下载
+    const btn = () => document.querySelector('.llama-section .btn-primary') as HTMLButtonElement;
+    expect(btn().textContent?.trim()).toBe('切换版本');
+    // （初始「检查更新」点击=重查——此处直接断言切换后即为「切换版本」，点击即下载）
+    btn().click();
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();

@@ -414,13 +414,26 @@ const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: b
   'stop-update': { label: () => '停止并更新',        disabled: false },
 };
 // 2026-09-18：up-to-date 态也显示 Windows 版本下拉（允许切换变体，如 CPU/CUDA/Vulkan）→
-// 有版本选项时按钮切「下载更新」（点击即下载所选变体，覆盖安装）；
+// 按钮文案随「所选版本 vs lms_launcher.yaml 配置（llama_update.last_version_type）」切换：
+//   一致（无配置 = 第一项视为一致 / 配置命中选中项）→「检查更新」（点击重查）；
+//   不一致（用户在弹窗里切换了下拉）→「切换版本」（点击即下载所选变体，覆盖安装）。
 // 无选项（主进程未返回 versionOptions 的异常情形）保持「检查更新」（点击重查）
 function llamaUpToDateHasOptions(): boolean {
   return llamaUpdateStatus.value === 'up-to-date' && llamaVersionOptions.value.length > 0;
 }
+// 所选版本与配置一致：无配置时以第一项为一致基准（默认选中即第一项，用户未切=一致，
+// 切到其它项=不一致；无法判断真实安装变体，不诱导对第一项的完整下载覆盖）；
+// 有配置时按 label 精确匹配（与 applyLlamaDefaultSelection 同一匹配口径）。
+// 选项表为空时恒返回 true（此时按钮走「检查更新」兜底分支，该值不被消费）。
+function llamaSelectedMatchesConfig(): boolean {
+  if (llamaVersionOptions.value.length === 0) return true;
+  if (!llamaLastVersionType.value) return llamaSelectedOptionIndex.value === 0;
+  return llamaVersionOptions.value[llamaSelectedOptionIndex.value]?.label === llamaLastVersionType.value;
+}
 function llamaBtnLabel(): string {
-  if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) return '下载更新';
+  if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) {
+    return llamaSelectedMatchesConfig() ? '检查更新' : '切换版本';
+  }
   return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value);
 }
 function llamaBtnDisabled(): boolean {
@@ -430,10 +443,15 @@ function llamaBtnDisabled(): boolean {
   return LLAMA_BUTTONS[llamaPhase.value].disabled;
 }
 function onLlamaBtn(): void {
-  // 2026-09-18：up-to-date + 有版本选项 → 下载所选变体（用户切换版本的主路径）；
-  // 无选项时保持旧行为（重查，重新同步主进程状态）
+  // 2026-09-18：up-to-date + 有版本选项 → 按「所选 vs 配置」分流：
+  //   不一致 → 下载所选变体（「切换版本」，用户切换变体的主路径）；
+  //   一致 → 重查（「检查更新」，重新同步主进程状态）。无选项时保持旧行为（重查）。
   if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) {
-    void downloadLlamaUpdateInternal();
+    if (llamaSelectedMatchesConfig()) {
+      void checkLlamaUpdateInternal();
+    } else {
+      void downloadLlamaUpdateInternal();
+    }
     return;
   }
   switch (llamaPhase.value) {
