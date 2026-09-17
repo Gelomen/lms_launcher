@@ -19,8 +19,9 @@ import {
   // 2026-09-17 两阶段更新：下载完成后判定服务运行 → 「停止并更新」
   getPendingLlamaDownload,
   installLlamaUpdate,
+  // 2026-09-18：打开弹窗时读取 last_version_type，版本下拉默认选中上一次使用的变体
+  getLlamaUpdateConfig,
 } from '../llama-update-client';
-// 2026-09-17：getLlamaUpdateConfig 移除——include_pre_release 开关已删（stable 无 Windows 包，恒查 nightly）
 import { onLlamaUpdateProgress } from '../ipc';
 
 // 2026-09-17 两阶段更新：新增 stop-update 态（仅 llama.cpp 行使用——下载完成但服务运行中，
@@ -56,6 +57,10 @@ const llamaRemoteVersion = ref<string>('');
 const llamaUpdateStatus = ref<'up-to-date' | 'update-available' | 'unknown' | 'error' | 'unconfigured'>('unknown');
 const llamaVersionOptions = ref<Array<{ label: string; downloadUrl: string; cudaDllsUrl?: string }>>([]);
 const llamaSelectedOptionIndex = ref(0);
+// 2026-09-18：版本下拉默认选中「上一次使用的版本类型」——打开弹窗时从
+// lms_launcher.yaml 的 llama_update.last_version_type 读取（每次下载成功后写入），
+// 选项表就绪后按 label 精确匹配恢复；无配置/取配置失败/选项表已无该 label → 第一项。
+const llamaLastVersionType = ref('');
 const llamaDownloading = ref(false);
 const llamaDownloadPct = ref(0);
 const llamaError = ref('');
@@ -114,6 +119,8 @@ async function runLlamaUpdateCheck() {
         downloadUrl: opt.downloadUrl,
         cudaDllsUrl: opt.cudaDllsUrl,
       }));
+      // 2026-09-18：选项表同步后恢复默认选中（配置 last_version_type 命中 → 该项）
+      applyLlamaDefaultSelection();
       // 按钮态随检查结论切换：可用 → 下载更新（点击即下载）；已是最新 → 检查更新；
       // 未知/失败 → 重试（kind='retry'，重发检查）
       llamaPhase.value = result.status === 'update-available' ? 'available'
@@ -137,6 +144,17 @@ async function runLlamaUpdateCheck() {
   }
 }
 
+// 2026-09-18：选项表就绪后恢复默认选中（配置 last_version_type 命中 → 该项；
+// 无配置/未命中 → 第一项）。选项表为空（未检查到选项）时 no-op——下拉 v-if 本就不渲染。
+function applyLlamaDefaultSelection(): void {
+  const opts = llamaVersionOptions.value;
+  if (opts.length === 0) return;
+  const idx = llamaLastVersionType.value
+    ? opts.findIndex((o) => o.label === llamaLastVersionType.value)
+    : -1;
+  llamaSelectedOptionIndex.value = idx >= 0 ? idx : 0;
+}
+
 // Task 7: 下载 llama.cpp 更新
 async function downloadLlamaUpdateInternal() {
   const option = llamaVersionOptions.value[llamaSelectedOptionIndex.value];
@@ -158,7 +176,9 @@ async function downloadLlamaUpdateInternal() {
         llamaPhase.value = 'stop-update';
         return;
       }
-      // 更新成功，保存配置
+      // 更新成功，保存配置；同步内存值——随后重查的 applyLlamaDefaultSelection
+      // 按本次所选 label 恢复选中，不被打开弹窗时读到的旧配置重置（2026-09-18）
+      llamaLastVersionType.value = option.label;
       await setLlamaUpdateConfig({ last_version_type: option.label });
       emit('llama-complete', true);
       // 重新检查更新状态
@@ -189,9 +209,13 @@ async function installLlamaUpdateInternal() {
   try {
     const result = await installLlamaUpdate();
     if (result.success) {
-      // 保存配置（与自动安装成功路径一致：last_version_type 记录本次所选版本类型）
+      // 保存配置（与自动安装成功路径一致：last_version_type 记录本次所选版本类型）；
+      // 同步内存值，重查后下拉保持本次所选（2026-09-18）
       const option = llamaVersionOptions.value[llamaSelectedOptionIndex.value];
-      if (option) await setLlamaUpdateConfig({ last_version_type: option.label });
+      if (option) {
+        llamaLastVersionType.value = option.label;
+        await setLlamaUpdateConfig({ last_version_type: option.label });
+      }
       emit('llama-complete', true);
       await checkLlamaUpdateInternal(); // 重查 → 通常 up-to-date
     } else if (result.busy) {
@@ -266,13 +290,25 @@ watch(
       llamaRemoteVersion.value = '';
       llamaVersionOptions.value = [];
       llamaSelectedOptionIndex.value = 0;
+      llamaLastVersionType.value = '';
       llamaDownloadPct.value = 0;
       llamaError.value = '';
       llamaStopUpdateRunning.value = false;
       llamaPhase.value = 'idle'; // 行恒显示：按钮回到「检查更新」，随后进入 checking
       // 2026-09-17 两阶段更新：检查落定后再 adopt 暂存包，避免并发覆盖 phase——
       // 有暂存包（安装未完成）时切「停止并更新」，跳过重新下载。
-      void checkLlamaUpdateInternal().then(() => adoptPendingLlamaDownload());
+      // 2026-09-18：先读配置里的 last_version_type（本地 IPC，秒回），再发起检查——
+      // 检查落定时选项表就绪，runLlamaUpdateCheck 内即按配置恢复默认选中。
+      // 读配置失败不阻塞检查（下拉回退第一项）。
+      void getLlamaUpdateConfig()
+        .then((r) => {
+          if (r.success && r.config?.last_version_type) {
+            llamaLastVersionType.value = r.config.last_version_type;
+          }
+        })
+        .catch(() => { /* 取配置失败 → 默认第一项，不影响检查主流程 */ })
+        .then(() => checkLlamaUpdateInternal())
+        .then(() => adoptPendingLlamaDownload());
       setupLlamaProgressListener();
     } else {
       cleanupLlamaProgressListener();

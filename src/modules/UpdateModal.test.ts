@@ -594,11 +594,13 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
 
   // 2026-09-17 定稿：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅
   // nightly-tag.txt，2026-09-17 实测 v0.4.1），nightly（b 号）是唯一可下载来源，恒查 pre-release，
-  // 无需用户开关。回归契约：DOM 无勾选框；check_llama_update 不带 include_pre_release 参数；
-  // 也不再读取 get_llama_update_config（该 IPC 仅主进程内部/其他用途，弹窗不依赖）。
+  // 无需用户开关。回归契约：DOM 无勾选框；check_llama_update 不带 include_pre_release 参数。
+  // （2026-09-18 契约更新：打开弹窗会读取一次 get_llama_update_config 取 last_version_type
+  // 作为下拉默认选中，见下方「默认选中」用例组。）
   it('恒查 pre-release：无勾选框 UI，检查不带 include_pre_release 参数', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'check_llama_update') return { success: true, status: 'up-to-date' };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -613,9 +615,6 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
     expect(checkCalls.length).toBeGreaterThan(0);
     expect(checkCalls[0][1]).toBeUndefined();
-    // 弹窗不再读取更新配置
-    const configCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config');
-    expect(configCalls.length).toBe(0);
     w.unmount();
   });
 
@@ -993,6 +992,172 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     expect(document.querySelector('.llama-section .select-trigger')).toBeNull();
     expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
+    w.unmount();
+  });
+
+  // ---- 2026-09-18：版本下拉默认选中「上一次使用的版本类型」----
+  // 背景：lms_launcher.yaml 的 llama_update.last_version_type 在每次下载成功后写入
+  // （如 'Windows x64 (CUDA 13)'），但弹窗打开时下拉恒默认第一项，用户每次都要手动
+  // 重选变体。
+  // 契约：打开弹窗取 get_llama_update_config 的 last_version_type，检查返回选项表后
+  // 按 label 精确匹配恢复选中项；无配置/取配置失败/选项表不含该 label（新版本选项
+  // 变化）→ 回退第一项，且不影响检查主流程。
+  it('默认选中：配置 last_version_type 命中选项 → 下拉默认选中该项（非第一项）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CUDA 13)');
+    w.unmount();
+  });
+
+  it('默认选中：配置命中但选项表已无该 label（release 选项变化）→ 回退第一项', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b11001',
+        // CUDA 13 已被上游移除 → 配置里的 last_version_type 找不到对应选项
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (Vulkan)', downloadUrl: 'https://example.com/vk.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CPU)');
+    w.unmount();
+  });
+
+  it('默认选中：无配置（首次使用）→ 取一次配置后回退第一项，不影响检查', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 配置确实被读取（契约：取 last_version_type 的唯一途径）
+    const cfgCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config');
+    expect(cfgCalls.length).toBe(1);
+    // 无 last_version_type → 第一项
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CPU)');
+    // 检查主流程不受配置读取影响
+    const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
+    expect(checkCalls.length).toBe(1);
+    w.unmount();
+  });
+
+  it('默认选中：下载完成重查后，下拉保持本次所选变体（不被打开时的旧配置重置）', async () => {
+    // 打开时配置为空 → 默认第一项 CPU；用户切到 CUDA 13 下载成功（installed=true 自动安装）
+    // → set_llama_update_config 写入 CUDA 13 → 重查 → 下拉必须仍是 CUDA 13
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'up-to-date',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_update_config') return { success: true, config: {} };
+      if (cmd === 'download_llama_update') return { success: true, installed: true };
+      if (cmd === 'set_llama_update_config') return { success: true, config: {} };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 切到 CUDA 13
+    const trigger = () => document.querySelector('.llama-section .select-trigger') as HTMLButtonElement;
+    trigger().click();
+    await nextTick();
+    const lis = document.querySelectorAll('.llama-section .dropdown-panel li');
+    (lis[1] as HTMLElement).click();
+    await nextTick();
+    // 下载（up-to-date + 有选项 → 按钮「下载更新」）
+    const btn = document.querySelector('.llama-section .btn-primary') as HTMLButtonElement;
+    btn.click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    await nextTick();
+    // 下载成功路径保存了配置
+    const setCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'set_llama_update_config');
+    expect(setCalls.length).toBe(1);
+    expect(setCalls[0][1]).toEqual({ last_version_type: 'Windows x64 (CUDA 13)' });
+    // 重查完成后下拉仍为本次所选 CUDA 13
+    expect(trigger().textContent).toContain('Windows x64 (CUDA 13)');
+    w.unmount();
+  });
+
+  it('默认选中：取配置失败 → 不阻塞检查，下拉回退第一项', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'check_llama_update') return {
+        success: true,
+        status: 'update-available',
+        remoteVersion: 'b11001',
+        versionOptions: [
+          { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+          { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip' },
+        ],
+      };
+      if (cmd === 'get_llama_update_config') throw new Error('ipc channel unavailable');
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 配置抛错不进入错误态（检查正常完成）
+    expect(document.querySelector('.llama-section .llama-below--error')).toBeNull();
+    const checkCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'check_llama_update');
+    expect(checkCalls.length).toBe(1);
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CPU)');
     w.unmount();
   });
 });
