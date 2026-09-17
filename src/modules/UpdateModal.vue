@@ -91,6 +91,11 @@ async function checkLlamaLocalVersionOnOpen() {
         : r.localVersion?.version ? `v${r.localVersion.version}` : '';
       // 保持 unknown：非重置语义（重开仍会查询刷新），按钮回到「检查更新」
       llamaUpdateStatus.value = 'unknown';
+      // 2026-11 回归修复：配置读取时机随下拉提前到打开时（2026 契约曾挪进手动检查路径，
+      // 而 2026-11 细化让下拉打开即出现 → 配置未读时恒选第一项，丢失「默认选中上一次
+      // 用的版本」）。先静默读 yaml 的 last_version_type 恢复内存值，再拉选项表（顺序
+      // await 保证 applyLlamaDefaultSelection 读到的是本次恢复值）。
+      await restoreLlamaLastVersionType();
       // 2026-11 细化：目录已配置（本地查询成功）→ 追加联网拉取版本选项（下拉立即可见）。
       // 失败静默：下拉不出现、不进入错误态（用户手动「检查更新」走完整检查恢复）。
       // 注意：此处不比对版本、不落 status——最新 tag 的获取与本地比较只在点击「检查更新」后。
@@ -106,6 +111,21 @@ async function checkLlamaLocalVersionOnOpen() {
     llamaLocalVersion.value = '';
   } finally {
     llamaPhase.value = 'idle'; // 按钮回到「检查更新」（unconfigured 态由 llamaBtnDisabled 禁用）
+  }
+}
+
+// 2026-11 回归修复：打开时恢复「上一次使用的版本类型」（2026-09-18 契约的读取时机
+// 最终落点——曾随下拉出现时机两次迁移：2026-09-18 检查落定后 → 2026 契约手动检查路径
+// 前 → 2026-11 打开时选项拉取前）。静默：取配置失败/无 last_version_type 字段 → 保持
+// 现有内存值（首次打开为空 → 默认第一项），不影响选项拉取与检查主流程。
+async function restoreLlamaLastVersionType(): Promise<void> {
+  try {
+    const r = await getLlamaUpdateConfig();
+    if (r.success && r.config?.last_version_type) {
+      llamaLastVersionType.value = r.config.last_version_type;
+    }
+  } catch {
+    // 取配置失败 → 回退第一项（不阻塞选项拉取）
   }
 }
 
@@ -144,21 +164,10 @@ async function checkLlamaUpdateInternal() {
   }
 }
 
-// 2026-09-18 契约（读取时机再迁移）：仅「用户发起的检查」（手动「检查更新」/「重试」）
-// 先读 lms_launcher.yaml 的 llama_update.last_version_type 恢复下拉默认选中；
-// 下载/安装成功后的程序性重查不重读——该路径刚把本次所选 label 写回配置并同步内存值，
-// 重读会把下拉重置回磁盘上的旧值（2026 修复：重查落定后下拉须保持本次所选）。
-async function manualLlamaCheck(): Promise<void> {
-  try {
-    const r = await getLlamaUpdateConfig();
-    if (r.success && r.config?.last_version_type) {
-      llamaLastVersionType.value = r.config.last_version_type;
-    }
-  } catch {
-    // 取配置失败 → 不阻塞检查（下拉按现有内存值/第一项回退）
-  }
-  await checkLlamaUpdateInternal();
-}
+// 2026-11 契约（manualLlamaCheck 移除）：配置读取时机迁至打开弹窗时（restoreLlamaLastVersionType，
+// 下拉出现前恢复默认选中）。点击「检查更新」/「重试」直接走 checkLlamaUpdateInternal——
+// 不再读配置：该路径若重读 yaml，会把用户在本弹窗内手动切换过的变体重置回磁盘旧值
+// （2026-09-18 T27 回归根因）；下载/安装成功后的程序性重查同理（已同步内存值）。
 
 // 执行远程检查（含结果落态）。独立成函数供打开弹窗与下载完成后复用。
 // 2026-09-17：恒查 pre-release（nightly），无 includePreRelease 参数。
@@ -486,7 +495,7 @@ function onLlamaBtn(): void {
   //   一致 → 重查（「检查更新」，重新同步主进程状态）。无选项时保持旧行为（重查）。
   if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) {
     if (llamaSelectedMatchesConfig()) {
-      void manualLlamaCheck(); // 用户发起的检查 → 先读配置恢复默认选中再检查
+      void checkLlamaUpdateInternal(); // 用户发起的完整检查（配置已在打开时恢复，此处不重读）
     } else {
       void downloadLlamaUpdateInternal();
     }
@@ -497,7 +506,7 @@ function onLlamaBtn(): void {
     case 'up-to-date':
     case 'error':
     case 'ready':
-      void manualLlamaCheck(); // 检查 / 重试均为用户发起 → 读配置 + 重发检查
+      void checkLlamaUpdateInternal(); // 检查 / 重试均为用户发起 → 重发完整检查（不重读配置）
       break;
     case 'available':
       void downloadLlamaUpdateInternal();

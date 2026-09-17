@@ -623,8 +623,8 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   // 2026-09-17 定稿：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅
   // nightly-tag.txt，2026-09-17 实测 v0.4.1），nightly（b 号）是唯一可下载来源，恒查 pre-release，
   // 无需用户开关。回归契约：DOM 无勾选框；check_llama_update 不带 include_pre_release 参数。
-  // （2026-09-18 契约更新：手动「检查更新」前读取一次 get_llama_update_config 取 last_version_type
-  // 作为下拉默认选中，见下方「默认选中」用例组。）
+  // （2026-11 契约更新：get_llama_update_config 取 last_version_type 作为下拉默认选中，
+  // 读取时机 = 打开弹窗时（下拉出现前），见下方「默认选中」用例组。）
   it('恒查 pre-release：无勾选框 UI，检查不带 include_pre_release 参数', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'get_llama_local_version') return { success: true, localVersion: { type: 'prerelease', build: 10679 } };
@@ -1265,14 +1265,14 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 打开时不读配置（自动动作仅本地查询）
-    expect(invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config').length).toBe(0);
-    // 手动点「检查更新」→ 手动路径取一次配置
+    // 2026-11：打开时读一次配置（下拉出现前恢复默认选中）——首次使用无 last_version_type
+    expect(invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config').length).toBe(1);
+    // 手动点「检查更新」→ 完整检查（不再重读配置）
     (document.querySelector('.llama-section .btn-primary') as HTMLButtonElement).click();
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 配置确实被读取（契约：取 last_version_type 的唯一途径）
+    // 点击路径不重读配置（配置读取唯一时机 = 打开弹窗时）
     const cfgCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config');
     expect(cfgCalls.length).toBe(1);
     // 无 last_version_type → 第一项
@@ -1360,7 +1360,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 手动「检查更新」：手动路径取配置抛错 → 不阻塞检查
+    // 打开路径取配置抛错 → 静默（下拉回退第一项）；手动「检查更新」照常完整检查
     (document.querySelector('.llama-section .btn-primary') as HTMLButtonElement).click();
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
@@ -1552,5 +1552,59 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
     expect(document.querySelector('.llama-state-text')?.textContent?.trim()).toBe('b11020');
     w.unmount();
   });
+
+  // ---- 回归修复（2026-11 细化后）：默认选中「上一次用的版本」的读取时机随下拉提前到打开时 ----
+  // 背景：2026 契约把配置读取挪进 manualLlamaCheck（点击「检查更新」后），而 2026-11 细化让
+  // 下拉在打开时即出现（此时配置未读 → 恒选第一项）→ 丢失「默认选中上一次用的版本」功能。
+  // 契约：打开时（本地查询成功）先静默读一次 yaml 的 last_version_type 恢复默认选中，再拉选项表；
+  // 取配置失败/无该字段静默回退第一项。点击「检查更新」路径不再读配置（避免把用户手动切过的
+  // 变体重置回磁盘旧值——2026-09-18 T27 回归根因）。
+  it('默认选中：配置 last_version_type 命中 → 打开即选中该项（无需等「检查更新」点击）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'get_llama_local_version') return { success: true, localVersion: { type: 'prerelease', build: 11020 } };
+      if (cmd === 'get_llama_release_options') return { success: true, versionOptions: [
+        { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+        { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip' },
+        { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/dlls.zip' },
+      ] };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    // 打开即按配置恢复选中（非第一项），全程零完整检查
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CUDA 13)');
+    expect(countCheckCalls()).toBe(0);
+    expect(countOptionsCalls()).toBe(1);
+    w.unmount();
+  });
+
+  it('默认选中：配置命中但选项表已无该 label → 打开即回退第一项（不报错）', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'get_llama_local_version') return { success: true, localVersion: { type: 'prerelease', build: 11020 } };
+      if (cmd === 'get_llama_release_options') return { success: true, versionOptions: [
+        { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+        { label: 'Windows x64 (Vulkan)', downloadUrl: 'https://example.com/vk.zip' },
+      ] };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    expect(trigger!.textContent).toContain('Windows x64 (CPU)');
+    expect(document.querySelector('.llama-below--error')).toBeNull();
+    w.unmount();
+  });
 });
+
 
