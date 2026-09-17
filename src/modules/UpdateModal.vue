@@ -462,11 +462,29 @@ const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: b
 };
 // 2026-09-18：up-to-date 态也显示 Windows 版本下拉（允许切换变体，如 CPU/CUDA/Vulkan）→
 // 按钮文案随「所选版本 vs lms_launcher.yaml 配置（llama_update.last_version_type）」切换：
-//   一致（无配置 = 第一项视为一致 / 配置命中选中项）→「检查更新」（点击重查）；
+//   一致（无配置 = 第一项视为一致 / 配置命中选中项）→ 原按钮语义（检查更新/下载更新…）；
 //   不一致（用户在弹窗里切换了下拉）→「切换版本」（点击即下载所选变体，覆盖安装）。
-// 无选项（主进程未返回 versionOptions 的异常情形）保持「检查更新」（点击重查）
-function llamaUpToDateHasOptions(): boolean {
-  return llamaUpdateStatus.value === 'up-to-date' && llamaVersionOptions.value.length > 0;
+// 无选项（主进程未返回 versionOptions 的异常情形）保持原按钮语义。
+// 2026-11 回归修复：gate 从 up-to-date 扩展到「下拉可见」的任一状态（up-to-date /
+// update-available / unknown——与模板 v-if 同口径）：2026-11 细化让下拉在 unknown 态
+// （phase idle）即出现，用户此时切换变体也必须能切「切换版本」（此前 gate 死在
+// up-to-date → unknown 态切换后按钮恒「检查更新」，丢失切换功能）。
+function llamaDropdownVisible(): boolean {
+  return ['up-to-date', 'update-available', 'unknown'].includes(llamaUpdateStatus.value)
+    && llamaVersionOptions.value.length > 0;
+}
+// 「切换版本」分流实际生效条件（label 与 click 共用）：下拉可见 + 所选 ≠ 配置变体，
+// 但排除两阶段/进度态：
+//   stop-update → 下载已完成、包已暂存，必须显示「停止并更新」（此路径未回写配置，
+//     所选项仍 ≠ 旧配置，不排除会被误覆盖为「切换版本」）；
+//   checking / downloading → 按钮走自身进度语义（「检查中...」/「下载中 NN%」）。
+function llamaSwitchVariantApplies(): boolean {
+  // 仅在按钮本为「检查更新」的态（idle=unknown / up-to-date / ready）覆盖为「切换版本」；
+  // 不覆盖 available（「下载更新」——切换下拉那里仍是下载所选变体的新更新，非切换已装变体）
+  // 及 checking / downloading / stop-update（各自进度/两阶段语义）。
+  const checkPhases: Phase[] = ['idle', 'up-to-date', 'ready'];
+  if (!checkPhases.includes(llamaPhase.value)) return false;
+  return llamaDropdownVisible() && !llamaSelectedMatchesConfig();
 }
 // 所选版本与配置一致：无配置时以第一项为一致基准（默认选中即第一项，用户未切=一致，
 // 切到其它项=不一致；无法判断真实安装变体，不诱导对第一项的完整下载覆盖）；
@@ -478,10 +496,10 @@ function llamaSelectedMatchesConfig(): boolean {
   return llamaVersionOptions.value[llamaSelectedOptionIndex.value]?.label === llamaLastVersionType.value;
 }
 function llamaBtnLabel(): string {
-  if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) {
-    return llamaSelectedMatchesConfig() ? '检查更新' : '切换版本';
+  if (llamaSwitchVariantApplies()) {
+    return '切换版本'; // 所选 ≠ 配置变体（用户切换了下拉）→ 点击即下载所选变体
   }
-  return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value);
+  return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value); // 一致 → 原按钮语义
 }
 function llamaBtnDisabled(): boolean {
   // 2026-09-15 需求：未选择安装目录（unconfigured）时按钮置灰不可点——
@@ -490,15 +508,12 @@ function llamaBtnDisabled(): boolean {
   return LLAMA_BUTTONS[llamaPhase.value].disabled;
 }
 function onLlamaBtn(): void {
-  // 2026-09-18：up-to-date + 有版本选项 → 按「所选 vs 配置」分流：
+  // 2026-09-18：下拉可见 + 有版本选项 → 按「所选 vs 配置」分流：
   //   不一致 → 下载所选变体（「切换版本」，用户切换变体的主路径）；
-  //   一致 → 重查（「检查更新」，重新同步主进程状态）。无选项时保持旧行为（重查）。
-  if (llamaPhase.value === 'up-to-date' && llamaUpToDateHasOptions()) {
-    if (llamaSelectedMatchesConfig()) {
-      void checkLlamaUpdateInternal(); // 用户发起的完整检查（配置已在打开时恢复，此处不重读）
-    } else {
-      void downloadLlamaUpdateInternal();
-    }
+  //   一致 → 走原 phase 语义（unknown/up-to-date/error → 完整检查；available → 下载更新）。
+  // 2026-11：gate 同 llamaBtnLabel（llamaSwitchVariantApplies，排除 stop-update 两阶段态）。
+  if (llamaSwitchVariantApplies()) {
+    void downloadLlamaUpdateInternal(); // 「切换版本」→ 下载所选变体（覆盖安装）
     return;
   }
   switch (llamaPhase.value) {
