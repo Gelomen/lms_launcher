@@ -26,7 +26,7 @@ beforeEach(() => {
 });
 
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
-type Item = { name: string; phase: Phase; version?: string; pct?: number; errorText?: string };
+type Item = { name: string; phase: Phase; version?: string; pct?: number; errorText?: string; localVersion?: string };
 
 // 构造一行更新项（默认 idle），按需覆盖字段
 function makeItem(over: Partial<Item> = {}): Item {
@@ -68,6 +68,38 @@ describe('UpdateModal', () => {
     const btn = actionBtns()[0];
     expect(btn.textContent?.trim()).toBe('检查中...');
     expect(btn.disabled).toBe(true);
+    w.unmount();
+  });
+
+  // ---- 2026-09-18 需求：打开弹窗默认（idle/checking 态）显示当前本地版本号（用户反馈：
+  // 「LMS 启动器」与「检查更新」按钮之间默认空白）。契约：idle/checking 态中段渲染
+  // item.localVersion（灰字，同 up-to-date 的 .update-row__latest 样式）；无 localVersion
+  // 时中段不渲染（保持空白兜底，与旧行为一致）。
+// LMS 启动器行中段（排除 llama.cpp 行自带的 .llama-middle，避免 querySelector 抓到后者）
+function lmsMiddle(): HTMLElement | null {
+  return document.querySelector('.update-row__middle:not(.llama-middle)') as HTMLElement | null;
+}
+
+  it('idle: 带 localVersion 时中段显示当前版本号（灰字）', () => {
+    const w = mountModal({ items: [makeItem({ localVersion: '0.2.0' })] });
+    const middle = lmsMiddle();
+    expect(middle).not.toBeNull();
+    expect(middle!.classList.contains('update-row__latest')).toBe(true);
+    expect(middle!.textContent?.trim()).toBe('0.2.0');
+    w.unmount();
+  });
+
+  it('idle: 无 localVersion 时中段不渲染（保持空白兜底）', () => {
+    const w = mountModal({ items: [makeItem()] });
+    expect(lmsMiddle()).toBeNull();
+    w.unmount();
+  });
+
+  it('checking: 带 localVersion 时中段同样显示当前版本号', () => {
+    const w = mountModal({ items: [makeItem({ phase: 'checking', localVersion: '0.2.0' })] });
+    const middle = lmsMiddle();
+    expect(middle).not.toBeNull();
+    expect(middle!.textContent?.trim()).toBe('0.2.0');
     w.unmount();
   });
 

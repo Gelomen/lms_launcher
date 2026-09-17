@@ -35,6 +35,9 @@ type Item = {
   version?: string;
   pct?: number;
   errorText?: string;
+  // 2026-09-18：当前本地版本号（App 经 get_version 取得）——idle/checking 态中段显示，
+  // 避免打开弹窗后「LMS 启动器」与「检查更新」按钮之间默认空白
+  localVersion?: string;
 };
 
 const props = withDefaults(defineProps<{
@@ -395,6 +398,8 @@ function btnDisabled(item: Item): boolean {
 // 中段渲染（12px）：available/downloading/ready → 新版号（--muted）；up-to-date → 灰字「已是最新版本 vX.Y.Z」；error → 红字错误原因
 // ready 带 errorText（run_update 失败）→ 红字错误优先展示；否则显示新版号
 // downloading 期间版本号为已知信息（来自 update-available），恒显示不隐藏
+// 2026-09-18：idle/checking → 'local'（灰字当前本地版本号，打开弹窗即见，与 llama.cpp
+// 行 unknown 态同款灰字）；localVersion 缺失时返回 ''（中段不渲染，保持旧行为兜底）
 function middleKind(item: Item): string {
   switch (item.phase) {
     case 'ready':
@@ -406,6 +411,9 @@ function middleKind(item: Item): string {
       return 'latest';
     case 'error':
       return 'error';
+    case 'idle':
+    case 'checking':
+      return item.localVersion ? 'local' : '';
     default:
       return '';
   }
@@ -417,6 +425,8 @@ function middleText(item: Item): string {
       return item.version ?? '';
     case 'latest':
       return `已是最新版本 ${item.version ?? ''}`;
+    case 'local':
+      return item.localVersion ?? '';
     case 'error':
       return item.errorText ?? '';
     default:
@@ -599,7 +609,7 @@ function llamaBelow(): { kind: string; text: string } | null {
               class="update-row__middle"
               :class="
                 middleKind(item) === 'version' ? 'update-row__version'
-                : middleKind(item) === 'latest' ? 'update-row__latest'
+                : middleKind(item) === 'latest' || middleKind(item) === 'local' ? 'update-row__latest'
                 : 'update-row__error'
               "
             >{{ middleText(item) }}</span>

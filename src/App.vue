@@ -46,8 +46,10 @@ const updateState = ref<{ phase: UpdatePhase; version: string; pct: number; erro
 });
 // 状态行：恒单行，数据驱动便于扩展（UpdateModal items 契约）
 // llama.cpp 更新由 UpdateModal 内部管理，不再作为信号项传入
+// 2026-09-18：localVersion 随 items 下发（= 顶栏版本号，onMounted 经 get_version 取得）——
+// UpdateModal 在 idle/checking 态中段显示，打开弹窗即见当前版本（此前该区间默认空白）
 const updateItems = computed(() => [
-  { name: 'LMS 启动器', ...updateState.value },
+  { name: 'LMS 启动器', localVersion: version.value, ...updateState.value },
 ]);
 // 最近一次失败类型：error 态「重试」据此分流（check 失败→重发 check；download 失败→重发 download）
 const lastFailure = ref<'check' | 'download'>('check');
