@@ -18,7 +18,7 @@ const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
 import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
-import { downloadLlamaZip, extractLlamaZips, verifyLlamaInstall, deriveTagFromDownloadUrl, findLockedFiles, llamaLockProbeFiles } from './llama-update-download';
+import { downloadLlamaZip, extractLlamaZips, verifyLlamaInstall, deriveTagFromDownloadUrl, findLockedFiles, llamaLockProbeFiles, cudaMajorFromDllsUrl, cleanupStaleCudaDlls } from './llama-update-download';
 import type { LlamaUpdateConfig } from './config';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
@@ -43,7 +43,11 @@ let pendingUpdate: LatestReleaseInfo | null = null;
 // llama.cpp 更新两阶段（2026-09-17 修复 EBUSY）：download_llama_update 只下载 zip 到临时目录
 // （不触碰 llama_dir，运行中的 llama-server 不受影响），成功后暂存 pending 等待 install_llama_update；
 // 内存态，重启即失（下载完成的包重启后丢失，需重新下载）。
-let pendingLlamaUpdate: { zipPath: string; dlZipPath?: string; tag: string | null } | null = null;
+// keepCudaMajor：本次更新保留的 CUDA 主版本号（从 CUDA DLLs 下载链接解析；
+// null = 非 CUDA 变体如 CPU → 安装后三个 CUDA DLL 家族全部视为过期）。
+// 2026-09-18 更新清理旧 CUDA DLL：跨版本更新（12 ↔ 13）或切非 CUDA 变体后，
+// 旧版 cudart64_XX.dll / cublas64_XX.dll / cublasLt64_XX.dll 是死文件，安装后自动删除。
+let pendingLlamaUpdate: { zipPath: string; dlZipPath?: string; tag: string | null; keepCudaMajor: number | null } | null = null;
 // GPU 采样停止句柄（whenReady 内 startGpuStats 赋值；exit_app 显式调用——app.exit 不触发 will-quit）
 let stopGpuStats: () => void = () => {};
 
@@ -761,7 +765,7 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
 
   if (running) {
     // 服务运行中：暂存 zip，等用户点「停止并更新」→ install_llama_update
-    pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url) };
+    pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url), keepCudaMajor: cudaMajorFromDllsUrl(opts.cuda_dlls_url) };
     const reason = ps.isRunning() || ps.state === 'stopping'
       ? 'llama-server 正在运行'
       : `文件被占用（${locked.map((p) => p.split(/[\/\\]/).pop()).join(', ')}）`;
@@ -770,7 +774,7 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
   }
 
   // 未运行：直接安装（等价旧行为——用户无感知，下载完即装完）
-  pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url) };
+  pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url), keepCudaMajor: cudaMajorFromDllsUrl(opts.cuda_dlls_url) };
   const inst = await installPendingLlama();
   if (inst.success) return { success: true, installed: true };
   return { success: false, error: inst.error ?? 'unknown error' };
@@ -796,7 +800,8 @@ ipcMain.handle('get_pending_llama_download', (): {
 // 安装 pending 包的共用逻辑（2026-09-17 两阶段更新）：
 // 1. 停止 launcher 托管的 llama-server（3s 优雅 → 强杀进程树）
 // 2. 探测外部进程占用 → 友好错误（不再裸露 EBUSY 堆栈）；空闲则解压覆盖
-// 3. 运行 llama-server --version 验证（期望 tag 由下载 URL 推导）
+// 3. 清理旧 CUDA DLL（2026-09-18：跨版本/非 CUDA 变体更新后删除死文件，被锁跳过不阻塞）
+// 4. 运行 llama-server --version 验证（期望 tag 由下载 URL 推导）
 // busy=true 表示失败原因是文件仍被占用（而非其他错误）：UI 据此回到「停止并更新」
 // （pending 包保留，用户关闭外部进程后可再次点击）；其他错误走「重试」（完整重下）。
 async function installPendingLlama(): Promise<{ success: true } | { success: false; error: string; busy?: boolean }> {
@@ -837,7 +842,18 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
       : errText || 'unknown error' };
   }
 
-  // 3. 验证（2026-09-14 修复：期望 tag 由下载 URL 推导，不再硬编码 'latest'）
+  // 3. 清理旧 CUDA DLL（2026-09-18：跨 CUDA 版本更新或切非 CUDA 变体后，
+  // 旧版 cudart64_XX.dll / cublas64_XX.dll / cublasLt64_XX.dll 是死文件；
+  // 被锁文件跳过、删除失败不阻塞安装，只记日志）
+  const stale = cleanupStaleCudaDlls(dir, pendingLlamaUpdate.keepCudaMajor);
+  if (stale.deleted.length > 0) {
+    emitLog(`[lms_launcher] llama.cpp · 清理旧 CUDA DLL：${stale.deleted.join(', ')}`, 'sys');
+  }
+  if (stale.skipped.length > 0) {
+    emitLog(`[lms_launcher] llama.cpp · 以下 CUDA DLL 被占用未删除：${stale.skipped.join(', ')}（可稍后手动删除）`, 'sys');
+  }
+
+  // 4. 验证（2026-09-14 修复：期望 tag 由下载 URL 推导，不再硬编码 'latest'）
   emitLog('[lms_launcher] llama.cpp · 验证安装...', 'sys');
   const verifyResult = await verifyLlamaInstall(dir, pendingLlamaUpdate.tag ?? undefined);
   if (!verifyResult.success) {

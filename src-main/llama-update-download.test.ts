@@ -463,3 +463,99 @@ describe('extractLlamaZips（已下载 zip 解压到目标目录）', () => {
     expect(r.error).toContain('EBUSY');
   });
 });
+
+// 2026-09-18 更新清理旧 CUDA DLL：跨版本变体更新（CUDA 12 ↔ CUDA 13）或切换非 CUDA
+// 变体（CPU）后，目录里旧版 cudart64_XX.dll / cublas64_XX.dll / cublasLt64_XX.dll
+// 是死文件（进程按 DLL 文件名精确加载，新构建只认新主版本号），更新完成后自动清理。
+import { cudaMajorFromDllsUrl, staleCudaDllFiles, cleanupStaleCudaDlls } from './llama-update-download';
+
+describe('cudaMajorFromDllsUrl（从 CUDA DLLs 下载链接解析保留主版本号）', () => {
+  it('cudart-llama-bin-win-cuda-12.4-x64.zip → 12', () => {
+    expect(cudaMajorFromDllsUrl('https://github.com/ggml-org/llama.cpp/releases/download/b11035/cudart-llama-bin-win-cuda-12.4-x64.zip')).toBe(12);
+  });
+  it('cuda-13.4 → 13', () => {
+    expect(cudaMajorFromDllsUrl('https://github.com/ggml-org/llama.cpp/releases/download/b11035/cudart-llama-bin-win-cuda-13.4-x64.zip')).toBe(13);
+  });
+  it('无链接（非 CUDA 变体，如 CPU）→ null', () => {
+    expect(cudaMajorFromDllsUrl(undefined)).toBeNull();
+  });
+  it('链接不含 cuda 版本号 → null（不猜测）', () => {
+    expect(cudaMajorFromDllsUrl('https://github.com/ggml-org/llama.cpp/releases/download/b11035/llama-b11035-bin-win-cpu-x64.zip')).toBeNull();
+  });
+});
+
+describe('staleCudaDllFiles（判定哪些 CUDA runtime DLL 应删除）', () => {
+  const both = [
+    'llama-server.exe', 'ggml-cuda.dll', 'ggml-base.dll', 'model.gguf',
+    'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
+    'cudart64_13.dll', 'cublas64_13.dll', 'cublasLt64_13.dll',
+  ];
+  it('保留 13（更新到 CUDA 13）→ 只删三个 _12 文件', () => {
+    expect(staleCudaDllFiles(both, 13)).toEqual([
+      'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
+    ]);
+  });
+  it('保留 12（更新到 CUDA 12）→ 只删三个 _13 文件', () => {
+    expect(staleCudaDllFiles(both, 12)).toEqual([
+      'cudart64_13.dll', 'cublas64_13.dll', 'cublasLt64_13.dll',
+    ]);
+  });
+  it('保留 null（更新到 CPU 等非 CUDA 变体）→ 三个家族全部删除', () => {
+    expect(staleCudaDllFiles(both, null)).toEqual([
+      'cudart64_12.dll', 'cublas64_12.dll', 'cublasLt64_12.dll',
+      'cudart64_13.dll', 'cublas64_13.dll', 'cublasLt64_13.dll',
+    ]);
+  });
+  it('exe / ggml-*.dll / 模型文件一律不碰', () => {
+    const result = staleCudaDllFiles(both, null);
+    expect(result).not.toContain('llama-server.exe');
+    expect(result).not.toContain('ggml-cuda.dll');
+    expect(result).not.toContain('ggml-base.dll');
+    expect(result).not.toContain('model.gguf');
+  });
+  it('目录无 CUDA DLL → 空列表', () => {
+    expect(staleCudaDllFiles(['llama-server.exe', 'ggml-cuda.dll'], 13)).toEqual([]);
+  });
+});
+
+describe('cleanupStaleCudaDlls（删除 + 占用跳过，不阻塞安装）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCloseSync.mockReturnValue(undefined);
+  });
+
+  it('删除空闲的旧版本 DLL，被锁的跳过', () => {
+    mockReaddirSync.mockImplementation((d: string) => {
+      if (String(d) !== '/d/llama-cpp') throw new Error('ENOENT');
+      return ['llama-server.exe', 'cudart64_12.dll', 'cublas64_12.dll', 'cudart64_13.dll'];
+    });
+    mockExistsSync.mockReturnValue(true);
+    mockOpenSync.mockImplementation((p: string) => {
+      if (String(p).includes('cublas64_12')) {
+        const e = new Error('EBUSY');
+        e.code = 'EBUSY';
+        throw e;
+      }
+      return 3;
+    });
+    const r = cleanupStaleCudaDlls('/d/llama-cpp', 13);
+    expect(r.deleted.sort()).toEqual(['cudart64_12.dll']);
+    expect(r.skipped).toEqual(['cublas64_12.dll']);
+    expect(mockRmSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('无 stale 文件 → 不调 rmSync', () => {
+    mockReaddirSync.mockReturnValue(['llama-server.exe', 'cudart64_13.dll', 'cublas64_13.dll', 'cublasLt64_13.dll']);
+    mockExistsSync.mockReturnValue(true);
+    mockOpenSync.mockReturnValue(3);
+    const r = cleanupStaleCudaDlls('/d/llama-cpp', 13);
+    expect(r.deleted).toEqual([]);
+    expect(r.skipped).toEqual([]);
+    expect(mockRmSync).not.toHaveBeenCalled();
+  });
+
+  it('目录不可读 → 空结果不抛', () => {
+    mockReaddirSync.mockImplementation(() => { throw new Error('ENOENT'); });
+    expect(cleanupStaleCudaDlls('/d/gone', 13)).toEqual({ deleted: [], skipped: [] });
+  });
+});

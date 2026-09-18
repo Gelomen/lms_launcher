@@ -284,6 +284,77 @@ function cleanupLlamaZips(zips: { zipPath: string; dlZipPath?: string }): void {
 }
 
 /**
+ * 从 CUDA DLLs 下载链接解析保留的主版本号（如 cuda-12.4 → 12）。
+ *
+ * 官方 DLLs 包命名：cudart-llama-bin-win-cuda-<major.minor>-<arch>.zip（2026-09 实测
+ * b11035：cuda-12.4 / cuda-13.4）。链接缺失（非 CUDA 变体，如 CPU）或无法解析时
+ * 返回 null——调用方将 null 视为「本更新不含 CUDA，三个 DLL 家族全部视为过期」。
+ */
+export function cudaMajorFromDllsUrl(url?: string): number | null {
+  if (!url) return null;
+  const m = url.match(/cuda-(\d+)/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * 判定 llama_dir 中哪些 CUDA runtime DLL 已过期（应删除）。
+ *
+ * 背景：Windows 上进程按 DLL 文件名精确加载（cudart64_12.dll 与 cudart64_13.dll
+ * 互不冲突），跨 CUDA 版本更新（12 ↔ 13）或切换到非 CUDA 变体（CPU）后，
+ * 旧版 DLL 是永不加载的死文件，自动清理。
+ *
+ * 只处理三个精确命名家族：cudart64_*.dll / cublas64_*.dll / cublasLt64_*.dll
+ * （官方 CUDA DLLs 包的全部内容）。keepMajor 为 null（非 CUDA 变体）时三个家族
+ * 全删（用户 2026-09-18 定稿：CPU 变体安装后 CUDA DLL 一并删除，目录最干净）。
+ *
+ * @param names 目录内文件名列表
+ * @param keepMajor 本更新保留的 CUDA 主版本号；null = 全部删除
+ */
+export function staleCudaDllFiles(names: string[], keepMajor: number | null): string[] {
+  const stale: string[] = [];
+  for (const name of names) {
+    const m = name.match(/^(?:cudart64|cublas64|cublasLt64)_(\d+)\.dll$/i);
+    if (!m) continue;
+    if (keepMajor === null || parseInt(m[1], 10) !== keepMajor) stale.push(name);
+  }
+  return stale;
+}
+
+/**
+ * 删除目录中过期的 CUDA runtime DLL（更新解压覆盖后调用）。
+ *
+ * 删除前逐个做占用探测（复用 findLockedFiles 的 openSync 'a+' 机制）：被外部
+ * 进程锁住的文件跳过并计入 skipped——本函数绝不抛错、绝不阻塞安装主流程
+ * （调用点在解压成功之后，删除失败/跳过只记日志，不算更新失败）。
+ *
+ * @returns deleted 实际删除的文件名；skipped 因占用跳过的文件名
+ */
+export function cleanupStaleCudaDlls(
+  dir: string,
+  keepMajor: number | null
+): { deleted: string[]; skipped: string[] } {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return { deleted: [], skipped: [] };
+  }
+  const stale = staleCudaDllFiles(names, keepMajor);
+  const locked = new Set(findLockedFiles(dir, stale).map((p) => p.split(/[\\/]/).pop()));
+  const deleted: string[] = [];
+  const skipped: string[] = [];
+  for (const name of stale) {
+    if (locked.has(name)) {
+      skipped.push(name);
+      continue;
+    }
+    rmSync(join(dir, name), { force: true });
+    deleted.push(name);
+  }
+  return { deleted, skipped };
+}
+
+/**
  * 从下载 URL 推导 release tag。
  * URL 格式：https://github.com/ggml-org/llama.cpp/releases/download/<tag>/<file>.zip
  *
