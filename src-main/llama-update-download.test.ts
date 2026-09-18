@@ -34,7 +34,7 @@ vi.mock('node:child_process', () => ({
   spawnSync: mockSpawnSync,
 }));
 
-import { downloadAndInstallLlama, verifyLlamaInstall, deriveTagFromDownloadUrl } from './llama-update-download';
+import { downloadAndInstallLlama, verifyLlamaInstall, deriveTagFromDownloadUrl, installVerifyMessage } from './llama-update-download';
 
 function makeMockResponse() {
   // headers 必须是带 .get 的 Headers 形态（生产代码 res.headers.get('content-length')），
@@ -557,5 +557,26 @@ describe('cleanupStaleCudaDlls（删除 + 占用跳过，不阻塞安装）', ()
   it('目录不可读 → 空结果不抛', () => {
     mockReaddirSync.mockImplementation(() => { throw new Error('ENOENT'); });
     expect(cleanupStaleCudaDlls('/d/gone', 13)).toEqual({ deleted: [], skipped: [] });
+  });
+});
+
+// 2026-09-18：安装验证降级为辅助告知——verifyLlamaInstall 失败（exe 无法运行 /
+// 退出非 0 / 输出无法解析，如 arm64 exe 装在 x64 机器）不得否定已完成的文件覆盖；
+// 安装日志文案由本纯函数派生：成功 →「安装完成：bNNNNN」，失败 →
+//「安装完成（未能确认本地版本号：原因）」（安装仍算成功，渲染端回写 last_llama_type）。
+describe('installVerifyMessage（安装完成日志文案，验证失败非致命）', () => {
+  it('成功 + 有版本号 → 「安装完成：b11036」', () => {
+    expect(installVerifyMessage({ success: true, actualVersion: 'b11036' })).toBe('安装完成：b11036');
+  });
+  it('成功 + 无版本号 → 「安装完成：版本号未知」', () => {
+    expect(installVerifyMessage({ success: true })).toBe('安装完成：版本号未知');
+  });
+  it('失败（exe 无法运行，退出码非 0）→ 安装仍完成 + 原因透传', () => {
+    expect(installVerifyMessage({ error: 'llama-server --version exited with code 3221225786' }))
+      .toBe('安装完成（未能确认本地版本号：llama-server --version exited with code 3221225786）');
+  });
+  it('失败（版本输出无法解析）→ 安装仍完成 + 原因透传', () => {
+    expect(installVerifyMessage({ error: 'Failed to parse version output: ' }))
+      .toBe('安装完成（未能确认本地版本号：Failed to parse version output: ）');
   });
 });

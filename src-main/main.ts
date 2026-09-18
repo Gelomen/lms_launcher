@@ -18,7 +18,7 @@ const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
 import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
-import { downloadLlamaZip, extractLlamaZips, verifyLlamaInstall, deriveTagFromDownloadUrl, findLockedFiles, llamaLockProbeFiles, cudaMajorFromDllsUrl, cleanupStaleCudaDlls } from './llama-update-download';
+import { downloadLlamaZip, extractLlamaZips, verifyLlamaInstall, installVerifyMessage, deriveTagFromDownloadUrl, findLockedFiles, llamaLockProbeFiles, cudaMajorFromDllsUrl, cleanupStaleCudaDlls } from './llama-update-download';
 import type { LlamaUpdateConfig } from './config';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
@@ -853,15 +853,13 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
     emitLog(`[lms_launcher] llama.cpp · 以下 CUDA DLL 被占用未删除：${stale.skipped.join(', ')}（可稍后手动删除）`, 'sys');
   }
 
-  // 4. 验证（2026-09-14 修复：期望 tag 由下载 URL 推导，不再硬编码 'latest'）
-  emitLog('[lms_launcher] llama.cpp · 验证安装...', 'sys');
+  // 4. 版本确认（辅助，非致命；期望 tag 由下载 URL 推导）——2026-09-18 用户定稿：
+  // 解压成功即安装完成。--version 只是辅助告知当前版本号：其失败（exe 无法运行 /
+  // 退出非 0 / 输出无法解析——如 arm64 exe 装在 x64 机器）只记日志，不否定已完成的
+  // 文件覆盖；渲染端以本函数 success 为闸门回写 last_llama_type（验证失败也回写，
+  // 下次打开弹窗下拉默认选中当前变体）。
   const verifyResult = await verifyLlamaInstall(dir, pendingLlamaUpdate.tag ?? undefined);
-  if (!verifyResult.success) {
-    emitLog(`[lms_launcher] llama.cpp · 安装验证失败：${verifyResult.error}`, 'sys');
-    return { success: false, error: `verify failed: ${verifyResult.error}` };
-  }
-
-  emitLog(`[lms_launcher] llama.cpp · 安装完成：${verifyResult.actualVersion}`, 'sys');
+  emitLog(`[lms_launcher] llama.cpp · ${installVerifyMessage(verifyResult)}`, 'sys');
   pendingLlamaUpdate = null;
   return { success: true };
 }

@@ -462,3 +462,18 @@ export async function verifyLlamaInstall(
     };
   }
 }
+
+/**
+ * 安装完成日志文案（2026-09-18 用户定稿：解压成功即安装完成，--version 只是
+ * 辅助告知当前版本号，其失败一律非致命——跨架构变体（如 arm64 exe 装在 x64 机器）
+ * 下 --version 必然不可用，不得否定已完成的文件覆盖）。
+ * 成功 →「安装完成：bNNNNN」（无版本号 →「安装完成：版本号未知」）；
+ * 失败 →「安装完成（未能确认本地版本号：原因）」（安装仍算成功）。
+ */
+export function installVerifyMessage(
+  result: { success: true; actualVersion?: string } | { success?: false; error?: string }
+): string {
+  if (result.success && result.actualVersion) return '安装完成：' + result.actualVersion;
+  if (result.success) return '安装完成：版本号未知';
+  return '安装完成（未能确认本地版本号：' + (result.error || '未知原因') + '）';
+}
