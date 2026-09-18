@@ -60,7 +60,7 @@ function mountApp(initial: object = RUNNING): { w: import('@vue/test-utils').Vue
       case 'get_configs': return Promise.resolve(cfg());
       case 'start_server': return start.promise;
       case 'stop_server': return stop.promise;
-      case 'get_app_config': return Promise.resolve({ llama_dir: '/x', proxy_host: '127.0.0.1', proxy_port: 10808 });
+      case 'get_app_config': return Promise.resolve({ llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } });
       case 'save_proxy': return Promise.resolve('ok');
       default: return Promise.resolve(undefined);
     }

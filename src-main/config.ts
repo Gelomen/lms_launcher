@@ -1,16 +1,17 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 
+export interface ProxyConfig { host?: string; port?: number; }
+
 export interface LlamaUpdateConfig {
-  last_version_type?: string;
+  last_llama_type?: string;
 }
 
 export interface AppConfig {
   llama_dir: string;
   vram_total_gb?: number;
-  proxy_host?: string;
-  proxy_port?: number;
-  llama_update?: LlamaUpdateConfig;
+  proxy?: ProxyConfig;
+  update?: LlamaUpdateConfig;
 }
 export interface ParamsFile {
   params: Record<string, string>;
@@ -31,7 +32,7 @@ function normalizeEntry(entry: { desc?: string; name?: string; values: Record<st
   return entry.desc !== undefined ? { name: entry.desc, values: entry.values } : { values: entry.values };
 }
 
-const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '', llama_update: { last_version_type: 'Windows x64 (CUDA 12)' } }; // 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）
+const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '' }; // 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）；2026-09-18：默认 update 值移除——首次保存不再写入用户从未选择的版本类型
 
 function parseYaml(path: string, s: string, name: string): unknown {
   let parsed: unknown;
@@ -56,9 +57,8 @@ export function appConfigLoad(path: string): AppConfig {
     return {
       llama_dir: parsed?.llama_dir ?? '',
       vram_total_gb: parsed?.vram_total_gb,
-      proxy_host: parsed?.proxy_host,
-      proxy_port: parsed?.proxy_port,
-      llama_update: parsed?.llama_update,
+      proxy: parsed?.proxy,
+      update: parsed?.update,
     };
   } catch {
     return EMPTY_APP_CONFIG;
@@ -216,7 +216,7 @@ export function defaultParams(): ParamsFile {
 /**
  * 保存 llama.cpp 安装目录（2026-09-14 修复）。
  * load→改→save 增量保存：旧 save_llama_dir 用全新 {llama_dir} 对象 appConfigSave
- * 全量重写 yaml，把 proxy_host/proxy_port/vram_total_gb/llama_update 全部清空。
+ * 全量重写 yaml，把 proxy/vram_total_gb/update 全部清空。
  */
 export function saveLlamaDir(p: string, dir: string): AppConfig {
   const cfg = appConfigLoad(p);
@@ -231,16 +231,14 @@ export function saveProxy(p: string, host: string, port: string): AppConfig {
   const h = (host ?? '').trim();
   const ps = (port ?? '').trim();
   if (!h && !ps) {
-    cfg.proxy_host = undefined;
-    cfg.proxy_port = undefined;
+    cfg.proxy = undefined; // 2026-09-18：清除 = 整节消失
     appConfigSave(p, cfg);
     return cfg;
   }
   if (!h || !ps) throw new Error('端口不能为空（或留空禁用代理）');
   const n = Number(ps);
   if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error('端口须为 1–65535 的数字');
-  cfg.proxy_host = h;
-  cfg.proxy_port = n;
+  cfg.proxy = { host: h, port: n };
   appConfigSave(p, cfg);
   return cfg;
 }

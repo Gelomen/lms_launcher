@@ -196,15 +196,15 @@ ipcMain.handle('tray-tooltip-update', (_e, name: string | null): void => {
 ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
   const [p] = yamlPaths();
   const cfg = saveProxy(p, host, port);
-  const on = cfg.proxy_host && cfg.proxy_port
-    ? `已保存代理 http://${cfg.proxy_host}:${cfg.proxy_port}`
+  const on = cfg.proxy?.host && cfg.proxy?.port
+    ? `已保存代理 http://${cfg.proxy.host}:${cfg.proxy.port}`
     : '已清空代理';
   emitLog(`[lms_launcher] 设置 · ${on}`, 'sys');
   return 'ok';
 });
 ipcMain.handle('save_llama_dir', (_e, dir: string): void => {
   // 增量保存（2026-09-14 修复）：旧实现 appConfigSave(p, {llama_dir}) 全量重写 yaml，
-  // 会清空 proxy_host/proxy_port/vram_total_gb/llama_update 等无关字段
+  // 会清空 proxy/vram_total_gb/update 等无关字段
   saveLlamaDir(yamlPaths()[0], dir);
 });
 ipcMain.handle('validate_dir', (_e, dir: string): boolean => {
@@ -609,8 +609,8 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
   }
 
   // 构建代理 URL
-  const proxy = cfg.proxy_host && cfg.proxy_port
-    ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
+  const proxy = cfg.proxy?.host && cfg.proxy?.port
+    ? `http://${cfg.proxy.host}:${cfg.proxy.port}`
     : undefined;
 
   // 2026-09-17：恒查 pre-release（nightly）——llama.cpp 的 stable release 只有
@@ -683,8 +683,8 @@ ipcMain.handle('get_llama_release_options', async (_e): Promise<
 > => {
   const [cp] = yamlPaths();
   const cfg = appConfigLoad(cp);
-  const proxy = cfg.proxy_host && cfg.proxy_port
-    ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
+  const proxy = cfg.proxy?.host && cfg.proxy?.port
+    ? `http://${cfg.proxy.host}:${cfg.proxy.port}`
     : undefined;
   const remoteInfo = await fetchLlamaReleaseInfo(proxy);
   if (!remoteInfo) {
@@ -717,8 +717,8 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     return { success: false, error: 'unconfigured' };
   }
 
-  const proxy = cfg.proxy_host && cfg.proxy_port
-    ? `http://${cfg.proxy_host}:${cfg.proxy_port}`
+  const proxy = cfg.proxy?.host && cfg.proxy?.port
+    ? `http://${cfg.proxy.host}:${cfg.proxy.port}`
     : undefined;
 
   emitLog(`[lms_launcher] llama.cpp · 开始下载更新：${opts.download_url}`, 'sys');
@@ -857,15 +857,15 @@ ipcMain.handle('install_llama_update', async (): Promise<
 > => installPendingLlama());
 
 // set_llama_update_config：设置 llama.cpp 更新配置
-ipcMain.handle('set_llama_update_config', async (_e, opts: { last_version_type?: string }): Promise<
+ipcMain.handle('set_llama_update_config', async (_e, opts: { last_llama_type?: string }): Promise<
   { success: true } | { success: false; error: string }
 > => {
   try {
     const [cp] = yamlPaths();
     const cfg = appConfigLoad(cp);
 
-    if (!cfg.llama_update) cfg.llama_update = {};
-    if (opts.last_version_type !== undefined) cfg.llama_update.last_version_type = opts.last_version_type;
+    if (!cfg.update) cfg.update = {};
+    if (opts.last_llama_type !== undefined) cfg.update.last_llama_type = opts.last_llama_type;
     // 2026-09-17：include_pre_release 已移除（恒查 nightly）
 
     appConfigSave(cp, cfg);
@@ -882,7 +882,7 @@ ipcMain.handle('set_llama_update_config', async (_e, opts: { last_version_type?:
 ipcMain.handle('get_llama_update_config', (): { success: true; config: LlamaUpdateConfig } => {
   const [cp] = yamlPaths();
   const cfg = appConfigLoad(cp);
-  return { success: true, config: cfg.llama_update ?? {} };
+  return { success: true, config: cfg.update ?? {} };
 });
 
 // ---------- app lifecycle ----------

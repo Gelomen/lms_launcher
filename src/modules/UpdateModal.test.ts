@@ -655,7 +655,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   // 2026-09-17 定稿：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅
   // nightly-tag.txt，2026-09-17 实测 v0.4.1），nightly（b 号）是唯一可下载来源，恒查 pre-release，
   // 无需用户开关。回归契约：DOM 无勾选框；check_llama_update 不带 include_pre_release 参数。
-  // （2026-11 契约更新：get_llama_update_config 取 last_version_type 作为下拉默认选中，
+  // （2026-11 契约更新：get_llama_update_config 取 last_llama_type 作为下拉默认选中，
   // 读取时机 = 打开弹窗时（下拉出现前），见下方「默认选中」用例组。）
   it('恒查 pre-release：无勾选框 UI，检查不带 include_pre_release 参数', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
@@ -918,7 +918,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
 
   // ---- 2026-09-18：up-to-date 态也显示 Windows 版本下拉；按钮文案随「选中项 vs lms_launcher.yaml 配置」切换 ----
   // 背景：用户要求「检查到已是最新版本时，下方也要显示各 Windows 版本的下拉菜单，允许切换版本」；
-  // 后续优化：所选版本与 yaml 里 llama_update.last_version_type 一致时按钮应为「检查更新」，
+  // 后续优化：所选版本与 yaml 里 update.last_llama_type 一致时按钮应为「检查更新」，
   // 不一致（用户在弹窗里切换了下拉）时为「切换版本」。
   // 契约：up-to-date + 有 versionOptions → 下拉渲染；
   //   选中项与配置一致（无配置 = 第一项视为一致 / 配置命中选中项）→ 按钮「检查更新」（点击重查）；
@@ -1028,7 +1028,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   });
 
   // ---- 2026-09-18：up-to-date 按钮随「选中项 vs yaml 配置」切换（检查更新 / 切换版本）----
-  // 契约：选中项 label 与 llama_update.last_version_type 一致 → 「检查更新」（点击重发
+  // 契约：选中项 label 与 update.last_llama_type 一致 → 「检查更新」（点击重发
   // check_llama_update，不发起下载）；不一致 → 「切换版本」（点击下载所选变体）。
   it('up-to-date + 配置命中选中项：按钮「检查更新」；点击重发 check，不发起下载', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
@@ -1042,7 +1042,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
           { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip' },
         ],
       };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 13)' } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -1086,7 +1086,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
           { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/cuda13-dlls.zip' },
         ],
       };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 13)' } };
       if (cmd === 'download_llama_update') return { success: true, installed: true };
       if (cmd === 'set_llama_update_config') return { success: true, config: {} };
       return {};
@@ -1125,7 +1125,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     // 下载成功 → 回写配置 CPU
     const setCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'set_llama_update_config');
     expect(setCalls.length).toBe(1);
-    expect(setCalls[0][1]).toEqual({ last_version_type: 'Windows x64 (CPU)' });
+    expect(setCalls[0][1]).toEqual({ last_llama_type: 'Windows x64 (CPU)' });
     // 重查落定：选中项与（回写后的）配置一致 → 按钮落回「检查更新」
     expect(document.querySelector('.llama-section .select-trigger')!.textContent).toContain('Windows x64 (CPU)');
     expect(document.querySelector('.llama-section .btn-primary')?.textContent?.trim()).toBe('检查更新');
@@ -1208,13 +1208,13 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
   });
 
   // ---- 2026-09-18：版本下拉默认选中「上一次使用的版本类型」----
-  // 背景：lms_launcher.yaml 的 llama_update.last_version_type 在每次下载成功后写入
+  // 背景：lms_launcher.yaml 的 update.last_llama_type 在每次下载成功后写入
   // （如 'Windows x64 (CUDA 13)'），但弹窗打开时下拉恒默认第一项，用户每次都要手动
   // 重选变体。
-  // 契约：打开弹窗取 get_llama_update_config 的 last_version_type，检查返回选项表后
+  // 契约：打开弹窗取 get_llama_update_config 的 last_llama_type，检查返回选项表后
   // 按 label 精确匹配恢复选中项；无配置/取配置失败/选项表不含该 label（新版本选项
   // 变化）→ 回退第一项，且不影响检查主流程。
-  it('默认选中：配置 last_version_type 命中选项 → 下拉默认选中该项（非第一项）', async () => {
+  it('默认选中：配置 last_llama_type 命中选项 → 下拉默认选中该项（非第一项）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'get_llama_local_version') return { success: true, localVersion: { type: 'prerelease', build: 11000 } };
       if (cmd === 'check_llama_update') return {
@@ -1227,7 +1227,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
           { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip' },
         ],
       };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 13)' } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -1253,13 +1253,13 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
         success: true,
         status: 'update-available',
         remoteVersion: 'b11001',
-        // CUDA 13 已被上游移除 → 配置里的 last_version_type 找不到对应选项
+        // CUDA 13 已被上游移除 → 配置里的 last_llama_type 找不到对应选项
         versionOptions: [
           { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
           { label: 'Windows x64 (Vulkan)', downloadUrl: 'https://example.com/vk.zip' },
         ],
       };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 13)' } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -1297,7 +1297,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     await new Promise((r) => setTimeout(r, 0));
     await nextTick();
-    // 2026-11：打开时读一次配置（下拉出现前恢复默认选中）——首次使用无 last_version_type
+    // 2026-11：打开时读一次配置（下拉出现前恢复默认选中）——首次使用无 last_llama_type
     expect(invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config').length).toBe(1);
     // 手动点「检查更新」→ 完整检查（不再重读配置）
     (document.querySelector('.llama-section .btn-primary') as HTMLButtonElement).click();
@@ -1307,7 +1307,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     // 点击路径不重读配置（配置读取唯一时机 = 打开弹窗时）
     const cfgCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'get_llama_update_config');
     expect(cfgCalls.length).toBe(1);
-    // 无 last_version_type → 第一项
+    // 无 last_llama_type → 第一项
     const trigger = document.querySelector('.llama-section .select-trigger') as HTMLButtonElement | null;
     expect(trigger).not.toBeNull();
     expect(trigger!.textContent).toContain('Windows x64 (CPU)');
@@ -1366,7 +1366,7 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     // 下载成功路径保存了配置
     const setCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'set_llama_update_config');
     expect(setCalls.length).toBe(1);
-    expect(setCalls[0][1]).toEqual({ last_version_type: 'Windows x64 (CUDA 13)' });
+    expect(setCalls[0][1]).toEqual({ last_llama_type: 'Windows x64 (CUDA 13)' });
     // 重查完成后下拉仍为本次所选 CUDA 13
     expect(trigger().textContent).toContain('Windows x64 (CUDA 13)');
     w.unmount();
@@ -1588,10 +1588,10 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
   // ---- 回归修复（2026-11 细化后）：默认选中「上一次用的版本」的读取时机随下拉提前到打开时 ----
   // 背景：2026 契约把配置读取挪进 manualLlamaCheck（点击「检查更新」后），而 2026-11 细化让
   // 下拉在打开时即出现（此时配置未读 → 恒选第一项）→ 丢失「默认选中上一次用的版本」功能。
-  // 契约：打开时（本地查询成功）先静默读一次 yaml 的 last_version_type 恢复默认选中，再拉选项表；
+  // 契约：打开时（本地查询成功）先静默读一次 yaml 的 last_llama_type 恢复默认选中，再拉选项表；
   // 取配置失败/无该字段静默回退第一项。点击「检查更新」路径不再读配置（避免把用户手动切过的
   // 变体重置回磁盘旧值——2026-09-18 T27 回归根因）。
-  it('默认选中：配置 last_version_type 命中 → 打开即选中该项（无需等「检查更新」点击）', async () => {
+  it('默认选中：配置 last_llama_type 命中 → 打开即选中该项（无需等「检查更新」点击）', async () => {
     invokeMock = vi.fn(async (cmd: string) => {
       if (cmd === 'get_llama_local_version') return { success: true, localVersion: { type: 'prerelease', build: 11020 } };
       if (cmd === 'get_llama_release_options') return { success: true, versionOptions: [
@@ -1599,7 +1599,7 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
         { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip' },
         { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/dlls.zip' },
       ] };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 13)' } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -1623,7 +1623,7 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
         { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
         { label: 'Windows x64 (Vulkan)', downloadUrl: 'https://example.com/vk.zip' },
       ] };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 13)' } };
       return {};
     });
     window.lms.invoke = invokeMock as any;
@@ -1652,7 +1652,7 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
         { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
         { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/dlls.zip' },
       ] };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CPU)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CPU)' } };
       if (cmd === 'download_llama_update') return { success: true, installed: false };
       return {};
     });
@@ -1696,7 +1696,7 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
         { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
         { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/dlls.zip' },
       ] };
-      if (cmd === 'get_llama_update_config') return { success: true, config: { last_version_type: 'Windows x64 (CUDA 13)' } };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 13)' } };
       if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b11021', versionOptions: [
         { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
         { label: 'Windows x64 (CUDA 13)', downloadUrl: 'https://example.com/cuda13.zip', cudaDllsUrl: 'https://example.com/dlls.zip' },

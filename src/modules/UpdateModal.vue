@@ -21,7 +21,7 @@ import {
   setLlamaUpdateConfig,
   // 2026-09-17 两阶段更新：下载完成后判定服务运行 → 「停止并更新」
   installLlamaUpdate,
-  // 2026-09-18：手动「检查更新」时读取 last_version_type，版本下拉默认选中上一次使用的变体
+  // 2026-09-18：手动「检查更新」时读取 last_llama_type，版本下拉默认选中上一次使用的变体
   getLlamaUpdateConfig,
 } from '../llama-update-client';
 import { onLlamaUpdateProgress } from '../ipc';
@@ -64,7 +64,7 @@ const llamaUpdateStatus = ref<'up-to-date' | 'update-available' | 'unknown' | 'e
 const llamaVersionOptions = ref<Array<{ label: string; downloadUrl: string; cudaDllsUrl?: string }>>([]);
 const llamaSelectedOptionIndex = ref(0);
 // 2026-09-18：版本下拉默认选中「上一次使用的版本类型」——打开弹窗时从
-// lms_launcher.yaml 的 llama_update.last_version_type 读取（每次下载成功后写入），
+// lms_launcher.yaml 的 update.last_llama_type 读取（每次下载成功后写入），
 // 选项表就绪后按 label 精确匹配恢复；无配置/取配置失败/选项表已无该 label → 第一项。
 const llamaLastVersionType = ref('');
 const llamaDownloading = ref(false);
@@ -96,7 +96,7 @@ async function checkLlamaLocalVersionOnOpen() {
       llamaUpdateStatus.value = 'unknown';
       // 2026-11 回归修复：配置读取时机随下拉提前到打开时（2026 契约曾挪进手动检查路径，
       // 而 2026-11 细化让下拉打开即出现 → 配置未读时恒选第一项，丢失「默认选中上一次
-      // 用的版本」）。先静默读 yaml 的 last_version_type 恢复内存值，再拉选项表（顺序
+      // 用的版本」）。先静默读 yaml 的 last_llama_type 恢复内存值，再拉选项表（顺序
       // await 保证 applyLlamaDefaultSelection 读到的是本次恢复值）。
       await restoreLlamaLastVersionType();
       // 2026-11 细化：目录已配置（本地查询成功）→ 追加联网拉取版本选项（下拉立即可见）。
@@ -119,13 +119,13 @@ async function checkLlamaLocalVersionOnOpen() {
 
 // 2026-11 回归修复：打开时恢复「上一次使用的版本类型」（2026-09-18 契约的读取时机
 // 最终落点——曾随下拉出现时机两次迁移：2026-09-18 检查落定后 → 2026 契约手动检查路径
-// 前 → 2026-11 打开时选项拉取前）。静默：取配置失败/无 last_version_type 字段 → 保持
+// 前 → 2026-11 打开时选项拉取前）。静默：取配置失败/无 last_llama_type 字段 → 保持
 // 现有内存值（首次打开为空 → 默认第一项），不影响选项拉取与检查主流程。
 async function restoreLlamaLastVersionType(): Promise<void> {
   try {
     const r = await getLlamaUpdateConfig();
-    if (r.success && r.config?.last_version_type) {
-      llamaLastVersionType.value = r.config.last_version_type;
+    if (r.success && r.config?.last_llama_type) {
+      llamaLastVersionType.value = r.config.last_llama_type;
     }
   } catch {
     // 取配置失败 → 回退第一项（不阻塞选项拉取）
@@ -203,7 +203,7 @@ async function runLlamaUpdateCheck() {
         downloadUrl: opt.downloadUrl,
         cudaDllsUrl: opt.cudaDllsUrl,
       }));
-      // 2026-09-18：选项表同步后恢复默认选中（配置 last_version_type 命中 → 该项）
+      // 2026-09-18：选项表同步后恢复默认选中（配置 last_llama_type 命中 → 该项）
       applyLlamaDefaultSelection();
       // 按钮态随检查结论切换：可用 → 下载更新（点击即下载）；已是最新 → 检查更新；
       // 未知/失败 → 重试（kind='retry'，重发检查）
@@ -228,7 +228,7 @@ async function runLlamaUpdateCheck() {
   }
 }
 
-// 2026-09-18：选项表就绪后恢复默认选中（配置 last_version_type 命中 → 该项；
+// 2026-09-18：选项表就绪后恢复默认选中（配置 last_llama_type 命中 → 该项；
 // 无配置/未命中 → 第一项）。选项表为空（未检查到选项）时 no-op——下拉 v-if 本就不渲染。
 function applyLlamaDefaultSelection(): void {
   const opts = llamaVersionOptions.value;
@@ -263,7 +263,7 @@ async function downloadLlamaUpdateInternal() {
       // 更新成功，保存配置；同步内存值——随后重查的 applyLlamaDefaultSelection
       // 按本次所选 label 恢复选中，不被打开弹窗时读到的旧配置重置（2026-09-18）
       llamaLastVersionType.value = option.label;
-      await setLlamaUpdateConfig({ last_version_type: option.label });
+      await setLlamaUpdateConfig({ last_llama_type: option.label });
       emit('llama-complete', true);
       // 重新检查更新状态
       await checkLlamaUpdateInternal();
@@ -293,12 +293,12 @@ async function installLlamaUpdateInternal() {
   try {
     const result = await installLlamaUpdate();
     if (result.success) {
-      // 保存配置（与自动安装成功路径一致：last_version_type 记录本次所选版本类型）；
+      // 保存配置（与自动安装成功路径一致：last_llama_type 记录本次所选版本类型）；
       // 同步内存值，重查后下拉保持本次所选（2026-09-18）
       const option = llamaVersionOptions.value[llamaSelectedOptionIndex.value];
       if (option) {
         llamaLastVersionType.value = option.label;
-        await setLlamaUpdateConfig({ last_version_type: option.label });
+        await setLlamaUpdateConfig({ last_llama_type: option.label });
       }
       emit('llama-complete', true);
       await checkLlamaUpdateInternal(); // 重查 → 通常 up-to-date
@@ -471,7 +471,7 @@ const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: b
   'stop-update': { label: () => '停止并更新',        disabled: false },
 };
 // 2026-09-18：up-to-date 态也显示 Windows 版本下拉（允许切换变体，如 CPU/CUDA/Vulkan）→
-// 按钮文案随「所选版本 vs lms_launcher.yaml 配置（llama_update.last_version_type）」切换：
+// 按钮文案随「所选版本 vs lms_launcher.yaml 配置（update.last_llama_type）」切换：
 //   一致（无配置 = 第一项视为一致 / 配置命中选中项）→ 原按钮语义（检查更新/下载更新…）；
 //   不一致（用户在弹窗里切换了下拉）→「切换版本」（点击即下载所选变体，覆盖安装）。
 // 无选项（主进程未返回 versionOptions 的异常情形）保持原按钮语义。

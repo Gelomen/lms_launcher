@@ -42,7 +42,7 @@ export interface LlamaLocalVersionResult {
 }
 
 export interface LlamaUpdateConfig {
-  last_version_type?: string;
+  last_llama_type?: string;
 }
 // 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）
 

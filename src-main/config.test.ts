@@ -282,26 +282,45 @@ params_file:
   });
 });
 
-describe('proxy 字段兼容', () => {
-  it('老 yaml 无 proxy 字段 → 两字段 undefined', () => {
+describe('proxy 节（2026-09-18 分组格式）', () => {
+  it('无 proxy 节 → undefined', () => {
     const p = tmpPath('app_proxy_legacy.yaml');
     rm(p);
     writeText(p, 'llama_dir: /x');
     const cfg = appConfigLoad(p);
-    expect(cfg.proxy_host).toBeUndefined();
-    expect(cfg.proxy_port).toBeUndefined();
+    expect(cfg.proxy).toBeUndefined();
     expect(cfg.llama_dir).toBe('/x');
     rm(p);
   });
 
-  it('save 后 proxy 字段持久化', () => {
+  it('save 后 proxy 节持久化', () => {
     const p = tmpPath('app_proxy.yaml');
     rm(p);
-    const cfg = { llama_dir: '/x', proxy_host: '127.0.0.1', proxy_port: 10808 };
+    const cfg = { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } };
     appConfigSave(p, cfg);
     const loaded = appConfigLoad(p);
-    expect(loaded.proxy_host).toBe('127.0.0.1');
-    expect(loaded.proxy_port).toBe(10808);
+    expect(loaded.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    rm(p);
+  });
+
+  it('yaml 字面格式：proxy 嵌套节（host/port 缩进在节内）', () => {
+    const p = tmpPath('app_proxy_literal.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } });
+    const s = require('node:fs').readFileSync(p, 'utf8');
+    expect(s).toContain('proxy:\n  host: 127.0.0.1\n  port: 10808');
+    expect(s).not.toContain('proxy_host');
+    rm(p);
+  });
+
+  it('yaml 字面格式：update 嵌套节（last_llama_type 在节内）', () => {
+    const p = tmpPath('app_update_literal.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'Windows x64 (CUDA 13)' } });
+    const s = require('node:fs').readFileSync(p, 'utf8');
+    expect(s).toContain('update:\n  last_llama_type:');
+    expect(s).not.toContain('llama_update');
+    expect(s).not.toContain('last_version_type');
     rm(p);
   });
 });
@@ -311,17 +330,15 @@ describe('saveProxy', () => {
     const p = tmpPath('saveproxy_ok.yaml');
     rm(p);
     const cfg = saveProxy(p, '127.0.0.1 ', ' 10808 ');
-    expect(cfg.proxy_host).toBe('127.0.0.1');
-    expect(cfg.proxy_port).toBe(10808);
+    expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
     rm(p);
   });
-  it('两参均空 → 清除代理字段', () => {
+  it('两参均空 → 清除代理（整节消失）', () => {
     const p = tmpPath('saveproxy_clear.yaml');
     rm(p);
-    appConfigSave(p, { llama_dir: '/x', proxy_host: 'h', proxy_port: 1 });
+    appConfigSave(p, { llama_dir: '/x', proxy: { host: 'h', port: 1 } });
     const cfg = saveProxy(p, '  ', '');
-    expect(cfg.proxy_host).toBeUndefined();
-    expect(cfg.proxy_port).toBeUndefined();
+    expect(cfg.proxy).toBeUndefined();
     rm(p);
   });
   it('host 非空 port 空 → throw 端口不能为空', () => {
@@ -349,26 +366,24 @@ describe('saveLlamaDir', () => {
     rm(p);
   });
 
-  it('增量保存：不破坏 proxy / vram_total_gb / llama_update 字段', () => {
+  it('增量保存：不破坏 proxy / vram_total_gb / update 节', () => {
     // 2026-09-14 bug 回归：旧 save_llama_dir 用全新 {llama_dir} 对象 appConfigSave
-    // 全量重写 yaml → proxy_host/proxy_port/vram_total_gb/llama_update 全被清空。
+    // 全量重写 yaml → proxy/vram_total_gb/update 全被清空。
     // 修复后必须 load→改→save，其余字段原样保留。
     const p = tmpPath('savedir_preserve.yaml');
     rm(p);
     appConfigSave(p, {
       llama_dir: 'C:\\old',
       vram_total_gb: 24,
-      proxy_host: '127.0.0.1',
-      proxy_port: 10808,
-      llama_update: { last_version_type: 'Windows x64 (CUDA 12)' },
+      proxy: { host: '127.0.0.1', port: 10808 },
+      update: { last_llama_type: 'Windows x64 (CUDA 12)' },
     });
     saveLlamaDir(p, 'C:\\new');
     const cfg = appConfigLoad(p);
     expect(cfg.llama_dir).toBe('C:\\new');
     expect(cfg.vram_total_gb).toBe(24);
-    expect(cfg.proxy_host).toBe('127.0.0.1');
-    expect(cfg.proxy_port).toBe(10808);
-    expect(cfg.llama_update).toEqual({ last_version_type: 'Windows x64 (CUDA 12)' });
+    expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    expect(cfg.update).toEqual({ last_llama_type: 'Windows x64 (CUDA 12)' });
     rm(p);
   });
 

@@ -21,8 +21,8 @@ const saving = ref(false);
 onMounted(async () => {
   try {
     const cfg: any = await invoke('get_app_config');
-    proxyHost.value = cfg?.proxy_host ?? '';
-    proxyPort.value = cfg?.proxy_port != null ? String(cfg.proxy_port) : '';
+    proxyHost.value = cfg?.proxy?.host ?? '';
+    proxyPort.value = cfg?.proxy?.port != null ? String(cfg.proxy.port) : '';
   } catch { /* 回填失败静默 */ }
 });
 
