@@ -1736,6 +1736,143 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
     w.unmount();
   });
 
+  // ---- 2026-09-18：本地版本无法检测（unknown）时允许切换变体 ----
+  // 背景：用户切到 arm64 CPU 版后 exe 在 x64 机器上无法运行，--version 无输出 → 本地
+  // 版本 unknown。此时想切回 x64 CUDA 版：下拉可见，但点过「检查更新」后 status=unknown
+  // 被 runLlamaUpdateCheck 落 phase='error'（按钮「重试」），而「切换版本」gate 不认
+  // error → 死锁。修法：status=unknown（检查成功但本地未检测到）落 phase='idle'，与
+  // 「打开未检查」的可用行为对齐——所选≠配置 → 「切换版本」（点击直接下载覆盖）；
+  // 所选=配置 → 「检查更新」（点击走完整检查）。纯检查失败（success:false）仍落
+  // error「重试」，不受影响。
+  it('unknown 态（检查成功但本地未检测到）：按钮非「重试」；切到配置不一致变体 → 「切换版本」，点击直接下载所选变体', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      // 本地版本检测失败（模拟 arm64 exe 在 x64 机器上无法运行，--version 无输出）
+      if (cmd === 'get_llama_local_version') return { success: true };
+      if (cmd === 'get_llama_release_options') return { success: true, versionOptions: [
+        { label: 'Windows ARM64 (CPU)', downloadUrl: 'https://example.com/arm64.zip' },
+        { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip', cudaDllsUrl: 'https://example.com/dlls12.zip' },
+      ] };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows ARM64 (CPU)' } };
+      // 完整检查：本地未检测到 + 远程有选项 → status unknown
+      if (cmd === 'check_llama_update') return { success: true, status: 'unknown', remoteVersion: 'b11036', versionOptions: [
+        { label: 'Windows ARM64 (CPU)', downloadUrl: 'https://example.com/arm64.zip' },
+        { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip', cudaDllsUrl: 'https://example.com/dlls12.zip' },
+      ] };
+      if (cmd === 'download_llama_update') return { success: true, installed: false };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const trigger = () => document.querySelector('.llama-section .select-trigger') as HTMLButtonElement;
+    const btn = () => document.querySelector('.llama-section .btn-primary') as HTMLButtonElement;
+    // 打开：配置命中 ARM64（无法运行的版本）→ 默认选中 ARM64，按钮「检查更新」
+    expect(trigger().textContent).toContain('Windows ARM64 (CPU)');
+    expect(btn().textContent?.trim()).toBe('检查更新');
+    // 点击「检查更新」→ 落 unknown（本地未检测到）→ 按钮**不应**变「重试」
+    btn().click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(countCheckCalls()).toBe(1);
+    expect(btn().textContent?.trim()).toBe('检查更新');
+    expect(btn().disabled).toBe(false);
+    // 中段仍提示本地版本未检测到（status=unknown 文案不受 phase 修正影响）
+    expect(document.querySelector('.llama-section .llama-middle')?.textContent?.trim()).toBe('本地版本未检测到');
+    // 切到 x64 CUDA 12（与配置不一致）→ 按钮「切换版本」
+    trigger().click();
+    await nextTick();
+    const lis = document.querySelectorAll('.llama-section .dropdown-panel li');
+    (lis[1] as HTMLElement).click();
+    await nextTick();
+    expect(trigger().textContent).toContain('Windows x64 (CUDA 12)');
+    expect(btn().textContent?.trim()).toBe('切换版本');
+    expect(btn().disabled).toBe(false);
+    // 点击「切换版本」→ 直接下载所选变体（不重发完整检查）
+    btn().click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const dlCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'download_llama_update');
+    expect(dlCalls.length).toBe(1);
+    expect(dlCalls[0][1]).toEqual({ download_url: 'https://example.com/cuda12.zip', cuda_dlls_url: 'https://example.com/dlls12.zip' });
+    expect(countCheckCalls()).toBe(1); // 未因点击再增
+    // 下载完成（服务运行 → installed=false）→ 两阶段「停止并更新」
+    expect(btn().textContent?.trim()).toBe('停止并更新');
+    w.unmount();
+  });
+
+  it('unknown 态（检查成功但本地未检测到）：所选=配置 → 按钮保持「检查更新」，点击重发检查不发起下载', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'get_llama_local_version') return { success: true };
+      if (cmd === 'get_llama_release_options') return { success: true, versionOptions: [
+        { label: 'Windows ARM64 (CPU)', downloadUrl: 'https://example.com/arm64.zip' },
+        { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip', cudaDllsUrl: 'https://example.com/dlls12.zip' },
+      ] };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows ARM64 (CPU)' } };
+      if (cmd === 'check_llama_update') return { success: true, status: 'unknown', remoteVersion: 'b11036', versionOptions: [
+        { label: 'Windows ARM64 (CPU)', downloadUrl: 'https://example.com/arm64.zip' },
+        { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip', cudaDllsUrl: 'https://example.com/dlls12.zip' },
+      ] };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const btn = () => document.querySelector('.llama-section .btn-primary') as HTMLButtonElement;
+    // 点击「检查更新」→ 落 unknown，按钮保持「检查更新」（非「重试」）
+    btn().click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(countCheckCalls()).toBe(1);
+    expect(btn().textContent?.trim()).toBe('检查更新');
+    // 再点（所选=配置，默认 ARM64 未动）→ 重发完整检查，不发起下载
+    btn().click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(countCheckCalls()).toBe(2);
+    expect(invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'download_llama_update').length).toBe(0);
+    expect(btn().textContent?.trim()).toBe('检查更新');
+    w.unmount();
+  });
+
+  it('unknown 态放行切换不影响纯检查失败：success:false → 仍「重试」+ 红字，gate 不生效', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'get_llama_local_version') return { success: true };
+      if (cmd === 'get_llama_release_options') return { success: true, versionOptions: [
+        { label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/cpu.zip' },
+        { label: 'Windows x64 (CUDA 12)', downloadUrl: 'https://example.com/cuda12.zip', cudaDllsUrl: 'https://example.com/dlls12.zip' },
+      ] };
+      if (cmd === 'get_llama_update_config') return { success: true, config: { last_llama_type: 'Windows x64 (CUDA 12)' } };
+      // 纯检查失败（网络）
+      if (cmd === 'check_llama_update') return { success: false, error: 'failed to fetch remote release info' };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const btn = () => document.querySelector('.llama-section .btn-primary') as HTMLButtonElement;
+    const trigger = () => document.querySelector('.llama-section .select-trigger') as HTMLButtonElement;
+    // 点击「检查更新」→ 纯失败 → error 态「重试」+ 红字（现状语义保留）
+    btn().click();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    expect(btn().textContent?.trim()).toBe('重试');
+    expect(document.querySelector('.llama-below--error')?.textContent?.trim()).toBe('failed to fetch remote release info');
+    // error 态下拉不渲染（v-if 不认 error）→「切换版本」gate 无从生效，不会误触下载
+    expect(trigger()).toBeNull();
+    w.unmount();
+  });
+
 });
 
 

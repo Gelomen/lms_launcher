@@ -206,9 +206,13 @@ async function runLlamaUpdateCheck() {
       // 2026-09-18：选项表同步后恢复默认选中（配置 last_llama_type 命中 → 该项）
       applyLlamaDefaultSelection();
       // 按钮态随检查结论切换：可用 → 下载更新（点击即下载）；已是最新 → 检查更新；
-      // 未知/失败 → 重试（kind='retry'，重发检查）
+      // 未知（检查成功但本地未检测到，如装在 x64 机器上的 arm64 变体无法运行
+      // --version）→ idle（2026-09-18：与「打开未检查」的可用行为对齐——下拉可见、
+      // 「切换版本」gate 生效，用户可切回可运行变体直接下载覆盖；所选=配置时按钮
+      // 「检查更新」点击重走完整检查）；真实失败 → error「重试」（success:false 分支）。
       llamaPhase.value = result.status === 'update-available' ? 'available'
         : result.status === 'up-to-date' ? 'up-to-date'
+        : result.status === 'unknown' ? 'idle'
         : 'error';
     } else {
       // 区分 unconfigured 和一般错误
