@@ -121,6 +121,7 @@ const PARAM_TIPS: Record<string, string> = {
   reasoning_format: '--reasoning-format\n推理输出的格式（none/hide/deepseek）',
   reasoning_effort: '--reasoning-effort\n推理强度档位（none~max）',
   reasoning_preserve: '--reasoning-preserve\n保留历史推理块（true/false）',
+  no_reasoning_preserve: '--no-reasoning-preserve\n丢弃历史推理块（true/false）',
   port: '--port\n服务监听端口',
   metrics: '--metrics\n开启 Prometheus 指标（true/false）',
   fit: '-fit, --fit\n自动调整未设置参数以适配显存（on/off）',

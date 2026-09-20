@@ -190,6 +190,7 @@ export function defaultParams(): ParamsFile {
     ['jinja', '--jinja'], ['chat_template_file', '--chat-template-file'],
     ['reasoning', '-rea'], ['reasoning_format', '--reasoning-format'],
     ['reasoning_effort', '--reasoning-effort'], ['reasoning_preserve', '--reasoning-preserve'],
+    ['no_reasoning_preserve', '--no-reasoning-preserve'],
     ['port', '--port'],
     ['metrics', '--metrics'], ['fit', '-fit'], ['fit_ctx', '-fitc'], ['fit_target', '-fitt'],
   ];
@@ -207,7 +208,7 @@ export function defaultParams(): ParamsFile {
       reasoning_effort: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
       fit: ['off', 'on'], // -fit 显存自动调整开关（默认 off：llama-server 自身默认 on，launcher 显式 off 保持参数显式可控）
     },
-    params_boolean: ['jinja', 'reasoning_preserve', 'metrics'],
+    params_boolean: ['jinja', 'reasoning_preserve', 'no_reasoning_preserve', 'metrics'],
     params_file: ['m', 'mmproj', 'chat_template_file', 'md'],
     params_default: { port: '9931', fit: 'off' }, // 新建模板自动填写 + 保存时写入用户模板；存量配置由 configsBackfillDefaults 补齐
   };

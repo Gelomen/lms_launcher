@@ -138,7 +138,7 @@ describe('config.ts', () => {
     paramsLoad(p);
     // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
     const pf2 = paramsLoad(p);
-    expect(Object.keys(pf2.params)).toHaveLength(37);
+    expect(Object.keys(pf2.params)).toHaveLength(38);
     expect(pf2.params['spec_type']).toBe('--spec-type');
     expect(pf2.params['presence_penalty']).toBe('--presence_penalty');
     rm(p);
@@ -185,7 +185,7 @@ params_file:
     expect(pf.params['fit_ctx']).toBe('-fitc');
     expect(pf.params['fit_target']).toBe('-fitt');
     expect(pf.params['metrics']).toBe('--metrics');
-    expect(Object.keys(pf.params)).toHaveLength(37); // 既有 26 + v1.1 新增 7 + alias + #15 image_min_tokens + md + ngld
+    expect(Object.keys(pf.params)).toHaveLength(38); // 既有 26 + v1.1 新增 7 + alias + #15 image_min_tokens + md + ngld + no_reasoning_preserve
     expect(pf.params['alias']).toBe('-a');
     // #15：image_min_tokens 紧随 mmproj 之后，--mmproj 有值时可启用
     expect(pf.params['image_min_tokens']).toBe('--image-min-tokens');
@@ -200,7 +200,7 @@ params_file:
     // ctk/ctv：KV cache dtype 下拉（精度从低到高，q4_0 为默认首项）
     expect(pf.params_options?.ctk).toEqual(['q4_0','q5_0','q8_0','f16']);
     expect(pf.params_options?.ctv).toEqual(['q4_0','q5_0','q8_0','f16']);
-    expect(pf.params_boolean).toEqual(['jinja','reasoning_preserve','metrics']); // #14：metrics 声明为 boolean
+    expect(pf.params_boolean).toEqual(['jinja','reasoning_preserve','no_reasoning_preserve','metrics']); // #14：metrics 声明为 boolean
 
     expect(pf.params_file).toEqual(['m','mmproj','chat_template_file','md']);
     // md（--spec-draft-model）紧随 spec_draft_n_max 之后，params_file 类型
