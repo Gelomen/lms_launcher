@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faFolderOpen } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
-import { invoke, errMsg } from '../ipc';
+import { invoke, errMsg, onStartupLlamaCheck } from '../ipc';
 
 // 2026-08-31：校验出 ✓/✗ 结果后向 App 通报（App 写「目录校验」sys 行进 LMS Launcher 日志区）
 const emit = defineEmits<{ (e: 'validated', r: { ok: boolean; dir: string }): void }>();
@@ -70,7 +70,22 @@ async function validate(): Promise<void> {
   }
 }
 
-onMounted(load);
+// 启动检测（2026-11 用户确认）：主进程 whenReady 时 detectLlamaInstall 算出 4 态后推一次
+// startup-llama-check 事件（与「启动检测 · …」日志行同源同刻）→ 卡片 status 槽位复用
+// 「选目录后校验」同一条显示路径（✓/✗ 同款文案）；unset → 不显示行（首次安装现状保持）。
+let unsubCheck: (() => void) | null = null;
+onMounted(() => {
+  unsubCheck = onStartupLlamaCheck((e) => {
+    // e.status 解构重命名（chk）——避免与下方 status ref 同名遮蔽
+    const chk = e.status;
+    if (chk === 'ok') status.value = { ok: true, msg: 'llama-server.exe 已找到' };
+    else if (chk === 'exe_missing') status.value = { ok: false, msg: '未找到 llama-server.exe' };
+    else if (chk === 'dir_missing') status.value = { ok: false, msg: 'llama.cpp 安装目录不存在' };
+    else if (chk === 'unset') status.value = null;
+  });
+  void load();
+});
+onUnmounted(() => { if (unsubCheck) unsubCheck(); });
 </script>
 <template>
   <section class="module module-dir">

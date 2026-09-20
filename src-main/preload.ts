@@ -44,6 +44,13 @@ contextBridge.exposeInMainWorld('lms', {
     ipcRenderer.on('tray-settings-request', listener);
     return () => ipcRenderer.removeListener('tray-settings-request', listener);
   },
+  // 启动检测（2026-11 用户确认）：whenReady 时 detectLlamaInstall 算出 4 态后推一次，
+  // 安装目录卡片据此显示 ✓/✗（与「启动检测 · …」日志行同源同刻）
+  onStartupLlamaCheck: (cb: (e: { status: string; dir: string }) => void) => {
+    const listener = (_e: unknown, payload: { status: string; dir: string }) => cb(payload);
+    ipcRenderer.on('startup-llama-check', listener);
+    return () => ipcRenderer.removeListener('startup-llama-check', listener);
+  },
   // GPU 卡片（spec 2026-09-09-gpu-card-design §4）：主进程每 ~2 秒推送合并后的卡数据
   onGpuStats: (cb: (e: { gpus: { luid: string; name: string; utilization: number; dedicatedUsed: number; dedicatedTotal: number; sharedUsed: number; sharedTotal: number }[] }) => void) => {
     const listener = (_e: unknown, payload: { gpus: { luid: string; name: string; utilization: number; dedicatedUsed: number; dedicatedTotal: number; sharedUsed: number; sharedTotal: number }[] }) => cb(payload);

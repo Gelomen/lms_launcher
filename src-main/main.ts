@@ -158,10 +158,19 @@ function createTray(): void {
 function detectLlamaInstall(): void {
   const [p] = yamlPaths();
   const dir = appConfigLoad(p).llama_dir;
-  const line = installCheckMessage(dir, checkLlamaInstall(dir));
+  const status = checkLlamaInstall(dir);
+  const line = installCheckMessage(dir, status);
   const win = mainWin();
-  if (!win || !win.webContents.isLoading()) { emitLog(line, 'sys'); return; }
-  win.webContents.once('did-finish-load', () => emitLog(line, 'sys'));
+  if (!win || !win.webContents.isLoading()) {
+    emitLog(line, 'sys');
+    if (win) win.webContents.send('startup-llama-check', { status, dir });
+    return;
+  }
+  // 日志行与卡片事件同源同刻、同一发送点：did-finish-load 后一起发（渲染端未就绪时 send 即发即弃）
+  win.webContents.once('did-finish-load', () => {
+    emitLog(line, 'sys');
+    win.webContents.send('startup-llama-check', { status, dir });
+  });
 }
 
 // ---------- 窗口 ----------

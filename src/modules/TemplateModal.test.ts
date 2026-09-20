@@ -47,8 +47,9 @@ describe('TemplateModal', () => {
     it('every_param_label_carries_two_line_tooltip_long_flag_plus_zh', async () => {
       calls = []; mockLms(); mountModal(); await flush();
       // 每个参数 label：第一行 = llama.cpp 长 flag，第二行 = 中文说明（data-tooltip 两行）
+      // 计数 = defaultParams().params 条目数（4f5c37f 新增 --no-reasoning-preserve 后为 38）
       const labels = [...document.querySelectorAll('.flag-grid .flag-label')];
-      expect(labels.length).toBe(37);
+      expect(labels.length).toBe(38);
       for (const l of labels) {
         const tip = l.getAttribute('data-tooltip');
         expect(tip, `label=${l.textContent}`).toBeDefined();

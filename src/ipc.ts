@@ -24,6 +24,8 @@ declare global {
       onTrayUpdateRequest: (cb: () => void) => () => void;
       onTraySettingsRequest: (cb: () => void) => () => void;
       onGpuStats: (cb: (e: { gpus: GpuStats[] }) => void) => () => void;
+      onStartupLlamaCheck: (cb: (e: { status: string; dir: string }) => void) => () => void;
+      onStartupLlamaCheck: (cb: (e: { status: string; dir: string }) => void) => () => void;
     };
   }
 }
@@ -84,4 +86,11 @@ export const isValidation = (msg: string): boolean => msg.includes("VALIDATION:"
 
 export function onGpuStats(cb: (e: { gpus: GpuStats[] }) => void): () => void {
   return window.lms.onGpuStats(cb);
+}
+
+// 启动检测（2026-08-31-startup-llama-check-design 的 UI 透出，2026-11 用户确认）：
+// 主进程 whenReady 的 detectLlamaInstall 算出 4 态后推送一次（与「启动检测 · …」日志行同源同刻）。
+// status 取值 = src-main/llama-check.ts 的 LlamaInstallStatus：unset / dir_missing / exe_missing / ok
+export function onStartupLlamaCheck(cb: (e: { status: string; dir: string }) => void): () => void {
+  return window.lms.onStartupLlamaCheck(cb);
 }

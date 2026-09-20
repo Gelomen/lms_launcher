@@ -23,6 +23,8 @@ const trayUpdateHandlers: Array<() => void> = [];
 let traySettingsHandlers: Array<() => void> = [];
 // GPU 卡片（spec 2026-09-09-gpu-card-design）：gpu-stats 推送事件桥
 const gpuStatsHandlers: Array<(e: { gpus: unknown[] }) => void> = [];
+// 启动检测（2026-11）：startup-llama-check 推送事件桥（DirModule 订阅；App 级测试不驱动）
+const startupLlamaCheckHandlers: Array<(e: { status: string; dir: string }) => void> = [];
 // llama.cpp 更新进度事件桥（Task 8）：UpdateModal 内通过 ipc.onLlamaUpdateProgress 订阅
 const llamaUpdateProgressHandlers: Array<(e: { percent: number; stage: string }) => void> = [];
 vi.mock('./ipc', () => ({
@@ -39,6 +41,8 @@ vi.mock('./ipc', () => ({
   onTraySettingsRequest: (fn: () => void) => { traySettingsHandlers.push(fn); return () => {}; },
   onLlamaUpdateProgress: (fn: (e: { percent: number; stage: string }) => void) => { llamaUpdateProgressHandlers.push(fn); return () => {}; },
   onGpuStats: (fn: (e: { gpus: unknown[] }) => void) => { gpuStatsHandlers.push(fn); return () => {} },
+  // 启动检测事件桥（2026-11）：DirModule onMounted 无条件订阅；App 级测试不驱动该事件（no-op 注册）
+  onStartupLlamaCheck: (fn: (e: { status: string; dir: string }) => void) => { startupLlamaCheckHandlers.push(fn); return () => {}; },
 }));
 
 const RUNNING = { running: true, stopping: false, configId: 'c1' };
