@@ -3,7 +3,7 @@
 #   更新前留基线：powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 -Snapshot [-InstallDir <dir>]
 #   更新后验证：  powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 [-InstallDir D:\AI\LMS-Launcher]
 # 5 项检查（只读诊断：不创建/删除任何计划任务，不启动/杀掉任何进程）：
-#   C1 新版存活     lms_launcher.exe 进程存在
+#   C1 新版存活     安装目录内的 lms_launcher.exe 进程存在（按路径过滤，多实例下不会拿错）
 #   C2 独立存活     其父进程（更新脚本的 powershell）已退出——不再挂在脚本进程树上
 #                  （Win32_Process.ParentProcessId 记录创建者 PID，DETACHED 形态下创建者随即退出）
 #   C3 conhost 无新增 当前 conhost 集合 ⊆ 快照集合（需先跑 -Snapshot）
@@ -45,10 +45,18 @@ if ($Snapshot) {
 # ---------- 默认模式：5 项检查 ----------
 $pass = 0; $fail = 0; $skip = 0
 
-# C1 新版存活
-$main = Get-Process -Name 'lms_launcher' -ErrorAction SilentlyContinue | Select-Object -First 1
+# C1 新版存活（只认安装目录内的实例：机器上可能同时存在其他路径的同名实例，按名取第一个会拿错）
+$targetExe = Join-Path ([System.IO.Path]::GetFullPath($InstallDir)) 'lms_launcher.exe'
+$main = $null
+# 同目录内主进程与 GPU/renderer 子进程的可执行路径完全相同，故按 Id 升序取第一个：
+# 主进程先创建、PID 通常最小，避免拿到子进程导致 C2 误判「父进程仍存活」
+foreach ($proc in @(Get-Process -Name 'lms_launcher' -ErrorAction SilentlyContinue | Sort-Object Id)) {
+  $procPath = $null
+  try { $procPath = $proc.Path } catch { $procPath = $null }
+  if ($null -ne $procPath -and $procPath -ieq $targetExe) { $main = $proc; break }
+}
 if ($null -eq $main) {
-  Write-Host '[FAIL] C1 新版存活：未找到 lms_launcher.exe 进程'
+  Write-Host ('[FAIL] C1 新版存活：安装目录内未找到 lms_launcher.exe 进程（' + $targetExe + '）')
   $fail++
 } else {
   Write-Host ('[PASS] C1 新版存活：lms_launcher.exe 在运行（PID ' + $main.Id + '）')

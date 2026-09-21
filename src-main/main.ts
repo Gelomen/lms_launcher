@@ -15,6 +15,10 @@ import { execSync, spawnSync } from 'node:child_process';
 // 无论 detached / 非 detached / cmd 包裹 / windowsHide / 双叉 / VBS 均无法既真正执行脚本又
 // 在 app.exit 后存活；只有任务计划程序（svchost 发起，与应用无父子关系）两条都满足。
 const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
+// 新版启动任务名（由 scripts/lms-launcher-update.ps1 创建）：更新脚本改用独立计划任务让
+// svchost 拉起新版应用，使其落在自己的 Job 里、与更新任务的生命周期解耦（否则关掉更新终端
+// 会连带杀掉新版应用 —— 见 ps1 第 6 步注释）。脚本刻意不删它，故由应用启动时清理。
+const START_TASK_NAME = 'LMSLauncherStart';
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
 import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
@@ -27,8 +31,16 @@ import { downloadToFile } from './update-download';
 // ---------- 单实例锁：禁止多开 ----------
 // requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
 // 已在运行实例收到 'second-instance' 事件 → 把主窗口从托盘唤回前台。
+// 2026-09-21 真机验收修订：失败路径改用 app.exit(0)，不用 app.quit()。quit 是优雅退出，会先关闭窗口，
+// 而下面的 win.on('close') 把「关闭」实现为「隐藏到托盘」（e.preventDefault()），退出流程可被取消 ——
+// 该实例便既拿不到锁、也不退出，成为「不持锁的常驻实例」，长期占用 lms_launcher 这个进程名，
+// 把更新脚本的等待条件卡死（见同日 scripts/lms-launcher-update.ps1 的路径过滤修复）。
+// 证据强度：现场那个不持锁、无可见窗口、存活 ≥27 分钟的实例 A 即该分支的产物（间接实证）；
+// 本机探针在锁失败场景下 8/8 都在 ~2.3s 退出（第二实例尚未创建窗口，quit 得以生效），未复现常驻侧
+// —— 该分支受时序影响，故本改动定位为「消除不确定性的加固」：app.exit(0) 立即终止进程，
+// 不触发窗口 close / before-quit / will-quit，与 run_update / exit_app 的既有用法一致。
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  app.exit(0);
 } else {
   app.on('second-instance', () => {
     restoreWindow();
@@ -576,15 +588,23 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, 3000)); // 等任务拉起脚本落地（/Run 后 ps1 需数秒才写到首行日志），避免 app.exit 抢先
   app.exit(0);
 });
-// 清理残留更新任务：上次 create 成功但 /Run 前应用崩溃（或用户强杀）会留下
-// ONCE 任务，其计划触发点可能落在下次启动后的 2 分钟窗口内——ps1 会等 lms_launcher
-// 退出才覆盖，届时应用正在运行，等待必然 60s 超时。启动时删除即可（任务幂等，
-// 正常运行时它本来也已在 ps1 尾部自删）。
+// 清理残留计划任务（两个）：
+//   LMSLauncherUpdate —— 更新脚本任务。上次 create 成功但 /Run 前应用崩溃（或用户强杀）会留下
+//     ONCE 任务，其计划触发点可能落在下次启动后的 2 分钟窗口内；ps1 会等 lms_launcher 退出才
+//     覆盖，届时应用正在运行，等待必然 60s 超时。正常运行时脚本尾部已自删，这里兜底。
+//   LMSLauncherStart —— 更新脚本用于拉起新版的独立 ONCE 任务。脚本刻意不删它（对正在运行的
+//     实例执行 /Delete 有连带终止新版的风险），所以由应用启动时清理。
 function cleanStaleUpdateTask(): void {
-  try {
-    execSync('schtasks /Delete /F /TN "' + UPDATE_TASK_NAME + '"', { stdio: 'ignore' });
-    emitLog('[lms_launcher] LMS 启动器 · 更新 · 已清理残留计划任务 ' + UPDATE_TASK_NAME, 'sys');
-  } catch { /* 任务不存在 / schtasks 不可用：均无影响 */ }
+  const cleaned: string[] = [];
+  for (const name of [UPDATE_TASK_NAME, START_TASK_NAME]) {
+    try {
+      execSync('schtasks /Delete /F /TN "' + name + '"', { stdio: 'ignore' });
+      cleaned.push(name);
+    } catch { /* 任务不存在 / schtasks 不可用：均无影响 */ }
+  }
+  if (cleaned.length > 0) {
+    emitLog('[lms_launcher] LMS 启动器 · 更新 · 已清理残留计划任务 ' + cleaned.join('、'), 'sys');
+  }
 }
 // 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
 // 进 LMS Launcher 日志区 → 删除（一次性）。与 detectLlamaInstall 同机制处理渲染端未就绪——
