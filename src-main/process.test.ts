@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { join } from 'node:path';
 import { ProcessState } from './process';
 
 const PS = "powershell";
@@ -38,5 +39,17 @@ describe('process.ts', () => {
     const code = ps.drainExit();
     expect(code).not.toBeNull();
     expect(ps.state).toBe('ready');
+  });
+
+  it('launch_applies_cwd_to_child', async () => {
+    const ps = new ProcessState();
+    const dir = join(process.cwd(), 'src-main');
+    await ps.launch(PS, ['-Command', '[System.IO.Directory]::GetCurrentDirectory()'], 'c1', dir);
+    const { stdout } = ps.takePipes();
+    const chunks: string[] = [];
+    stdout.on('data', (c: Buffer) => chunks.push(c.toString()));
+    await new Promise((r) => setTimeout(r, 3000));
+    expect(chunks.join('')).toContain('src-main');
+    await ps.stopGraceful(3);
   });
 });

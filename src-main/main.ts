@@ -259,7 +259,7 @@ ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => 
   const configs = configsLoad(cfgP); // MISSING: / YAML: 透传
   const args = prepareLaunch(appCfg.llama_dir.trim(), pf, configs, configId); // MISSING: / VALIDATION: 透传
   const summary = summarize(configs[configId], pf);
-  await ps.launch(args[0], args.slice(1), configId);
+  await ps.launch(args[0], args.slice(1), configId, dataDir());
   // launcher 日志：完整启动命令行（exe 全路径 + 参数向量）——start_server 的返回值仍是 summary
   emitLog("[lms_launcher] 启动命令 · " + commandLine(args), "sys", ['llama-server']);
   const { stdout, stderr } = ps.takePipes();

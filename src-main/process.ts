@@ -18,13 +18,21 @@ export class ProcessState {
     return this.state === 'running';
   }
 
-  // 启动子进程（隐藏窗口、双管道）；非 ready → STATE 拒绝（防二次启动）
-  async launch(exe: string, args: string[], configId: string | null): Promise<void> {
+  // 启动子进程（隐藏窗口、双管道、显式工作目录）；非 ready → STATE 拒绝（防二次启动）
+  // cwd：调用方传 dataDir()（exe 所在目录）。必须显式——更新后应用由 ps1 的
+  // CreateProcess(DETACHED_PROCESS) 启动，lpCurrentDirectory 若未指定则由 Windows 给
+  // C:\Windows\System32，llama-server 会继承该 cwd，使模板中相对路径的文件参数解析错位。
+  // 缺省（undefined）时保持 Node 默认：继承本进程工作目录。
+  async launch(exe: string, args: string[], configId: string | null, cwd?: string): Promise<void> {
     if (this.state !== 'ready') throw new Error('STATE: 已有进程在运行');
     this.exitCode = null;
     this.exited = false;
     this.runningConfigId = configId;
-    const child = spawn(exe, args, { stdio: ["ignore", "pipe", "pipe"], shell: false });
+    const child = spawn(exe, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: false,
+      ...(cwd ? { cwd } : {}),
+    });
     child.on("error", (err) => {
       if (this.child !== child) return;
       // 事件回调内不得 throw（未捕获异常会让 Electron 主进程崩溃）：
