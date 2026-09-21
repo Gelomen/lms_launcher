@@ -4,6 +4,13 @@
 #       校验关键条目 → 全量覆盖 installDir（zip 不含 yaml/downloads，用户数据不受影响）→
 #       清理（含旧版 update.exe 残留）→ 启动新版。
 # 日志：追加写 <installDir>\lms_launcher_update.log，主应用下次启动时回显并删除。
+# 启动新版（2026-09-21 评审修订）：不再 Start-Process —— 它的子进程会继承本脚本的控制台，
+# 导致更新完成后 CMD 窗口残留、关窗连带杀应用（.temp/probeB3/B4 + .temp/grill/console-attach4
+# 实测附着增量 +2）。改为 P/Invoke CreateProcessW + DETACHED_PROCESS(0x8)：新进程不与任何控制台
+# 关联（实测增量 0），等价于用户双击启动（explorer 同样无控制台）。lpApplicationName 独立传参，
+# 安装路径含空格也无需引号转义；lpCurrentDirectory 固定安装目录，与旧 -WorkingDirectory 语义一致。
+# 失败语义：CreateProcess 失败、或进程 3 秒内退出 → 记 [ERROR]，更新仍算成功（exit 0，不回退
+# Start-Process，避免在罕见路径复现窗口 bug）。
 param(
   [string]$ZipPath = '',
   [string]$InstallDir = ''
@@ -91,11 +98,78 @@ try {
   $oldStaged = Join-Path $InstallDir 'update.exe.new'
   if (Test-Path $oldStaged) { Remove-Item $oldStaged -Force }
 
-  # 6) 启动新版
+  # 6) 启动新版（2026-09-21 评审修订：CreateProcess + DETACHED_PROCESS）
+  #    Start-Process 的子进程会继承本脚本的控制台（探针实测 GetConsoleProcessList 增量 +2）：
+  #    更新完成后 CMD 窗口被新应用挂住不关，关窗又向它发 CTRL_CLOSE_EVENT 连带杀进程。
+  #    DETACHED_PROCESS(0x8) 让新进程不与任何控制台关联（实测增量 0）——等价于用户双击启动。
+  #    lpApplicationName 独立传参 → 安装路径含空格无需引号转义；lpCurrentDirectory 固定安装目录
+  #    （与旧 Start-Process -WorkingDirectory 语义一致；否则 Windows 会给 C:\Windows\System32，
+  #    连带改变 llama-server 继承的工作目录）。
   $newExe = Join-Path $InstallDir 'lms_launcher.exe'
-  Write-Log '[INFO] 启动新版 lms_launcher.exe'
-  Start-Process -FilePath $newExe -WorkingDirectory $InstallDir
-  Write-Log '[INFO] 更新完成'
+  if (-not (Test-Path $newExe)) {
+    Write-Log ('[ERROR] 未找到新版 ' + $newExe + '，请手动检查安装目录')
+  } else {
+    $launchOk = $false
+    try {
+      Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class LmsDetachedLaunch {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  public struct STARTUPINFO {
+    public int cb;
+    public string lpReserved;
+    public string lpDesktop;
+    public string lpTitle;
+    public int dwX; public int dwY; public int dwXSize; public int dwYSize;
+    public int dwXCountChars; public int dwYCountChars; public int dwFillAttribute;
+    public int dwFlags; public short wShowWindow; public short cbReserved2;
+    public IntPtr lpReserved2;
+    public IntPtr hStdInput; public IntPtr hStdOutput; public IntPtr hStdError;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct PROCESS_INFORMATION {
+    public IntPtr hProcess; public IntPtr hThread; public int dwProcessId; public int dwThreadId;
+  }
+  [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  public static extern bool CreateProcess(string lpApplicationName, string lpCommandLine,
+    IntPtr lpProcessAttributes, IntPtr lpThreadAttributes, bool bInheritHandles,
+    uint dwCreationFlags, IntPtr lpEnvironment, string lpCurrentDirectory,
+    ref STARTUPINFO lpStartupInfo, out PROCESS_INFORMATION lpProcessInformation);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern bool CloseHandle(IntPtr hObject);
+}
+'@
+      $si = New-Object LmsDetachedLaunch+STARTUPINFO
+      $si.cb = [System.Runtime.InteropServices.Marshal]::SizeOf([type][LmsDetachedLaunch+STARTUPINFO])
+      $pi = New-Object LmsDetachedLaunch+PROCESS_INFORMATION
+      # 0x00000008 DETACHED_PROCESS：新进程既不继承父控制台、也不创建新控制台
+      $DETACHED_PROCESS = 0x00000008
+      Write-Log ('[INFO] 启动新版（DETACHED_PROCESS，与本脚本控制台解耦）：' + $newExe)
+      $ok = [LmsDetachedLaunch]::CreateProcess($newExe, ('"' + $newExe + '"'),
+        [IntPtr]::Zero, [IntPtr]::Zero, $false, $DETACHED_PROCESS, [IntPtr]::Zero, $InstallDir,
+        [ref]$si, [ref]$pi)
+      if ($ok) {
+        [void][LmsDetachedLaunch]::CloseHandle($pi.hThread)
+        [void][LmsDetachedLaunch]::CloseHandle($pi.hProcess)
+        # 等 3 秒确认进程仍在：CreateProcess 成功只代表创建成功，缺 DLL / 被拦截会立刻退出
+        Start-Sleep -Seconds 3
+        if (Get-Process -Id $pi.dwProcessId -ErrorAction SilentlyContinue) {
+          $launchOk = $true
+          Write-Log ('[INFO] 新版已启动（PID ' + $pi.dwProcessId + '，无控制台关联）')
+        } else {
+          Write-Log ('[ERROR] 新版启动后立即退出（PID ' + $pi.dwProcessId + '），请手动启动 lms_launcher.exe')
+        }
+      } else {
+        $winErr = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        Write-Log ('[ERROR] CreateProcess 失败（Win32 错误 ' + $winErr + '），请手动启动 lms_launcher.exe')
+      }
+    } catch {
+      Write-Log ('[ERROR] 启动新版失败：' + $_.Exception.Message + ' —— 请手动启动 lms_launcher.exe')
+    }
+    if ($launchOk) { Write-Log '[INFO] 更新完成' }
+    else { Write-Log '[INFO] 更新完成（新版未自动启动，请手动启动）' }
+  }
   Remove-UpdateTask
   exit 0
 }
