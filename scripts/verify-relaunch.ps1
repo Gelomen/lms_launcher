@@ -6,7 +6,9 @@
 #   C1 新版存活     lms_launcher.exe 进程存在
 #   C2 独立存活     其父进程（更新脚本的 powershell）已退出——不再挂在脚本进程树上
 #                  （Win32_Process.ParentProcessId 记录创建者 PID，DETACHED 形态下创建者随即退出）
-#   C3 conhost 无新增 基线快照的 conhost 全部已退出、且当前无快照之外的新 Id（需先跑 -Snapshot）
+#   C3 conhost 无新增 当前 conhost 集合 ⊆ 快照集合（需先跑 -Snapshot）
+#                  只断言「无新增」，不要求「快照里的全退了」——常驻终端的 conhost 更新后仍存活，
+#                  基线快照含用户自己的终端 conhost，要求「全退」在这类机器上必误报
 #   C4 任务不残留   计划任务 LMSLauncherUpdate 不存在（更新脚本启动即自删）
 #   C5 日志无 ERROR  lms_launcher_update.log 最后一段（自最后一个「更新脚本启动」行起）无 [ERROR] 行
 # 退出码：全部 PASS exit 0；任一 FAIL exit 1；[INFO] 跳过不算失败。
@@ -75,7 +77,10 @@ if ($null -eq $main) {
   }
 }
 
-# C3 conhost 无新增：快照中的 conhost 全部已退出，且当前集合无快照之外的 Id
+# C3 conhost 无新增：当前 conhost Id 集合 ⊆ 快照 Id 集合。
+# 只断言「无新增」，不要求「快照里的 conhost 全部已退出」——常驻终端/控制台的 conhost
+# 在更新前后都存活，而基线快照包含用户自己终端的 conhost，若要求「全退」在这类机器上必然误报，
+# 与计划步骤 3 的「无新增 conhost 占用」语义不符。
 if (-not (Test-Path $SnapPath)) {
   Write-Host ('[INFO] C3 conhost 无新增：无基线快照（' + $SnapPath + '），请先在更新前跑一次 -Snapshot，跳过（不判失败）')
   $skip++
@@ -83,15 +88,21 @@ if (-not (Test-Path $SnapPath)) {
   $snapLines = @(Get-Content -LiteralPath $SnapPath -Encoding UTF8 | Where-Object { $_ -match '^\s*\d+\s+\d+\s*$' })
   $snapIds = @($snapLines | ForEach-Object { [int]($_ -split '\s+')[0] })
   $current = @(Get-ConhostIds)
-  $alive = @($snapIds | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
   $newOnes = @($current | Where-Object { $snapIds -notcontains $_ })
-  if ($alive.Count -eq 0 -and $newOnes.Count -eq 0) {
-    Write-Host ('[PASS] C3 conhost 无新增：基线 ' + $snapIds.Count + ' 个 conhost 全部已退出，且无基线之外的新增 conhost')
+  if ($newOnes.Count -eq 0) {
+    Write-Host ('[PASS] C3 conhost 无新增：当前 ' + $current.Count + ' 个 conhost 全部在基线快照内（基线 ' + $snapIds.Count + ' 个），无快照之外的新增 conhost')
     $pass++
   } else {
-    $aliveText = $(if ($alive.Count) { $alive -join ',' } else { '无' })
-    $newText   = $(if ($newOnes.Count) { $newOnes -join ',' } else { '无' })
-    Write-Host ('[FAIL] C3 conhost 无新增：快照中仍存活=' + $aliveText + ' | 快照外新增=' + $newText)
+    $detail = @($newOnes | ForEach-Object {
+      $pname = '未知'
+      $p = Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId=' + $_) -ErrorAction SilentlyContinue
+      if ($null -ne $p -and $null -ne $p.ParentProcessId -and $p.ParentProcessId -gt 0) {
+        $pp = Get-Process -Id $p.ParentProcessId -ErrorAction SilentlyContinue
+        if ($null -ne $pp) { $pname = $pp.ProcessName }
+      }
+      ('PID ' + $_ + '（父进程：' + $pname + '）')
+    })
+    Write-Host ('[FAIL] C3 conhost 无新增：快照之外新增 conhost ' + $newOnes.Count + ' 个：' + ($detail -join '；'))
     $fail++
   }
 }
