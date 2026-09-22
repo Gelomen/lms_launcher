@@ -211,6 +211,18 @@ params_file:
     expect(pk[pk.indexOf('md') + 1]).toBe('ngld');
   });
 
+  it('language_round_trips_and_survives_incremental_saves', () => {
+    const p = tmpPath('app_lang.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', language: 'en' });
+    expect(appConfigLoad(p).language).toBe('en');
+    // 增量保存（saveLlamaDir / saveProxy 均基于 ...cfg）不得丢语言
+    saveLlamaDir(p, '/y');
+    expect(appConfigLoad(p).language).toBe('en');
+    expect(appConfigLoad(p).llama_dir).toBe('/y');
+    rm(p);
+  });
+
   it('vram_total_gb_roundtrip', () => {
     const p = tmpPath('app_vram.yaml');
     rm(p);

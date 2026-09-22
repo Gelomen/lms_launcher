@@ -12,6 +12,8 @@ export interface AppConfig {
   vram_total_gb?: number;
   proxy?: ProxyConfig;
   update?: LlamaUpdateConfig;
+  /** i18n（spec §3.4）：用户选择的语言；缺省 = 跟随系统。 */
+  language?: 'zh' | 'en';
 }
 export interface ParamsFile {
   params: Record<string, string>;
@@ -59,6 +61,7 @@ export function appConfigLoad(path: string): AppConfig {
       vram_total_gb: parsed?.vram_total_gb,
       proxy: parsed?.proxy,
       update: parsed?.update,
+      language: parsed?.language,
     };
   } catch {
     return EMPTY_APP_CONFIG;
