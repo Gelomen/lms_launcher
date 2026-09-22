@@ -17,7 +17,10 @@ const emit = defineEmits<{ close: []; saved: [] }>();
 
 const proxyHost = ref('');
 const proxyPort = ref('');
-const saveError = ref('');
+// 校验类报错存 key（如 settings.proxy.err.partial），渲染端 t() 即时重译——切换语言后同一条错误自动变为新语言（spec §3.5 仅指已落定的日志/错误文本不回改，渲染端实时报错属即时重译）。
+const validateError = ref('');
+// 主进程透传的 IO 错误文本（errMsg）不是词典 key，保持原样透传（非译边界）。
+const ioError = ref('');
 const saving = ref(false);
 
 // 语言选项：语言名用自名（中文 / English），不随当前语言翻译（spec §6.3）。
@@ -39,35 +42,38 @@ onMounted(async () => {
   } catch { /* 回填失败静默 */ }
 });
 
-watch(() => props.open, (v) => { if (v) saveError.value = ''; });
+watch(() => props.open, (v) => { if (v) { validateError.value = ''; ioError.value = ''; } });
 
 // 代理地址格式白名单：IPv4（a.b.c.d）或主机名（字母数字点连字符，每段不以连字符起头）。
 // 拒绝带 scheme（http://evil）、带端口（host:80，端口应另填）、带空格/路径等畸形输入，
 // 否则这些会拼进 ProxyAgent uri 才在「检查更新」时报 invalid URL（延迟 UX）。
 const PROXY_HOST_RE = /^(?:\d{1,3}\.){3}\d{1,3}$|^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
 
+// 校验类错误返回词典 key（存 key 不存译文，渲染端 t() 随语言即时重译，见 validateError 注释）。
 function validate(): string | null {
   const h = proxyHost.value.trim();
   const p = proxyPort.value.trim();
-  if ((h && !p) || (!h && p)) return t('settings.proxy.err.partial');
-  if (h && !PROXY_HOST_RE.test(h)) return t('settings.proxy.err.host');
+  if ((h && !p) || (!h && p)) return 'settings.proxy.err.partial';
+  if (h && !PROXY_HOST_RE.test(h)) return 'settings.proxy.err.host';
   if (p) {
     const n = Number(p);
-    if (!Number.isInteger(n) || n < 1 || n > 65535) return t('settings.proxy.err.port');
+    if (!Number.isInteger(n) || n < 1 || n > 65535) return 'settings.proxy.err.port';
   }
   return null;
 }
 
 async function save() {
+  // 保存开始：先清两类报错（校验失败/IO 失败互斥，至多显示一行）
+  validateError.value = '';
+  ioError.value = '';
   const err = validate();
-  if (err) { saveError.value = err; return; }
+  if (err) { validateError.value = err; return; }
   saving.value = true;
-  saveError.value = '';
   try {
     await invoke('save_proxy', proxyHost.value, proxyPort.value);
     emit('saved');
   } catch (e) {
-    saveError.value = errMsg(e);
+    ioError.value = errMsg(e);
   } finally {
     saving.value = false;
   }
@@ -86,10 +92,10 @@ async function save() {
         </button>
       </div>
       <div class="modal-body">
-        <p v-if="saveError" class="error-text">{{ saveError }}</p>
         <!-- 语言切换（spec §6.3）：即时生效无保存按钮；选项自名（中文 / English）不随语言翻译 -->
         <div class="form-row">
-          <label class="label">{{ t('settings.language') }}</label>
+          <!-- 标签刻意恒定为 Language（语言行是不随语言变的锚点，与下拉选项自名 中文/English 一致），使任意母语用户都能定位 -->
+          <label class="label">Language</label>
           <Dropdown :value="currentLang" :options="langOptions" @update:value="onLangChange" />
         </div>
         <!-- 代理地址 + 端口同行：host 弹性伸缩，port 固定 5 位数字宽度（2026-09-07 UI 微调） -->
@@ -103,6 +109,10 @@ async function save() {
             <input id="proxy-port" v-model="proxyPort" class="input" type="text" inputmode="numeric" maxlength="5" placeholder="10808" />
           </div>
         </div>
+        <!-- 校验报错存 key 由 t() 即时重译；IO 报错（主进程 errMsg）非译边界原样透传。
+             位置：代理输入行下方、保存行上方（2026-09-22 人工验收指定，「中文布局冻结」对该位置解除）。 -->
+        <p v-if="validateError" class="error-text">{{ t(validateError) }}</p>
+        <p v-else-if="ioError" class="error-text">{{ ioError }}</p>
       </div>
       <div class="modal-actions">
         <button type="button" class="modal-save" :disabled="saving" :aria-label="t('settings.save')" @click="save">
@@ -150,6 +160,9 @@ async function save() {
 /* 代理地址 + 端口同行：弹性/定宽放在列（.form-row）上；输入框保持 .input 固有高度 var(--h-control)，两列等高。
    注意不能在 input 上用 flex:1——.form-row 是 column flex，flex-basis:0% 会沿列方向把 host 框的高度拉高，造成两框不等高。 */
 .proxy-row { display: flex; gap: 12px; align-items: flex-start; }
+/* 报错行下移到代理输入行下方后，与上方输入框的间距：全局 .error-text margin-top 4px 偏紧，
+   本组件 scoped 内补 8px（勿改 style.css 全局，避免影响其他弹窗）。 */
+.modal-body .error-text { margin-top: 8px; }
 .proxy-row .form-row { min-width: 0; }
 .host-row { flex: 1; }
 .port-row { flex: none; width: 92px; } /* 5 位数字 + padding */

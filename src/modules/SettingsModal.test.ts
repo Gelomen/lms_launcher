@@ -48,9 +48,11 @@ async function clickSave(): Promise<void> {
   await flush();
 }
 
+// 报错行 DOM 文本：所有 .error-text 节点合并（校验/IO 两类报错分行，任一时刻至多一行显示）
 function saveErrorText(): string {
-  const el = document.querySelector('.error-text');
-  return el ? (el.textContent || '') : '';
+  return Array.from(document.querySelectorAll('.error-text'))
+    .map((el) => el.textContent || '')
+    .join('');
 }
 
 beforeEach(() => {
@@ -116,13 +118,69 @@ describe('SettingsModal 代理输入校验', () => {
     expect(invoke).not.toHaveBeenCalledWith('save_proxy', expect.anything(), expect.anything());
   });
 
-  it('host 与 port 一空一满 → 提示端口不能为空（保留原契约）', async () => {
+  it('host 与 port 一空一满（只填 host）→ 提示地址与端口须同时填写（文案双向对称）', async () => {
     mountModal(); await flush();
     await setField('proxy-host', '127.0.0.1');
     // port 留空
     await clickSave();
-    expect(saveErrorText()).toContain('端口不能为空（或留空禁用代理）');
+    expect(saveErrorText()).toContain('代理地址与端口须同时填写（或都留空以禁用代理）');
     expect(invoke).not.toHaveBeenCalledWith('save_proxy', expect.anything(), expect.anything());
+  });
+
+  it('host 与 port 一空一满（只填 port）→ 同一条对称文案（覆盖第二方向）', async () => {
+    mountModal(); await flush();
+    await setField('proxy-port', '10808');
+    // host 留空
+    await clickSave();
+    expect(saveErrorText()).toContain('代理地址与端口须同时填写（或都留空以禁用代理）');
+    expect(invoke).not.toHaveBeenCalledWith('save_proxy', expect.anything(), expect.anything());
+  });
+
+  it('语言行标签恒定 Language（不随界面语言翻译，任意母语用户可定位）', async () => {
+    mountModal(); await flush();
+    const label = Array.from(document.querySelectorAll('.modal-body .form-row > .label'))
+      .find((el) => (el.textContent || '').trim() !== '代理地址' && (el.textContent || '').trim() !== '端口');
+    expect(label).toBeTruthy();
+    expect(label!.textContent).toBe('Language');
+    const trigger = document.querySelector('.modal-body .dropdown .select-trigger') as HTMLButtonElement | null;
+    if (!trigger) throw new Error('language dropdown not found');
+    trigger.click(); await flush();
+    const options = Array.from(document.querySelectorAll('.dropdown-panel .option')) as HTMLElement[];
+    const en = options.find((o) => (o.textContent || '').trim() === 'English');
+    if (!en) throw new Error('English option not found');
+    en.click(); await flush();
+    expect(invoke).toHaveBeenCalledWith('set_language', 'en');
+    expect(document.querySelector('.modal-title')!.textContent).toBe('Settings');
+    expect(document.querySelector('.modal-body .form-row > .label')!.textContent).toBe('Language');
+  });
+
+  it('partial 校验报错随语言切换重译（存 key 渲染，错误持续显示不消失）', async () => {
+    mountModal(); await flush();
+    await setField('proxy-host', '127.0.0.1');
+    // port 留空
+    await clickSave();
+    expect(saveErrorText()).toBe('代理地址与端口须同时填写（或都留空以禁用代理）');
+    const trigger = document.querySelector('.modal-body .dropdown .select-trigger') as HTMLButtonElement | null;
+    if (!trigger) throw new Error('language dropdown not found');
+    trigger.click(); await flush();
+    const options = Array.from(document.querySelectorAll('.dropdown-panel .option')) as HTMLElement[];
+    const en = options.find((o) => (o.textContent || '').trim() === 'English');
+    if (!en) throw new Error('English option not found');
+    en.click(); await flush();
+    expect(saveErrorText()).toBe('Host and port must both be set (or leave both empty to disable proxy)');
+  });
+
+  it('校验报错行位于代理输入行（proxy-row）下方、保存行上方（DOM 顺序）', async () => {
+    mountModal(); await flush();
+    await setField('proxy-host', '127.0.0.1');
+    // port 留空
+    await clickSave();
+    const err = document.querySelector('.error-text');
+    const port = document.querySelector('#proxy-port');
+    const actions = document.querySelector('.modal-actions');
+    if (!err || !port || !actions) throw new Error('error-text / proxy-port / modal-actions not found');
+    expect(port.compareDocumentPosition(err) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actions.compareDocumentPosition(err) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 
   it('切换语言 → 调用 set_language 且界面文案变为英文', async () => {
