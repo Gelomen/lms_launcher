@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue';
 import { invoke, errMsg } from '../ipc';
+import Dropdown from '../components/Dropdown.vue';
+import { currentLang, setLang, t, type Lang } from '../i18n';
 // FontAwesome：与 TemplateModal 同款注册方式（xmark 关闭 / floppy-disk 保存）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faXmark } from '@fortawesome/free-solid-svg-icons';
@@ -17,6 +19,16 @@ const proxyHost = ref('');
 const proxyPort = ref('');
 const saveError = ref('');
 const saving = ref(false);
+
+// 语言选项：语言名用自名（中文 / English），不随当前语言翻译（spec §6.3）。
+const langOptions = [
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+];
+// 语言切换即时生效：setLang 本地立即切换 + 通知主进程持久化/重建托盘，无保存按钮。
+function onLangChange(v: string): void {
+  setLang(v as Lang);
+}
 
 onMounted(async () => {
   try {
@@ -36,11 +48,11 @@ const PROXY_HOST_RE = /^(?:\d{1,3}\.){3}\d{1,3}$|^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*
 function validate(): string | null {
   const h = proxyHost.value.trim();
   const p = proxyPort.value.trim();
-  if ((h && !p) || (!h && p)) return '端口不能为空（或留空禁用代理）';
-  if (h && !PROXY_HOST_RE.test(h)) return '代理地址须为 IPv4 或主机名（不含端口、协议、空格）';
+  if ((h && !p) || (!h && p)) return t('settings.proxy.err.partial');
+  if (h && !PROXY_HOST_RE.test(h)) return t('settings.proxy.err.host');
   if (p) {
     const n = Number(p);
-    if (!Number.isInteger(n) || n < 1 || n > 65535) return '端口须为 1–65535 的数字';
+    if (!Number.isInteger(n) || n < 1 || n > 65535) return t('settings.proxy.err.port');
   }
   return null;
 }
@@ -67,27 +79,32 @@ async function save() {
   <div v-if="open" class="modal-overlay">
     <div class="modal-box card">
       <div class="modal-head">
-        <div class="modal-title">设置</div>
-        <button type="button" class="modal-close" aria-label="关闭弹窗" @click="emit('close')">
+        <div class="modal-title">{{ t('settings.title') }}</div>
+        <button type="button" class="modal-close" :aria-label="t('settings.close')" @click="emit('close')">
           <FontAwesomeIcon :icon="byPrefixAndName.fat['xmark']" />
         </button>
       </div>
       <div class="modal-body">
         <p v-if="saveError" class="error-text">{{ saveError }}</p>
+        <!-- 语言切换（spec §6.3）：即时生效无保存按钮；选项自名（中文 / English）不随语言翻译 -->
+        <div class="form-row">
+          <label class="label">{{ t('settings.language') }}</label>
+          <Dropdown :value="currentLang" :options="langOptions" @update:value="onLangChange" />
+        </div>
         <!-- 代理地址 + 端口同行：host 弹性伸缩，port 固定 5 位数字宽度（2026-09-07 UI 微调） -->
         <div class="proxy-row">
           <div class="form-row host-row">
-            <label class="label" for="proxy-host">代理地址</label>
+            <label class="label" for="proxy-host">{{ t('settings.proxy.host') }}</label>
             <input id="proxy-host" v-model="proxyHost" class="input" type="text" placeholder="127.0.0.1" />
           </div>
           <div class="form-row port-row">
-            <label class="label" for="proxy-port">端口</label>
+            <label class="label" for="proxy-port">{{ t('settings.proxy.port') }}</label>
             <input id="proxy-port" v-model="proxyPort" class="input" type="text" inputmode="numeric" maxlength="5" placeholder="10808" />
           </div>
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="modal-save" :disabled="saving" aria-label="保存" @click="save">
+        <button type="button" class="modal-save" :disabled="saving" :aria-label="t('settings.save')" @click="save">
           <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" style="font-size: 18px;" />
         </button>
       </div>

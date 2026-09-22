@@ -124,4 +124,17 @@ describe('SettingsModal 代理输入校验', () => {
     expect(saveErrorText()).toContain('端口不能为空（或留空禁用代理）');
     expect(invoke).not.toHaveBeenCalledWith('save_proxy', expect.anything(), expect.anything());
   });
+
+  it('切换语言 → 调用 set_language 且界面文案变为英文', async () => {
+    mountModal(); await flush();
+    const trigger = document.querySelector('.modal-body .dropdown .select-trigger') as HTMLButtonElement | null;
+    if (!trigger) throw new Error('language dropdown not found');
+    trigger.click(); await flush();
+    const options = Array.from(document.querySelectorAll('.dropdown-panel .option')) as HTMLElement[];
+    const en = options.find((o) => (o.textContent || '').trim() === 'English');
+    if (!en) throw new Error('English option not found');
+    en.click(); await flush();
+    expect(invoke).toHaveBeenCalledWith('set_language', 'en');
+    expect(document.querySelector('.modal-title')!.textContent).toBe('Settings');
+  });
 });
