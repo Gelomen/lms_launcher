@@ -144,6 +144,7 @@ async function save() {
 .modal-box.card { padding: 0; }
 .form-row { display: flex; flex-direction: column; gap: 4px; }
 .form-row + .form-row { margin-top: 12px; }
+.form-row + .proxy-row { margin-top: 12px; } /* 语言行（.form-row）→ proxy-row 间距：+.form-row 不跨类名匹配，单独补一条 */
 .proxy-row .form-row + .form-row { margin-top: 0; } /* 同行布局：取消兄弟列的纵向间距（原 12px 会把端口列顶低错位） */
 /* 代理地址 + 端口同行：弹性/定宽放在列（.form-row）上；输入框保持 .input 固有高度 var(--h-control)，两列等高。
    注意不能在 input 上用 flex:1——.form-row 是 column flex，flex-basis:0% 会沿列方向把 host 框的高度拉高，造成两框不等高。 */

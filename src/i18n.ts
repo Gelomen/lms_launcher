@@ -3,6 +3,10 @@ import { computed, ref } from 'vue';
 import { dict, translate, type Lang } from '../src-main/i18n/dict';
 import { invoke } from './ipc';
 
+// re-export：渲染端使用方（src/main.ts、SettingsModal.vue 等）统一从本模块 import type Lang，
+// 与 src-main/i18n/index.ts 的 re-export 模式一致（根因：任务 1 落地时缺此行，导致 import type Lang 为类型错误）。
+export type { Lang } from '../src-main/i18n/dict';
+
 const lang = ref<Lang>('zh');
 
 /** 当前语言（只读视图，变更请走 setLang / applyLangLocal）。 */
