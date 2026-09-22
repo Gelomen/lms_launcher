@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
 import { trayTooltipText } from './tray-tooltip';
+import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
@@ -72,6 +73,14 @@ function yamlPaths(): [string, string, string] {
   const d = dataDir();
   return [join(d, 'lms_launcher.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
 }
+// i18n（spec §3.3）：主进程为语言权威，whenReady 最先解析。托盘菜单、启动检测日志、
+// 更新日志回显全部使用该初值。用户选择（yaml.language）优先于系统 locale；
+// yaml 被手改成非法值时回落跟随系统（任务 3 控制器裁定 B-a 的运行时校验）。
+function initI18n(): void {
+  const [p] = yamlPaths();
+  const configured = appConfigLoad(p).language;
+  applyLang(configured === 'zh' || configured === 'en' ? configured : resolveSystemLang(app.getLocale()));
+}
 // 更新包目录：exe 目录下 downloads/（不直接落根目录，保持根目录整洁）
 // 下载前确保存在（不存在则创建，失败不阻断——writeStream 会自行报错走原有失败分支）
 function updateZipDir(): string {
@@ -118,43 +127,40 @@ function gpuScriptPath(): string {
 
 // ---------- 托盘（§4.6） ----------
 let tray: Tray | null = null;
-function createTray(): void {
-  const icon = nativeImage.createFromPath(appIconPath());
-  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
-  const menu = Menu.buildFromTemplate([
-    { label: '打开 LMS 启动器', click: () => {
+let trayTooltipName: string | null = null; // 当前选中模板名（语言切换时重建 tooltip 用）
+function buildTrayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: t('tray.open'), click: () => {
       restoreWindow();
     } },
-    { label: '检查更新', click: () => {
+    { label: t('tray.checkUpdate'), click: () => {
       const win = mainWin();
       if (win) {
-        // 先唤回窗口（关闭=隐藏到托盘），渲染端收到 tray-update-request 后走顶栏同款检查流程
         win.show(); win.focus();
         win.webContents.send('tray-update-request', {});
       }
     } },
-    { label: '设置', click: () => {
+    { label: t('tray.settings'), click: () => {
       const win = mainWin();
       if (win) {
-        // 先唤回窗口（关闭=隐藏到托盘），渲染端收到 tray-settings-request 后打开设置面板
         win.show(); win.focus();
         win.webContents.send('tray-settings-request', {});
       }
     } },
-    { label: '退出', click: () => {
+    { label: t('tray.exit'), click: () => {
       const win = mainWin();
       if (win) {
-        // 先唤回窗口：关闭=隐藏到托盘（main.ts §4.6），确认对话框开在渲染进程窗口内——
-        // 窗口还藏着时 send 过去用户看不到任何弹窗。show+focus 后 ConfirmDialog 才可见。
         win.show(); win.focus();
         win.webContents.send('tray-exit-request', {});
       }
     } },
   ]);
-  // 托盘 hover 提示（规格 2026-09-05-tray-tooltip-template-design）：初始无选择 = 占位文案；
-  // 渲染端 LaunchBar 首帧 load() 后经 tray-tooltip-update 推送真实选中模板名。
-  tray.setToolTip(trayTooltipText(null));
-  tray.setContextMenu(menu);
+}
+function createTray(): void {
+  const icon = nativeImage.createFromPath(appIconPath());
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+  tray.setToolTip(trayTooltipText(trayTooltipName, t('tray.tooltip.empty')));
+  tray.setContextMenu(buildTrayMenu());
   // 双击托盘图标 = 唤回窗口（方案 A：单击无反应，右键维持菜单）
   tray.on('double-click', () => {
     restoreWindow();
@@ -215,7 +221,21 @@ ipcMain.handle('get_app_config', (): AppConfig => {
 // tray-tooltip-update（规格 2026-09-05-tray-tooltip-template-design）：渲染端 LaunchBar 选中态
 // 变化（load 后 / 切换下拉 / 配置缺失）→ 原生 tray.setToolTip 更新 hover 提示
 ipcMain.handle('tray-tooltip-update', (_e, name: string | null): void => {
-  if (tray) tray.setToolTip(trayTooltipText(name));
+  trayTooltipName = name;
+  if (tray) tray.setToolTip(trayTooltipText(name, t('tray.tooltip.empty')));
+});
+// i18n（spec §3.3）：渲染端启动取初值；设置弹窗切换后主进程写 yaml + 重建托盘菜单。
+ipcMain.handle('get_language', (): Lang => getLang());
+ipcMain.handle('set_language', (_e, lang: Lang): void => {
+  if (lang !== 'zh' && lang !== 'en') return; // IPC 边界防御（任务 3 控制器裁定 B-b）：渲染端 devtools 可传任意值
+  applyLang(lang);
+  const [p] = yamlPaths();
+  const cfg = appConfigLoad(p);
+  appConfigSave(p, { ...cfg, language: lang });
+  if (tray) {
+    tray.setToolTip(trayTooltipText(trayTooltipName, t('tray.tooltip.empty')));
+    tray.setContextMenu(buildTrayMenu());
+  }
 });
 // save_proxy：持久化更新代理（host/port 均为空 = 清空代理，行为回落到直连）；saveProxy 的 throw 原样传给渲染端 reject
 ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
@@ -930,6 +950,7 @@ ipcMain.handle('get_llama_update_config', (): { success: true; config: LlamaUpda
 
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
+  initI18n(); // i18n（spec §3.3）：主进程为语言权威，whenReady 最先解析（须在托盘/日志文案使用前）
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
   Menu.setApplicationMenu(null);
   // params_default 存量兼容（2026-09）：现有模板配置缺失的默认值自动为用户新增（仅改动才落盘；失败只记日志不挡启动）

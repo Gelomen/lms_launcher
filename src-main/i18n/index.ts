@@ -17,3 +17,5 @@ export function applyLang(lang: Lang): void {
 export function t(key: string, params?: Record<string, string | number>): string {
   return translate(dict[current] as Readonly<Record<string, string>>, key, params);
 }
+
+export { resolveSystemLang } from './dict';
