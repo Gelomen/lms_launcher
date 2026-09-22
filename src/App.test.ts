@@ -884,4 +884,38 @@ describe('i18n / App 外壳（Slice 1）', () => {
     expect(maxBtn.attributes('aria-label')).toBe('Restore');
     w.unmount();
   });
+
+  function mountWithUpdate(): any {
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve(READY);
+        case 'get_configs': return Promise.resolve(cfg());
+        case 'check_update': return Promise.resolve({ available: true, status: 'update-available', version: '9.9.9' });
+        default: return Promise.resolve(undefined);
+      }
+    });
+    return mount(App);
+  }
+
+  it('更新 pill available 态英文最短文案 + tooltip', async () => {
+    const w = mountWithUpdate();
+    await flush();
+    await applyEn();
+    const pill = w.find('.update-pill');
+    expect(pill.text()).toBe('New version!');
+    expect(pill.attributes('data-tooltip')).toBe('Version 9.9.9 available, click to view and install');
+    w.unmount();
+  });
+
+  it('更新 pill downloading 态英文只显示百分比 + tooltip', async () => {
+    const w = mountWithUpdate();
+    await flush();
+    await applyEn();
+    updateProgressHandlers.at(-1)!({ pct: 55 });
+    await nextTick();
+    const busy = w.find('.update-pill--busy');
+    expect(busy.text()).toBe('55%');
+    expect(busy.attributes('data-tooltip')).toBe('Downloading 55%, click to view progress');
+    w.unmount();
+  });
 });

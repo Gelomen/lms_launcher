@@ -316,14 +316,14 @@ function onExitClose(): void {
           v-if="updateState.phase === 'available'"
           type="button"
           class="update-pill tip-down"
-          :data-tooltip="'发现新版本 v' + updateState.version + '，点击查看并安装'"
-          @click="updateOpen = true">有新版本!</button>
+          :data-tooltip="t('app.update.tip.available', { version: updateState.version })"
+          @click="updateOpen = true">{{ t('app.update.pill.available') }}</button>
         <button
           v-else-if="updateState.phase === 'downloading'"
           type="button"
           class="update-pill update-pill--busy tip-down"
-          :data-tooltip="'下载中 ' + updateState.pct + '%，点击查看进度'"
-          @click="updateOpen = true">下载中 {{ updateState.pct }}%</button>
+          :data-tooltip="t('app.update.tip.downloading', { pct: updateState.pct })"
+          @click="updateOpen = true">{{ t('app.update.pill.downloading', { pct: updateState.pct }) }}</button>
       </div>
       <div class="winbar__controls">
         <!-- hover 提示 = 项目公共 tooltip（tip-down 向下定位，同 .update-pill）；原生 title 不保留 -->
