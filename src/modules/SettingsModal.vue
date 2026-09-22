@@ -27,6 +27,7 @@ const langOptions = [
 ];
 // 语言切换即时生效：setLang 本地立即切换 + 通知主进程持久化/重建托盘，无保存按钮。
 function onLangChange(v: string): void {
+  if (v !== 'zh' && v !== 'en') return;
   setLang(v as Lang);
 }
 

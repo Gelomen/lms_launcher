@@ -13,9 +13,13 @@ export function applyLang(lang: Lang): void {
   current = lang;
 }
 
-/** 主进程侧 t()：使用当前语言。 */
+/** 主进程侧 t()：使用当前语言。缺 key 时返回 key 本身，并在 dev（NODE_ENV 非 production）下 console.warn（spec §3.1）。 */
 export function t(key: string, params?: Record<string, string | number>): string {
-  return translate(dict[current] as Readonly<Record<string, string>>, key, params);
+  const table = dict[current] as Readonly<Record<string, string>>;
+  if (table[key] === undefined && process.env.NODE_ENV !== 'production') {
+    console.warn(`[i18n] missing key: ${key} (lang=${current})`);
+  }
+  return translate(table, key, params);
 }
 
 export { resolveSystemLang } from './dict';

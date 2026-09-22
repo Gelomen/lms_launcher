@@ -12,10 +12,6 @@ const lang = ref<Lang>('zh');
 /** 当前语言（只读视图，变更请走 setLang / applyLangLocal）。 */
 export const currentLang = computed<Lang>(() => lang.value);
 
-export function getLang(): Lang {
-  return lang.value;
-}
-
 /** 仅改本地状态 + <html lang>，不触碰持久化。启动取初值用。 */
 export function applyLangLocal(l: Lang): void {
   lang.value = l;
@@ -30,7 +26,11 @@ export function setLang(l: Lang): void {
   void invoke('set_language', l);
 }
 
-/** 渲染端响应式 t()：读 lang ref，组件模板/计算属性自动重渲染。 */
+/** 渲染端响应式 t()：读 lang ref，组件模板/计算属性自动重渲染。缺 key 时返回 key 本身，并在 dev（NODE_ENV 非 production）下 console.warn（spec §3.1）。 */
 export function t(key: string, params?: Record<string, string | number>): string {
-  return translate(dict[lang.value] as Readonly<Record<string, string>>, key, params);
+  const table = dict[lang.value] as Readonly<Record<string, string>>;
+  if (table[key] === undefined && process.env.NODE_ENV !== 'production') {
+    console.warn(`[i18n] missing key: ${key} (lang=${lang.value})`);
+  }
+  return translate(table, key, params);
 }

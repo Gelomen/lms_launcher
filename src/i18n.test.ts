@@ -27,4 +27,16 @@ describe('renderer i18n', () => {
     applyLangLocal('en');
     expect(invoke).not.toHaveBeenCalled();
   });
+
+  it('缺 key 回 key + dev warn（I-1）', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      applyLangLocal('zh');
+      expect(t('no.such.key')).toBe('no.such.key');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(String(warnSpy.mock.calls[0][0])).toContain('no.such.key');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });

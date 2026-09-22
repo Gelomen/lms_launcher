@@ -73,8 +73,8 @@ function yamlPaths(): [string, string, string] {
   const d = dataDir();
   return [join(d, 'lms_launcher.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
 }
-// i18n（spec §3.3）：主进程为语言权威，whenReady 最先解析。托盘菜单、启动检测日志、
-// 更新日志回显全部使用该初值。用户选择（yaml.language）优先于系统 locale；
+// i18n（spec §3.3）：主进程为语言权威，whenReady 最先解析。托盘菜单使用该初值；
+// 启动检测日志、更新日志回显待 S10 接入 t()。用户选择（yaml.language）优先于系统 locale；
 // yaml 被手改成非法值时回落跟随系统（任务 3 控制器裁定 B-a 的运行时校验）。
 function initI18n(): void {
   const [p] = yamlPaths();
@@ -136,6 +136,7 @@ function buildTrayMenu(): Menu {
     { label: t('tray.checkUpdate'), click: () => {
       const win = mainWin();
       if (win) {
+        // 先唤回窗口（关闭=隐藏到托盘），渲染端收到 tray-update-request 后走顶栏同款检查流程
         win.show(); win.focus();
         win.webContents.send('tray-update-request', {});
       }
@@ -143,6 +144,7 @@ function buildTrayMenu(): Menu {
     { label: t('tray.settings'), click: () => {
       const win = mainWin();
       if (win) {
+        // 先唤回窗口（关闭=隐藏到托盘），渲染端收到 tray-settings-request 后打开设置面板
         win.show(); win.focus();
         win.webContents.send('tray-settings-request', {});
       }
@@ -150,6 +152,8 @@ function buildTrayMenu(): Menu {
     { label: t('tray.exit'), click: () => {
       const win = mainWin();
       if (win) {
+        // 先唤回窗口：关闭=隐藏到托盘（main.ts §4.6），确认对话框开在渲染进程窗口内——
+        // 窗口还藏着时 send 过去用户看不到任何弹窗。show+focus 后 ConfirmDialog 才可见。
         win.show(); win.focus();
         win.webContents.send('tray-exit-request', {});
       }
@@ -159,6 +163,8 @@ function buildTrayMenu(): Menu {
 function createTray(): void {
   const icon = nativeImage.createFromPath(appIconPath());
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
+  // 托盘 hover 提示（规格 2026-09-05-tray-tooltip-template-design）：初始无选择 = 占位文案；
+  // 渲染端 LaunchBar 首帧 load() 后经 tray-tooltip-update 推送真实选中模板名。
   tray.setToolTip(trayTooltipText(trayTooltipName, t('tray.tooltip.empty')));
   tray.setContextMenu(buildTrayMenu());
   // 双击托盘图标 = 唤回窗口（方案 A：单击无反应，右键维持菜单）
