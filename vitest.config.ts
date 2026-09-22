@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src-main/**/*.test.ts', 'src/**/*.test.ts'],
+    setupFiles: ['./src/test-setup.ts'],
     // Windows 下 powershell 进程测试需要 30–60s（见任务 4）；组件测试用文件级 @vitest-environment happy-dom 声明
     testTimeout: 60000,
   },
