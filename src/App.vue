@@ -10,6 +10,7 @@ import { LOG_TABS, type LogTabId } from './modules/log-tabs';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import UpdateModal from './modules/UpdateModal.vue';
 import SettingsModal from './modules/SettingsModal.vue';
+import { t } from './i18n';
 
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
@@ -308,7 +309,7 @@ function onExitClose(): void {
     <header class="winbar">
       <div class="winbar__brand">
         <img class="winbar__logo" :src="logoUrl" alt="" draggable="false" />
-        <span class="winbar__name">LMS 启动器</span>
+        <span class="winbar__name">{{ t('app.brand') }}</span>
         <span v-if="version" class="winbar__version">v{{ version }}</span>
         <!-- 自动更新（2026-09-01-update-modal §E）：有新版本 → 圆角紫底按钮；点击只打开检查更新弹窗 -->
         <button
@@ -326,10 +327,10 @@ function onExitClose(): void {
       </div>
       <div class="winbar__controls">
         <!-- hover 提示 = 项目公共 tooltip（tip-down 向下定位，同 .update-pill）；原生 title 不保留 -->
-        <button class="winbtn winbtn--github tip-down" data-tooltip="GitHub 仓库" aria-label="GitHub 仓库" @click="onOpenGithub"><FontAwesomeIcon :icon="['fab','github']" /></button>
-        <button class="winbtn tip-down" data-tooltip="最小化" aria-label="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
-        <button class="winbtn tip-down" :data-tooltip="maximized ? '还原' : '最大化'" :aria-label="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
-        <button class="winbtn winbtn--close tip-down" data-tooltip="关闭" aria-label="关闭" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
+        <button class="winbtn winbtn--github tip-down" :data-tooltip="t('app.winbar.github')" :aria-label="t('app.winbar.github')" @click="onOpenGithub"><FontAwesomeIcon :icon="['fab','github']" /></button>
+        <button class="winbtn tip-down" :data-tooltip="t('app.winbar.minimize')" :aria-label="t('app.winbar.minimize')" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
+        <button class="winbtn tip-down" :data-tooltip="t(maximized ? 'app.winbar.restore' : 'app.winbar.maximize')" :aria-label="t(maximized ? 'app.winbar.restore' : 'app.winbar.maximize')" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
+        <button class="winbtn winbtn--close tip-down" :data-tooltip="t('app.winbar.close')" :aria-label="t('app.winbar.close')" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
       </div>
   </header>
   <main class="layout">

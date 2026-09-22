@@ -5,6 +5,7 @@
 //  start failure -> automatically falls back to green [启动] (authoritative get_state)
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import App from './App.vue';
 
 const invoke = vi.fn();
@@ -829,6 +830,58 @@ describe('App GPU card mount', () => {
     expect(gpuCard.find('.module-gpu').exists()).toBe(true);
     expect(gpuCard.find('.gpu-title').text()).toBe('#GPU 0 NVIDIA GeForce RTX 4090');
     expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 / 24.0 GB');
+    w.unmount();
+  });
+});
+
+// ===== Slice 1（2026-09-23-i18n-app-shell-design）：App 外壳 i18n =====
+describe('i18n / App 外壳（Slice 1）', () => {
+  // S0 记录的坑：./i18n 必须延迟 import（静态 import 会在 vi.mock('./ipc') 注册前绑定真实 ipc）
+  async function applyEn(): Promise<void> {
+    const { applyLangLocal } = await import('./i18n');
+    applyLangLocal('en');
+    await nextTick();
+  }
+
+  function mountShell(): any {
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve(READY);
+        case 'get_configs': return Promise.resolve(cfg());
+        default: return Promise.resolve(undefined);
+      }
+    });
+    return mount(App);
+  }
+
+  it('winbar 品牌 / GitHub / 三键 tooltip+aria 随语言切换', async () => {
+    const w = mountShell();
+    await flush();
+    expect(w.find('.winbar__name').text()).toBe('LMS 启动器');
+    const btns = w.findAll('.winbtn');
+    expect(btns[0].attributes('data-tooltip')).toBe('GitHub 仓库');
+    await applyEn();
+    expect(w.find('.winbar__name').text()).toBe('LMS Launcher');
+    expect(btns[0].attributes('data-tooltip')).toBe('GitHub repository');
+    expect(btns[0].attributes('aria-label')).toBe('GitHub repository');
+    expect(btns[1].attributes('data-tooltip')).toBe('Minimize');
+    expect(btns[1].attributes('aria-label')).toBe('Minimize');
+    expect(btns[2].attributes('data-tooltip')).toBe('Maximize');
+    expect(btns[2].attributes('aria-label')).toBe('Maximize');
+    expect(btns[3].attributes('data-tooltip')).toBe('Close');
+    expect(btns[3].attributes('aria-label')).toBe('Close');
+    w.unmount();
+  });
+
+  it('已最大化时 en 还原键为 Restore', async () => {
+    const w = mountShell();
+    await flush();
+    await applyEn();
+    winMaxHandlers.at(-1)!({ maximized: true });
+    await nextTick();
+    const maxBtn = w.findAll('.winbtn')[2];
+    expect(maxBtn.attributes('data-tooltip')).toBe('Restore');
+    expect(maxBtn.attributes('aria-label')).toBe('Restore');
     w.unmount();
   });
 });
