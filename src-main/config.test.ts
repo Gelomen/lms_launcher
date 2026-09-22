@@ -196,7 +196,7 @@ params_file:
     expect(pf.params_options?.load_mode).toEqual(['none','auto','mmap','mlock','mmap+mlock','dio']);
     expect(pf.params_options?.reasoning).toEqual(['auto','on','off']);
     expect(pf.params_options?.reasoning_format).toEqual(['none','hide','deepseek']);
-    expect(pf.params_options?.reasoning_effort).toEqual(['none','low','medium','high','xhigh','max']);
+    expect(pf.params_options?.reasoning_effort).toEqual(['default','low','medium','high','xhigh','max']);
     // ctk/ctv：KV cache dtype 下拉（精度从低到高，q4_0 为默认首项）
     expect(pf.params_options?.ctk).toEqual(['q4_0','q5_0','q8_0','f16']);
     expect(pf.params_options?.ctv).toEqual(['q4_0','q5_0','q8_0','f16']);

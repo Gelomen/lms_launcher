@@ -205,7 +205,7 @@ export function defaultParams(): ParamsFile {
       load_mode: ['none', 'auto', 'mmap', 'mlock', 'mmap+mlock', 'dio'],
       reasoning: ['auto', 'on', 'off'],
       reasoning_format: ['none', 'hide', 'deepseek'],
-      reasoning_effort: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+      reasoning_effort: ['default', 'low', 'medium', 'high', 'xhigh', 'max'],
       fit: ['off', 'on'], // -fit 显存自动调整开关（默认 off：llama-server 自身默认 on，launcher 显式 off 保持参数显式可控）
     },
     params_boolean: ['jinja', 'reasoning_preserve', 'no_reasoning_preserve', 'metrics'],
