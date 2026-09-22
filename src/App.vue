@@ -350,7 +350,7 @@ function onExitClose(): void {
       <LogPanel :buckets="logBuckets" @clear="onLogClear" />
     </section>
     <!-- §D 共用退出确认：托盘「退出」(exit_app) 与 更新 ready 后「重启应用」(run_update) 共享；exitAction 分流 -->
-    <ConfirmDialog :open="exitConfirm" title="退出程序" message="将停止 llama-server 并退出，是否确认？" tone="primary"
+    <ConfirmDialog :open="exitConfirm" :title="t('app.exit.title')" :message="t('app.exit.message')" tone="primary"
       @confirm="onExitConfirmed" @close="onExitClose" />
     <!-- 检查更新弹窗（七态由 updateState 驱动；action 事件由 onUpdateAction 分流） -->
     <!-- llama.cpp 更新区域由 UpdateModal 内部管理（Task 7）；此处仅添加 llama event handlers -->

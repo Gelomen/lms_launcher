@@ -918,4 +918,18 @@ describe('i18n / App 外壳（Slice 1）', () => {
     expect(busy.attributes('data-tooltip')).toBe('Downloading 55%, click to view progress');
     w.unmount();
   });
+
+  it('退出确认框 title/message 随语言即时重译', async () => {
+    const w = mountShell();
+    await flush();
+    trayHandlers.at(-1)!(); // 托盘「退出」→ 打开确认框
+    await nextTick();
+    expect(document.querySelector('.confirm-box')!.textContent).toContain('退出程序');
+    await applyEn();
+    await flush();
+    const box = document.querySelector('.confirm-box') as HTMLElement;
+    expect(box.textContent).toContain('Exit');
+    expect(box.textContent).toContain('llama-server will be stopped. Continue?');
+    w.unmount();
+  });
 });
