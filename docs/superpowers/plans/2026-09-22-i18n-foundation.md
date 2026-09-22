@@ -14,7 +14,7 @@
 
 - 词典单一真源 `src-main/i18n/dict.ts`；**不引入第三方 i18n 依赖**。
 - key 命名 `<scope>.<subject>[.<modifier>]`；scope 白名单：`common` / `app` / `tray` / `settings` / `dir` / `launch` / `tpl` / `tplModal` / `gpu` / `log` / `update` / `vram` / `err`。
-- 不译边界（规格 §1.2）：llama-server 原生输出、release body 版本 label、`[lms_launcher]` / `MISSING:` / `VALIDATION:` / `YAML:` 前缀、专名与单位、参数 flag 第一行。
+- 不译边界（规格 §1.2）：llama-server 原生输出、release body 版本 label、`[lms_launcher]` / `MISSING:` / `VALIDATION:` / `YAML:` / `PROC:` / `STATE:` 前缀、专名与单位、参数 flag 第一行。
 - 中文布局冻结；英文按钮用最短动词、下载态仅百分比（本 slice 只涉及设置弹窗与托盘文案）。
 - 默认语言跟随系统（`zh` 系 → zh，其余 → en）；手动选择优先并持久化。
 - 测试固定 zh（`src/test-setup.ts`）；**现有中文断言不改**。
