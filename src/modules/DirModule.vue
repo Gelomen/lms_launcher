@@ -4,6 +4,7 @@ import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faFolderOpen } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, onStartupLlamaCheck } from '../ipc';
+import { t } from '../i18n';
 
 // 2026-08-31：校验出 ✓/✗ 结果后向 App 通报（App 写「目录校验」sys 行进 LMS Launcher 日志区）
 const emit = defineEmits<{ (e: 'validated', r: { ok: boolean; dir: string }): void }>();
@@ -15,6 +16,7 @@ const byPrefixAndName = { fat: { 'folder-open': faFolderOpen } };
 
 // 模块 1 · llama.cpp 安装目录（规格 §4.1）
 const dir = ref('');
+// msg 存词典 key（spec §3），模板 t() 即时重译
 const status = ref<{ ok: boolean; msg: string } | null>(null);
 const error = ref<string | null>(null);
 const saving = ref(false);
@@ -54,7 +56,7 @@ async function validate(): Promise<void> {
     const ok = await invoke<boolean>('validate_dir', dir.value.trim());
     emit('validated', { ok, dir: dir.value.trim() }); // 日志区记录校验结果（成功/失败均发）
     if (ok) {
-      status.value = { ok: true, msg: 'llama-server.exe 已找到' };
+      status.value = { ok: true, msg: 'dir.status.ok' };
       saving.value = true;
       try {
         await invoke('save_llama_dir', dir.value.trim());
@@ -62,7 +64,7 @@ async function validate(): Promise<void> {
         error.value = errMsg(e);
       } finally { saving.value = false; }
     } else {
-      status.value = { ok: false, msg: '未找到 llama-server.exe' };
+      status.value = { ok: false, msg: 'dir.status.exe_missing' };
     }
   } catch (e) {
     // validate_dir 契约上不抛 MISSING/VALIDATION —— 未知异常转字符串展示（不崩溃）
@@ -78,9 +80,9 @@ onMounted(() => {
   unsubCheck = onStartupLlamaCheck((e) => {
     // e.status 解构重命名（chk）——避免与下方 status ref 同名遮蔽
     const chk = e.status;
-    if (chk === 'ok') status.value = { ok: true, msg: 'llama-server.exe 已找到' };
-    else if (chk === 'exe_missing') status.value = { ok: false, msg: '未找到 llama-server.exe' };
-    else if (chk === 'dir_missing') status.value = { ok: false, msg: 'llama.cpp 安装目录不存在' };
+    if (chk === 'ok') status.value = { ok: true, msg: 'dir.status.ok' };
+    else if (chk === 'exe_missing') status.value = { ok: false, msg: 'dir.status.exe_missing' };
+    else if (chk === 'dir_missing') status.value = { ok: false, msg: 'dir.status.dir_missing' };
     else if (chk === 'unset') status.value = null;
   });
   void load();
@@ -94,22 +96,22 @@ onUnmounted(() => { if (unsubCheck) unsubCheck(); });
         <path d="M600 392L504.249 558L504.137 557.929C487.252 584.069 458.193 600 426.864 600H120L240 392H600Z"></path>
         <path d="M240 392H0L199.602 46.0254C216.032 17.5463 246.411 3.25756e-05 279.29 0H466.154L240 392Z"></path>
       </svg>
-      llama.cpp 安装目录
+      {{ t('dir.title') }}
     </h2>
     <p v-if="error" class="error-text">{{ error }}</p>
     <div style="display: flex; gap: 8px;">
       <input class="input" v-model="dir" @change="status = null" />
       <!-- 与「启动控制」状态按钮同款保护：flex-shrink:0 防止窄卡片下被 input(width:100%) 挤压 ——
            宽度固定 = [启动]/[停止] 的盒子（2 CJK 字 + padding + 边框），两个按钮尺寸一致 -->
-      <button class="btn btn-secondary btn-dirpick btn-noshrink tip-up" data-tooltip="选择 llama.cpp 安装目录" aria-label="选择 llama.cpp 安装目录" @click="pickDir">
+      <button class="btn btn-secondary btn-dirpick btn-noshrink tip-up" :data-tooltip="t('dir.btn.select')" :aria-label="t('dir.btn.select')" @click="pickDir">
         <FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 16px;" />
       </button>
     </div>
     <!-- 下方恒定槽位：预留校验结果行（单行，与「保存中…」共用；避免校验前后卡片高度抖动） -->
     <div class="dir-status">
-      <p v-if="status?.ok" class="ok-text">✓ {{ status.msg }}</p>
-      <p v-else-if="status && !status.ok" class="error-text">✗ {{ status.msg }}</p>
-      <p v-else-if="saving" class="label">保存中…</p>
+      <p v-if="status?.ok" class="ok-text">✓ {{ t(status.msg) }}</p>
+      <p v-else-if="status && !status.ok" class="error-text">✗ {{ t(status.msg) }}</p>
+      <p v-else-if="saving" class="label">{{ t('dir.status.saving') }}</p>
     </div>
   </section>
 </template>
