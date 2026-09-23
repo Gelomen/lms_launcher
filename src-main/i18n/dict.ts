@@ -34,6 +34,10 @@ export const dict = {
     'dir.status.exe_missing': '未找到 llama-server.exe',
     'dir.status.dir_missing': 'llama.cpp 安装目录不存在',
     'dir.status.saving': '保存中…',
+    // 启动控制卡片（S3 2026-09-23-i18n-launch-card）
+    'launch.title': 'llama-server 启动控制',
+    'launch.placeholder.select': '选择配置…',
+    'launch.placeholder.empty': '暂无模板配置',
   },
   en: {
     'common.cancel': 'Cancel',
@@ -65,6 +69,10 @@ export const dict = {
     'dir.status.exe_missing': 'llama-server.exe not found',
     'dir.status.dir_missing': "llama.cpp directory doesn't exist",
     'dir.status.saving': 'Saving...',
+    // 启动控制卡片（S3 2026-09-23-i18n-launch-card）
+    'launch.title': 'Launch llama-server',
+    'launch.placeholder.select': 'Select a config...',
+    'launch.placeholder.empty': 'No templates',
   },
 } as const;
 
