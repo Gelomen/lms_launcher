@@ -38,6 +38,16 @@ export const dict = {
     'launch.title': '启动 llama-server', // 2026-09-23 用户文案修订：原「llama-server 启动控制」
     'launch.placeholder.select': '选择配置…',
     'launch.placeholder.empty': '暂无模板配置',
+    // 模板管理卡片（S4 2026-09-24-i18n-template-card）：值与 TemplateModule.vue 现状中文串逐字一致（tooltip 为半角冒号+空格）
+    'tpl.title': '启动参数模板',
+    'tpl.btn.new': '新建模板',
+    'tpl.btn.copy': '复制',
+    'tpl.btn.edit': '编辑',
+    'tpl.vram.aria': '显卡显存设置',
+    'tpl.vram.tip.value': '显卡显存: {v}',
+    'tpl.vram.tip.unset': '显卡显存: 未配置',
+    'tpl.empty.missing': '暂无模板配置',
+    'tpl.empty.none': '暂无配置',
   },
   en: {
     'common.cancel': 'Cancel',
@@ -73,6 +83,16 @@ export const dict = {
     'launch.title': 'Launch llama-server',
     'launch.placeholder.select': 'Select a config...',
     'launch.placeholder.empty': 'No templates',
+    // 模板管理卡片（S4 2026-09-24-i18n-template-card）
+    'tpl.title': 'Flag templates',
+    'tpl.btn.new': 'New template',
+    'tpl.btn.copy': 'Copy',
+    'tpl.btn.edit': 'Edit',
+    'tpl.vram.aria': 'Set VRAM',
+    'tpl.vram.tip.value': 'VRAM: {v}',
+    'tpl.vram.tip.unset': 'VRAM not set',
+    'tpl.empty.missing': 'No templates',
+    'tpl.empty.none': 'No templates',
   },
 } as const;
 
