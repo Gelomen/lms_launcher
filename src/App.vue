@@ -326,11 +326,11 @@ function onExitClose(): void {
           @click="updateOpen = true">{{ t('app.update.pill.downloading', { pct: updateState.pct }) }}</button>
       </div>
       <div class="winbar__controls">
-        <!-- hover 提示 = 项目公共 tooltip（tip-down 向下定位，同 .update-pill）；原生 title 不保留 -->
+        <!-- GitHub 键保留项目公共 tooltip（tip-down 向下定位，同 .update-pill）；三键 tooltip 已移除（2026-09-23：英文 "Close" 的 ::after 未变换盒越过窗口右缘 → 横向滚动条顶出边距），仅留 aria-label -->
         <button class="winbtn winbtn--github tip-down" :data-tooltip="t('app.winbar.github')" :aria-label="t('app.winbar.github')" @click="onOpenGithub"><FontAwesomeIcon :icon="['fab','github']" /></button>
-        <button class="winbtn tip-down" :data-tooltip="t('app.winbar.minimize')" :aria-label="t('app.winbar.minimize')" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
-        <button class="winbtn tip-down" :data-tooltip="t(maximized ? 'app.winbar.restore' : 'app.winbar.maximize')" :aria-label="t(maximized ? 'app.winbar.restore' : 'app.winbar.maximize')" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
-        <button class="winbtn winbtn--close tip-down" :data-tooltip="t('app.winbar.close')" :aria-label="t('app.winbar.close')" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
+        <button class="winbtn" aria-label="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
+        <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
+        <button class="winbtn winbtn--close" aria-label="关闭" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
       </div>
   </header>
   <main class="layout">

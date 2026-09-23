@@ -34,10 +34,6 @@ describe('i18n dict', () => {
   it('S1：app.* 的 zh 值与既有界面文案逐字一致', () => {
     expect(dict.zh['app.brand']).toBe('LMS 启动器');
     expect(dict.zh['app.winbar.github']).toBe('GitHub 仓库');
-    expect(dict.zh['app.winbar.minimize']).toBe('最小化');
-    expect(dict.zh['app.winbar.maximize']).toBe('最大化');
-    expect(dict.zh['app.winbar.restore']).toBe('还原');
-    expect(dict.zh['app.winbar.close']).toBe('关闭');
     expect(dict.zh['app.update.pill.available']).toBe('有新版本!');
     expect(dict.zh['app.update.pill.downloading']).toBe('下载中 {pct}%');
     expect(dict.zh['app.update.tip.available']).toBe('发现新版本 v{version}，点击查看并安装');
@@ -49,10 +45,6 @@ describe('i18n dict', () => {
   it('S1：app.* 的 en 值为最短文案（下载态仅百分比）', () => {
     expect(dict.en['app.brand']).toBe('LMS Launcher');
     expect(dict.en['app.winbar.github']).toBe('GitHub repository');
-    expect(dict.en['app.winbar.minimize']).toBe('Minimize');
-    expect(dict.en['app.winbar.maximize']).toBe('Maximize');
-    expect(dict.en['app.winbar.restore']).toBe('Restore');
-    expect(dict.en['app.winbar.close']).toBe('Close');
     expect(dict.en['app.update.pill.available']).toBe('New version!');
     expect(dict.en['app.update.pill.downloading']).toBe('{pct}%');
     expect(dict.en['app.update.tip.available']).toBe('Version {version} available, click to view and install');

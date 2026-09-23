@@ -264,29 +264,20 @@ describe('window controls (frameless winbar)', () => {
     expect(invoke).toHaveBeenCalledWith('open_external', 'https://github.com/Gelomen/lms_launcher');
   });
 
-  it('hover tooltip = 项目公共 tooltip（tip-down 向下定位 + data-tooltip），原生 title 不保留', async () => {
+  it('hover tooltip 仅 GitHub 键（tip-down + data-tooltip），原生 title 不保留', async () => {
     const { w } = mountApp();
     await flush();
     const btns = w.find('.winbar').findAll('.winbtn');
     expect(btns[0].classes()).toContain('tip-down');
     expect(btns[0].attributes('data-tooltip')).toBe('GitHub 仓库');
     expect(btns[0].attributes('title')).toBeUndefined();
-    expect(btns[1].attributes('data-tooltip')).toBe('最小化');
-    expect(btns[1].attributes('title')).toBeUndefined();
-    expect(btns[2].attributes('data-tooltip')).toBe('最大化'); // 初始非最大化
-    expect(btns[2].attributes('title')).toBeUndefined();
-    expect(btns[3].classes()).toContain('tip-down');
-    expect(btns[3].attributes('data-tooltip')).toBe('关闭');
-    expect(btns[3].attributes('title')).toBeUndefined();
-  });
-
-  it('maximized push switches the tooltip 最大化 → 还原', async () => {
-    const { w } = mountApp();
-    await flush();
-    winMaxHandlers.forEach(fn => fn({ maximized: true })); // 模拟主进程推送
-    await flush();
-    const maxBtn = w.find('.winbar').findAll('.winbtn')[2];
-    expect(maxBtn.attributes('data-tooltip')).toBe('还原');
+    // 三键（最小化/最大化/关闭）已移除 hover tooltip（2026-09-23：英文 "Close" 的 ::after
+    // 未变换盒越过 frameless 窗口右缘 → 触发横向滚动条，整条 winbar 被顶左 10px）
+    for (const btn of btns.slice(1)) {
+      expect(btn.classes()).not.toContain('tip-down');
+      expect(btn.attributes('data-tooltip')).toBeUndefined();
+      expect(btn.attributes('title')).toBeUndefined();
+    }
   });
 
   it('clicking the controls invokes win_minimize / win_maximize / win_close', async () => {
@@ -854,7 +845,7 @@ describe('i18n / App 外壳（Slice 1）', () => {
     return mount(App);
   }
 
-  it('winbar 品牌 / GitHub / 三键 tooltip+aria 随语言切换', async () => {
+  it('winbar 品牌 / GitHub tooltip+aria 随语言切换;三键 aria-label 为静态中文不随语言切', async () => {
     const w = mountShell();
     await flush();
     expect(w.find('.winbar__name').text()).toBe('LMS 启动器');
@@ -864,24 +855,10 @@ describe('i18n / App 外壳（Slice 1）', () => {
     expect(w.find('.winbar__name').text()).toBe('LMS Launcher');
     expect(btns[0].attributes('data-tooltip')).toBe('GitHub repository');
     expect(btns[0].attributes('aria-label')).toBe('GitHub repository');
-    expect(btns[1].attributes('data-tooltip')).toBe('Minimize');
-    expect(btns[1].attributes('aria-label')).toBe('Minimize');
-    expect(btns[2].attributes('data-tooltip')).toBe('Maximize');
-    expect(btns[2].attributes('aria-label')).toBe('Maximize');
-    expect(btns[3].attributes('data-tooltip')).toBe('Close');
-    expect(btns[3].attributes('aria-label')).toBe('Close');
-    w.unmount();
-  });
-
-  it('已最大化时 en 还原键为 Restore', async () => {
-    const w = mountShell();
-    await flush();
-    await applyEn();
-    winMaxHandlers.at(-1)!({ maximized: true });
-    await nextTick();
-    const maxBtn = w.findAll('.winbtn')[2];
-    expect(maxBtn.attributes('data-tooltip')).toBe('Restore');
-    expect(maxBtn.attributes('aria-label')).toBe('Restore');
+    // 三键 tooltip 已移除,仅剩静态中文 aria-label（不随语言切换）
+    expect(btns[1].attributes('aria-label')).toBe('最小化');
+    expect(btns[2].attributes('aria-label')).toBe('最大化');
+    expect(btns[3].attributes('aria-label')).toBe('关闭');
     w.unmount();
   });
 
