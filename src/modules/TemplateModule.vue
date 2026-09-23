@@ -5,6 +5,7 @@ import { faPenToSquare, faCopy } from '@fortawesome/free-regular-svg-icons';
 import { faFileCirclePlus } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
+import { t } from '../i18n';
 import { truncateByWidth, visualWidth } from '../util/truncate';
 import TemplateModal from './TemplateModal.vue';
 import VramDialog from './VramDialog.vue';
@@ -155,19 +156,20 @@ onMounted(() => { void reload(); void loadVramTotal(); });
 <template>
   <section class="module module-template" style="position: relative;">
     <div style="display: flex; justify-content: flex-start; align-items: center; gap: 2px;">
-      <h2 style="margin-bottom: 0;">启动参数模板</h2>
-      <button class="icon-btn icon-btn--sm" data-tooltip="新建模板" aria-label="新建模板"
+      <h2 style="margin-bottom: 0;">{{ t('tpl.title') }}</h2>
+      <button class="icon-btn icon-btn--sm" :data-tooltip="t('tpl.btn.new')" :aria-label="t('tpl.btn.new')"
         @click="openNew">
         <FontAwesomeIcon :icon="byPrefixAndName.fat['file-circle-plus']" />
       </button>
     </div>
     <!-- VRAM 按钮:卡片右上角,紫底白字 14px;未配置显 VRAM / 已配置显 24GB(规格 §5) -->
-    <button class="vram-badge tip-up" :data-tooltip="'显卡显存: ' + (vramTotal !== undefined ? vramTotal + ' GB' : '未配置')"
-      aria-label="显卡显存设置" @click="vramDialogOpen = true">
+    <button class="vram-badge tip-up"
+      :data-tooltip="vramTotal !== undefined ? t('tpl.vram.tip.value', { v: vramTotal + ' GB' }) : t('tpl.vram.tip.unset')"
+      :aria-label="t('tpl.vram.aria')" @click="vramDialogOpen = true">
       {{ vramTotal !== undefined ? vramTotal + ' GB' : 'VRAM' }}
     </button>
     <div class="template-list">
-      <p v-if="missing && error" class="label">暂无模板配置</p>
+      <p v-if="missing && error" class="label">{{ t('tpl.empty.missing') }}</p>
       <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
       <!-- 行卡片化（2026-08-26 spec）：每配置一个 .tpl-row —— 灰边框圆角独立卡片，
            flex 两端对齐（id 左 / 编辑右），行间 gap 留白替代原 tr border-top 分隔线 -->
@@ -184,19 +186,19 @@ onMounted(() => { void reload(); void loadVramTotal(); });
           <!-- 操作按钮组：margin-left:auto 贴卡片右缘（复制在编辑左边） -->
           <div class="tpl-row__actions">
             <!-- 复制按钮（2026-08-30 spec）：faCopy regular 款；点击=新 id + name 加 - copy（递增编号）+ 插入本行后 -->
-            <button class="icon-btn icon-btn--sm" data-tooltip="复制" aria-label="复制"
+            <button class="icon-btn icon-btn--sm" :data-tooltip="t('tpl.btn.copy')" :aria-label="t('tpl.btn.copy')"
               :disabled="copying"
               @click="onCopy(id)">
               <FontAwesomeIcon :icon="byPrefixAndName.fat['copy']" />
             </button>
-            <button class="icon-btn icon-btn--sm" data-tooltip="编辑" aria-label="编辑"
+            <button class="icon-btn icon-btn--sm" :data-tooltip="t('tpl.btn.edit')" :aria-label="t('tpl.btn.edit')"
               @click="openEdit(id)">
               <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
             </button>
           </div>
         </div>
       </div>
-      <p v-if="configs && Object.keys(configs).length === 0" class="label">暂无配置</p>
+      <p v-if="configs && Object.keys(configs).length === 0" class="label">{{ t('tpl.empty.none') }}</p>
     </div>
 
     <TemplateModal
