@@ -2,11 +2,12 @@
 // 组件级测试：TemplateModule —— 配置存在时必须渲染出行（preview() 摘要），不得白屏。
 // RED 依据：bug#2 现场复现——首次成功保存后 .module-template 整个从 DOM 消失
 // （TypeError: Cannot read properties of undefined (reading 'm') @ preview()）。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import fs from 'fs';
 import path from 'path';
 import TemplateModule from './TemplateModule.vue';
+import { t, applyLangLocal } from '../i18n';
 import { defaultParams } from '../../src-main/config';
 
 // 注入真实 style.css —— 组件测试不挂载 App,全局样式不会自动进入 DOM;CSS 契约断言(getComputedStyle)需要它
@@ -359,5 +360,105 @@ describe('TemplateModule', () => {
     const title = document.querySelector(".modal-head .modal-title");
     expect(title?.textContent).toBe("新建模板");
     wrapper.unmount();
+  });
+});
+
+// ===== S4（2026-09-24-i18n-template-card）：模板管理卡片 en 冒烟 6 条 =====
+// TDD 先行（红）：TemplateModule.vue 尚未接入 t()，组件仍输出中文串——6 条渲染级断言预期红。
+// stubLmsEn：invoke 白名单覆盖 get_configs / get_params / get_app_config，其余 resolve(null)；
+// afterEach 还原 zh，防污染同文件既有 12 条 zh 用例（S2/S3 同款）。
+describe('TemplateModule en 冒烟', () => {
+  function stubLmsEn(
+    over: Record<string, (...a: unknown[]) => unknown> = {},
+  ): void {
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => {
+        if (over[cmd]) return Promise.resolve(over[cmd](...args)); // 用例覆盖优先（MISSING 用例的 get_configs reject 等）
+        if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS)));
+        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_app_config') return Promise.resolve({ llama_dir: 'x' });
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+  }
+
+  beforeEach(() => {
+    applyLangLocal('en');
+  });
+  afterEach(() => {
+    applyLangLocal('zh');
+  });
+
+  it('标题 en：h2 = Flag templates', async () => {
+    stubLmsEn();
+    const w = mount(TemplateModule);
+    await flush();
+    expect(w.find('h2').text()).toBe('Flag templates');
+    w.unmount();
+  });
+
+  it('新建按钮 en：data-tooltip 与 aria-label 均为 New template', async () => {
+    stubLmsEn();
+    const w = mount(TemplateModule);
+    await flush();
+    const addBtn = w.find("button[data-tooltip='New template']");
+    expect(addBtn.exists()).toBe(true);
+    expect(addBtn.attributes('aria-label')).toBe('New template');
+    w.unmount();
+  });
+
+  it('行按钮 en：行内 data-tooltip 分别 = Copy / Edit（aria 同值）', async () => {
+    stubLmsEn();
+    const w = mount(TemplateModule);
+    await flush();
+    const row = w.findAll('.module-template .tpl-row')[0];
+    const btns = row.findAll('button');
+    expect(btns.length).toBe(2);
+    expect(btns[0].attributes('data-tooltip')).toBe('Copy');
+    expect(btns[0].attributes('aria-label')).toBe('Copy');
+    expect(btns[1].attributes('data-tooltip')).toBe('Edit');
+    expect(btns[1].attributes('aria-label')).toBe('Edit');
+    w.unmount();
+  });
+
+  it('VRAM 已配置 en：.vram-badge data-tooltip = VRAM: 24 GB、aria-label = Set VRAM、text = 24 GB', async () => {
+    stubLmsEn({ get_app_config: () => ({ llama_dir: 'x', vram_total_gb: 24 }) });
+    const w = mount(TemplateModule);
+    await flush();
+    const badge = w.find('.vram-badge');
+    expect(badge.exists()).toBe(true);
+    expect(badge.attributes('data-tooltip')).toBe('VRAM: 24 GB');
+    expect(badge.attributes('aria-label')).toBe('Set VRAM');
+    expect(badge.text()).toBe('24 GB');
+    w.unmount();
+  });
+
+  it('VRAM 未配置 en：.vram-badge data-tooltip = VRAM not set、text = VRAM', async () => {
+    stubLmsEn();
+    const w = mount(TemplateModule);
+    await flush();
+    const badge = w.find('.vram-badge');
+    expect(badge.exists()).toBe(true);
+    expect(badge.attributes('data-tooltip')).toBe('VRAM not set');
+    expect(badge.text()).toBe('VRAM');
+    w.unmount();
+  });
+
+  it('空态两形态 en：resolve {} 与 reject MISSING 均显示 No templates', async () => {
+    // 形态一：configs 为空对象 → tpl.empty.none
+    stubLmsEn({ get_configs: () => ({}) });
+    const w1 = mount(TemplateModule);
+    await flush();
+    expect(w1.find('.module-template p.label').text()).toBe('No templates');
+    w1.unmount();
+    // 形态二：get_configs reject MISSING → 剥壳后 isMissing 命中 → tpl.empty.missing（get_params 保持 resolve 避免覆盖 error）
+    stubLmsEn({ get_configs: () => Promise.reject(new Error('MISSING: llama_launch_configs.yaml')) });
+    const w2 = mount(TemplateModule);
+    await flush();
+    expect(w2.find('.module-template p.label').text()).toBe('No templates');
+    w2.unmount();
   });
 });
