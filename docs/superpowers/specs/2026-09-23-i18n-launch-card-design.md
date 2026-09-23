@@ -18,7 +18,7 @@
 
 | key | zh | en | 使用处 |
 |---|---|---|---|
-| `launch.title` | `llama-server 启动控制` | `Launch llama-server` | h2 标题 |
+| `launch.title` | `启动 llama-server`（2026-09-23 用户修订，原 `llama-server 启动控制`） | `Launch llama-server` | h2 标题 |
 | `launch.placeholder.select` | `选择配置…`（全角 …） | `Select a config...`（半角三点） | 下拉 trigger 占位（有配置表、无选中项） |
 | `launch.placeholder.empty` | `暂无模板配置` | `No templates` | 下拉 trigger 占位（MISSING 或配置表为空） |
 

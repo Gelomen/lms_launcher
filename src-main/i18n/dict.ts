@@ -35,7 +35,7 @@ export const dict = {
     'dir.status.dir_missing': 'llama.cpp 安装目录不存在',
     'dir.status.saving': '保存中…',
     // 启动控制卡片（S3 2026-09-23-i18n-launch-card）
-    'launch.title': 'llama-server 启动控制',
+    'launch.title': '启动 llama-server', // 2026-09-23 用户文案修订：原「llama-server 启动控制」
     'launch.placeholder.select': '选择配置…',
     'launch.placeholder.empty': '暂无模板配置',
   },
