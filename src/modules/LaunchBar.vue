@@ -4,6 +4,7 @@ import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faRocket, faStop } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing } from '../ipc';
+import { t } from '../i18n';
 import { truncateByWidth, visualWidth } from '../util/truncate';
 import Dropdown from '../components/Dropdown.vue';
 
@@ -107,7 +108,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
 </script>
 <template>
   <section class="module module-launch">
-    <h2>llama-server 启动控制</h2>
+    <h2>{{ t('launch.title') }}</h2>
     <!-- 配置下拉 + 单一切换按钮同行排布（与「llama.cpp 安装目录」卡片一致：控件占满宽度、按钮贴右）：
          未运行 = 绿 [启动]；运行中 = 红 [停止]（stopping → 「...」禁用）；
          启动失败 / 进程退出 → state 回落 ready → 自动恢复绿 [启动] -->
@@ -117,7 +118,7 @@ watch((): number => props.configsReloadKey, () => { void load(); });
       <Dropdown class="dropdown--stretch" :disabled="state.running"
                 :value="selected"
                 :options="options ?? []" :tip="triggerTip"
-                :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? '暂无模板配置' : '选择配置…'"
+                :placeholder="missing || (configs !== null && Object.keys(configs).length === 0) ? t('launch.placeholder.empty') : t('launch.placeholder.select')"
                 @update:value="(v: string) => { selected = v; pushTrayTooltip(v); }" />
       <button
         class="btn-noshrink"
