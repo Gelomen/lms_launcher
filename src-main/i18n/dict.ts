@@ -27,6 +27,13 @@ export const dict = {
     'app.update.tip.downloading': '下载中 {pct}%，点击查看进度',
     'app.exit.title': '退出程序',
     'app.exit.message': '将停止 llama-server 并退出，是否确认？',
+    // 目录卡片（S2 2026-09-23-i18n-dir-card）：值与 DirModule.vue 现状中文串逐字一致
+    'dir.title': 'llama.cpp 安装目录',
+    'dir.btn.select': '选择 llama.cpp 安装目录',
+    'dir.status.ok': 'llama-server.exe 已找到',
+    'dir.status.exe_missing': '未找到 llama-server.exe',
+    'dir.status.dir_missing': 'llama.cpp 安装目录不存在',
+    'dir.status.saving': '保存中…',
   },
   en: {
     'common.cancel': 'Cancel',
@@ -51,6 +58,13 @@ export const dict = {
     'app.update.tip.downloading': 'Downloading {pct}%, click to view progress',
     'app.exit.title': 'Exit',
     'app.exit.message': 'llama-server will be stopped. Continue?',
+    // 目录卡片（S2 2026-09-23-i18n-dir-card）
+    'dir.title': 'llama.cpp directory',
+    'dir.btn.select': 'Select directory',
+    'dir.status.ok': 'llama-server.exe is available',
+    'dir.status.exe_missing': 'llama-server.exe not found',
+    'dir.status.dir_missing': "llama.cpp directory doesn't exist",
+    'dir.status.saving': 'Saving...',
   },
 } as const;
 
