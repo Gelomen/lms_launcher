@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 // 组件测试：LaunchBar 配置下拉截断 —— 与模板行名相同优化（spec 2026-08-26-launchbar-dropdown-truncation）：
 // >10 字 → 前 10 字 + …(U+2026)；hover tooltip 显示完整名字（trigger data-tooltip + 面板 li）。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import LaunchBar from './LaunchBar.vue';
+import { t, applyLangLocal } from '../i18n';
 
 const LONG = '这是一个非常长的配置描述名称用来验证启动控制下拉的截断与省略号行为'; // 29 字 >10
 const READY = { running: false, stopping: false, configId: null };
@@ -123,5 +124,37 @@ describe('LaunchBar config dropdown truncation', () => {
       expect(trayTooltipCalls.at(-1)).toBeNull();
       w.unmount();
     });
+  });
+});
+
+// ===== S3（2026-09-23-i18n-launch-card）：启动控制卡片 en 冒烟 3 条 =====
+// TDD 先行（红）：LaunchBar.vue 尚未接入 t()，组件仍输出中文串——h2 与空态两条渲染级断言预期红；
+// 选择态底线断言只依赖任务 1 词典已入，预期绿。afterEach 还原 zh，防污染同文件既有 8 条用例（S2 DirModule.test.ts 同款）。
+describe('LaunchBar en 冒烟', () => {
+  beforeEach(() => {
+    applyLangLocal('en');
+  });
+  afterEach(() => {
+    applyLangLocal('zh');
+  });
+
+  it('标题 en：h2 = Launch llama-server', async () => {
+    mockLms({ a: { name: '模板A', values: {} } });
+    const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+    await flush();
+    expect(w.find('h2').text()).toBe('Launch llama-server');
+    w.unmount();
+  });
+
+  it('空态 en：无模板时 .select-label 显示 No templates', async () => {
+    mockLms({});
+    const w = mount(LaunchBar, { props: { state: READY, configsReloadKey: 0 } });
+    await flush();
+    expect(w.find('.select-label').text()).toBe('No templates');
+    w.unmount();
+  });
+
+  it('选择态 en：底线断言 t(launch.placeholder.select) = Select a config...（半角三点）', () => {
+    expect(t('launch.placeholder.select')).toBe('Select a config...');
   });
 });
