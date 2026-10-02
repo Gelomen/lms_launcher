@@ -225,8 +225,9 @@ function truncDeleteName(n: string): string {
   return truncateByWidth(full, NAME_BUDGET);
 }
 const deleteMsgName = computed(() => truncDeleteName(props.name ?? ''));
-// message：截断后 + …；仅截断时传完整文案 tip（ConfirmDialog hover title 显示）
-const deleteFullMsg = computed(() => t('tplModal.delete.message', { name: props.name || '' }));
+// message：整句仍走词典（截断名 + 固定前后缀）；仅「手动截断」时把截断名作为可 hover 片段 + 完整名
+// 传给 ConfirmDialog（方案 B：hover 名字弹自绘 .tpl-tip 只显示完整名字；短名不传 → 无 tooltip）。
+const deleteTruncated = computed(() => visualWidth(props.name ?? '') > NAME_BUDGET + 2);
 const deleteShortMsg = computed(() => t('tplModal.delete.message', { name: deleteMsgName.value }));
 async function doDelete(): Promise<void> {
   try {
@@ -447,7 +448,9 @@ function close(): void { emit('close'); }
     <div v-if="flagTip" class="flag-tip" :class="{ 'flag-tip--down': !flagTip.above }"
       :style="{ left: flagTip.x + 'px', top: flagTip.y + 'px' }">{{ flagTip.text }}</div>
     <ConfirmDialog :open="confirmDeleteOpen" :title="t('tplModal.delete.title')"
-      :message="deleteShortMsg" :tip="visualWidth(props.name || '') > NAME_BUDGET + 2 ? deleteFullMsg : undefined"
+      :message="deleteShortMsg"
+      :tip-name="deleteTruncated ? deleteMsgName : undefined"
+      :tip-full="deleteTruncated ? props.name : undefined"
       tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
   </Teleport>
 </template>

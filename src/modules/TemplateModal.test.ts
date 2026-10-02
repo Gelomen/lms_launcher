@@ -377,7 +377,36 @@ describe('TemplateModal delete', () => {
     expect(box.textContent).not.toContain(LONG_NAME); // 完整长名不出现（截断了）
     const msg = document.querySelector('.confirm-msg') as HTMLElement;
     expect(msg.textContent).toContain('abcdefgabcdefgab…」吗？'); // 前 16 字 + …，后接固定后缀
-    expect(msg.getAttribute('title')).toContain(LONG_NAME); // hover title=完整值
+    // 方案 B（2026-10-02）：截断名独立成可 hover 片段，自绘 .tpl-tip 只显示完整名字
+    const span = document.querySelector('.confirm-msg__name') as HTMLElement;
+    expect(span).not.toBeNull();
+    expect(span.textContent).toBe('abcdefgabcdefgab…');
+    expect(span.getAttribute('data-tooltip')).toBe(LONG_NAME);
+    span.dispatchEvent(new MouseEvent('mouseenter'));
+    await flush();
+    expect(document.querySelector('.tpl-tip')?.textContent).toBe(LONG_NAME); // hover 显示完整名字
+    w.unmount();
+  });
+
+  // 回归（2026-10-02）：TemplateModule 常驻挂载 TemplateModal，弹窗关闭时 name=undefined；
+  // 用户点「编辑」长名模板后 name 才变有效值 —— ConfirmDialog 的 title 必须响应式跟上，
+  // 否则 hover 被截断的名字时没有 tooltip（tip 快照 bug）。
+  it('delete_dialog_name_tooltip_available_when_name_bound_after_mount', async () => {
+    calls = []; mockLms();
+    const LONG_NAME = 'abcdefgabcdefgabcdefgabcdefgabcdefg';
+    const w = mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: false, id: '', values: {}, paramsMeta }, // 常驻挂载：editingId=null → name 未定
+    });
+    await flush();
+    await w.setProps({ open: true, id: 'qwen38', values: {}, name: LONG_NAME }); // 用户点「编辑」
+    await flush();
+    findDeleteBtn()!.click(); await flush();
+    const span = document.querySelector('.confirm-msg__name') as HTMLElement;
+    expect(span).not.toBeNull();                 // 名字未定时挂载，后绑定仍要出现片段
+    span.dispatchEvent(new MouseEvent('mouseenter'));
+    await flush();
+    expect(document.querySelector('.tpl-tip')?.textContent).toBe(LONG_NAME); // hover 显示完整名字
     w.unmount();
   });
 

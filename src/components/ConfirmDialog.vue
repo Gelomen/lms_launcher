@@ -2,8 +2,10 @@
 // 圆形语义图标 + 标题 + 灰字说明，[取消]/[确认] 贴右下；tone=danger(红,删除等危险) / primary(蓝,退出等中性)。
 // 契约：@confirm = 用户点确认（调用方执行 IPC）；@close = 取消（[取消] / 点遮罩），仅关窗不产生副作用。
 // 长 message（如超长配置名）：变量部分由调用方按视觉宽度预算截断（与下拉 truncOpt 同口径），
-// 本组件只负责 title=tip hover 显示完整值 + CSS word-break 兜底防溢出。
+// 截断的名字片段由调用方以 tipName/tipFull 传入——本组件渲染为可 hover 片段，hover 弹自绘 .tpl-tip
+// （视觉/机制同模板列表行 .tpl-tip）仅显示完整名字；CSS word-break 兜底防溢出。
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faTriangleExclamation, faInfoCircle } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
@@ -16,15 +18,35 @@ const props = withDefaults(defineProps<{
   title: string;
   message: string;
   tone?: 'danger' | 'primary';
-  /** 完整文案（截断时 hover title 显示）；缺省 = 若 message 被截断则补全 message */
-  tip?: string;
+  /** 文案里被截断的名字片段（message 的子串）：提供时该片段单独渲染为可 hover 的 span */
+  tipName?: string;
+  /** 截断名字的完整值：hover tipName 片段 → 自绘 .tpl-tip 浮层只显示它（未截断不传） */
+  tipFull?: string;
 }>(), { tone: 'primary' });
 
 const emit = defineEmits<{ (e: 'confirm'): void; (e: 'close'): void }>();
 const iconByTone = { danger: faTriangleExclamation, primary: faInfoCircle };
 
-// tip：调用方传入的完整文案（配置名截断场景）——挂 title，hover 显示。未传则无 tooltip。
-const msgTip = props.tip;
+// 名字片段：仅截断场景（tipName + tipFull 都传、且 tipName 确是 message 子串）才拆句；
+// 短名走普通文本 → 无片段、无 tooltip。必须 computed：调用方 TemplateModal 常驻挂载本组件，
+// name 在 open 之后才绑定，一次性快照会让片段永远不出现（2026-10-02 修复）。
+const msgParts = computed(() => {
+  const name = props.tipName;
+  if (!name || !props.tipFull) return null;
+  const i = props.message.indexOf(name);
+  if (i < 0) return null;
+  return { before: props.message.slice(0, i), name, after: props.message.slice(i + name.length) };
+});
+
+// 截断名 tooltip（方案 B）：hover 名字片段 → 自绘 .tpl-tip 浮层（position:fixed 浮于视口，
+// 定位约定同 .dd-tip/.tpl-tip：x = 片段水平中心、y = 片段顶边，靠 CSS transform 归位）。
+const nameTip = ref<{ text: string; x: number; y: number } | null>(null);
+function onNameEnter(e: MouseEvent): void {
+  if (!props.tipFull || msgParts.value === null) return;
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  nameTip.value = { text: props.tipFull, x: r.left + r.width / 2, y: r.top };
+}
+function onNameLeave(): void { nameTip.value = null; }
 function onConfirm(): void { emit('confirm'); }
 function onClose(): void { emit('close'); }
 </script>
@@ -39,7 +61,11 @@ function onClose(): void { emit('close'); }
           </span>
           <div class="confirm-texts">
             <p class="confirm-title">{{ title }}</p>
-            <p class="confirm-sub confirm-msg" :title="msgTip">{{ message }}</p>
+            <p class="confirm-sub confirm-msg">
+              <template v-if="msgParts">{{ msgParts.before }}<span class="confirm-msg__name"
+                :data-tooltip="tipFull" @mouseenter="onNameEnter" @mouseleave="onNameLeave">{{ msgParts.name }}</span>{{ msgParts.after }}</template>
+              <template v-else>{{ message }}</template>
+            </p>
           </div>
         </div>
         <div class="confirm-actions">
@@ -49,6 +75,10 @@ function onClose(): void { emit('close'); }
             aria-label="确认" @click="onConfirm">确认</button>
         </div>
       </div>
+      <!-- 截断名 tooltip：自绘浮层（.tpl-tip 为全局样式，与模板列表行/下拉长名同视觉语言），
+           position:fixed 浮于视口、片段上方居中；pointer-events:none 不挡点击 -->
+      <div v-if="nameTip" class="tpl-tip"
+        :style="{ left: nameTip.x + 'px', top: nameTip.y + 'px' }">{{ nameTip.text }}</div>
     </div>
   </Teleport>
 </template>
