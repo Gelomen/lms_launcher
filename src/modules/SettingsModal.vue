@@ -25,7 +25,7 @@ const saving = ref(false);
 
 // 语言选项：语言名用自名（中文 / English），不随当前语言翻译（spec §6.3）。
 const langOptions = [
-  { value: 'zh', label: '中文' },
+  { value: 'zh', label: '简体中文' },
   { value: 'en', label: 'English' },
 ];
 // 语言切换即时生效：setLang 本地立即切换 + 通知主进程持久化/重建托盘，无保存按钮。
