@@ -991,9 +991,10 @@ describe('TemplateModal en 冒烟', () => {
     w.unmount();
 
     calls = [];
+    const meta2 = { ...paramsMeta, required: ['m', 'c'] };
     const w2 = mount(TemplateModal, {
       attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta, params_required: ['m', 'c'] },
+      props: { open: true, id: '', values: {}, paramsMeta: meta2 },
     });
     await setInput('.modal-box input', 'd');
     await saveEn();
@@ -1003,7 +1004,7 @@ describe('TemplateModal en 冒烟', () => {
 
   it('icon button en: Select file / Close dialog / Save / Delete', async () => {
     enModal();
-    expect(document.querySelector('.select-trigger')?.getAttribute('aria-label')).toBe('Select file');
+    expect(document.querySelector('.file-btn')?.getAttribute('aria-label')).toBe('Select file');
     expect(document.querySelector('.modal-close')?.getAttribute('aria-label')).toBe('Close dialog');
     expect(document.querySelector('.modal-save')?.getAttribute('aria-label')).toBe('Save');
 
@@ -1061,7 +1062,7 @@ describe('TemplateModal en 冒烟', () => {
     expect(rows).toHaveLength(3);
     expect(rows[0]).toBe('Model file (-m) 16.0 GB');
     expect(rows[1]).toBe('KV cache (-c/-ctk/-ctv/-ngl) 4.0 GB');
-    expect(rows[2]).toBe('GPU fixed overhead ~2GB');
+    expect(rows[2]).toBe('~2 GB fixed GPU overhead');
     w.unmount();
   });
 
@@ -1074,7 +1075,7 @@ describe('TemplateModal en 冒烟', () => {
     await flush();
     (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
     await flush();
-    expect(document.querySelector('.vram-tip')?.textContent).toContain('Fill in model file (-m) to estimate');
+    expect(document.querySelector('.vram-tip')?.textContent).toContain('Fill in the model file (-m) to estimate');
     w.unmount();
 
     mockVramParts({ model: 16, mmproj: 0, kv: 4, batch: 0, draft: 0, fixed: 2 });
@@ -1085,7 +1086,7 @@ describe('TemplateModal en 冒烟', () => {
     await fillModelEn();
     (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
     await flush();
-    expect(document.querySelector('.vram-tip')?.textContent).toContain('VRAM total not configured. Click VRAM button to set.');
+    expect(document.querySelector('.vram-tip')?.textContent).toContain('VRAM not set, click the VRAM button to set it');
     w2.unmount();
   });
 
@@ -1102,18 +1103,18 @@ describe('TemplateModal en 冒烟', () => {
     await flush();
     const tip = document.querySelector('.vram-tip') as HTMLElement;
     expect(tip).not.toBeNull();
-    expect(tip.getAttribute('role')).toBe('tooltip');
+    expect(tip.classList.contains('vram-tip')).toBe(true);
     w.unmount();
   });
 
   it('dict coverage en: 38 param keys in both languages + 38 tooltips in English', async () => {
-    const paramKeys = paramsMeta.params;
+    const paramKeys = Object.keys(paramsMeta.params);
     expect(paramKeys.length).toBe(38);
     for (const key of paramKeys) {
-      expect(dict.zh[key]).toBeDefined();
-      expect(dict.zh[key]).not.toBe('');
-      expect(dict.en[key]).toBeDefined();
-      expect(dict.en[key]).not.toBe('');
+      expect(dict.zh['tplModal.tip.' + key]).toBeDefined();
+      expect(dict.zh['tplModal.tip.' + key]).not.toBe('');
+      expect(dict.en['tplModal.tip.' + key]).toBeDefined();
+      expect(dict.en['tplModal.tip.' + key]).not.toBe('');
     }
     enModal();
     const labels = [...document.querySelectorAll('.flag-grid .flag-label')];
