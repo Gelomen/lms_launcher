@@ -263,7 +263,7 @@ function scheduleVramEstimate(): void {
         if (res.ok) { vramUsedGb.value = res.usedGb; vramOk.value = true; vramReason.value = null; vramParts.value = (res as { parts?: Record<string, number> }).parts ?? null; }
         else { vramUsedGb.value = null; vramOk.value = false; vramReason.value = res.reason; vramParts.value = null; }
       })
-      .catch(() => { vramUsedGb.value = null; vramOk.value = false; vramReason.value = 'IPC 调用失败'; vramParts.value = null; });
+      .catch(() => { vramUsedGb.value = null; vramOk.value = false; vramReason.value = t('tplModal.vram.ipcFail'); vramParts.value = null; });
   }, 150);
 }
 
@@ -321,21 +321,21 @@ const breakdown = computed((): Array<{ label: string; gb: number; note?: boolean
   if (!vramHasModel.value || vramUsedGb.value === null || p === null) return null;
   if (props.vramTotalGb === undefined) return null; // 未配置显卡显存 → 降级单行（用户定稿文案）
   const rows: Array<{ label: string; gb: number }> = [
-    { label: '模型文件（-m）', gb: p.model ?? 0 },
-    { label: '视觉投影（--mmproj）', gb: p.mmproj ?? 0 },
-    { label: 'KV 缓存（-c/-ctk/-ctv/-ngl）', gb: p.kv ?? 0 },
-    { label: 'batch 缓冲（-b/-ub）', gb: p.batch ?? 0 },
-    { label: 'draft 缓存（--spec-type + --spec-draft-n-max）', gb: p.draft ?? 0 },
-    { label: 'draft 模型（-md）', gb: p.draftModel ?? 0 },
-  ].filter((r) => r.gb > 0); // 0 项隐藏（fixed 除外，恒显）
-  rows.push({ label: 'GPU 固定开销约 2GB', gb: p.fixed ?? 0, note: true }); // 末行说明性文案（用户定稿，不拼数值）
+    { label: t('tplModal.vram.row.model'), gb: p.model ?? 0 },
+    { label: t('tplModal.vram.row.mmproj'), gb: p.mmproj ?? 0 },
+    { label: t('tplModal.vram.row.kv'), gb: p.kv ?? 0 },
+    { label: t('tplModal.vram.row.batch'), gb: p.batch ?? 0 },
+    { label: t('tplModal.vram.row.draft'), gb: p.draft ?? 0 },
+    { label: t('tplModal.vram.row.draftModel'), gb: p.draftModel ?? 0 },
+  ].filter((r) => r.gb > 0);
+  rows.push({ label: t('tplModal.vram.row.fixed'), gb: p.fixed ?? 0, note: true });
   return rows;
 });
 const breakdownFallback = computed((): string => {
-  if (!vramHasModel.value) return '填写模型文件（-m）后自动估算';
-  if (props.vramTotalGb === undefined) return '未配置显卡显存，点击 VRAM 按钮设置';
-  if (vramUsedGb.value === null) return (vramOk.value ? '填写模型文件后自动估算' : (vramReason ?? '估算失败'));
-  return '估算中…'; // usedGb 在手但 parts 缺失（不应发生：主进程恒返回 parts）
+  if (!vramHasModel.value) return t('tplModal.vram.fallback.noModel');
+  if (props.vramTotalGb === undefined) return t('tplModal.vram.fallback.noTotal');
+  if (vramUsedGb.value === null) return (vramOk.value ? t('tplModal.vram.fallback.retry') : (vramReason ?? t('tplModal.vram.fallback.fail')));
+  return t('tplModal.vram.fallback.pending');
 });
 
 function close(): void { emit('close'); }
@@ -415,7 +415,7 @@ function close(): void { emit('close'); }
             <span class="vram-total">{{ props.vramTotalGb !== undefined ? props.vramTotalGb.toFixed(1) : '--' }}</span>
             <!-- &nbsp;：flex item 内容的首空格会被 CSS 折叠（24.0 与 GB 贴死），用不换行空格兜底 -->
             <span class="vram-unit">&nbsp;GB</span>
-            <span class="vram-info" aria-label="显存估算明细" @mouseenter="onInfoEnter" @mouseleave="vramTip = null">
+            <span class="vram-info" :aria-label="t('tplModal.vram.aria')" @mouseenter="onInfoEnter" @mouseleave="vramTip = null">
               <FontAwesomeIcon :icon="byPrefixAndName.fat['circle-info']" />
             </span>
           </div>
@@ -433,7 +433,7 @@ function close(): void { emit('close'); }
     <div v-if="vramTip" class="vram-tip" :class="{ 'vram-tip--down': vramTip.flip }"
       :style="{ left: vramTip.x + 'px', top: (vramTip.flip ? vramTip.y + 24 : vramTip.y) + 'px' }">
       <!-- 顶部提示行（主题紫）：预测仅供参考，明细/降级两种形态都显示 -->
-      <div class="vram-tip__title">显存占用预测，仅供参考</div>
+      <div class="vram-tip__title">{{ t('tplModal.vram.tip.title') }}</div>
       <template v-if="breakdown">
         <div v-for="row in breakdown" :key="row.label" class="vram-tip__row">
           <template v-if="row.note">{{ row.label }}</template>
