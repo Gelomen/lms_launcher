@@ -114,6 +114,13 @@ export const dict = {
     'tplModal.vram.fallback.fail': '估算失败',
     'tplModal.vram.fallback.pending': '估算中…',
     'tplModal.vram.ipcFail': 'IPC 调用失败',
+    // GPU 卡片（S6 2026-10-02-i18n-gpu-card）：值与 GpuModule.vue 现状中文串逐字一致
+    'gpu.cell.dedicated': '专用 GPU 内存',
+    'gpu.cell.shared': '共享 GPU 内存',
+    'gpu.cell.total': 'GPU 内存',
+    'gpu.cell.util': 'GPU 利用率',
+    'gpu.nav.prev': '上一张卡',
+    'gpu.nav.next': '下一张卡',
   },
   en: {
     'common.cancel': 'Cancel',
@@ -225,6 +232,13 @@ export const dict = {
     'tplModal.vram.fallback.fail': 'Estimate failed',
     'tplModal.vram.fallback.pending': 'Estimating...',
     'tplModal.vram.ipcFail': 'IPC call failed',
+    // GPU card (S6 2026-10-02-i18n-gpu-card): values match Windows 11 Task Manager terminology
+    'gpu.cell.dedicated': 'Dedicated GPU memory',
+    'gpu.cell.shared': 'Shared GPU memory',
+    'gpu.cell.total': 'GPU memory',
+    'gpu.cell.util': 'GPU utilization',
+    'gpu.nav.prev': 'Previous GPU',
+    'gpu.nav.next': 'Next GPU',
   },
 } as const;
 
