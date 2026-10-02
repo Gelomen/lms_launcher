@@ -3,11 +3,12 @@
 // 位置结构恒一致，内容区恒预留 32px 让位、‹ › 恒渲染，见 docs/superpowers/changes/2026-09-10-gpu-first-frame-placeholder.md）：
 // 首帧占位（– / – / –）/ 数据到达四格 + 合计行 / 单卡按钮禁用单点实心 / 多卡 N 点当前实心其余空心 / 模运算绕回。
 // formatGb fixture 与 src-main/gpu-stats.test.ts 同一组数值（两份实现防漂移）。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import GpuModule from './GpuModule.vue';
 import type { GpuStats } from '../ipc';
+import { applyLangLocal } from '../i18n';
 
 const gpuHandlers: Array<(e: { gpus: unknown[] }) => void> = [];
 function mockLms(): void {
@@ -404,5 +405,58 @@ describe('GpuModule GPU memory usage chart', () => {
     expect(history[29]).toBe(42); // utilization is always tracked
     
     w.unmount();
+  });
+});
+
+describe('GpuModule i18n', () => {
+  it('zh：四格标签与现状中文逐字一致（中文零回归）', async () => {
+    mockLms();
+    const w = mount(GpuModule, { global: { stubs: STUBS } });
+    await flush();
+    fire([GPU_A, GPU_B]);
+    await flush();
+    expect(w.findAll('.gpu-layer:not(.gpu-layer--off) .gpu-cell .label').map((n: any) => n.text()))
+      .toEqual(['专用 GPU 内存', '共享 GPU 内存', 'GPU 内存', 'GPU 利用率']);
+    w.unmount();
+  });
+
+  describe('en 冒烟', () => {
+    beforeEach(() => { applyLangLocal('en'); });
+    afterEach(() => { applyLangLocal('zh'); });
+
+    it('四格标签 = Windows 11 英文任务管理器术语', async () => {
+      mockLms();
+      const w = mount(GpuModule, { global: { stubs: STUBS } });
+      await flush();
+      fire([GPU_A, GPU_B]);
+      await flush();
+      expect(w.findAll('.gpu-layer:not(.gpu-layer--off) .gpu-cell .label').map((n: any) => n.text()))
+        .toEqual(['Dedicated GPU memory', 'Shared GPU memory', 'GPU memory', 'GPU utilization']);
+      w.unmount();
+    });
+
+    it('轮播 aria = Previous GPU / Next GPU', async () => {
+      mockLms();
+      const w = mount(GpuModule, { global: { stubs: STUBS } });
+      await flush();
+      fire([GPU_A, GPU_B, GPU_C]);
+      await flush();
+      expect(w.find('.gpu-nav-btn--left').attributes('aria-label')).toBe('Previous GPU');
+      expect(w.find('.gpu-nav-btn--right').attributes('aria-label')).toBe('Next GPU');
+      w.unmount();
+    });
+
+    it('不译项锁定：占位 / 数值 / 单位 / 标题', async () => {
+      mockLms();
+      const w = mount(GpuModule, { global: { stubs: STUBS } });
+      await flush();
+      expect(layerTitle(w, 0)).toBe('–');
+      expect(cellTexts(w)).toEqual(['– / –', '– / –', '– / –', '–']);
+      fire([GPU_A, GPU_B]);
+      await flush();
+      expect(cellTexts(w)).toEqual(['22.0 / 24.0 GB', '1.0 / 48.0 GB', '23.0 / 72.0 GB', '28 %']);
+      expect(w.find('.gpu-title').text()).toBe('#GPU 0 NVIDIA GeForce RTX 4090');
+      w.unmount();
+    });
   });
 });
