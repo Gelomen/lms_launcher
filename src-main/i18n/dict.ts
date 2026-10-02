@@ -233,8 +233,8 @@ export const dict = {
     'tplModal.vram.fallback.pending': 'Estimating...',
     'tplModal.vram.ipcFail': 'IPC call failed',
     // GPU card (S6 2026-10-02-i18n-gpu-card): values match Windows 11 Task Manager terminology
-    'gpu.cell.dedicated': 'Dedicated GPU memory',
-    'gpu.cell.shared': 'Shared GPU memory',
+    'gpu.cell.dedicated': 'Dedicated VRAM',
+    'gpu.cell.shared': 'Shared VRAM',
     'gpu.cell.total': 'GPU memory',
     'gpu.cell.util': 'GPU utilization',
     'gpu.nav.prev': 'Previous GPU',

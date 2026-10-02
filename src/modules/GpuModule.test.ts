@@ -431,7 +431,7 @@ describe('GpuModule i18n', () => {
       fire([GPU_A, GPU_B]);
       await flush();
       expect(w.findAll('.gpu-layer:not(.gpu-layer--off) .gpu-cell .label').map((n: any) => n.text()))
-        .toEqual(['Dedicated GPU memory', 'Shared GPU memory', 'GPU memory', 'GPU utilization']);
+        .toEqual(['Dedicated VRAM', 'Shared VRAM', 'GPU memory', 'GPU utilization']);
       w.unmount();
     });
 
