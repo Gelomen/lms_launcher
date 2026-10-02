@@ -5,6 +5,7 @@ import { faXmark, faCircleInfo } from '@fortawesome/free-solid-svg-icons';
 import { faFloppyDisk, faFolderOpen, faTrashCan } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
+import { t } from '../i18n';
 // truncate：选项行用（flag-form）；删除确认对话框的 name 同样按视觉宽度截断（truncDeleteName）
 import { truncateByWidth, visualWidth } from '../util/truncate';
 
@@ -191,7 +192,7 @@ const emptyRequired = computed((): string[] => {
 
 // desc（名字，2026-09 label 由「描述」改名；数据 key 仍为 desc）必填——新建 / 编辑均要求非空
 const descError = computed((): string | null => {
-  return (formDesc.value ?? '').trim().length === 0 ? '必填' : null;
+  return (formDesc.value ?? '').trim().length === 0 ? t('tplModal.required') : null;
 });
 // ---------- 保存 ----------
 async function save(): Promise<void> {
@@ -363,9 +364,9 @@ function close(): void { emit('close'); }
       <div class="card modal-box">
         <!-- 标题栏：固定不滚动（sticky），文字居中，[x] 关闭按钮贴最右 -->
         <header class="modal-head">
-          <span class="modal-title">{{ isEdit ? '编辑模板' : '新建模板' }}</span>
+          <span class="modal-title">{{ isEdit ? t('tplModal.title.edit') : t('tplModal.title.new') }}</span>
           <!-- [x] 关闭按钮：文字 ×（2026-08）→ FontAwesome xmark 图标（.modal-close font-size:16px 经 FA 继承定尺寸） -->
-          <button type="button" class="modal-close" aria-label="关闭弹窗" @click="close">
+          <button type="button" class="modal-close" :aria-label="t('tplModal.close')" @click="close">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['xmark']" />
           </button>
         </header>
@@ -377,8 +378,8 @@ function close(): void { emit('close'); }
           <p v-if="isEdit" class="id-view">id: {{ props.id }}</p>
 
           <!-- 字段 label「描述」→「名字」（2026-09）；数据契约不变，yaml key 仍为 desc -->
-          <label class="label" style="display: block; margin-top: 8px;">名字</label>
-          <input class="input" :class="{ error: attemptedSave && descError !== null }" v-model="formDesc" placeholder="如：qwen27b 日常推理" />
+          <label class="label" style="display: block; margin-top: 8px;">{{ t('tplModal.name.label') }}</label>
+          <input class="input" :class="{ error: attemptedSave && descError !== null }" v-model="formDesc" :placeholder="t('tplModal.name.placeholder')" />
           <p v-if="attemptedSave && descError" class="error-text">{{ descError }}</p>
 
           <div class="flag-grid">
@@ -393,7 +394,7 @@ function close(): void { emit('close'); }
                   :value="formValues[row.key]"
                   @input="(ev: Event) => { formValues[row.key] = (ev.target as HTMLInputElement).value; }"
                 />
-                <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn tip-up" data-tooltip="选择文件" aria-label="选择文件"
+                <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn tip-up" :data-tooltip="t('tplModal.btn.pickFile')" :aria-label="t('tplModal.btn.pickFile')"
                   @click="pickFile(row.key)"><FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 14px;" /></button>
               </div>
               <div v-else-if="row.type === 'boolean'" class="dropdown">
@@ -411,7 +412,7 @@ function close(): void { emit('close'); }
             </template>
           </div>
 
-          <p v-if="attemptedSave && emptyRequired.length > 0" class="error-text">必填项未填写：{{ emptyRequired.map((k) => props.paramsMeta.params[k]).join('、') }}</p>
+          <p v-if="attemptedSave && emptyRequired.length > 0" class="error-text">{{ t('tplModal.required.missing', { names: emptyRequired.map((k) => props.paramsMeta.params[k]).join(t('common.listSep')) }) }}</p>
         </div>
 
         <!-- 底部按钮区固定不滚动：取消功能已挪到标题栏 [x]，仅保留 删除 + 保存；
@@ -419,7 +420,7 @@ function close(): void { emit('close'); }
         <footer class="modal-actions">
           <!-- [删除]：参考 [保存] 角形按钮——左下角形，上下占满底部栏全高、左缘贴卡片左缘（.modal-actions padding:0 16px 让位于绝对定位）；
                文字「删除」（2026-08）→ FontAwesome trash-can 图标 + a11y label（仅编辑模式渲染，行为不变） -->
-          <button v-if="isEdit" class="btn-delete" aria-label="删除" @click="onDelete">
+          <button v-if="isEdit" class="btn-delete" :aria-label="t('tplModal.btn.delete')" @click="onDelete">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['trash-can']" />
           </button>
           <!-- 软盘图标 = 保存（2026-08-27 角形按钮；2026-09：手写 SVG → FontAwesome floppy-disk） -->
@@ -436,7 +437,7 @@ function close(): void { emit('close'); }
               <FontAwesomeIcon :icon="byPrefixAndName.fat['circle-info']" />
             </span>
           </div>
-          <button class="modal-save" :disabled="saving" aria-label="保存" @click="save">
+          <button class="modal-save" :disabled="saving" :aria-label="t('tplModal.btn.save')" @click="save">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['floppy-disk']" style="font-size: 18px;" />
           </button>
         </footer>
