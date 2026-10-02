@@ -89,45 +89,19 @@ function fill(): void {
 
 // 参数 label 的 hover tooltip 两行内容：第一行 = llama.cpp 官方长 flag（全称），第二行 = 一句中文说明。
 // flag 来自 D:\AI\llama-cpp\llama-server.exe --help（2026-09 核对）。未收录的 key 不弹 tooltip。
-const PARAM_TIPS: Record<string, string> = {
-  m: '-m, --model\n模型文件（gguf）',
-  mmproj: '-mm, --mmproj\n视觉投影文件（mmproj gguf）',
-  image_min_tokens: '--image-min-tokens\n每张图片消耗的 token 数（下限）',
-  alias: '-a, --alias\n模型服务别名',
-  ngl: '-ngl, --gpu-layers\n放到 GPU 的层数（N/auto/all）',
-  fa: '-fa, --flash-attn\nFlash Attention 开关（on/off/auto）',
-  n_cpu_moe: '-ncmoe, --n-cpu-moe\nMoE 专家权重保留在 CPU 的前 N 层',
-  load_mode: '-lm, --load-mode\n模型加载模式（auto/mmap/mlock/dio 等）',
-  np: '-np, --parallel\n并发请求数（slots）',
-  c: '-c, --context-size\n上下文长度（ctx 大小）',
-  b: '-b, --batch-size\n批处理大小（batch）',
-  ub: '-ub, --ubatch-size\n物理最大批大小（ubatch）',
-  t: '-t, --threads\nCPU 线程数',
-  tb: '-tb, --threads-batch\n批处理和提示词处理的线程数',
-  ctk: '-ctk, --cache-type-k\nKV 缓存 K 部分的量化类型',
-  ctv: '-ctv, --cache-type-v\nKV 缓存 V 部分的量化类型',
-  spec_type: '--spec-type\n投机解码类型（none/draft-mtp/draft-dflash/draft-dspark）',
-  spec_draft_n_max: '--spec-draft-n-max\n投机解码一次最多生成的 token 数（默认 3）',
-  md: '-md, --spec-draft-model\n投机解码草稿模型文件（gguf）',
-  ngld: '-ngld, --spec-draft-ngl\n草稿模型放到 GPU 的层数',
-  temp: '--temp\n采样温度',
-  top_p: '--top-p\nnucleus sampling 的 p 值',
-  top_k: '--top-k\n候选 token 数上限',
-  min_p: '--min-p\n最小概率阈值',
-  presence_penalty: '--presence_penalty\n出现惩罚',
-  repeat_penalty: '--repeat_penalty\n重复惩罚',
-  jinja: '--jinja\n是否用 jinja 解析模板（true/false）',
-  chat_template_file: '--chat-template-file\n自定义 jinja 模板文件',
-  reasoning: '-rea, --reasoning\n推理/思考模式开关（on/off/auto）',
-  reasoning_format: '--reasoning-format\n推理输出的格式（none/hide/deepseek）',
-  reasoning_effort: '--reasoning-effort\n推理强度档位（default~max）',
-  reasoning_preserve: '--reasoning-preserve\n保留历史推理块（true/false）',
-  no_reasoning_preserve: '--no-reasoning-preserve\n丢弃历史推理块（true/false）',
-  port: '--port\n服务监听端口',
-  metrics: '--metrics\n开启 Prometheus 指标（true/false）',
-  fit: '-fit, --fit\n自动调整未设置参数以适配显存（on/off）',
-  fit_ctx: '-fitc, --fit-ctx\n--fit 可设置的最小 ctx 大小',
-  fit_target: '-fitt, --fit-target\n--fit 的目标显存（MiB0,MiB1,...）',
+const PARAM_FLAGS: Record<string, string> = {
+  m: '-m, --model', mmproj: '-mm, --mmproj', image_min_tokens: '--image-min-tokens',
+  alias: '-a, --alias', ngl: '-ngl, --gpu-layers', fa: '-fa, --flash-attn',
+  n_cpu_moe: '-ncmoe, --n-cpu-moe', load_mode: '-lm, --load-mode', np: '-np, --parallel',
+  c: '-c, --context-size', b: '-b, --batch-size', ub: '-ub, --ubatch-size',
+  t: '-t, --threads', tb: '-tb, --threads-batch', ctk: '-ctk, --cache-type-k',
+  ctv: '-ctv, --cache-type-v', spec_type: '--spec-type', spec_draft_n_max: '--spec-draft-n-max',
+  md: '-md, --spec-draft-model', ngld: '-ngld, --spec-draft-ngl', temp: '--temp',
+  top_p: '--top-p', top_k: '--top-k', min_p: '--min-p', presence_penalty: '--presence_penalty',
+  repeat_penalty: '--repeat_penalty', jinja: '--jinja', chat_template_file: '--chat-template-file',
+  reasoning: '-rea, --reasoning', reasoning_format: '--reasoning-format', reasoning_effort: '--reasoning-effort',
+  reasoning_preserve: '--reasoning-preserve', no_reasoning_preserve: '--no-reasoning-preserve',
+  port: '--port', metrics: '--metrics', fit: '-fit, --fit', fit_ctx: '-fitc, --fit-ctx', fit_target: '-fitt, --fit-target',
 };
 type RowType = 'text' | 'options' | 'boolean';
 type Row = { key: string; flag: string; required: boolean; type: RowType; opts: string[]; tip: string };
@@ -140,7 +114,15 @@ const rows = computed((): Row[] => {
     let type: RowType = 'text';
     if (bools.includes(k)) type = 'boolean';
     else if (opts[k] !== undefined) type = 'options';
-    out.push({ key: k, flag, required: props.paramsMeta.required.includes(k), type, opts: opts[k] ?? [], tip: PARAM_TIPS[k] ?? '' });
+    const flagLine = PARAM_FLAGS[k];
+    out.push({
+      key: k,
+      flag,
+      required: props.paramsMeta.required.includes(k),
+      type,
+      opts: opts[k] ?? [],
+      tip: flagLine === undefined ? '' : flagLine + '\n' + t('tplModal.tip.' + k),
+    });
   }
   return out;
 });
