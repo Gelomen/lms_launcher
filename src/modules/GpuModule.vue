@@ -4,6 +4,7 @@ import { config } from '@fortawesome/fontawesome-svg-core';
 import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons'; // chevron 仅存在于 solid 集（regular 集无此图标，FA Free 事实，非风格选择）
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { onGpuStats, type GpuStats } from '../ipc';
+import { t } from '../i18n';
 
 config.autoAddCss = false;
 // 项目惯例命名（键值即 IconDefinition，前缀不具语义）；chevron-left/right 来自 free-solid
@@ -272,7 +273,7 @@ function posClass(x: -1 | 0 | 1): string {
     <div class="gpu-body">
       <!-- ‹ 贴卡片左边缘、› 贴右边缘（左右各占一边，纵向居中，用户指定）；恒渲染（用户 2026-09-10：
            无论单卡/多卡/首帧，内容区结构恒统一，单卡与无数据时按钮禁用不可点击） -->
-      <button type="button" class="gpu-nav-btn gpu-nav-btn--left" :disabled="!multi" aria-label="上一张卡" @click="go(-1)"><FontAwesomeIcon :icon="byPrefixAndName.fat['chevron-left']" /></button>
+      <button type="button" class="gpu-nav-btn gpu-nav-btn--left" :disabled="!multi" :aria-label="t('gpu.nav.prev')" @click="go(-1)"><FontAwesomeIcon :icon="byPrefixAndName.fat['chevron-left']" /></button>
       <div class="gpu-stage">
         <div
           v-for="(l, i) in layers"
@@ -294,11 +295,11 @@ function posClass(x: -1 | 0 | 1): string {
             <canvas :ref="(el) => setChartCanvas(i, el)" />
           </div>
           <div class="gpu-grid">
-            <div class="gpu-cell"><span class="label">专用 GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'dedicated') }}</span></div>
-            <div class="gpu-cell"><span class="label">共享 GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'shared') }}</span></div>
+            <div class="gpu-cell"><span class="label">{{ t('gpu.cell.dedicated') }}</span><span class="gpu-val">{{ memOf(l.cardIndex, 'dedicated') }}</span></div>
+            <div class="gpu-cell"><span class="label">{{ t('gpu.cell.shared') }}</span><span class="gpu-val">{{ memOf(l.cardIndex, 'shared') }}</span></div>
             <!-- 合计 = 专用 + 共享（组件层计算，spec §3） -->
-            <div class="gpu-cell"><span class="label">GPU 内存</span><span class="gpu-val">{{ memOf(l.cardIndex, 'sum') }}</span></div>
-            <div class="gpu-cell"><span class="label">GPU 利用率</span><span class="gpu-val">{{ util(l.cardIndex) }}</span></div>
+            <div class="gpu-cell"><span class="label">{{ t('gpu.cell.total') }}</span><span class="gpu-val">{{ memOf(l.cardIndex, 'sum') }}</span></div>
+            <div class="gpu-cell"><span class="label">{{ t('gpu.cell.util') }}</span><span class="gpu-val">{{ util(l.cardIndex) }}</span></div>
           </div>
         </div>
         <!-- 底部指示点：N 卡 = N 点，当前实心灰、其余空心描边；纯展示不可点击（切换只走 ‹ ›） -->
@@ -306,7 +307,7 @@ function posClass(x: -1 | 0 | 1): string {
           <span v-for="(g, i) in gpus" :key="g.luid" class="dot" :class="{ 'dot--active': i === index }" />
         </div>
       </div>
-      <button type="button" class="gpu-nav-btn gpu-nav-btn--right" :disabled="!multi" aria-label="下一张卡" @click="go(1)"><FontAwesomeIcon :icon="byPrefixAndName.fat['chevron-right']" /></button>
+      <button type="button" class="gpu-nav-btn gpu-nav-btn--right" :disabled="!multi" :aria-label="t('gpu.nav.next')" @click="go(1)"><FontAwesomeIcon :icon="byPrefixAndName.fat['chevron-right']" /></button>
     </div>
   </section>
 </template>
