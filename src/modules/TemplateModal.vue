@@ -226,8 +226,8 @@ function truncDeleteName(n: string): string {
 }
 const deleteMsgName = computed(() => truncDeleteName(props.name ?? ''));
 // message：截断后 + …；仅截断时传完整文案 tip（ConfirmDialog hover title 显示）
-const deleteFullMsg = '确定删除配置「' + (props.name || '') + '」吗？'; // 静态拼接（props.name 编辑模式不变，无需 computed）
-const deleteShortMsg = () => '确定删除配置「' + deleteMsgName.value + '」吗？';
+const deleteFullMsg = computed(() => t('tplModal.delete.message', { name: props.name || '' }));
+const deleteShortMsg = computed(() => t('tplModal.delete.message', { name: deleteMsgName.value }));
 async function doDelete(): Promise<void> {
   try {
     await invoke('delete_config', props.id);
@@ -446,8 +446,8 @@ function close(): void { emit('close'); }
          默认挂 label 右侧垂直居中，右侧放不下视口时 .flag-tip--flip 翻到左缘内侧 -->
     <div v-if="flagTip" class="flag-tip" :class="{ 'flag-tip--down': !flagTip.above }"
       :style="{ left: flagTip.x + 'px', top: flagTip.y + 'px' }">{{ flagTip.text }}</div>
-    <ConfirmDialog :open="confirmDeleteOpen" title="删除模板"
-      :message="deleteShortMsg()" :tip="visualWidth(props.name || '') > NAME_BUDGET + 2 ? deleteFullMsg : undefined"
+    <ConfirmDialog :open="confirmDeleteOpen" :title="t('tplModal.delete.title')"
+      :message="deleteShortMsg" :tip="visualWidth(props.name || '') > NAME_BUDGET + 2 ? deleteFullMsg : undefined"
       tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
   </Teleport>
 </template>
