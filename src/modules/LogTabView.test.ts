@@ -2,9 +2,10 @@
 // 组件级测试：LogTabView —— 日志行链接识别与 Ctrl+左键打开（规格 2026-08-31-log-link-ctrl-click-design §3.2/§5.2）：
 // 含 http(s) 的行渲染 .ln-link（文本 = URL）；无链接行无 .ln-link；
 // Ctrl+点击 → invoke('open_external', url)；普通左键不触发任何 IPC。
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import LogTabView from './LogTabView.vue';
+import { applyLangLocal } from '../i18n';
 
 const invoke = vi.fn().mockResolvedValue(undefined);
 vi.mock('../ipc', () => ({
@@ -180,5 +181,90 @@ describe('LogTabView 日志查找（规格 2026-09-05-log-search-design）', () 
     expect(link.find('.ln-mark').exists()).toBe(true);        // 内部高亮段
     expect(link.find('.ln-mark').text()).toBe('docs');
     w.unmount();
+  });
+});
+
+
+describe('LogTabView i18n', () => {
+  const urlLine: E[] = [{ line: 'see https://example.com/x now', stream: 'out' }];
+
+  it('zh: all control texts match current (zero regression)', () => {
+    const w = mountTab(urlLine);
+    expect(w.find('.label span').text()).toBe('自动滚动');
+    expect(w.find('button[aria-label="清空日志"]').attributes('data-tooltip')).toBe('清空日志');
+    const input = w.find('.log-search-input');
+    expect(input.attributes('placeholder')).toBe('查找…');
+    expect(input.attributes('aria-label')).toBe('日志查找');
+    const searchClear = w.find('.btn-search-clear');
+    expect(searchClear.attributes('aria-label')).toBe('清空查找');
+    expect(searchClear.attributes('data-tooltip')).toBe('清空查找');
+    expect(w.find('.btn-search-prev').attributes('aria-label')).toBe('上一个匹配');
+    expect(w.find('.btn-search-prev').attributes('data-tooltip')).toBe('上一个');
+    expect(w.find('.btn-search-next').attributes('aria-label')).toBe('下一个匹配');
+    expect(w.find('.btn-search-next').attributes('data-tooltip')).toBe('下一个');
+    expect(w.find('.ln-link').attributes('data-tooltip')).toBe('Ctrl + Click 打开链接');
+    w.unmount();
+    const e = mountTab([]);
+    expect(e.find('.ln-dim').text()).toBe('暂无日志');
+    e.unmount();
+  });
+
+  describe('en smoke', () => {
+    beforeEach(() => { applyLangLocal('en'); });
+    afterEach(() => { applyLangLocal('zh'); });
+
+    it('toolbar = Auto-scroll / Clear', () => {
+      const w = mountTab([]);
+      expect(w.find('.label span').text()).toBe('Auto-scroll');
+      const clear = w.find('button[aria-label="Clear"]');
+      expect(clear.exists()).toBe(true);
+      expect(clear.attributes('data-tooltip')).toBe('Clear');
+      w.unmount();
+    });
+
+    it('search group = Find... / Search logs / Clear search', () => {
+      const w = mountTab([]);
+      expect(w.find('.log-search-input').attributes('placeholder')).toBe('Find...');
+      expect(w.find('.log-search-input').attributes('aria-label')).toBe('Search logs');
+      const searchClear = w.find('.btn-search-clear');
+      expect(searchClear.attributes('aria-label')).toBe('Clear search');
+      expect(searchClear.attributes('data-tooltip')).toBe('Clear search');
+      w.unmount();
+    });
+
+    it('nav aria = Previous match / Next match, tooltip = Previous / Next', () => {
+      const w = mountTab([]);
+      expect(w.find('.btn-search-prev').attributes('aria-label')).toBe('Previous match');
+      expect(w.find('.btn-search-prev').attributes('data-tooltip')).toBe('Previous');
+      expect(w.find('.btn-search-next').attributes('aria-label')).toBe('Next match');
+      expect(w.find('.btn-search-next').attributes('data-tooltip')).toBe('Next');
+      w.unmount();
+    });
+
+    it('empty state = no logs', () => {
+      const w = mountTab([]);
+      expect(w.find('.ln-dim').text()).toBe('no logs');
+      w.unmount();
+    });
+
+    it('link tooltip = Ctrl + Click to open link', () => {
+      const w = mountTab(urlLine);
+      expect(w.find('.ln-link').attributes('data-tooltip')).toBe('Ctrl + Click to open link');
+      w.unmount();
+    });
+
+    it('non-translation items locked: match count and log body', async () => {
+      const w = mountTab([
+        { line: 'boot ok', stream: 'out' },
+        { line: 'Error: disk full', stream: 'err' },
+        { line: 'error retrying now', stream: 'out' },
+      ]);
+      expect(w.find('.log-search-count').text()).toBe('0 / 0');
+      await w.find('.log-search-input').setValue('error');
+      await w.find('.btn-search-next').trigger('click');
+      expect(w.find('.log-search-count').text()).toBe('1 / 2');
+      expect(w.find('.log-view').text()).toContain('Error: disk full');
+      w.unmount();
+    });
   });
 });
