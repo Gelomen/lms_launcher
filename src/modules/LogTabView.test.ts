@@ -193,7 +193,7 @@ describe('LogTabView i18n', () => {
     expect(w.find('.label span').text()).toBe('自动滚动');
     expect(w.find('button[aria-label="清空日志"]').attributes('data-tooltip')).toBe('清空日志');
     const input = w.find('.log-search-input');
-    expect(input.attributes('placeholder')).toBe('查找…');
+    expect(input.attributes('placeholder')).toBe('查找日志…');
     expect(input.attributes('aria-label')).toBe('日志查找');
     const searchClear = w.find('.btn-search-clear');
     expect(searchClear.attributes('aria-label')).toBe('清空查找');
@@ -224,7 +224,7 @@ describe('LogTabView i18n', () => {
 
     it('search group = Find... / Search logs / Clear search', () => {
       const w = mountTab([]);
-      expect(w.find('.log-search-input').attributes('placeholder')).toBe('Find...');
+      expect(w.find('.log-search-input').attributes('placeholder')).toBe('Search log...');
       expect(w.find('.log-search-input').attributes('aria-label')).toBe('Search logs');
       const searchClear = w.find('.btn-search-clear');
       expect(searchClear.attributes('aria-label')).toBe('Clear search');

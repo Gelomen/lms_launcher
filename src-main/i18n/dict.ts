@@ -124,7 +124,7 @@ export const dict = {
     // 日志面板（S7 2026-10-03-i18n-log-panel）：除空态外值与 LogTabView.vue 现状中文串逐字一致
     'log.toolbar.autoScroll': '自动滚动',
     'log.toolbar.clear': '清空日志',
-    'log.search.placeholder': '查找…',
+    'log.search.placeholder': '查找日志…',
     'log.search.aria': '日志查找',
     'log.search.clear': '清空查找',
     'log.search.prev': '上一个',
@@ -255,7 +255,7 @@ export const dict = {
     // Log panel (S7 2026-10-03-i18n-log-panel)：Find... 用半角三点，与 launch.placeholder.select / dir.status.saving 先例一致
     'log.toolbar.autoScroll': 'Auto-scroll',
     'log.toolbar.clear': 'Clear',
-    'log.search.placeholder': 'Find...',
+    'log.search.placeholder': 'Search log...',
     'log.search.aria': 'Search logs',
     'log.search.clear': 'Clear search',
     'log.search.prev': 'Previous',
