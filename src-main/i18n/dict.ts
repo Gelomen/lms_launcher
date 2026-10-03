@@ -6,6 +6,8 @@ export const dict = {
   zh: {
     'common.cancel': '取消',
     'common.listSep': '、',
+    'common.save': '保存',
+    'common.confirm': '确认',
     'settings.title': '设置',
     'settings.proxy.host': '代理地址',
     'settings.proxy.port': '端口',
@@ -158,11 +160,16 @@ export const dict = {
     'update.err.app.checkUnknown': '检查更新时发生未知错误，请稍后重试。',
     'update.err.app.checkNetwork': '无法连接更新服务器或解析版本信息，请稍后重试。',
     'update.err.app.dev': '开发模式不检查更新',
-    'update.err.app.downloadUnknown': '更新下载时发生未知错误，请稍后重试。'
+    'update.err.app.downloadUnknown': '更新下载时发生未知错误，请稍后重试。',
+    'vram.dialog.title': '显卡显存（GB）',
+    'vram.dialog.placeholder': '如 24',
+    'vram.dialog.err.positive': '须为正数（GB）'
   },
   en: {
     'common.cancel': 'Cancel',
     'common.listSep': ', ',
+    'common.save': 'Save',
+    'common.confirm': 'Confirm',
     'settings.title': 'Settings',
     'settings.proxy.host': 'Proxy host',
     'settings.proxy.port': 'Port',
@@ -313,7 +320,10 @@ export const dict = {
     'update.err.app.checkUnknown': 'Update check failed. Try again.',
     'update.err.app.checkNetwork': 'Update server unreachable.',
     'update.err.app.dev': 'Update checks disabled in dev mode.',
-    'update.err.app.downloadUnknown': 'Update download failed. Try again.'
+    'update.err.app.downloadUnknown': 'Update download failed. Try again.',
+    'vram.dialog.title': 'VRAM (GB)',
+    'vram.dialog.placeholder': 'e.g. 24',
+    'vram.dialog.err.positive': 'Must be a positive number (GB)'
   },
 } as const;
 
