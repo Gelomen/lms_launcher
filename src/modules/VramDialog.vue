@@ -3,6 +3,7 @@
 // 复用 modal-overlay 遮罩语言（TemplateModal 同款 Teleport + 居中卡片）。
 import { ref, watch } from 'vue';
 import { invoke, errMsg } from '../ipc';
+import { t } from '../i18n';
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -26,35 +27,37 @@ watch(
     if (props.open && gb !== undefined) value.value = String(gb);
   },
 );
-const error = ref<string | null>(null);
+const validateError = ref<string | null>(null);
+const ioError = ref<string | null>(null);
 
 function save(): void {
-  error.value = null;
+  validateError.value = null;
+  ioError.value = null;
   const v = value.value.trim();
   const n = v === '' ? 0 : Number(v);
   if (!Number.isFinite(n) || n <= 0) {
-    error.value = '须为正数（GB）';
+    validateError.value = 'vram.dialog.err.positive';
     return;
   }
   invoke('save_vram_total', n)
     .then(() => emit('saved'))
-    .catch((e) => { error.value = errMsg(e); });
+    .catch((e) => { ioError.value = errMsg(e); });
 }
 </script>
 <template>
   <Teleport to="body">
     <div v-if="open" class="modal-overlay">
       <div class="card vram-dialog-box">
-        <h3 class="vram-dialog-title">显卡显存（GB）</h3>
+        <h3 class="vram-dialog-title">{{ t('vram.dialog.title') }}</h3>
         <input class="input" type="number" min="1" step="1"
           :value="value"
-          placeholder="如 24"
+          :placeholder="t('vram.dialog.placeholder')"
           @input="(ev: Event) => { value = (ev.target as HTMLInputElement).value; }"
           @keydown.enter="save" />
-        <p v-if="error" class="error-text">{{ error }}</p>
+        <p v-if="validateError || ioError" class="error-text">{{ validateError ? t(validateError) : ioError }}</p>
         <div class="vram-dialog-actions">
-          <button class="btn btn-secondary" @click="emit('close')">取消</button>
-          <button class="btn btn-primary" @click="save">保存</button>
+          <button class="btn btn-secondary" @click="emit('close')">{{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
         </div>
       </div>
     </div>

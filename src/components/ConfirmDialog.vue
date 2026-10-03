@@ -9,6 +9,7 @@ import { computed, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faTriangleExclamation, faInfoCircle } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import { t } from '../i18n';
 
 config.autoGenerateCss = true;
 library.add(faTriangleExclamation, faInfoCircle);
@@ -69,10 +70,10 @@ function onClose(): void { emit('close'); }
           </div>
         </div>
         <div class="confirm-actions">
-          <button type="button" class="btn confirm-cancel" aria-label="取消" @click="onClose">取消</button>
+          <button type="button" class="btn confirm-cancel" :aria-label="t('common.cancel')" @click="onClose">{{ t('common.cancel') }}</button>
           <button type="button" class="btn confirm-ok"
             :class="{ 'btn-danger': props.tone === 'danger', 'btn-primary': props.tone === 'primary' }"
-            aria-label="确认" @click="onConfirm">确认</button>
+            :aria-label="t('common.confirm')" @click="onConfirm">{{ t('common.confirm') }}</button>
         </div>
       </div>
       <!-- 截断名 tooltip：自绘浮层（.tpl-tip 为全局样式，与模板列表行/下拉长名同视觉语言），
