@@ -4,9 +4,10 @@
 // - [确认] emit confirm（调用方执行 IPC）；[取消] emit close（仅关窗，无副作用）
 // - tone=danger → ok 按钮带 btn-danger（红）；tone=primary（默认）→ btn-primary（蓝）
 // 注意：两个实例同时挂在 body 时全局 .confirm-* 选择器会撞车，故每条断言只用单实例并 unmount。
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import ConfirmDialog from './ConfirmDialog.vue';
+import { applyLangLocal } from '../i18n';
 
 function mountDlg(props: Record<string, unknown>): any {
   return mount(ConfirmDialog, { props });
@@ -103,5 +104,35 @@ describe('ConfirmDialog', () => {
     await tick();
     expect((document.querySelector('.confirm-ok') as HTMLButtonElement).className).toContain('btn-primary');
     wP.unmount();
+  });
+
+  // ===== S9（2026-10-03-i18n-misc-dialogs）：按钮文本 + aria-label 走词典 =====
+  it('zh 回归：按钮文本与 aria-label 均为 取消 / 确认', async () => {
+    const w = mountDlg({ open: true, title: 'T', message: 'M' });
+    await tick();
+    const cancel = document.querySelector('.confirm-cancel') as HTMLButtonElement;
+    const ok = document.querySelector('.confirm-ok') as HTMLButtonElement;
+    expect(cancel.textContent).toBe('取消');
+    expect(cancel.getAttribute('aria-label')).toBe('取消');
+    expect(ok.textContent).toBe('确认');
+    expect(ok.getAttribute('aria-label')).toBe('确认');
+    w.unmount();
+  });
+
+  describe('en smoke', () => {
+    beforeEach(() => { applyLangLocal('en'); });
+    afterEach(() => { applyLangLocal('zh'); });
+
+    it('按钮文本与 aria-label = Cancel / Confirm', async () => {
+      const w = mountDlg({ open: true, title: 'T', message: 'M' });
+      await tick();
+      const cancel = document.querySelector('.confirm-cancel') as HTMLButtonElement;
+      const ok = document.querySelector('.confirm-ok') as HTMLButtonElement;
+      expect(cancel.textContent).toBe('Cancel');
+      expect(cancel.getAttribute('aria-label')).toBe('Cancel');
+      expect(ok.textContent).toBe('Confirm');
+      expect(ok.getAttribute('aria-label')).toBe('Confirm');
+      w.unmount();
+    });
   });
 });

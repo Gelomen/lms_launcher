@@ -4,9 +4,10 @@
 // - 打开弹窗时:只要传入了已配置的 vramTotalGb(数字),输入框即回填该值;未配置(undefined)→ 空输入
 //   (含"打开→关闭→再打开"反复开合:每次打开都以当前 prop 为准回填)
 // - 保存:合法正数 emit saved + invoke('save_vram_total', n);空/非数字 → 错误提示不发 IPC
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import VramDialog from './VramDialog.vue';
+import { applyLangLocal } from '../i18n';
 
 vi.mock('../ipc', () => ({ invoke: vi.fn(() => Promise.resolve()), errMsg: (e: unknown) => String(e) }));
 const { invoke } = await import('../ipc');
@@ -84,5 +85,38 @@ describe('VramDialog', () => {
     expect(invoke).not.toHaveBeenCalled();
     expect((document.querySelector('.vram-dialog-box .error-text') as HTMLElement).textContent).toContain('须为正数');
     w.unmount();
+  });
+
+  // ===== S9（2026-10-03-i18n-misc-dialogs）：en 冒烟 =====
+  describe('en smoke', () => {
+    beforeEach(() => { applyLangLocal('en'); });
+    afterEach(() => { applyLangLocal('zh'); });
+
+    it('标题 = VRAM (GB)、placeholder = e.g. 24', async () => {
+      const w = mountDlg({ open: true });
+      await tick();
+      expect(document.querySelector('.vram-dialog-title')!.textContent).toBe('VRAM (GB)');
+      expect(dlgInput().placeholder).toBe('e.g. 24');
+      w.unmount();
+    });
+
+    it('校验报错行 = Must be a positive number (GB)', async () => {
+      const w = mountDlg({ open: true });
+      await tick();
+      (document.querySelector('.vram-dialog-box .btn-primary') as HTMLButtonElement).click();
+      await tick();
+      expect((document.querySelector('.vram-dialog-box .error-text') as HTMLElement).textContent)
+        .toBe('Must be a positive number (GB)');
+      expect(invoke).not.toHaveBeenCalled();
+      w.unmount();
+    });
+
+    it('两按钮 = Cancel / Save', async () => {
+      const w = mountDlg({ open: true });
+      await tick();
+      const btns = [...document.querySelectorAll('.vram-dialog-actions .btn')] as HTMLButtonElement[];
+      expect(btns.map((x) => x.textContent)).toEqual(['Cancel', 'Save']);
+      w.unmount();
+    });
   });
 });

@@ -910,11 +910,18 @@ describe('i18n / App 外壳（Slice 1）', () => {
     trayHandlers.at(-1)!(); // 托盘「退出」→ 打开确认框
     await nextTick();
     expect(document.querySelector('.confirm-box')!.textContent).toContain('退出程序');
+    // S9：按钮文本与 aria 走 common.cancel / common.confirm
+    expect((document.querySelector('.confirm-cancel') as HTMLButtonElement).textContent).toBe('取消');
+    expect((document.querySelector('.confirm-ok') as HTMLButtonElement).textContent).toBe('确认');
     await applyEn();
     await flush();
     const box = document.querySelector('.confirm-box') as HTMLElement;
     expect(box.textContent).toContain('Exit');
     expect(box.textContent).toContain('llama-server will be stopped. Continue?');
+    expect((document.querySelector('.confirm-cancel') as HTMLButtonElement).textContent).toBe('Cancel');
+    expect((document.querySelector('.confirm-cancel') as HTMLButtonElement).getAttribute('aria-label')).toBe('Cancel');
+    expect((document.querySelector('.confirm-ok') as HTMLButtonElement).textContent).toBe('Confirm');
+    expect((document.querySelector('.confirm-ok') as HTMLButtonElement).getAttribute('aria-label')).toBe('Confirm');
     w.unmount();
   });
 
