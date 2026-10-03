@@ -5,6 +5,7 @@ import { faCircleDown, faCircleUp, faCircleXmark, faTrashCan } from '@fortawesom
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke } from '../ipc';
 import { findMatches, splitLineForSearch, type MarkRange, type RenderSeg } from '../util/log-search';
+import { t } from '../i18n';
 
 // 清空日志（2026-08-28）：无文字 icon 按钮——复用编辑模板弹窗左下角的删除图标
 // （faTrashCan regular，TemplateModal .btn-delete 同源）；emit('clear')，App 只清本 tab 桶。
@@ -134,39 +135,39 @@ watch(autoScroll, (on) => {
     <div style="display: flex; justify-content: flex-start; align-items: center;">
       <label style="display: flex; gap: 4px; align-items: center; user-select: none;" class="label">
         <input type="checkbox" v-model="autoScroll" style="margin: 0; accent-color: var(--primary);" />
-        <span>自动滚动</span>
+        <span>{{ t('log.toolbar.autoScroll') }}</span>
       </label>
       <!-- [清空日志]：icon-only（无文字）+ aria-label；icon 复用 TemplateModal 删除图标（trash-can regular）；
            盒型 = style.css 既有 .icon-btn（32×32、hover 浅灰），hover tooltip 由 data-tooltip 提供 -->
-      <button type="button" class="icon-btn icon-btn--noborder" aria-label="清空日志" data-tooltip="清空日志" @click="onClear">
+      <button type="button" class="icon-btn icon-btn--noborder" :aria-label="t('log.toolbar.clear')" :data-tooltip="t('log.toolbar.clear')" @click="onClear">
         <FontAwesomeIcon :icon="['far', 'trash-can']" />
       </button>
       <!-- [日志查找]（2026-09-05）：输入即查 + 计数 + 上/下一个（far circle-up/down，regular 优先）。
            （2026-09-05 用户反馈）控件收进 .log-search 一组，统一 gap:4px——原 margin 散落导致按钮间距过大 -->
       <div class="log-search">
         <input type="text" class="input log-search-input" v-model="query"
-          placeholder="查找…" aria-label="日志查找" />
+          :placeholder="t('log.search.placeholder')" :aria-label="t('log.search.aria')" />
         <!-- [清空查找]（2026-09-05 用户追加）：far circle-xmark 圆形内 x；清空输入即复位高亮与计数 -->
         <button type="button" class="icon-btn icon-btn--noborder btn-search-clear"
-          aria-label="清空查找" data-tooltip="清空查找" :disabled="clearDisabled" @click="onQueryClear">
+          :aria-label="t('log.search.clear')" :data-tooltip="t('log.search.clear')" :disabled="clearDisabled" @click="onQueryClear">
           <FontAwesomeIcon :icon="['far', 'circle-xmark']" />
         </button>
         <span class="label log-search-count">{{ countText }}</span>
         <button type="button" class="icon-btn icon-btn--noborder btn-search-prev"
-          aria-label="上一个匹配" data-tooltip="上一个" :disabled="navDisabled" @click="goPrev">
+          :aria-label="t('log.search.prevMatch')" :data-tooltip="t('log.search.prev')" :disabled="navDisabled" @click="goPrev">
           <FontAwesomeIcon :icon="['far', 'circle-up']" />
         </button>
         <button type="button" class="icon-btn icon-btn--noborder btn-search-next"
-          aria-label="下一个匹配" data-tooltip="下一个" :disabled="navDisabled" @click="goNext">
+          :aria-label="t('log.search.nextMatch')" :data-tooltip="t('log.search.next')" :disabled="navDisabled" @click="goNext">
           <FontAwesomeIcon :icon="['far', 'circle-down']" />
         </button>
       </div>
     </div>
     <div ref="view" class="log-view">
-      <template v-if="lines.length === 0"><p class="ln-dim">（暂无日志）</p></template>
+      <template v-if="lines.length === 0"><p class="ln-dim">{{ t('log.empty.missing') }}</p></template>
       <p v-for="(e, i) in lines" :key="i" :class="cls(e)" style="margin: 0;">
         <template v-for="(g, k) in segsOf(e, i)" :key="k">
-          <span v-if="g.inLink && g.parts" class="ln-link tip-up" data-tooltip="Ctrl + Click 打开链接" @click.ctrl="onLink(g.url)">
+          <span v-if="g.inLink && g.parts" class="ln-link tip-up" :data-tooltip="t('log.link.tip')" @click.ctrl="onLink(g.url)">
             <template v-for="(seg, j) in g.parts" :key="j">
               <span v-if="seg.current" class="ln-mark--current">{{ seg.text }}</span>
               <span v-else-if="seg.mark" class="ln-mark">{{ seg.text }}</span>

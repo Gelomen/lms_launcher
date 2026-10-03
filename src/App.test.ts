@@ -46,6 +46,9 @@ vi.mock('./ipc', () => ({
   onStartupLlamaCheck: (fn: (e: { status: string; dir: string }) => void) => { startupLlamaCheckHandlers.push(fn); return () => {}; },
 }));
 
+const { t: i18nText } = await import('./i18n');
+const EMPTY_LOG = i18nText('log.empty.missing');
+
 const RUNNING = { running: true, stopping: false, configId: 'c1' };
 const READY = { running: false, stopping: false, configId: null };
 // 数据 key：desc → name（2026-09，main 返回 ConfigEntry.name）
@@ -188,7 +191,7 @@ describe('App start flow', () => {
 describe('App dir validation log', () => {
   function launcherTexts(w: any): string[] {
     const pane = w.find('.log-pane[data-tab-id="launcher"]');
-    return pane.findAll('p').map((p: any) => p.text()).filter((t: string) => t !== '（暂无日志）');
+    return pane.findAll('p').map((p: any) => p.text()).filter((s: string) => s !== EMPTY_LOG);
   }
 
   it('validated ok emits a launcher log line with the dir path', async () => {
@@ -370,9 +373,9 @@ describe('log routing to tabs', () => {
     const btn = w.find('.log-pane[data-tab-id="launcher"] button[aria-label="清空日志"]');
     await btn.trigger('click');
     await flush();
-    // 空桶渲染占位行「（暂无日志）」而非 0 个 p——日志行计数排除该占位
+    // 空桶渲染占位行「暂无日志」而非 0 个 p——日志行计数排除该占位
     const launcherPane = w.find('.log-pane[data-tab-id="launcher"]');
-    const logLines = (el: any) => el.findAll('p').filter((p: any) => p.text() !== '（暂无日志）');
+    const logLines = (el: any) => el.findAll('p').filter((p: any) => p.text() !== EMPTY_LOG);
     expect(logLines(launcherPane).length).toBe(0);
     expect(logLines(w.find('.log-pane[data-tab-id="llama-server"]')).length).toBe(3);
     // 清空后新日志正常追加（桶引用身份保持）
@@ -388,7 +391,7 @@ describe('lifecycle log dual-echo (echoTabs)', () => {
     return w.find(`.log-pane[data-tab-id="${tabId}"]`)
       .findAll('p')
       .map((p: any) => p.text())
-      .filter((t: string) => t !== '（暂无日志）');
+      .filter((s: string) => s !== EMPTY_LOG);
   }
 
   it('sys line with echoTabs: [llama-server] lands in both tabs; without it stays launcher-only', async () => {
