@@ -929,11 +929,11 @@ describe('i18n / App 外壳（Slice 1）', () => {
     });
     const w = mount(App);
     await flush();
+    await applyEn(); // Apply English BEFORE triggering the check
     trayUpdateHandlers.at(-1)!(); // 托盘「检查更新」→ 打开弹窗（不自动检查）
     await nextTick();
     updateBtns()[0].click(); // 手动「检查更新」→ reject
     await flush();
-    await applyEn();
     expect(document.querySelector('.update-modal .update-row__name')?.textContent?.trim()).toBe('LMS Launcher');
     expect(document.querySelector('.update-modal .update-row__error')?.textContent?.trim()).toBe('Update check failed. Try again.');
     w.unmount();

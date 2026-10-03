@@ -7,6 +7,7 @@
 // Task 7 扩展：新增 llama.cpp 更新区域（版本选择器 + 下载进度）
 
 import { ref, watch, onBeforeUnmount } from 'vue';
+import { t } from '../i18n';
 // 2026-09 视觉统一：llama.cpp Windows 版本下拉改用共享 Dropdown 组件（原生 <select> 样式与应用其他下拉不一致）
 import Dropdown from '../components/Dropdown.vue';
 import {
@@ -221,7 +222,7 @@ async function runLlamaUpdateCheck() {
         llamaPhase.value = 'idle'; // 未配置目录：按钮保持「检查更新」可点（重新检查）
       } else {
         llamaUpdateStatus.value = 'error';
-        llamaError.value = result.error ?? '未知错误';
+        llamaError.value = result.error ?? t('update.err.unknown');
         llamaPhase.value = 'error'; // 红字错误 + 「重试」
       }
     }
@@ -272,7 +273,7 @@ async function downloadLlamaUpdateInternal() {
       // 重新检查更新状态
       await checkLlamaUpdateInternal();
     } else {
-      llamaError.value = result.error ?? '下载失败';
+      llamaError.value = result.error ?? t('update.err.download');
       llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示
       llamaPhase.value = 'error'; // 下载失败 → 「重试」（重发检查，同步主进程状态）
       emit('llama-complete', false, result.error);
@@ -310,12 +311,12 @@ async function installLlamaUpdateInternal() {
       // 2026-09-17 修复（二轮）：占用类失败（如 ggml-cuda.dll 被外部 CUDA 版 llama-server 锁住）
       // → 回到「停止并更新」（pending 包仍在主进程，关闭外部进程后再点一次即可），
       // 而不是「重试」（会重走完整下载，浪费且包并未失效）
-      llamaError.value = result.error ?? '文件仍被占用';
+      llamaError.value = result.error ?? t('update.err.busy');
       llamaStopUpdateRunning.value = true;
       llamaPhase.value = 'stop-update';
       emit('llama-complete', false, llamaError.value);
     } else {
-      llamaError.value = result.error ?? '安装失败';
+      llamaError.value = result.error ?? t('update.err.install');
       llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示
       llamaPhase.value = 'error'; // →「重试」重新走完整检查+下载流程
       emit('llama-complete', false, llamaError.value);
@@ -379,14 +380,14 @@ onBeforeUnmount(() => {
 // idle=检查更新 / checking=检查中...(禁用) / available=下载更新 / downloading=下载中 NN%(禁用)
 // / ready=重启应用 / error=重试 / up-to-date=检查更新
 const BUTTONS: Record<Phase, { label: (pct: number) => string; kind: string; disabled: boolean }> = {
-  idle:         { label: () => '检查更新',       kind: 'check',    disabled: false },
-  checking:     { label: () => '检查中...',      kind: 'check',    disabled: true },
-  available:    { label: () => '下载更新',       kind: 'download', disabled: false },
-  downloading:  { label: (p) => `下载中 ${Math.floor(p)}%`, kind: 'download', disabled: true },
-  ready:        { label: () => '重启应用',       kind: 'restart',  disabled: false },
-  error:        { label: () => '重试',           kind: 'retry',    disabled: false },
-  'up-to-date': { label: () => '检查更新',       kind: 'check',    disabled: false },
-  'stop-update': { label: () => '停止并更新',    kind: 'stop-update', disabled: false }, // 仅 llama 行使用
+  idle:         { label: () => t('update.btn.check'),       kind: 'check',    disabled: false },
+  checking:     { label: () => t('update.btn.checking'),    kind: 'check',    disabled: true },
+  available:    { label: () => t('update.btn.download'),    kind: 'download', disabled: false },
+  downloading:  { label: (p) => t('update.btn.downloading', { pct: Math.floor(p) }), kind: 'download', disabled: true },
+  ready:        { label: () => t('update.btn.restart'),     kind: 'restart',  disabled: false },
+  error:        { label: () => t('update.btn.retry'),       kind: 'retry',    disabled: false },
+  'up-to-date': { label: () => t('update.btn.check'),       kind: 'check',    disabled: false },
+  'stop-update': { label: () => t('update.btn.stopUpdate'), kind: 'stop-update', disabled: false }, // 仅 llama 行使用
 };
 
 function btnLabel(item: Item): string {
@@ -428,7 +429,7 @@ function middleText(item: Item): string {
     case 'version':
       return item.version ?? '';
     case 'latest':
-      return `已是最新版本 ${item.version ?? ''}`;
+      return `${t('update.middle.latest')} ${item.version ?? ''}`;
     case 'local':
       return item.localVersion ?? '';
     case 'error':
@@ -464,15 +465,15 @@ function textGradientStyle(item: Item): string | undefined {
 // ---- llama.cpp 行按钮（2026-09 需求：llama.cpp 行恒显示，按钮默认「检查更新」；
 //      与 LMS 启动器行同一套七态语言，available 文案同为「下载更新」）----
 const LLAMA_BUTTONS: Record<Phase, { label: (pct: number) => string; disabled: boolean }> = {
-  idle:         { label: () => '检查更新',           disabled: false },
-  checking:     { label: () => '检查中...',          disabled: true },
-  available:    { label: () => '下载更新',           disabled: false },
-  downloading:  { label: (p) => `下载中 ${Math.floor(p)}%`, disabled: true },
-  ready:        { label: () => '检查更新',           disabled: false }, // llama 无 ready 态（覆盖安装无需重启），仅保映射完整
-  error:        { label: () => '重试',               disabled: false },
-  'up-to-date': { label: () => '检查更新',           disabled: false },
+  idle:         { label: () => t('update.btn.check'),       disabled: false },
+  checking:     { label: () => t('update.btn.checking'),    disabled: true },
+  available:    { label: () => t('update.btn.download'),    disabled: false },
+  downloading:  { label: (p) => t('update.btn.downloading', { pct: Math.floor(p) }), disabled: true },
+  ready:        { label: () => t('update.btn.check'),       disabled: false }, // llama 无 ready 态（覆盖安装无需重启），仅保映射完整
+  error:        { label: () => t('update.btn.retry'),       disabled: false },
+  'up-to-date': { label: () => t('update.btn.check'),       disabled: false },
   // 2026-09-17 两阶段更新：下载完成但 llama-server 运行中 → 「停止并更新」
-  'stop-update': { label: () => '停止并更新',        disabled: false },
+  'stop-update': { label: () => t('update.btn.stopUpdate'), disabled: false },
 };
 // 2026-09-18：up-to-date 态也显示 Windows 版本下拉（允许切换变体，如 CPU/CUDA/Vulkan）→
 // 按钮文案随「所选版本 vs lms_launcher.yaml 配置（update.last_llama_type）」切换：
@@ -511,7 +512,7 @@ function llamaSelectedMatchesConfig(): boolean {
 }
 function llamaBtnLabel(): string {
   if (llamaSwitchVariantApplies()) {
-    return '切换版本'; // 所选 ≠ 配置变体（用户切换了下拉）→ 点击即下载所选变体
+    return t('update.btn.switch'); // 所选 ≠ 配置变体（用户切换了下拉）→ 点击即下载所选变体
   }
   return LLAMA_BUTTONS[llamaPhase.value].label(llamaDownloadPct.value); // 一致 → 原按钮语义
 }
@@ -557,15 +558,15 @@ function llamaMiddle(): { kind: string; text: string } | null {
   switch (llamaUpdateStatus.value) {
     case 'up-to-date':
       return { kind: 'latest', text: llamaLocalVersion.value
-        ? '已是最新版本 ' + llamaLocalVersion.value
-        : '已是最新版本' };
+        ? t('update.middle.latest') + ' ' + llamaLocalVersion.value
+        : t('update.middle.latest') };
     case 'update-available':
-      return { kind: 'version', text: '新版本: ' + (llamaRemoteVersion.value || '') };
+      return { kind: 'version', text: t('update.middle.newVersion', { version: llamaRemoteVersion.value || '' }) };
     case 'unknown':
       // 2026 契约：打开仅本地查询（无网络检查）→ 中段显示当前本地版本（裸号灰字，
       // 如 b10679）；查询失败/无版本号 → 「本地版本未检测到」。kind='latest' → 模板
       // 映射为灰字 .llama-state-text（非 version 紫字）。
-      return { kind: 'latest', text: llamaLocalVersion.value || '本地版本未检测到' };
+      return { kind: 'latest', text: llamaLocalVersion.value || t('update.middle.localMissing') };
     default:
       return null; // unconfigured / error：中段留白（提示/红字走 llamaBelow）
   }
@@ -577,14 +578,14 @@ function llamaBelow(): { kind: string; text: string } | null {
   // 2026-09-17 两阶段更新：stop-update 态下名称行下方灰字说明，引导用户点「停止并更新」
   if (llamaPhase.value === 'stop-update') {
     return { kind: 'hint', text: llamaStopUpdateRunning.value
-      ? 'llama-server 正在运行，点击「停止并更新」停止服务并完成安装'
-      : '更新包已下载完成，点击「停止并更新」完成安装' };
+      ? t('update.hint.stopRunning')
+      : t('update.hint.stopReady') };
   }
   switch (llamaUpdateStatus.value) {
     case 'unconfigured':
-      return { kind: 'hint', text: '请先在主界面选择 llama.cpp 安装目录' };
+      return { kind: 'hint', text: t('update.hint.unconfigured') };
     case 'error':
-      return { kind: 'error', text: llamaError.value || '检查更新失败' };
+      return { kind: 'error', text: llamaError.value || t('update.err.check') };
     default:
       return null;
   }
@@ -597,8 +598,8 @@ function llamaBelow(): { kind: string; text: string } | null {
       <div class="update-card">
         <!-- 32px 标题栏：标题「检查更新」居中；右上角 × 关闭（hover 红底白字，同 .modal-close） -->
         <div class="update-head">
-          <span class="update-title">检查更新</span>
-          <button type="button" class="update-close" aria-label="关闭弹窗" @click="onClose()">
+          <span class="update-title">{{ t('update.title') }}</span>
+          <button type="button" class="update-close" :aria-label="t('update.close')" @click="onClose()">
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
               <path d="M4 4 L12 12 M12 4 L4 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
             </svg>

@@ -50,7 +50,7 @@ const updateState = ref<{ phase: UpdatePhase; version: string; pct: number; erro
 // 2026-09-18：localVersion 随 items 下发（= 顶栏版本号，onMounted 经 get_version 取得）——
 // UpdateModal 在 idle/checking 态中段显示，打开弹窗即见当前版本（此前该区间默认空白）
 const updateItems = computed(() => [
-  { name: 'LMS 启动器', localVersion: version.value, ...updateState.value },
+  { name: t('app.brand'), localVersion: version.value, ...updateState.value },
 ]);
 // 最近一次失败类型：error 态「重试」据此分流（check 失败→重发 check；download 失败→重发 download）
 const lastFailure = ref<'check' | 'download'>('check');
@@ -216,7 +216,7 @@ async function runCheck(): Promise<void> {
     r = await invoke<UpdateCheckResult>('check_update');
   } catch {
     lastFailure.value = 'check';
-    updateState.value = { phase: 'error', version: updateState.value.version, pct: 0, errorText: '检查更新时发生未知错误，请稍后重试。' };
+    updateState.value = { phase: 'error', version: updateState.value.version, pct: 0, errorText: t('update.err.app.checkUnknown') };
     return;
   }
   if (r.available) {
@@ -232,11 +232,11 @@ async function runCheck(): Promise<void> {
       break;
     case 'error':
       lastFailure.value = 'check';
-      updateState.value = { phase: 'error', version: '', pct: 0, errorText: '无法连接更新服务器或解析版本信息，请稍后重试。' };
+      updateState.value = { phase: 'error', version: '', pct: 0, errorText: t('update.err.app.checkNetwork') };
       break;
     case 'dev':
       lastFailure.value = 'check';
-      updateState.value = { phase: 'error', version: '', pct: 0, errorText: '开发模式不检查更新' };
+      updateState.value = { phase: 'error', version: '', pct: 0, errorText: t('update.err.app.dev') };
       break;
   }
 }
@@ -249,7 +249,7 @@ async function runDownload(): Promise<void> {
     r = await invoke<{ ok: boolean; reason?: string }>('download_update');
   } catch {
     lastFailure.value = 'download';
-    updateState.value = { ...updateState.value, phase: 'error', errorText: '更新下载时发生未知错误，请稍后重试。' };
+    updateState.value = { ...updateState.value, phase: 'error', errorText: t('update.err.app.downloadUnknown') };
     return;
   }
   if (r.ok) {
@@ -265,7 +265,7 @@ async function runDownload(): Promise<void> {
   }
   lastFailure.value = 'download';
   appendSys('LMS 启动器 · 更新下载失败 · ' + (r.reason ?? '未知错误'));
-  updateState.value = { ...updateState.value, phase: 'error', errorText: r.reason ?? '未知错误' };
+  updateState.value = { ...updateState.value, phase: 'error', errorText: r.reason ?? t('update.err.unknown') };
 }
 
 // UpdateModal @action：check / download / retry / restart（restart 走共用退出确认框）
