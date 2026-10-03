@@ -14,10 +14,16 @@ const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void }>();
 // 初始填充:挂载前已有配置值(数字)→ 直接回填字符串;未配置(undefined)→ 空输入。
 const value = ref<string>(props.vramTotalGb !== undefined ? String(props.vramTotalGb) : '');
 // 每次打开(open=false→true)都重填 prop——覆盖「配置后重启,打开时回填」的重复开合场景。
+// 同时清空残留的校验/IO 报错（关闭再打开不应看到上次的红字）。
 watch(
   () => props.open,
   (open) => {
-    if (open && props.vramTotalGb !== undefined) value.value = String(props.vramTotalGb);
+    if (open) {
+      validateError.value = null;
+      ioError.value = null;
+      // 重新打开时始终重置为 prop 值（有配置则显示配置值，否则留空），确保错误值被覆盖
+      value.value = props.vramTotalGb !== undefined ? String(props.vramTotalGb) : '';
+    }
   },
 );
 // 异步到达:挂载后 get_app_config 才返回 vramTotalGb,弹窗已打开时仍须回填(重启后加载路径)。

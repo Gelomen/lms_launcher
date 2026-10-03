@@ -42,7 +42,17 @@ onMounted(async () => {
   } catch { /* 回填失败静默 */ }
 });
 
-watch(() => props.open, (v) => { if (v) { validateError.value = ''; ioError.value = ''; } });
+watch(() => props.open, (v) => {
+  if (v) {
+    validateError.value = '';
+    ioError.value = '';
+    // 重新打开时始终从配置重新加载（有配置则显示配置值，否则留空），确保错误值被覆盖
+    invoke('get_app_config').then((cfg: any) => {
+      proxyHost.value = cfg?.proxy?.host ?? '';
+      proxyPort.value = cfg?.proxy?.port != null ? String(cfg.proxy.port) : '';
+    }).catch(() => {});
+  }
+});
 
 // 代理地址格式白名单：IPv4（a.b.c.d）或主机名（字母数字点连字符，每段不以连字符起头）。
 // 拒绝带 scheme（http://evil）、带端口（host:80，端口应另填）、带空格/路径等畸形输入，
