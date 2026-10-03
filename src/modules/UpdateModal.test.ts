@@ -8,6 +8,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import UpdateModal from './UpdateModal.vue';
+import { applyLangLocal } from '../i18n';
 
 // Mock window.lms for UpdateModal tests
 beforeEach(() => {
@@ -1873,6 +1874,49 @@ describe('UpdateModal · llama.cpp 打开即取版本选项（2026-11 细化）'
     w.unmount();
   });
 
+});
+
+// ===== S8（2026-10-03-i18n-update-modal）：检查更新弹窗 23 处文案 i18n =====
+describe('UpdateModal i18n（S8）', () => {
+  const sevenStates = [
+    makeItem({ phase: 'idle' }),
+    makeItem({ phase: 'checking' }),
+    makeItem({ phase: 'available', version: '0.2.0' }),
+    makeItem({ phase: 'downloading', pct: 42 }),
+    makeItem({ phase: 'ready', version: '0.2.0' }),
+    makeItem({ phase: 'error', errorText: 'boom' }),
+    makeItem({ phase: 'up-to-date', version: '0.1.0' }),
+  ];
+  const labels = () => actionBtns().map((b) => b.textContent?.trim());
+
+  it('zh：标题 / 关闭 aria / 七态按钮 / 中段与现状逐字一致（中文零回归）', () => {
+    const w = mountModal({ items: sevenStates });
+    expect(document.querySelector('.update-title')?.textContent).toBe('检查更新');
+    expect(closeBtn()!.getAttribute('aria-label')).toBe('关闭弹窗');
+    expect(labels().slice(0, 6)).toEqual(['检查更新', '检查中...', '下载更新', '下载中 42%', '重启应用', '重试']);
+    expect(labels()[6]).toBe('检查更新');
+    expect(document.querySelector('.update-row__latest')?.textContent?.trim()).toBe('已是最新版本 0.1.0');
+    w.unmount();
+  });
+
+  it('en：七态按钮与 up-to-date 中段', () => {
+    applyLangLocal('en');
+    const w = mountModal({ items: sevenStates });
+    expect(labels().slice(0, 6)).toEqual(['Check', 'Checking...', 'Download', '42%', 'Restart', 'Retry']);
+    expect(labels()[6]).toBe('Check');
+    expect(document.querySelector('.update-row__latest')?.textContent?.trim()).toBe('Up to date 0.1.0');
+    applyLangLocal('zh');
+    w.unmount();
+  });
+
+  it('en：标题与关闭 aria', () => {
+    applyLangLocal('en');
+    const w = mountModal();
+    expect(document.querySelector('.update-title')?.textContent).toBe('Check for updates');
+    expect(closeBtn()!.getAttribute('aria-label')).toBe('Close dialog');
+    applyLangLocal('zh');
+    w.unmount();
+  });
 });
 
 

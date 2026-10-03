@@ -832,6 +832,7 @@ describe('App GPU card mount', () => {
 describe('i18n / App 外壳（Slice 1）', () => {
   // S0 记录的坑：./i18n 必须延迟 import（静态 import 会在 vi.mock('./ipc') 注册前绑定真实 ipc）
   async function applyEn(): Promise<void> {
+
     const { applyLangLocal } = await import('./i18n');
     applyLangLocal('en');
     await nextTick();
@@ -877,6 +878,10 @@ describe('i18n / App 外壳（Slice 1）', () => {
     return mount(App);
   }
 
+  function updateBtns(): HTMLButtonElement[] {
+    return [...document.querySelectorAll('.update-modal .btn-primary')] as HTMLButtonElement[];
+  }
+
   it('更新 pill available 态英文最短文案 + tooltip', async () => {
     const w = mountWithUpdate();
     await flush();
@@ -910,6 +915,47 @@ describe('i18n / App 外壳（Slice 1）', () => {
     const box = document.querySelector('.confirm-box') as HTMLElement;
     expect(box.textContent).toContain('Exit');
     expect(box.textContent).toContain('llama-server will be stopped. Continue?');
+    w.unmount();
+  });
+
+  it('S8：弹窗行名走 app.brand；检查失败 errorText 为英文短句', async () => {
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve(READY);
+        case 'get_configs': return Promise.resolve(cfg());
+        case 'check_update': return Promise.reject(new Error('net down'));
+        default: return Promise.resolve(undefined);
+      }
+    });
+    const w = mount(App);
+    await flush();
+    trayUpdateHandlers.at(-1)!(); // 托盘「检查更新」→ 打开弹窗（不自动检查）
+    await nextTick();
+    updateBtns()[0].click(); // 手动「检查更新」→ reject
+    await flush();
+    await applyEn();
+    expect(document.querySelector('.update-modal .update-row__name')?.textContent?.trim()).toBe('LMS Launcher');
+    expect(document.querySelector('.update-modal .update-row__error')?.textContent?.trim()).toBe('Update check failed. Try again.');
+    w.unmount();
+  });
+
+  it('S8：无法连接 / 开发模式 errorText 为英文短句', async () => {
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve(READY);
+        case 'get_configs': return Promise.resolve(cfg());
+        case 'check_update': return Promise.resolve({ available: false, status: 'error' });
+        default: return Promise.resolve(undefined);
+      }
+    });
+    const w = mount(App);
+    await flush();
+    await applyEn();
+    trayUpdateHandlers.at(-1)!();
+    await nextTick();
+    updateBtns()[0].click();
+    await flush();
+    expect(document.querySelector('.update-modal .update-row__error')?.textContent?.trim()).toBe('Update server unreachable.');
     w.unmount();
   });
 });
