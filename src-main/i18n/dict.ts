@@ -121,6 +121,19 @@ export const dict = {
     'gpu.cell.util': 'GPU 利用率',
     'gpu.nav.prev': '上一张卡',
     'gpu.nav.next': '下一张卡',
+    // 日志面板（S7 2026-10-03-i18n-log-panel）：除空态外值与 LogTabView.vue 现状中文串逐字一致
+    'log.toolbar.autoScroll': '自动滚动',
+    'log.toolbar.clear': '清空日志',
+    'log.search.placeholder': '查找…',
+    'log.search.aria': '日志查找',
+    'log.search.clear': '清空查找',
+    'log.search.prev': '上一个',
+    'log.search.prevMatch': '上一个匹配',
+    'log.search.next': '下一个',
+    'log.search.nextMatch': '下一个匹配',
+    // 空态去全角括号（2026-10-03 用户指定；「中文布局冻结」唯一获批例外）
+    'log.empty.missing': '暂无日志',
+    'log.link.tip': 'Ctrl + Click 打开链接',
   },
   en: {
     'common.cancel': 'Cancel',
@@ -239,6 +252,18 @@ export const dict = {
     'gpu.cell.util': 'GPU utilization',
     'gpu.nav.prev': 'Previous GPU',
     'gpu.nav.next': 'Next GPU',
+    // Log panel (S7 2026-10-03-i18n-log-panel)：Find... 用半角三点，与 launch.placeholder.select / dir.status.saving 先例一致
+    'log.toolbar.autoScroll': 'Auto-scroll',
+    'log.toolbar.clear': 'Clear',
+    'log.search.placeholder': 'Find...',
+    'log.search.aria': 'Search logs',
+    'log.search.clear': 'Clear search',
+    'log.search.prev': 'Previous',
+    'log.search.prevMatch': 'Previous match',
+    'log.search.next': 'Next',
+    'log.search.nextMatch': 'Next match',
+    'log.empty.missing': 'no logs',
+    'log.link.tip': 'Ctrl + Click to open link',
   },
 } as const;
 
