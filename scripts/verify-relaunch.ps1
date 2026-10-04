@@ -10,7 +10,7 @@
 #                  只断言「无新增」，不要求「快照里的全退了」——常驻终端的 conhost 更新后仍存活，
 #                  基线快照含用户自己的终端 conhost，要求「全退」在这类机器上必误报
 #   C4 任务不残留   计划任务 LMSLauncherUpdate 不存在（更新脚本启动即自删）
-#   C5 日志无 ERROR  lms_launcher_update.log 最后一段（自最后一个「更新脚本启动」行起）无 [ERROR] 行
+#   C5 日志无 ERROR  lms_launcher_update.log 最后一段（自最后一个 `=== update run ===` 标记行起）无 [ERROR] 行
 # 退出码：全部 PASS exit 0；任一 FAIL exit 1；[INFO] 跳过不算失败。
 # 编码：UTF-8 with BOM + LF（与仓库其他 ps1 一致，PS 5.1 兼容）。
 param(
@@ -29,7 +29,7 @@ $SnapPath = Join-Path $InstallDir 'conhost-snapshot.txt'
 # ---------- -Snapshot 模式：更新前留 conhost 基线（每次覆盖） ----------
 if ($Snapshot) {
   if (-not (Test-Path $InstallDir)) {
-    Write-Host ('[FAIL] 安装目录不存在：' + $InstallDir)
+    Write-Host ('[FAIL] Install directory not found: ' + $InstallDir)
     exit 1
   }
   $con = Get-Process -Name 'conhost' -ErrorAction SilentlyContinue
@@ -38,7 +38,7 @@ if ($Snapshot) {
     $lines = @($con | ForEach-Object { ('{0} {1}' -f $_.Id, $(if ($null -eq $_.ParentProcessId) { 0 } else { $_.ParentProcessId })) })
   }
   Set-Content -LiteralPath $SnapPath -Value $lines -Encoding UTF8
-  Write-Host ('[OK] conhost 快照已保存：' + $SnapPath + '（' + $lines.Count + ' 行）')
+  Write-Host ('[OK] conhost snapshot saved: ' + $SnapPath + ' (' + $lines.Count + ' lines)')
   exit 0
 }
 
@@ -56,30 +56,30 @@ foreach ($proc in @(Get-Process -Name 'lms_launcher' -ErrorAction SilentlyContin
   if ($null -ne $procPath -and $procPath -ieq $targetExe) { $main = $proc; break }
 }
 if ($null -eq $main) {
-  Write-Host ('[FAIL] C1 新版存活：安装目录内未找到 lms_launcher.exe 进程（' + $targetExe + '）')
+  Write-Host ('[FAIL] C1 new version alive: no lms_launcher.exe process found in the install directory (' + $targetExe + ')')
   $fail++
 } else {
-  Write-Host ('[PASS] C1 新版存活：lms_launcher.exe 在运行（PID ' + $main.Id + '）')
+  Write-Host ('[PASS] C1 new version alive: lms_launcher.exe is running (PID ' + $main.Id + ')')
   $pass++
 }
 
 # C2 独立存活：父进程（更新脚本 powershell 创建者）已退出
 if ($null -eq $main) {
-  Write-Host '[INFO] C2 独立存活：lms_launcher 未运行，无法查父进程，跳过（不判失败）'
+  Write-Host '[INFO] C2 independent: lms_launcher is not running; cannot check the parent process, skipping (not a failure)'
   $skip++
 } else {
   $proc = Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId=' + $main.Id) -ErrorAction SilentlyContinue
   if ($null -eq $proc) {
-    Write-Host '[INFO] C2 独立存活：查不到 Win32_Process 记录（进程刚退出？），跳过（不判失败）'
+    Write-Host '[INFO] C2 independent: no Win32_Process record (did the process just exit?); skipping (not a failure)'
     $skip++
   } else {
     $ppid = [int]$proc.ParentProcessId
     $parent = Get-Process -Id $ppid -ErrorAction SilentlyContinue
     if ($null -eq $parent) {
-      Write-Host ('[PASS] C2 独立存活：父进程 PID ' + $ppid + ' 已不存在，未挂在更新脚本进程树上')
+      Write-Host ('[PASS] C2 independent: parent PID ' + $ppid + ' no longer exists; not attached to the update script\'s process tree')
       $pass++
     } else {
-      Write-Host ('[FAIL] C2 独立存活：父进程 PID ' + $ppid + '（' + $parent.ProcessName + '）仍存在——DETACHED 形态下更新脚本 powershell 应已退出')
+      Write-Host ('[FAIL] C2 independent: parent PID ' + $ppid + ' (' + $parent.ProcessName + ') still exists; in the DETACHED form the update script\'s powershell should have exited')
       $fail++
     }
   }
@@ -90,7 +90,7 @@ if ($null -eq $main) {
 # 在更新前后都存活，而基线快照包含用户自己终端的 conhost，若要求「全退」在这类机器上必然误报，
 # 与计划步骤 3 的「无新增 conhost 占用」语义不符。
 if (-not (Test-Path $SnapPath)) {
-  Write-Host ('[INFO] C3 conhost 无新增：无基线快照（' + $SnapPath + '），请先在更新前跑一次 -Snapshot，跳过（不判失败）')
+  Write-Host ('[INFO] C3 no new conhost: no baseline snapshot (' + $SnapPath + '); run -Snapshot before the update, skipping (not a failure)')
   $skip++
 } else {
   $snapLines = @(Get-Content -LiteralPath $SnapPath -Encoding UTF8 | Where-Object { $_ -match '^\s*\d+\s+\d+\s*$' })
@@ -98,19 +98,19 @@ if (-not (Test-Path $SnapPath)) {
   $current = @(Get-ConhostIds)
   $newOnes = @($current | Where-Object { $snapIds -notcontains $_ })
   if ($newOnes.Count -eq 0) {
-    Write-Host ('[PASS] C3 conhost 无新增：当前 ' + $current.Count + ' 个 conhost 全部在基线快照内（基线 ' + $snapIds.Count + ' 个），无快照之外的新增 conhost')
+    Write-Host ('[PASS] C3 no new conhost: all ' + $current.Count + ' current conhost processes are in the baseline snapshot (' + $snapIds.Count + ' in baseline); none outside it')
     $pass++
   } else {
     $detail = @($newOnes | ForEach-Object {
-      $pname = '未知'
+      $pname = 'unknown'
       $p = Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId=' + $_) -ErrorAction SilentlyContinue
       if ($null -ne $p -and $null -ne $p.ParentProcessId -and $p.ParentProcessId -gt 0) {
         $pp = Get-Process -Id $p.ParentProcessId -ErrorAction SilentlyContinue
         if ($null -ne $pp) { $pname = $pp.ProcessName }
       }
-      ('PID ' + $_ + '（父进程：' + $pname + '）')
+      ('PID ' + $_ + ' (parent: ' + $pname + ')')
     })
-    Write-Host ('[FAIL] C3 conhost 无新增：快照之外新增 conhost ' + $newOnes.Count + ' 个：' + ($detail -join '；'))
+    Write-Host ('[FAIL] C3 no new conhost: ' + $newOnes.Count + ' conhost processes outside the baseline snapshot: ' + ($detail -join ', '))
     $fail++
   }
 }
@@ -120,35 +120,36 @@ try {
   $null = & schtasks.exe /Query /TN 'LMSLauncherUpdate' 2>&1 | Out-Null
   $code = $LASTEXITCODE
   if ($code -ne 0) {
-    Write-Host ('[PASS] C4 任务不残留：计划任务 LMSLauncherUpdate 不存在（schtasks 退出码 ' + $code + '）')
+    Write-Host ('[PASS] C4 no stale task: scheduled task LMSLauncherUpdate does not exist (schtasks exit code ' + $code + ')')
     $pass++
   } else {
-    Write-Host '[FAIL] C4 任务不残留：计划任务 LMSLauncherUpdate 仍存在（更新脚本应已自删）'
+    Write-Host '[FAIL] C4 no stale task: scheduled task LMSLauncherUpdate still exists (the update script should have deleted it)'
     $fail++
   }
 } catch {
-  Write-Host ('[INFO] C4 任务不残留：schtasks 不可用（' + $_.Exception.Message + '），跳过（不判失败）')
+  Write-Host ('[INFO] C4 no stale task: schtasks is unavailable (' + $_.Exception.Message + '); skipping (not a failure)')
   $skip++
 }
 
-# C5 日志无 ERROR：最后一段（自最后一个「更新脚本启动」行起）
+# C5 日志无 ERROR：最后一段（自最后一个 `=== update run ===` 标记行起）
+# 注：锚点为结构化标记，与输出文案解耦；无标记时回落到全文件（现状行为）。
 $logPath = Join-Path $InstallDir 'lms_launcher_update.log'
 if (-not (Test-Path $logPath)) {
-  Write-Host '[INFO] C5 日志无 ERROR：lms_launcher_update.log 不存在，跳过（不判失败）'
+  Write-Host '[INFO] C5 no ERROR in log: lms_launcher_update.log does not exist; skipping (not a failure)'
   $skip++
 } else {
   $lines = @(Get-Content -LiteralPath $logPath -Encoding UTF8)
   $startIdx = -1
   for ($i = $lines.Count - 1; $i -ge 0; $i--) {
-    if ($lines[$i] -match '更新脚本启动') { $startIdx = $i; break }
+    if ($lines[$i].Contains('=== update run ===')) { $startIdx = $i; break }
   }
   if ($startIdx -ge 0) { $segment = $lines[$startIdx..($lines.Count - 1)] } else { $segment = $lines }
   $errs = @($segment | Where-Object { $_ -match '\[ERROR\]' })
   if ($errs.Count -eq 0) {
-    Write-Host ('[PASS] C5 日志无 ERROR：最后一段（自「更新脚本启动」起 ' + $segment.Count + ' 行）无 [ERROR] 行')
+    Write-Host ('[PASS] C5 no ERROR in log: the last segment (' + $segment.Count + ' lines since the run marker) has no [ERROR] lines')
     $pass++
   } else {
-    Write-Host ('[FAIL] C5 日志无 ERROR：最后一段有 ' + $errs.Count + ' 行 [ERROR]：')
+    Write-Host ('[FAIL] C5 no ERROR in log: the last segment has ' + $errs.Count + ' [ERROR] lines:')
     foreach ($e in $errs) { Write-Host ('    ' + $e.Trim()) }
     $fail++
   }
@@ -156,5 +157,5 @@ if (-not (Test-Path $logPath)) {
 
 # ---------- SUMMARY ----------
 Write-Host ''
-Write-Host ('SUMMARY：通过 ' + $pass + '/5（FAIL ' + $fail + '，跳过 ' + $skip + '）')
+Write-Host ('SUMMARY: passed ' + $pass + '/5 (FAIL ' + $fail + ', skipped ' + $skip + ')')
 if ($fail -gt 0) { exit 1 } else { exit 0 }

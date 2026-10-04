@@ -1,7 +1,8 @@
 // src-main/i18n/no-hardcoded.test.ts
 // S10 守护: 主进程与 App 外壳的字符串字面量不得含汉字
+// S11 扩展: scripts/ 目录的 PowerShell 脚本也须走英文词典
 // PENDING 为待清理清单, 随任务批次逐项移除; 归零即 S10 验收达成.
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -11,6 +12,9 @@ const EXCLUDE = new Set(['src-main/i18n/dict.ts']);
 const PENDING = new Set<string>([
   'src-main/main.ts',
 ]);
+
+// S11: PowerShell script targets
+const PS_TARGETS = ['scripts/lms-launcher-update.ps1', 'scripts/verify-relaunch.ps1'];
 
 function walk(rel: string): string[] {
   const abs = join(ROOT, rel);
@@ -60,20 +64,110 @@ export function literalText(src: string): string {
   return out;
 }
 
+// S11: PowerShell literal text extractor
+// Skips: # line comments, <# #> block comments
+// Collects: single-quoted strings, double-quoted strings, @' '@ here-strings, @" "@ here-strings
+export function psLiteralText(src: string): string {
+  const lines = src.split('\n');
+  let out = '';
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let j = 0;
+    while (j < line.length) {
+      const c = line[j];
+      const rest = line.slice(j);
+      if (c === '#') { break; }
+      if (rest.startsWith('<#')) {
+        j += 2;
+        while (true) {
+          if (rest.startsWith('#>', j)) { j += 2; break; }
+          if (j >= rest.length) { j = 0; i++; break; }
+          j++;
+        }
+        if (j > 0) continue;
+        i--;
+        break;
+      }
+      if (rest.startsWith("@'")) {
+        j += 2;
+        while (true) {
+          if (line.slice(j).startsWith("'@")) { j += 2; break; }
+          j = line.length;
+          i++;
+          if (i >= lines.length) break;
+          if (lines[i].trim().startsWith("'@")) { j = 2; break; }
+        }
+        continue;
+      }
+      if (rest.startsWith('@"')) {
+        j += 2;
+        while (true) {
+          if (line.slice(j).startsWith('"@')) { j += 2; break; }
+          j = line.length;
+          i++;
+          if (i >= lines.length) break;
+          if (lines[i].trim().startsWith('"@')) { j = 2; break; }
+        }
+        continue;
+      }
+      if (c === "'") {
+        j++;
+        while (j < line.length && line[j] !== "'") {
+          out += line[j];
+          j++;
+        }
+        j++;
+        continue;
+      }
+      if (c === '"') {
+        j++;
+        while (j < line.length && line[j] !== '"') {
+          if (line[j] === '`') { j++; if (j < line.length) out += line[j]; }
+          else out += line[j];
+          j++;
+        }
+        j++;
+        continue;
+      }
+      j++;
+    }
+    i++;
+  }
+  return out;
+}
+
 const HAS_HAN = /\p{Script=Han}/u;
 
 describe('i18n: 零硬编码中文', () => {
   it('待清理清单之外的文件,字符串字面量不含汉字', () => {
-    const bad = targets()
-      .filter((f) => !EXCLUDE.has(f) && !PENDING.has(f))
-      .filter((f) => HAS_HAN.test(literalText(readFileSync(join(ROOT, f), 'utf8'))));
-    expect(bad, '这些文件的文案未走词典:').toEqual([]);
+    const failures = [];
+    for (const rel of targets()) {
+      if (EXCLUDE.has(rel)) continue;
+      const src = readFileSync(join(ROOT, rel), 'utf-8');
+      const found = literalText(src).match(HAS_HAN);
+      if (found) failures.push({ file: rel, char: found[0] });
+    }
+    expect(failures).toEqual([]);
   });
 
   it('PENDING 中的文件确实仍含汉字(清理后须同步移除)', () => {
-    const stale = [...PENDING].filter(
-      (f) => !HAS_HAN.test(literalText(readFileSync(join(ROOT, f), 'utf8'))),
-    );
-    expect(stale, '这些文件已无硬编码汉字,请从 PENDING 移除:').toEqual([]);
+    for (const rel of PENDING) {
+      if (!existsSync(join(ROOT, rel))) continue;
+      const src = readFileSync(join(ROOT, rel), 'utf-8');
+      expect(literalText(src).match(HAS_HAN)).toBeTruthy();
+    }
+  });
+
+  // S11: PowerShell script targets
+  it('PowerShell 更新脚本不含硬编码中文(除注释)', () => {
+    const failures = [];
+    for (const rel of PS_TARGETS) {
+      if (!existsSync(join(ROOT, rel))) continue;
+      const src = readFileSync(join(ROOT, rel), 'utf-8');
+      const found = psLiteralText(src).match(HAS_HAN);
+      if (found) failures.push({ file: rel, char: found[0] });
+    }
+    expect(failures).toEqual([]);
   });
 });

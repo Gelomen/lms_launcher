@@ -28,11 +28,12 @@ function Write-Log([string]$Msg) {
 }
 
 if ($ZipPath -eq '' -or $InstallDir -eq '') {
-  [Console]::Error.WriteLine('缺少参数（用法：lms-launcher-update.ps1 <zipPath> <installDir>）')
+  [Console]::Error.WriteLine('Missing arguments (usage: lms-launcher-update.ps1 <zipPath> <installDir>)')
   exit 1
 }
 $LogPath = Join-Path $InstallDir 'lms_launcher_update.log'
-Write-Log ('[INFO] 更新脚本启动 · zip=' + $ZipPath + ' · dir=' + $InstallDir)
+Write-Log '[INFO] === update run ==='
+Write-Log ('[INFO] Update script started | zip=' + $ZipPath + ' | dir=' + $InstallDir)
 
 # 自清理调度任务（2026-09-05）：本脚本由任务计划程序 LMSLauncherUpdate 拉起。启动即自删
 # —— /Delete /F 对运行中的一次性任务安全（探针验证：任务库即时移除，脚本进程不受影响），
@@ -43,11 +44,11 @@ function Remove-UpdateTask() {
 }
 Remove-UpdateTask
 if (-not (Test-Path $InstallDir)) {
-  Write-Log ('[ERROR] 安装目录不存在：' + $InstallDir)
+  Write-Log ('[ERROR] Install directory not found: ' + $InstallDir)
   exit 1
 }
 if (-not (Test-Path $ZipPath)) {
-  Write-Log ('[ERROR] 更新包不存在：' + $ZipPath)
+  Write-Log ('[ERROR] Update package not found: ' + $ZipPath)
   exit 1
 }
 
@@ -83,21 +84,21 @@ try {
       }
     }
     if (-not $othersNoted -and $others.Count -gt 0) {
-      Write-Log ('[INFO] 检测到其他位置的 lms_launcher.exe（不占用本安装目录，不影响本次更新）：' + ($others -join '；'))
+      Write-Log ('[INFO] Found lms_launcher.exe in other locations (not locking this install directory, does not affect this update): ' + ($others -join ', '))
       $othersNoted = $true
     }
     if (-not $unknownNoted -and $unknown.Count -gt 0) {
-      Write-Log ('[INFO] 有 lms_launcher.exe 读不到可执行文件路径（权限或正在退出），按「可能属于本安装目录」保守等待：' + ($unknown -join '、'))
+      Write-Log ('[INFO] Some lms_launcher.exe processes have an unreadable executable path (access denied or exiting); waiting conservatively as they may belong to this install directory: ' + ($unknown -join ', '))
       $unknownNoted = $true
     }
     if ($mine.Count -eq 0) { break }
     if ((Get-Date) -ge $deadline) {
       $stay = ($mine | ForEach-Object {
-        $started = '未知'
-        try { $started = $_.StartTime.ToString('HH:mm:ss') } catch { $started = '未知' }
+        $started = 'unknown'
+        try { $started = $_.StartTime.ToString('HH:mm:ss') } catch { $started = 'unknown' }
         'PID ' + $_.Id + '@' + $started
-      }) -join '、'
-      Write-Log ('[ERROR] 等待安装目录内的 lms_launcher.exe 退出超时（60s），中止更新 · 仍在运行：' + $stay)
+      }) -join ', '
+      Write-Log ('[ERROR] Timed out after 60s waiting for lms_launcher.exe in this install directory to exit; aborting update | still running: ' + $stay)
       exit 1
     }
     Start-Sleep -Seconds 1
@@ -108,21 +109,21 @@ try {
   $tmp = Join-Path $InstallDir '__update_tmp'
   if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
   New-Item -ItemType Directory -Path $tmp | Out-Null
-  Write-Log '[INFO] 解压更新包到临时目录…'
+  Write-Log '[INFO] Extracting update package to temporary directory...'
   [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $tmp)
 
   # 3) 校验关键条目（防空包/损坏包覆盖安装目录）
   $mainExe = Join-Path $tmp 'lms_launcher.exe'
   $asar = Join-Path (Join-Path $tmp 'resources') 'app.asar'
   if (-not (Test-Path $mainExe)) {
-    Write-Log '[ERROR] 更新包缺少 lms_launcher.exe，中止（未覆盖任何文件）'
+    Write-Log '[ERROR] Update package is missing lms_launcher.exe; aborting (no files were overwritten)'
     exit 1
   }
   if (-not (Test-Path $asar) -or (Get-Item $asar).Length -lt 1MB) {
-    Write-Log '[ERROR] 更新包缺少 resources/app.asar（或文件异常小），中止（未覆盖任何文件）'
+    Write-Log '[ERROR] Update package is missing resources/app.asar (or the file is suspiciously small); aborting (no files were overwritten)'
     exit 1
   }
-  Write-Log ('[INFO] 校验通过：lms_launcher.exe + resources/app.asar（' + (Get-Item $asar).Length + ' 字节）')
+  Write-Log ('[INFO] Validation passed: lms_launcher.exe + resources/app.asar (' + (Get-Item $asar).Length + ' bytes)')
 
   # 4) 全量覆盖安装目录
   #    2026-09-21 真机验收修订 2（生产失败复盘）：**进程列表为空 ≠ 文件已可覆盖**。
@@ -149,20 +150,20 @@ try {
     if ($blocked) {
       $who = @(Get-Process -Name 'lms_launcher' -ErrorAction SilentlyContinue)
       $detail = ''
-      if ($who.Count -gt 0) { $detail = ' · 当前 lms_launcher 进程：' + (($who | ForEach-Object { 'PID ' + $_.Id }) -join '、') }
-      Write-Log ('[ERROR] 目标文件被占用，60s 内无法获得独占写权限：' + $target + $detail + ' · 中止更新（未覆盖任何文件）')
+      if ($who.Count -gt 0) { $detail = ' | current lms_launcher processes: ' + (($who | ForEach-Object { 'PID ' + $_.Id }) -join ', ') }
+      Write-Log ('[ERROR] Target file is locked; exclusive write access not obtained within 60s: ' + $target + $detail + ' ... aborting update (no files were overwritten)')
       try { if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force } } catch { }
       exit 1
     }
   }
-  Write-Log '[INFO] 覆盖安装目录…'
+  Write-Log '[INFO] Overwriting install directory...'
   Copy-Item -Path (Join-Path $tmp '*') -Destination $InstallDir -Recurse -Force
 
   # 5) 清理临时目录与旧版 Electron 更新器残留（update.exe 已被本脚本取代）
   Remove-Item $tmp -Recurse -Force
   $tmp = ''
   $oldUpdater = Join-Path $InstallDir 'update.exe'
-  if (Test-Path $oldUpdater) { Remove-Item $oldUpdater -Force; Write-Log '[INFO] 已移除旧版 update.exe' }
+  if (Test-Path $oldUpdater) { Remove-Item $oldUpdater -Force; Write-Log '[INFO] Removed legacy update.exe' }
   $oldStaged = Join-Path $InstallDir 'update.exe.new'
   if (Test-Path $oldStaged) { Remove-Item $oldStaged -Force }
 
@@ -181,7 +182,7 @@ try {
   #    DETACHED 路线保留为回退（任务创建失败，或 15s 内未见新版进程时使用）。
   $newExe = Join-Path $InstallDir 'lms_launcher.exe'
   if (-not (Test-Path $newExe)) {
-    Write-Log ('[ERROR] 未找到新版 ' + $newExe + '，请手动检查安装目录')
+    Write-Log ('[ERROR] New version not found at ' + $newExe + '; please check the install directory manually')
   } else {
     $launchOk = $false
     $startedPid = 0
@@ -193,7 +194,7 @@ try {
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>LMS Launcher 启动新版（一次性；应用启动后自行清理）</Description>
+    <Description>LMS Launcher: start the new version (one-shot; cleaned up by the app on startup)</Description>
   </RegistrationInfo>
   <Triggers />
   <Principals>
@@ -235,7 +236,7 @@ try {
       $createCode = $LASTEXITCODE
       Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
       if ($createCode -eq 0) {
-        Write-Log ('[INFO] 启动新版（独立计划任务 ' + $startTaskName + '，svchost 拉起）：' + $newExe)
+        Write-Log ('[INFO] Launching new version (standalone scheduled task ' + $startTaskName + ', started by svchost): ' + $newExe)
         & schtasks.exe /Run /TN $startTaskName 2>&1 | Out-Null
         $startDeadline = (Get-Date).AddSeconds(15)
         while ((Get-Date) -lt $startDeadline) {
@@ -249,15 +250,15 @@ try {
         }
         if ($startedPid -gt 0) {
           $launchOk = $true
-          Write-Log ('[INFO] 新版已启动（PID ' + $startedPid + '，独立计划任务，与本脚本的任务/控制台/Job 均无关）')
+          Write-Log ('[INFO] New version started (PID ' + $startedPid + ', standalone scheduled task; independent of this script''s task, console and job object)')
         } else {
-          Write-Log '[ERROR] 启动任务已触发但 15s 内未见新版进程，回退 DETACHED 启动'
+          Write-Log '[ERROR] Start task was triggered but no new-version process appeared within 15s; falling back to DETACHED launch'
         }
       } else {
-        Write-Log ('[ERROR] 创建启动任务失败（schtasks 退出码 ' + $createCode + '），回退 DETACHED 启动')
+        Write-Log ('[ERROR] Failed to create the start task (schtasks exit code ' + $createCode + '); falling back to DETACHED launch')
       }
     } catch {
-      Write-Log ('[ERROR] 计划任务启动路线异常：' + $_.Exception.Message + '，回退 DETACHED 启动')
+      Write-Log ('[ERROR] Scheduled-task launch route failed: ' + $_.Exception.Message + '; falling back to DETACHED launch')
     }
     # 6b) 回退：CreateProcess + DETACHED_PROCESS（实测无控制台；仅在任务路线失败时兜底）
     if (-not $launchOk) {
@@ -296,7 +297,7 @@ public class LmsDetachedLaunch {
       $pi = New-Object LmsDetachedLaunch+PROCESS_INFORMATION
       # 0x00000008 DETACHED_PROCESS：新进程既不继承父控制台、也不创建新控制台
       $DETACHED_PROCESS = 0x00000008
-      Write-Log ('[INFO] 启动新版（DETACHED_PROCESS，与本脚本控制台解耦）：' + $newExe)
+      Write-Log ('[INFO] Launching new version (DETACHED_PROCESS, decoupled from this script''s console): ' + $newExe)
       $ok = [LmsDetachedLaunch]::CreateProcess($newExe, ('"' + $newExe + '"'),
         [IntPtr]::Zero, [IntPtr]::Zero, $false, $DETACHED_PROCESS, [IntPtr]::Zero, $InstallDir,
         [ref]$si, [ref]$pi)
@@ -307,26 +308,26 @@ public class LmsDetachedLaunch {
         Start-Sleep -Seconds 3
         if (Get-Process -Id $pi.dwProcessId -ErrorAction SilentlyContinue) {
           $launchOk = $true
-          Write-Log ('[INFO] 新版已启动（PID ' + $pi.dwProcessId + '，无控制台关联）')
+          Write-Log ('[INFO] New version started (PID ' + $pi.dwProcessId + ', no console attached)')
         } else {
-          Write-Log ('[ERROR] 新版启动后立即退出（PID ' + $pi.dwProcessId + '），请手动启动 lms_launcher.exe')
+          Write-Log ('[ERROR] New version exited immediately after launch (PID ' + $pi.dwProcessId + '); please start lms_launcher.exe manually')
         }
       } else {
         $winErr = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-        Write-Log ('[ERROR] CreateProcess 失败（Win32 错误 ' + $winErr + '），请手动启动 lms_launcher.exe')
+        Write-Log ('[ERROR] CreateProcess failed (Win32 error ' + $winErr + '); please start lms_launcher.exe manually')
       }
     } catch {
-      Write-Log ('[ERROR] 启动新版失败（DETACHED 回退）：' + $_.Exception.Message + ' —— 请手动启动 lms_launcher.exe')
+      Write-Log ('[ERROR] Failed to launch the new version (DETACHED fallback): ' + $_.Exception.Message + ' - please start lms_launcher.exe manually')
     }
     }
-    if ($launchOk) { Write-Log '[INFO] 更新完成' }
-    else { Write-Log '[INFO] 更新完成（新版未自动启动，请手动启动）' }
+    if ($launchOk) { Write-Log '[INFO] Update completed' }
+    else { Write-Log '[INFO] Update completed (the new version was not started automatically; please start it manually)' }
   }
   Remove-UpdateTask
   exit 0
 }
 catch {
-  Write-Log ('[ERROR] 更新失败：' + $_.Exception.Message)
+  Write-Log ('[ERROR] Update failed: ' + $_.Exception.Message)
   try { if ($tmp -ne '' -and (Test-Path $tmp)) { Remove-Item $tmp -Recurse -Force } } catch { }
   Remove-UpdateTask
   exit 1
