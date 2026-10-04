@@ -35,6 +35,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { downloadAndInstallLlama, verifyLlamaInstall, deriveTagFromDownloadUrl, installVerifyMessage } from './llama-update-download';
+import { applyLang } from './i18n';
 
 function makeMockResponse() {
   // headers 必须是带 .get 的 Headers 形态（生产代码 res.headers.get('content-length')），
@@ -597,4 +598,15 @@ it('en: installVerifyMessage 三分支英文', () => {
   expect(installVerifyMessage({ success: false, error: 'x' })).toBe('Installed (could not confirm local version: x)');
   applyLang('zh');
 });
+});
+
+describe('installVerifyMessage i18n', () => {
+  it('should produce English output for all 3 branches', async () => {
+    const { applyLang } = await import('./i18n');
+    applyLang('en');
+    expect(installVerifyMessage({ success: true, actualVersion: 'b11021' })).toBe('Installed: b11021');
+    expect(installVerifyMessage({ success: true })).toBe('Installed: version unknown');
+    expect(installVerifyMessage({ success: false, error: 'some error' })).toBe('Installed (could not confirm local version: some error)');
+    applyLang('zh');
+  });
 });

@@ -249,9 +249,9 @@ ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
   const [p] = yamlPaths();
   const cfg = saveProxy(p, host, port);
   const on = cfg.proxy?.host && cfg.proxy?.port
-    ? `已保存代理 http://${cfg.proxy.host}:${cfg.proxy.port}`
-    : '已清空代理';
-  emitLog(`[lms_launcher] 设置 · ${on}`, 'sys');
+    ? t('log.launcher.settings.proxySaved', { url: `http://${cfg.proxy.host}:${cfg.proxy.port}` })
+    : t('log.launcher.settings.proxyCleared');
+  emitLog('[lms_launcher] ' + on, 'sys');
   return 'ok';
 });
 ipcMain.handle('save_llama_dir', (_e, dir: string): void => {
