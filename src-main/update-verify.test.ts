@@ -100,3 +100,12 @@ describe('update-verify.ts', () => {
   });
 
 });
+
+describe('en prefix retention', () => {
+  it('en: completeness reason in English', () => {
+    applyLang('en');
+    const r = evaluateDownloadIntegrity({ expectedSize: 100, actualSize: 10, expectedDigest: null, actualDigest: null, path: 'x' });
+    expect(r.reason).toBe('Incomplete download: received 10 bytes / expected 100 bytes, retry');
+    applyLang('zh');
+  });
+});

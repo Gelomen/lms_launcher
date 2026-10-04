@@ -4,6 +4,7 @@
 // 纯函数（parseGpuStatsJson / mergeGpuStats / formatGb）无 IO，单测见 gpu-stats.test.ts；
 // startGpuStats 为 IO 层（spawn），不进单测，由真机验收覆盖（spec §8）。
 import { spawn, type ChildProcess } from 'node:child_process';
+import { t } from './i18n';
 
 export interface GpuDynamic {
   luid: string; // 小写 luid 串（真机双 0x 形状 0x00000000_0x00010fbf）
@@ -165,12 +166,12 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
     try {
       p = spawn('pwsh', psArgs('static'));
     } catch (e) {
-      log('GPU 静态查询启动失败：' + (e instanceof Error ? e.message : String(e)));
+      log(t('log.gpu.staticSpawnFail', { err: e instanceof Error ? e.message : String(e) }));
       return;
     }
     let out = '';
     if (p.stdout) { p.stdout.on('data', (c: Buffer) => { out += c.toString('utf8'); }); }
-    p.on('error', (e) => { log('GPU 静态查询失败：' + e.message); });
+    p.on('error', (e) => { log(t('log.gpu.staticFail', { err: e.message })); });
     p.on('close', (code) => {
       if (stopped) return;
       if (code === 0) {
@@ -178,12 +179,12 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
           const trimmed = out.trim();
           statics = JSON.parse(trimmed) as GpuStatic[];
           const withMem = statics.filter(s => s.dedicatedTotal > 0);
-          log('GPU 静态查询成功：' + withMem.length + ' 张卡 → ' + withMem.map(s => s.name).join(', '));
+          log(t('log.gpu.staticOk', { n: withMem.length, names: withMem.map(s => s.name).join(', ') }));
         } catch {
-          log('GPU 静态查询结果解析失败（卡名/上限回退占位值），原始输出：' + out.trim().slice(0, 200));
+          log(t('log.gpu.staticParseFail', { out: out.trim().slice(0, 200) }));
         }
       } else {
-        log('GPU 静态查询异常退出 code=' + code + '（卡名/上限回退占位值）');
+        log(t('log.gpu.staticExit', { code }));
       }
     });
   }
@@ -207,7 +208,7 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
     try {
       proc = spawn('powershell.exe', psArgs('dynamic'));
     } catch (e) {
-      log('GPU 采样进程启动失败：' + (e instanceof Error ? e.message : String(e)));
+      log(t('log.gpu.sampleSpawnFail', { err: e instanceof Error ? e.message : String(e) }));
       return;
     }
     let buf = '';
@@ -220,7 +221,7 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
         if (line.length > 0) handleLine(line);
       }
     }); }
-    proc.on('error', (e) => { log('GPU 采样进程错误：' + e.message); });
+    proc.on('error', (e) => { log(t('log.gpu.sampleErr', { err: e.message })); });
     proc.on('close', () => {
       if (stopped) return;
       const wait = 5000 - (Date.now() - lastRespawn); // 限频：每 5 秒至多重建一次

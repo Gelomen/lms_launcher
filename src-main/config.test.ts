@@ -423,3 +423,11 @@ describe('saveLlamaDir', () => {
   });
 
 });
+
+describe('en prefix retention', () => {
+  it('en: MISSING prefix preserved', () => {
+    applyLang('en');
+    expect(() => configsLoad('D:/nope/llama_launch_configs.yaml')).toThrow(/^MISSING/);
+    applyLang('zh');
+  });
+});

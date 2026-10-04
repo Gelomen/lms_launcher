@@ -759,7 +759,7 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     const baselineChecks = invoke.mock.calls.filter((c) => c[0] === 'check_update').length; // = 0
     expect(baselineChecks).toBe(0);
     updateBtns()[0].click(); // 下载更新
-    ctrl.download.resolve({ ok: false, reason: '尚无更新任务，请先检查更新' });
+    ctrl.download.resolve({ ok: false, code: 'no-update-task', reason: '尚无更新任务，请先检查更新' });
     await flush();
     // 自动重新 check：除启动静默外恰好新增 1 次 check_update
     const checks = invoke.mock.calls.filter((c) => c[0] === 'check_update');
@@ -859,10 +859,10 @@ describe('i18n / App 外壳（Slice 1）', () => {
     expect(w.find('.winbar__name').text()).toBe('LMS Launcher');
     expect(btns[0].attributes('data-tooltip')).toBe('GitHub repository');
     expect(btns[0].attributes('aria-label')).toBe('GitHub repository');
-    // 三键 tooltip 已移除,仅剩静态中文 aria-label（不随语言切换）
-    expect(btns[1].attributes('aria-label')).toBe('最小化');
-    expect(btns[2].attributes('aria-label')).toBe('最大化');
-    expect(btns[3].attributes('aria-label')).toBe('关闭');
+    // S10: 三键 aria-label 已走 i18n（随语言切换）
+    expect(btns[1].attributes('aria-label')).toBe('Minimize');
+    expect(btns[2].attributes('aria-label')).toBe('Maximize');
+    expect(btns[3].attributes('aria-label')).toBe('Close');
     w.unmount();
   });
 

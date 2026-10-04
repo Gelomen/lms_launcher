@@ -325,3 +325,11 @@ describe('estimateUsedBytes', () => {
   });
 
 });
+
+describe('en prefix retention', () => {
+  it('en: GGUF prefix preserved, suffix in English', () => {
+    applyLang('en');
+    expect(() => parseGgufHeader(Buffer.alloc(4))).toThrow(/^GGUF: File too small$/);
+    applyLang('zh');
+  });
+});

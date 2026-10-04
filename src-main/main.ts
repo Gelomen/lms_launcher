@@ -3,7 +3,6 @@ import { trayTooltipText } from './tray-tooltip';
 import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { t } from './i18n';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
@@ -293,14 +292,14 @@ ipcMain.handle('get_state', () => {
 ipcMain.handle('start_server', async (_e, configId: string): Promise<string> => {
   const [appCfgP, pfP, cfgP] = yamlPaths();
   const appCfg = appConfigLoad(appCfgP);
-  if (appCfg.llama_dir.trim().length === 0) throw new Error('VALIDATION: 未配置 llama.cpp 目录');
+  if (appCfg.llama_dir.trim().length === 0) throw new Error('VALIDATION: ' + t('err.launch.noDir'));
   const pf = paramsLoad(pfP);
   const configs = configsLoad(cfgP); // MISSING: / YAML: 透传
   const args = prepareLaunch(appCfg.llama_dir.trim(), pf, configs, configId); // MISSING: / VALIDATION: 透传
   const summary = summarize(configs[configId], pf);
   await ps.launch(args[0], args.slice(1), configId, dataDir());
   // launcher 日志：完整启动命令行（exe 全路径 + 参数向量）——start_server 的返回值仍是 summary
-  emitLog("[lms_launcher] 启动命令 · " + commandLine(args), "sys", ['llama-server']);
+  emitLog('[lms_launcher] ' + t('log.launcher.start.cmd', { cmd: commandLine(args) }), 'sys', ['llama-server']);
   const { stdout, stderr } = ps.takePipes();
   stdout.on('data', (chunk: Buffer) => {
     chunk.toString().split("\n").filter((l) => l.length > 0).forEach((l) => emitLog(l, "out"));
@@ -331,16 +330,16 @@ ipcMain.handle('open_file_dialog', async (_e, key: string): Promise<string | nul
   if (!win) return null;
   const options: Electron.OpenDialogOptions = {};
   if (key === 'm' || key === 'mmproj' || key === 'md') {
-    options.filters = [{ name: 'Model files', extensions: ['gguf'] }];
+    options.filters = [{ name: t('app.dialog.filterModel'), extensions: ['gguf'] }];
   } else if (key === 'chat_template_file') {
-    options.filters = [{ name: 'Jinja template files', extensions: ['jinja'] }];
+    options.filters = [{ name: t('app.dialog.filterJinja'), extensions: ['jinja'] }];
   }
   const res = await dialog.showOpenDialog(win, options);
   return res.canceled ? null : res.filePaths[0];
 });
 ipcMain.handle('stop_server', async (): Promise<void> => {
   await ps.stopGraceful(3);
-  emitLog('[lms_launcher] 停止指令已发送', 'sys', ['llama-server']);
+  emitLog('[lms_launcher] ' + t('log.launcher.stop.sent'), 'sys', ['llama-server']);
 });
 // open_external（规格 2026-08-31-log-link-ctrl-click-design §3.3）：渲染端日志链接 Ctrl+点击 → 默认浏览器。
 // 协议白名单：仅 http/https 放行（防御 file:// 等，尽管 linkify 只会产出 http/https）；
@@ -388,7 +387,7 @@ ipcMain.handle('vram_estimate', async (_e, args: {
     let mdInfo: { bytes: number; header: ReturnType<typeof parseGgufHeader> } | null = null;
     if (isExtDraft) {
       const mdPath = (args.md ?? '').trim();
-      if (mdPath.length === 0) throw new Error('VALIDATION: --spec-type 为 draft-dflash/dspark 时须填写 --spec-draft-model（-md）文件');
+      if (mdPath.length === 0) throw new Error('VALIDATION: ' + t('err.launch.specDraft'));
       mdInfo = readGgufBytesAndHeader(mdPath);
     }
     const res = estimateUsedBytes({
@@ -476,12 +475,12 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
       headers: { 'User-Agent': 'lms_launcher' },
     });
     if (!res.ok) {
-      emitLog('[lms_launcher] LMS 启动器 · 检查更新失败：HTTP ' + res.status + proxyNote, 'sys');
+      emitLog('[lms_launcher] ' + t('log.launcher.check.http', { status: res.status, proxy: proxyNote }), 'sys');
       return { available: false, status: 'error' };
     }
     const info = parseLatestRelease(await res.json());
     if (!info) {
-      emitLog('[lms_launcher] LMS 启动器 · 检查更新失败：无法解析 release 信息' + proxyNote, 'sys');
+      emitLog('[lms_launcher] ' + t('log.launcher.check.parse', { proxy: proxyNote }), 'sys');
       return { available: false, status: 'error' };
     }
     const cur = app.getVersion();
@@ -492,7 +491,7 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
     pendingUpdate = info;
     return { available: true, status: 'update-available', version: info.tag };
   } catch (e) {
-    emitLog('[lms_launcher] LMS 启动器 · 检查更新失败：' + (e instanceof Error ? e.message : String(e)) + proxyNote, 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.check.err', { msg: e instanceof Error ? e.message : String(e), proxy: proxyNote }), 'sys');
     return { available: false, status: 'error' };
   } finally {
     clearTimeout(timer);
@@ -501,11 +500,11 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
 // download_update：流式下载 pendingUpdate.zipUrl → exe 目录 downloads/lms-launcher-update.zip
 // 进度经 update-download-progress 事件推渲染端；失败删半成品并报错（可重试）
 ipcMain.handle('download_update', async (): Promise<
-  { ok: true; zipPath: string; size: number } | { ok: false; reason: string }
+  { ok: true; zipPath: string; size: number } | { ok: false; reason: string; code?: 'no-update-task' }
 > => {
-  if (!pendingUpdate) return { ok: false, reason: '尚无更新任务（请先检查更新）' };
+  if (!pendingUpdate) return { ok: false, code: 'no-update-task', reason: t('err.update.noTask') } as const;
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip
-  emitLog('[lms_launcher] LMS 启动器 · 更新 · 开始下载：' + pendingUpdate.zipUrl, 'sys');
+  emitLog('[lms_launcher] ' + t('log.launcher.dl.start', { url: pendingUpdate.zipUrl }), 'sys');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 600000); // 10 分钟超时
   const [dp] = yamlPaths();
@@ -524,7 +523,7 @@ ipcMain.handle('download_update', async (): Promise<
       dest: zipPath,
       signal: ctrl.signal,
       onProgress: (pct) => { mainWin()?.webContents.send('update-download-progress', { pct }); },
-      onRetry: (a) => { emitLog('[lms_launcher] LMS 启动器 · 更新 · 写入被系统拒绝（EPERM，多为杀毒实时扫描锁文件），稍后重试（第 ' + (a + 1) + ' 次尝试）', 'sys'); },
+      onRetry: (a) => { emitLog('[lms_launcher] ' + t('log.launcher.dl.retry', { n: a + 1 }), 'sys'); },
     });
     // 完整性校验（spec 2026-09-05-download-integrity-check-design）：
     // 1) Content-Length 比对（截断/断流的流也会 done:true → 靠此拦截半成品）
@@ -541,15 +540,15 @@ ipcMain.handle('download_update', async (): Promise<
     });
     if (!integrity.ok) {
       try { unlinkSync(zipPath); } catch { /* 残留由下次下载覆盖 */ }
-      emitLog('[lms_launcher] LMS 启动器 · 更新 · ' + integrity.reason, 'sys');
-      return { ok: false, reason: integrity.reason ?? '校验失败' };
+      emitLog('[lms_launcher] ' + t('log.launcher.dl.reason', { reason: integrity.reason ?? t('err.update.verifyFallback') }), 'sys');
+      return { ok: false, reason: integrity.reason ?? t('err.update.verifyFallback') };
     }
-    emitLog('[lms_launcher] LMS 启动器 · 更新 · 下载完成 ' + (size / 1024 / 1024).toFixed(1) + 'MB' + (pendingUpdate.digest ? '（SHA-256 校验通过）' : ''), 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.dl.done', { size: (size / 1024 / 1024).toFixed(1), digest: pendingUpdate.digest ? t('log.launcher.dl.digestOk') : '' }), 'sys');
     return { ok: true, zipPath, size };
   } catch (e) {
     try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
     const msg = e instanceof Error ? e.message : String(e);
-    emitLog('[lms_launcher] LMS 启动器 · 更新 · 下载失败：' + msg + proxyNote, 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.dl.fail', { msg: msg, proxy: proxyNote }), 'sys');
     return { ok: false, reason: msg };
   } finally {
     clearTimeout(timer);
@@ -571,9 +570,9 @@ ipcMain.handle('run_update', async (): Promise<void> => {
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip（与 download_update 一致）
   const ps1 = join(installDir, 'lms-launcher-update.ps1');
   if (!existsSync(ps1) || !existsSync(zipPath)) {
-    throw new Error('更新文件缺失（lms-launcher-update.ps1 / lms-launcher-update.zip）');
+    throw new Error(t('err.update.filesMissing'));
   }
-  emitLog('[lms_launcher] LMS 启动器 · 更新 · 已启动更新脚本，应用即将退出', 'sys');
+  emitLog('[lms_launcher] ' + t('log.launcher.upd.started'), 'sys');
   const updateLogPath = join(installDir, 'lms_launcher_update.log');
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
   // 短启动器：ASCII + CRLF，每次更新重建（ps1/zip 路径不变，内容幂等）。
@@ -586,7 +585,7 @@ ipcMain.handle('run_update', async (): Promise<void> => {
     writeFileSync(bootstrapCmd, '@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + ps1 + '" "' + zipPath + '" "' + installDir + '"\r\n', 'ascii');
     // Node 侧先写一行，之后无论脚本是否被拉起都能从日志判断任务是否创建
     try {
-      appendFileSync(updateLogPath, stamp + ' [INFO] [node] 已写入更新启动器 · cmd=' + bootstrapCmd + ' · ps1=' + ps1 + ' · zip=' + zipPath + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] ' + t('log.launcher.upd.wroteBootstrap', { cmd: bootstrapCmd, ps1, zip: zipPath }) + '\r\n', 'utf8');
     } catch { /* 日志失败不阻断更新 */ }
     // /F 覆盖：同名任务若残留（上次 create 后 /Run 前崩溃）直接重建。
     // /SC ONCE 只设下次触发的计划时间；随后立即 /Run 手动触发，计划时间仅作
@@ -596,20 +595,20 @@ ipcMain.handle('run_update', async (): Promise<void> => {
     taskScheduled = true;
     execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     try {
-      appendFileSync(updateLogPath, stamp + ' [INFO] [node] 已创建并触发计划任务 ' + UPDATE_TASK_NAME + ' · ST=' + futureTime + ' · TR=' + bootstrapCmd + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] ' + t('log.launcher.upd.taskCreated', { name: UPDATE_TASK_NAME, st: futureTime, tr: bootstrapCmd }) + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
   } catch (e) {
     const errText = (e instanceof Error ? e.message : String(e))
       .split('\n').map((l) => l.trim()).filter(Boolean).slice(-3).join(' | ');
-    emitLog('[lms_launcher] LMS 启动器 · 更新失败：计划任务创建/触发失败（' + errText + '）', 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.upd.taskFail', { err: errText }), 'sys');
     try {
-      appendFileSync(updateLogPath, stamp + ' [ERROR] [node] schtasks 失败：' + errText + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [ERROR] [node] ' + t('log.launcher.upd.schtasksFail', { err: errText }) + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
     // 已创建未触发时尽力手动补一次（create 成功但 /Run 抛错的边界）
     if (taskScheduled) {
       try { execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); } catch { /* 忽略 */ }
     }
-    throw new Error('更新任务启动失败：' + errText);
+    throw new Error(t('err.update.taskStart', { err: errText }));
   }
   await ps.stopGraceful(3);
   await new Promise((resolve) => setTimeout(resolve, 3000)); // 等任务拉起脚本落地（/Run 后 ps1 需数秒才写到首行日志），避免 app.exit 抢先
@@ -630,7 +629,7 @@ function cleanStaleUpdateTask(): void {
     } catch { /* 任务不存在 / schtasks 不可用：均无影响 */ }
   }
   if (cleaned.length > 0) {
-    emitLog('[lms_launcher] LMS 启动器 · 更新 · 已清理残留计划任务 ' + cleaned.join('、'), 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.upd.taskCleaned', { list: cleaned.join(t('common.listSep')) }), 'sys');
   }
 }
 // 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
@@ -886,15 +885,15 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
     emitLog(`[lms_launcher] ` + t('log.llama.install.stillBusy', { names }), 'sys');
     return { success: false, busy: true, error: `文件仍被占用（${names}），请关闭外部启动的 llama.cpp 进程后重试` };
   }
-  emitLog('[lms_launcher] llama.cpp · 开始安装更新...', 'sys');
+  emitLog('[lms_launcher] ' + t('log.llama.install.start'), 'sys');
   const ext = extractLlamaZips(pendingLlamaUpdate, dir);
   if (!ext.success) {
-    emitLog(`[lms_launcher] llama.cpp · 安装失败：${ext.error}`, 'sys');
+    emitLog('[lms_launcher] ' + t('log.llama.install.fail', { err: ext.error ?? 'unknown' }), 'sys');
     // 兜底：探测未命中但解压仍被锁（如锁定句柄在探测与解压之间出现）→ 同样视为占用
     const errText = ext.error ?? '';
     const busy = /EBUSY|EPERM|EACCES|resource busy|permission denied/i.test(errText);
     return { success: false, busy, error: busy
-      ? '目标文件仍被占用（llama.cpp 进程可能未完全退出），请关闭外部启动的 llama.cpp 进程后重试'
+      ? t('err.llama.targetBusy')
       : errText || 'unknown error' };
   }
 
@@ -906,7 +905,7 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
     emitLog(`[lms_launcher] llama.cpp · 清理旧 CUDA DLL：${stale.deleted.join(', ')}`, 'sys');
   }
   if (stale.skipped.length > 0) {
-    emitLog(`[lms_launcher] llama.cpp · 以下 CUDA DLL 被占用未删除：${stale.skipped.join(', ')}（可稍后手动删除）`, 'sys');
+    emitLog('[lms_launcher] ' + t('log.llama.dll.skipped', { list: stale.skipped.join(t('common.listSep')) }), 'sys');
   }
 
   // 4. 版本确认（辅助，非致命；期望 tag 由下载 URL 推导）——2026-09-18 用户定稿：
@@ -915,7 +914,7 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
   // 文件覆盖；渲染端以本函数 success 为闸门回写 last_llama_type（验证失败也回写，
   // 下次打开弹窗下拉默认选中当前变体）。
   const verifyResult = await verifyLlamaInstall(dir, pendingLlamaUpdate.tag ?? undefined);
-  emitLog(`[lms_launcher] llama.cpp · ${installVerifyMessage(verifyResult)}`, 'sys');
+  emitLog('[lms_launcher] llama.cpp · ' + installVerifyMessage(verifyResult), 'sys');
   pendingLlamaUpdate = null;
   return { success: true };
 }
@@ -936,14 +935,13 @@ ipcMain.handle('set_llama_update_config', async (_e, opts: { last_llama_type?: s
 
     if (!cfg.update) cfg.update = {};
     if (opts.last_llama_type !== undefined) cfg.update.last_llama_type = opts.last_llama_type;
-    // 2026-09-17：include_pre_release 已移除（恒查 nightly）
 
     appConfigSave(cp, cfg);
-    emitLog('[lms_launcher] llama.cpp · 更新配置已保存', 'sys');
+    emitLog('[lms_launcher] ' + t('log.llama.cfg.saved'), 'sys');
     return { success: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    emitLog(`[lms_launcher] llama.cpp · 保存更新配置失败：${msg}`, 'sys');
+    emitLog('[lms_launcher] ' + t('log.llama.cfg.saveFail', { msg }), 'sys');
     return { success: false, error: msg };
   }
 });
@@ -965,7 +963,7 @@ app.whenReady().then(() => {
     const [, pfP, cfgP] = yamlPaths();
     configsBackfillDefaults(cfgP, paramsLoad(pfP));
   } catch (e) {
-    emitLog('[lms_launcher] params_default 回填失败：' + (e instanceof Error ? e.message : String(e)), 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.cfg.backfillFail', { msg: e instanceof Error ? e.message : String(e) }), 'sys');
   }
   createWindow();
   detectLlamaInstall();

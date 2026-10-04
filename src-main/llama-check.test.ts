@@ -30,3 +30,12 @@ describe('installCheckMessage', () => {
     applyLang('zh');
   });
 });
+
+describe('en prefix retention', () => {
+  it('en: startup check lines are in English', () => {
+    applyLang('en');
+    expect(installCheckMessage('D:/x', 'unset')).toBe('[lms_launcher] Startup check · llama.cpp directory not set');
+    expect(installCheckMessage('D:/x', 'ok')).toBe('[lms_launcher] Startup check · llama-server.exe available: D:/x');
+    applyLang('zh');
+  });
+});

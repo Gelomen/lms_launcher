@@ -1,4 +1,5 @@
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
+import { t } from './i18n';
 
 export type ProcStateName = "ready" | "running" | "stopping";
 
@@ -24,7 +25,7 @@ export class ProcessState {
   // C:\Windows\System32，llama-server 会继承该 cwd，使模板中相对路径的文件参数解析错位。
   // 缺省（undefined）时保持 Node 默认：继承本进程工作目录。
   async launch(exe: string, args: string[], configId: string | null, cwd?: string): Promise<void> {
-    if (this.state !== 'ready') throw new Error('STATE: 已有进程在运行');
+    if (this.state !== 'ready') throw new Error('STATE: ' + t('err.proc.alreadyRunning'));
     this.exitCode = null;
     this.exited = false;
     this.runningConfigId = configId;
@@ -37,12 +38,12 @@ export class ProcessState {
       if (this.child !== child) return;
       // 事件回调内不得 throw（未捕获异常会让 Electron 主进程崩溃）：
       // 记录 + 状态复位到 ready + PROC 分类错误经 onExit 链路上报
-      console.error(`PROC: ${exe} 启动失败: ${err.message}`);
+      console.error(`PROC: ${exe} ` + t('err.proc.spawnFail', { exe, err: err.message }));
       this.child = null;
       this.exited = true;
       this.state = 'ready';
       this.runningConfigId = null;
-      if (this.onExitCb) this.onExitCb(-1, `PROC: ${exe} 启动失败: ${err.message}`);
+      if (this.onExitCb) this.onExitCb(-1, 'PROC: ' + t('err.proc.spawnFail', { exe, err: err.message }));
     });
     child.on("close", (code) => {
       if (this.child !== child) return;
@@ -59,10 +60,10 @@ export class ProcessState {
 
   // 取 stdout/stderr 流（必须 running）——供任务 5 日志读取端订阅
   takePipes(): { stdout: NodeJS.ReadableStream; stderr: NodeJS.ReadableStream } {
-    if (!this.child || !this.isRunning()) throw new Error('STATE: 无子进程');
+    if (!this.child || !this.isRunning()) throw new Error('STATE: ' + t('err.proc.noChild'));
     const out = this.child.stdout;
     const err = this.child.stderr;
-    if (!out || !err) throw new Error('STATE: stdout/stderr 管道未打开');
+    if (!out || !err) throw new Error('STATE: ' + t('err.proc.noPipe'));
     return { stdout: out, stderr: err };
   }
 

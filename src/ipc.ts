@@ -30,6 +30,11 @@ declare global {
   }
 }
 
+// download_update 返回类型（S10 Task 4：增加结构化 reasonCode）
+export type DownloadUpdateResult =
+  | { ok: true; zipPath: string; size: number }
+  | { ok: false; reason: string; code?: 'no-update-task' };
+
 export function invoke<T = unknown>(cmd: string, ...args: unknown[]): Promise<T> {
   return window.lms.invoke(cmd, ...args) as Promise<T>;
 }

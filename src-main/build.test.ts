@@ -136,3 +136,11 @@ describe('build.ts', () => {
 
 
 });
+
+describe('en prefix retention', () => {
+  it('en: VALIDATION required param suffix in English', () => {
+    applyLang('en');
+    expect(() => buildArgVector('D:/x/llama-server.exe', pf, { id: 'cfg1', name: 'cfg1', values: {} })).toThrow(/^VALIDATION/);
+    applyLang('zh');
+  });
+});

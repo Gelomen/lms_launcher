@@ -104,7 +104,7 @@ function appendSys(line: string, echoTabs?: string[]): void {
 
 // DirModule emit → App：目录卡片校验结果（✓/✗）同步写一条「目录校验」sys 行进 launcher 桶（不带括号，与启动检测行同风格）
 function onDirValidated(r: { ok: boolean; dir: string }): void {
-  appendSys(r.ok ? '目录校验 · llama-server.exe 已找到：' + r.dir : '目录校验 · 未找到 llama-server.exe：' + r.dir);
+  appendSys(r.ok ? t('log.dirvalid.ok', { dir: r.dir }) : t('log.dirvalid.missing', { dir: r.dir }));
 }
 
 // LaunchBar emit → App：start_server，catch 一律 errMsg + isMissing/isValidation 分类
@@ -117,9 +117,9 @@ async function doStart(configId: string): Promise<void> {
     state.value = { ...state.value, running: true, stopping: false, starting: false, configId };
   } catch (e) {
     const msg = errMsg(e);
-    appendSys(isMissing(msg) ? '启动失败（配置缺失）· ' + msg
-      : isValidation(msg) ? '启动失败（校验未过）· ' + msg
-      : '启动失败 · ' + msg, ['llama-server']);
+    appendSys(isMissing(msg) ? t('log.app.start.missing', { msg })
+      : isValidation(msg) ? t('log.app.start.invalid', { msg })
+      : t('log.app.start.fail', { msg }), ['llama-server']);
     // 启动失败自动恢复绿 [启动]：进程侧已回落 ready，但「启动成功」的分支没跑过 get_state，
     // 此处按主进程权威状态刷新（若启动后进程已即刻退出——端口占用等——也会落到 ready）
     try {
@@ -139,7 +139,7 @@ async function doStop(): Promise<void> {
     // 强杀路径下 process-exit 事件可能稍晚落地（其复位幂等），不能干等它。
     state.value = { running: false, stopping: false, configId: state.value.configId };
   } catch (e) {
-    appendSys('停止失败 · ' + errMsg(e), ['llama-server']);
+    appendSys(t('log.app.start.fail', { msg: errMsg(e) }), ['llama-server']);
     state.value = { ...state.value, stopping: false }; // 失败回落，不卡在「...」
     // 主进程状态可能已自行回落 ready（stopGraceful 幂等）→ 按权威状态恢复绿 [启动]
     try {
@@ -161,7 +161,7 @@ onMounted(async () => {
   }));
   unsubs.push(onProcessExit((e) => {
     state.value = { ...state.value, running: false, stopping: false };
-    appendSys('进程退出 code=' + e.code, ['llama-server']);
+    appendSys(t('log.app.exit', { code: e.code }), ['llama-server']);
   }));
   // 会话恢复：窗口重载时读一次主进程状态（进程可能仍在跑）
   try {
@@ -177,7 +177,7 @@ onMounted(async () => {
     const r = await invoke<UpdateCheckResult>('check_update');
     if (r.available) {
       updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
-      appendSys('LMS 启动器 · 发现新版本 v' + r.version);
+      appendSys(t('log.app.update.found', { version: r.version }));
     }
   } catch { /* 检查失败不阻塞启动 */ }
   // 下载进度事件 → 状态机 downloading + pct
@@ -197,9 +197,9 @@ onMounted(async () => {
 // llama.cpp 更新完成事件
 function onLlamaComplete(success: boolean, error?: string): void {
   if (success) {
-    appendSys('llama.cpp 更新完成');
+    appendSys(t('log.app.update.downloadComplete'));
   } else {
-    appendSys('llama.cpp 更新失败 · ' + (error ?? '未知错误') + '，稍后再试');
+    appendSys(t('log.app.update.downloadFailed', { reason: error ?? t('update.err.unknown') }));
   }
 }
 onUnmounted(() => { for (const u of unsubs) u(); });
@@ -221,13 +221,13 @@ async function runCheck(): Promise<void> {
   }
   if (r.available) {
     lastFailure.value = 'check'; // 非失败动作不清空也无妨，保持显式
-    appendSys('LMS 启动器 · 发现新版本 v' + r.version);
+    appendSys(t('log.app.update.found', { version: r.version }));
     updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
     return;
   }
   switch (r.status) {
     case 'up-to-date':
-      appendSys('LMS 启动器 · 当前已是最新版本');
+      appendSys(t('log.app.update.latest'));
       updateState.value = { phase: 'up-to-date', version: r.version ?? '', pct: 0, errorText: '' };
       break;
     case 'error':
@@ -243,7 +243,7 @@ async function runCheck(): Promise<void> {
 
 async function runDownload(): Promise<void> {
   updateState.value = { ...updateState.value, phase: 'downloading', pct: 0, errorText: '' };
-  appendSys('LMS 启动器 · 开始下载新版本…');
+  appendSys(t('log.app.update.downloading'));
   let r: { ok: boolean; reason?: string };
   try {
     r = await invoke<{ ok: boolean; reason?: string }>('download_update');
@@ -253,18 +253,18 @@ async function runDownload(): Promise<void> {
     return;
   }
   if (r.ok) {
-    appendSys('LMS 启动器 · 下载完成');
+    appendSys(t('log.app.update.complete'));
     updateState.value = { ...updateState.value, phase: 'ready', errorText: '' };
     return;
   }
   // 「尚无更新任务」= 渲染端状态机与主进程下载任务失步 → 回落 idle 并自动重新 check（重新同步）
-  if (r.reason && r.reason.includes('尚无更新任务')) {
+  if (r.code === 'no-update-task') {
     updateState.value = { phase: 'idle', version: updateState.value.version, pct: 0, errorText: '' };
     void runCheck();
     return;
   }
   lastFailure.value = 'download';
-  appendSys('LMS 启动器 · 更新下载失败 · ' + (r.reason ?? '未知错误'));
+  appendSys(t('log.app.update.downloadFailed', { reason: r.reason ?? t('update.err.unknown') }));
   updateState.value = { ...updateState.value, phase: 'error', errorText: r.reason ?? t('update.err.unknown') };
 }
 
@@ -291,7 +291,7 @@ function onExitConfirmed(): void {
   invoke(action === 'run_update' ? 'run_update' : 'exit_app')
     .catch((e) => {
       if (action === 'run_update') {
-        appendSys('LMS 启动器 · 启动更新失败 · ' + errMsg(e));
+        appendSys(t('log.app.update.startFailed', { err: errMsg(e) }));
         updateState.value = { ...updateState.value, phase: 'ready', errorText: errMsg(e) };
       }
     })
@@ -328,9 +328,9 @@ function onExitClose(): void {
       <div class="winbar__controls">
         <!-- GitHub 键保留项目公共 tooltip（tip-down 向下定位，同 .update-pill）；三键 tooltip 已移除（2026-09-23：英文 "Close" 的 ::after 未变换盒越过窗口右缘 → 横向滚动条顶出边距），仅留 aria-label -->
         <button class="winbtn winbtn--github tip-down" :data-tooltip="t('app.winbar.github')" :aria-label="t('app.winbar.github')" @click="onOpenGithub"><FontAwesomeIcon :icon="['fab','github']" /></button>
-        <button class="winbtn" aria-label="最小化" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
-        <button class="winbtn" :aria-label="maximized ? '还原' : '最大化'" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
-        <button class="winbtn winbtn--close" aria-label="关闭" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
+        <button class="winbtn" :aria-label="t('app.winbar.minimize')" @click="onWinMinimize"><FontAwesomeIcon :icon="byPrefixAndName.fat['window-minimize']" /></button>
+        <button class="winbtn" :aria-label="maximized ? t('app.winbar.restore') : t('app.winbar.maximize')" @click="onWinToggleMax"><FontAwesomeIcon :icon="maximized ? byPrefixAndName.fat['window-restore'] : byPrefixAndName.fat['window-maximize']" /></button>
+        <button class="winbtn winbtn--close" :aria-label="t('app.winbar.close')" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
       </div>
   </header>
   <main class="layout">
