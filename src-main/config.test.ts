@@ -1,3 +1,4 @@
+import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir } from './config';
 import { tmpPath, rm, writeText, jp } from './test-utils';
@@ -407,4 +408,18 @@ describe('saveLlamaDir', () => {
     expect(appConfigLoad(p).llama_dir).toBe('D:\\llama');
     rm(p);
   });
+
+  
+
+
+  it('en: MISSING/VALIDATION 前缀保留、后缀英文', () => {
+    applyLang('en');
+    expect(() => configsLoad('D:/nope/llama_launch_configs.yaml')).toThrow(
+      /^MISSING: llama_launch_configs\.yaml not found/,
+    );
+    expect(validateConfigId('Bad_Id')).toBe(false);
+    expect(() => saveConfigEntry('tmp.yaml', 'Bad_Id', { values: {} })).toThrow(/^VALIDATION: id must be an alphanumeric/);
+    applyLang('zh');
+  });
+
 });

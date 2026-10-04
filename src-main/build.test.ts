@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
 import { buildArgVector, prepareLaunch, summarize, commandLine } from './build';
 import type { ParamsFile, ConfigEntry } from './config';
@@ -116,4 +118,21 @@ describe('build.ts', () => {
     const args2 = buildArgVector('llama-server.exe', pf, e2);
     expect(commandLine(args2)).toBe('llama-server.exe -m "my model.gguf"');
   });
+
+  
+  it('en: VALIDATION 必填参数后缀英文', () => {
+    applyLang('en');
+    const dir = tmpPath('build_en');
+    mkDir(dir);
+    writeText(join(dir, 'llama-server.exe'), '');
+    const paramFile = { params: { m: '-m' }, required: ['m'], params_file: ['m'] };
+    const configs = { c1: { name: 'test', values: {} } };
+    expect(() => prepareLaunch(dir, paramFile as any, configs as any, 'c1')).toThrow(
+      /^VALIDATION: Required param "/,
+    );
+    rm(dir);
+    applyLang('zh');
+  });
+
+
 });

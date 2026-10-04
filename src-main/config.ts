@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 
@@ -42,10 +43,10 @@ function parseYaml(path: string, s: string, name: string): unknown {
     parsed = parse(s);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`YAML: ${name} 失败: ${msg}`);
+    throw new Error('YAML: ' + t('err.config.yamlLoadFail', { name, msg }));
   }
   if (parsed === null || typeof parsed !== 'object') {
-    throw new Error(`YAML: ${name} 失败: 空文件`);
+    throw new Error('YAML: ' + t('err.config.yamlEmpty', { name }));
   }
   return parsed;
 }
@@ -82,7 +83,7 @@ export function paramsLoad(path: string): ParamsFile {
   const pf = parseYaml(path, s, 'llama_params.yaml') as ParamsFile;
   for (const k of Object.keys(pf.params)) {
     if (!validateParamKey(k)) {
-      throw new Error(`VALIDATION: 参数 key "${k}" 不是小写字母开头的字母数字串`);
+      throw new Error('VALIDATION: ' + t('err.config.paramKey', { k }));
     }
   }
   return pf;
@@ -90,7 +91,7 @@ export function paramsLoad(path: string): ParamsFile {
 
 // configs：缺失 → MISSING（不创建）；空文件 → {}；坏 yaml → YAML:
 export function configsLoad(path: string): ConfigsMap {
-  if (!existsSync(path)) throw new Error('MISSING: llama_launch_configs.yaml 不存在（新建第一个模板后自动生成）');
+  if (!existsSync(path)) throw new Error('MISSING: ' + t('err.config.missing'));
   const s = readFileSync(path, 'utf8');
   if (s.trim().length === 0) return {};
   const map = parseYaml(path, s, 'llama_launch_configs.yaml') as Record<string, { desc?: string; name?: string; values: Record<string, string> }>;
@@ -117,13 +118,13 @@ export function suggestConfigId(existing: string[]): string {
     const candidate = 'tpl' + Date.now().toString(36) + rand();
     if (validateConfigId(candidate) && !existing.includes(candidate)) return candidate;
   }
-  throw new Error('VALIDATION: id 生成失败（无法产生唯一值）');
+  throw new Error('VALIDATION: ' + t('err.config.idGen'));
 }
 
 // save：坏 id → VALIDATION；值 trim 后空串丢弃；文件不存在则首次创建。
 // defaults（2026-09 params_default）：被保存条目缺失的默认值自动补入（用户已设值不覆盖）
 export function saveConfigEntry(path: string, id: string, name: string | undefined, values: Record<string, string>, defaults?: ParamsFile): void {
-  if (!validateConfigId(id)) throw new Error('VALIDATION: id 须为小写字母开头的字母数字串（不含空格/大写），最长 32 位');
+  if (!validateConfigId(id)) throw new Error('VALIDATION: ' + t('err.config.idFormat'));
   let map: ConfigsMap = {};
   if (existsSync(path)) map = configsLoad(path); // legacy desc → name 归一（任意一次保存后即固化）
   const clean: Record<string, string> = {};
@@ -163,7 +164,7 @@ export function configsBackfillDefaults(path: string, pf: ParamsFile): boolean {
 
 export function deleteConfigEntry(path: string, id: string): void {
   const map = configsLoad(path);
-  if (!(id in map)) throw new Error(`VALIDATION: 配置 "${id}" 不存在`);
+  if (!(id in map)) throw new Error('VALIDATION: ' + t('err.config.notFound', { id }));
   delete map[id];
   writeFileSync(path, dump(map));
 }
@@ -239,9 +240,9 @@ export function saveProxy(p: string, host: string, port: string): AppConfig {
     appConfigSave(p, cfg);
     return cfg;
   }
-  if (!h || !ps) throw new Error('端口不能为空（或留空禁用代理）');
+  if (!h || !ps) throw new Error(t('err.config.proxyPortEmpty'));
   const n = Number(ps);
-  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error('端口须为 1–65535 的数字');
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(t('settings.proxy.err.port'));
   cfg.proxy = { host: h, port: n };
   appConfigSave(p, cfg);
   return cfg;

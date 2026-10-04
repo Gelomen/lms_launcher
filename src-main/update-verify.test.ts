@@ -1,3 +1,5 @@
+import { evaluateDownloadIntegrity } from './update-verify';
+import { applyLang } from './i18n';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -89,4 +91,12 @@ describe('update-verify.ts', () => {
     expect(digestMatches('sha1:abc', 'abc')).toBe(false);
     expect(digestMatches('not-a-digest', 'x')).toBe(false);
   });
+
+  it('en: 完整性 reason 英文', () => {
+    applyLang('en');
+    const r = evaluateDownloadIntegrity({ expectedSize: 100, actualSize: 10, expectedDigest: null, actualDigest: null, path: 'x' });
+    expect(r.reason).toBe('Incomplete download: received 10 bytes / expected 100 bytes, retry');
+    applyLang('zh');
+  });
+
 });

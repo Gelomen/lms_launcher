@@ -1,3 +1,4 @@
+import { t } from './i18n';
 // 显存占用预测纯函数（规格 2026-08-29-vram-estimate-design §3）。
 // 无 IO：文件字节数由调用方 stat 后传入；GGUF 头解析接受 Buffer。
 // 只读 GGUF magic + tensor 计数 + KV 元数据，不读张量数据。
@@ -55,8 +56,8 @@ function readNum(buf: Buffer, off: number, ty: number): number {
 // 解析 GGUF v3 头，返回层数与维度。只扫描元数据 KV，不读张量。
 // 架构字段命名不一致 → 按 key 末段（. 之后）匹配 LAYER_NAMES / EMBD_NAMES。
 export function parseGgufHeader(buf: Buffer): GgufHeader {
-  if (buf.length < 24) throw new Error('GGUF: 文件过小');
-  if (buf.readUInt32LE(0) !== 0x46554747) throw new Error('GGUF: 非 GGUF 文件（magic 不符）'); // LE 字节 47 47 55 46 = "GGUF"
+  if (buf.length < 24) throw new Error('GGUF: ' + t('err.vram.tooSmall'));
+  if (buf.readUInt32LE(0) !== 0x46554747) throw new Error('GGUF: ' + t('err.vram.badMagic')); // LE 字节 47 47 55 46 = "GGUF"
   // 头布局：magic(u32)@0 + version(u32)@4 + n_tensors(u64)@8 + n_kv(u64)@16 → KV @24
   const kvCount = Number(buf.readBigUInt64LE(16));
   let off = 24;
@@ -92,7 +93,7 @@ export function parseGgufHeader(buf: Buffer): GgufHeader {
     // （不能「核心字段到手就停」：混合模型的 interval 在 block_count/embedding_length 之后，如 qwen3.8-27b KV #27）
     if (coreFoundAt >= 0 && (faInterval !== undefined || i >= coreFoundAt + 40)) break;
   }
-  if (nLayer === 0 || nEmbD === 0) throw new Error('GGUF: 缺少层数/维度元数据（' + scanned + ' 个 KV 内未找到 n_layer/block_count 与 n_embd/embedding_length）');
+  if (nLayer === 0 || nEmbD === 0) throw new Error('GGUF: ' + t('err.vram.noMeta', { n: scanned }));
   return { n_layer: nLayer, n_embd: nEmbD, full_attention_interval: faInterval, head_count_kv: kvHeads, head_count: headCount, head_dim: headDim };
 }
 

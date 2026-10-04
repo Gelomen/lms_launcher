@@ -1,3 +1,4 @@
+import { applyLang } from './i18n';
 // vram.ts 纯函数单测：GGUF 头解析 + 显存公式边界（规格 2026-08-29-vram-estimate-design §3/§7）。
 // GGUF 二进制格式：magic(4B) + tensor count (u64) + array element count (u64) + KV 对。
 import { describe, it, expect } from 'vitest';
@@ -316,4 +317,11 @@ describe('estimateUsedBytes', () => {
     // KV 比 = 17/65（17 = ceil(65/4)）
     expect(hybrid.kvBytes / plain.kvBytes).toBeCloseTo(17 / 65, 5);
   });
+
+  it('en: GGUF 前缀保留、后缀英文', () => {
+    applyLang('en');
+    expect(() => parseGgufHeader(Buffer.alloc(4))).toThrow(/^GGUF: File too small$/);
+    applyLang('zh');
+  });
+
 });

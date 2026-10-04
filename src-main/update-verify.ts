@@ -1,3 +1,4 @@
+import { t } from './i18n';
 // 自动更新（spec 2026-09-05-download-integrity-check-design）：更新包下载完整性校验。
 // 纯函数判定 + 流式文件哈希（可单测）；main.ts download_update 在落盘完成后调用，
 // 失败时删半成品并返回 { ok: false, reason }。
@@ -29,14 +30,14 @@ export function evaluateDownloadIntegrity(i: IntegrityInput): IntegrityResult {
   if (i.expectedSize !== null && i.actualSize !== i.expectedSize) {
     return {
       ok: false,
-      reason: '下载不完整：收到 ' + i.actualSize + ' 字节 / 预期 ' + i.expectedSize + ' 字节，请重试',
+      reason: t('err.update.incomplete', { actual: i.actualSize, expected: i.expectedSize }),
     };
   }
   if (i.expectedDigest !== null) {
     if (i.actualDigest === null || i.actualDigest !== i.expectedDigest) {
       return {
         ok: false,
-        reason: '校验失败：文件与发布版本不一致（SHA-256 不匹配），请重试',
+        reason: t('err.update.digestMismatch'),
       };
     }
   }
