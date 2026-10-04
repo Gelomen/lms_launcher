@@ -19,6 +19,8 @@ const props = withDefaults(defineProps<{
   title: string;
   message: string;
   tone?: 'danger' | 'primary';
+  /** 确认按钮自定义文案；不传则用 common.confirm（'确认'） */
+  confirmText?: string;
   /** 文案里被截断的名字片段（message 的子串）：提供时该片段单独渲染为可 hover 的 span */
   tipName?: string;
   /** 截断名字的完整值：hover tipName 片段 → 自绘 .tpl-tip 浮层只显示它（未截断不传） */
@@ -73,7 +75,8 @@ function onClose(): void { emit('close'); }
           <button type="button" class="btn confirm-cancel" :aria-label="t('common.cancel')" @click="onClose">{{ t('common.cancel') }}</button>
           <button type="button" class="btn confirm-ok"
             :class="{ 'btn-danger': props.tone === 'danger', 'btn-primary': props.tone === 'primary' }"
-            :aria-label="t('common.confirm')" @click="onConfirm">{{ t('common.confirm') }}</button>
+            :aria-label="props.confirmText ?? t('common.confirm')"
+            @click="onConfirm">{{ props.confirmText ?? t('common.confirm') }}</button>
         </div>
       </div>
       <!-- 截断名 tooltip：自绘浮层（.tpl-tip 为全局样式，与模板列表行/下拉长名同视觉语言），
