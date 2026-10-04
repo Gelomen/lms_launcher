@@ -630,9 +630,11 @@ function cleanStaleUpdateTask(): void {
     emitLog('[lms_launcher] ' + t('log.launcher.upd.taskCleaned', { list: cleaned.join(t('common.listSep')) }), 'sys');
   }
 }
-// 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行 [lms_launcher] 前缀
-// 进 LMS Launcher 日志区 → 删除（一次性）。与 detectLlamaInstall 同机制处理渲染端未就绪——
-// 页面加载完前 send 的消息即发即弃，故延迟到 did-finish-load
+// 更新脚本日志回显（规格 §E）：启动时读 lms_launcher_update.log → 逐行【原样】进 LMS Launcher
+// 日志区 → 删除（一次性）。2026-10-04 用户指定：不再追加 [lms_launcher] 前缀，直接显示脚本原始
+// 日志（脚本行自带 yyyy-MM-dd HH:mm:ss 时间戳 + [INFO]/[ERROR]，自解释；渲染端 onLogLine→appendLine
+// 原样入库，只有渲染端本地 appendSys 才补前缀，故去掉此处前缀即对回显行全局生效）。
+// 与 detectLlamaInstall 同机制处理渲染端未就绪——页面加载完前 send 的消息即发即弃，故延迟到 did-finish-load
 function replayUpdateLog(): void {
   const logPath = join(dataDir(), 'lms_launcher_update.log');
   if (!existsSync(logPath)) return;
@@ -645,7 +647,7 @@ function replayUpdateLog(): void {
   try { unlinkSync(logPath); } catch { /* 删除失败不影响回显 */ }
   const lines = content.split(/\r?\n/).filter((l) => l.trim());
   const sendAll = (): void => {
-    for (const l of lines) emitLog('[lms_launcher] ' + l, 'sys');
+    for (const l of lines) emitLog(l, 'sys');
   };
   const win = mainWin();
   if (!win || !win.webContents.isLoading()) { sendAll(); return; }
