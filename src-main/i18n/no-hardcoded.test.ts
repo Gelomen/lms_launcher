@@ -9,8 +9,8 @@ const EXCLUDE = new Set(['src-main/i18n/dict.ts']);
 
 const PENDING = new Set<string>([
   'src-main/main.ts',
-  'src-main/llama-update-download.ts',
-  'src-main/llama-check.ts',
+
+
   'src-main/gpu-stats.ts',
   'src-main/process.ts',
   'src/App.vue',

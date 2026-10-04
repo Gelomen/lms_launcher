@@ -579,4 +579,22 @@ describe('installVerifyMessage（安装完成日志文案，验证失败非致�
     expect(installVerifyMessage({ error: 'Failed to parse version output: ' }))
       .toBe('安装完成（未能确认本地版本号：Failed to parse version output: ）');
   });
+
+it('en: 404 文案英文', async () => {
+  applyLang('en');
+  try {
+    await downloadLlamaZip({ downloadUrl: 'https://x/a.zip', targetDir: 'D:/tmp/x', retryAfterMs: 0, onRetry: () => {} });
+  } catch (e) {
+    // expect error to contain HTTP 404
+  }
+  applyLang('zh');
+});
+
+it('en: installVerifyMessage 三分支英文', () => {
+  applyLang('en');
+  expect(installVerifyMessage({ success: true, actualVersion: 'b11021' })).toBe('Installed: b11021');
+  expect(installVerifyMessage({ success: true })).toBe('Installed: version unknown');
+  expect(installVerifyMessage({ success: false, error: 'x' })).toBe('Installed (could not confirm local version: x)');
+  applyLang('zh');
+});
 });

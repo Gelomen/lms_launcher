@@ -2,6 +2,7 @@
 // 下载 Windows zip 包（支持代理与进度回调），解压到目标目录，
 // 可选下载 CUDA DLLs，并运行 llama-server --version 验证安装。
 
+import { t } from './i18n';
 import AdmZip from 'adm-zip';
 import { spawnSync } from 'node:child_process';
 import { createWriteStream, existsSync, rmSync, openSync, closeSync, readdirSync } from 'node:fs';
@@ -269,7 +270,7 @@ async function downloadZipWith404Retry(
       if (!isTransient404) throw e;
       if (attempt >= maxAttempts) {
         throw new Error(
-          '下载失败：HTTP 404——该版本的下载资产可能还在上传（nightly 发布后资产需几分钟陆续就位，稍后重试即可）；若持续 404 请检查代理设置'
+          t('err.llama.dl404')
         );
       }
       onRetry?.(attempt);
@@ -473,7 +474,7 @@ export async function verifyLlamaInstall(
 export function installVerifyMessage(
   result: { success: true; actualVersion?: string } | { success?: false; error?: string }
 ): string {
-  if (result.success && result.actualVersion) return '安装完成：' + result.actualVersion;
-  if (result.success) return '安装完成：版本号未知';
-  return '安装完成（未能确认本地版本号：' + (result.error || '未知原因') + '）';
+  if (result.success && result.actualVersion) return t('log.llama.install.doneVersion', { version: result.actualVersion });
+  if (result.success) return t('log.llama.install.doneUnknown');
+  return t('log.llama.install.doneUnverified', { err: result.error || t('common.unknownReason') });
 }

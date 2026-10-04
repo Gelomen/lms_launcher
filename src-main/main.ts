@@ -3,6 +3,7 @@ import { trayTooltipText } from './tray-tooltip';
 import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { t } from './i18n';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
@@ -683,22 +684,22 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
     const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
     const output = (result.stdout || result.stderr || '').trim();
     localVersion = parseLlamaVersion(output);
-    emitLog(`[lms_launcher] llama.cpp · 本地版本：${output || '未检测到'}`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.local', { version: output || t('log.llama.ver.unknown') }), 'sys');
   } catch (err) {
-    emitLog(`[lms_launcher] llama.cpp · 获取本地版本失败：${err instanceof Error ? err.message : String(err)}`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.localFail', { err: err instanceof Error ? err.message : String(err) }), 'sys');
   }
 
   // 获取远程 release 信息
   const remoteInfo = await fetchLlamaReleaseInfo(proxy);
   if (!remoteInfo) {
     const proxyNote = proxy ? `（代理 ${proxy}）` : '';
-    emitLog(`[lms_launcher] llama.cpp · 获取远程版本失败${proxyNote}`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.remoteFail', { proxy: proxyNote }), 'sys');
     return { success: false, error: 'failed to fetch remote release info' };
   }
 
   // 比较版本
   const status = compareLlamaVersions(localVersion, remoteInfo.tag);
-  emitLog(`[lms_launcher] llama.cpp · 版本检查：${status}（本地 ${localVersion ? (localVersion.version || `b${localVersion.build}`) : '未知'} vs 远程 ${remoteInfo.tag}）`, 'sys');
+  emitLog(`[lms_launcher] ` + t('log.llama.ver.check', { status, local: localVersion ? (localVersion.version || `b${localVersion.build}`) : t('log.llama.ver.unknown'), remote: remoteInfo.tag }), 'sys');
 
   return {
     success: true,
@@ -725,9 +726,9 @@ ipcMain.handle('get_llama_local_version', (_e): { success: true; localVersion?: 
     const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
     const output = (result.stdout || result.stderr || '').trim();
     localVersion = parseLlamaVersion(output);
-    emitLog(`[lms_launcher] llama.cpp · 本地版本：${output || '未检测到'}`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.local', { version: output || t('log.llama.ver.unknown') }), 'sys');
   } catch (err) {
-    emitLog(`[lms_launcher] llama.cpp · 获取本地版本失败：${err instanceof Error ? err.message : String(err)}`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.localFail', { err: err instanceof Error ? err.message : String(err) }), 'sys');
   }
   return { success: true, localVersion: localVersion ?? undefined };
 });
@@ -748,10 +749,10 @@ ipcMain.handle('get_llama_release_options', async (_e): Promise<
   const remoteInfo = await fetchLlamaReleaseInfo(proxy);
   if (!remoteInfo) {
     const proxyNote = proxy ? `（代理 ${proxy}）` : '';
-    emitLog(`[lms_launcher] llama.cpp · 获取版本列表失败${proxyNote}`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.listFail', { proxy: proxyNote }), 'sys');
     return { success: false, error: 'failed to fetch remote release info' };
   }
-  emitLog(`[lms_launcher] llama.cpp · 已获取远程版本列表（${remoteInfo.versionOptions.length} 个选项）`, 'sys');
+  emitLog(`[lms_launcher] ` + t('log.llama.ver.list', { n: remoteInfo.versionOptions.length }), 'sys');
   return {
     success: true,
     tag: remoteInfo.tag,
@@ -780,10 +781,10 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     ? `http://${cfg.proxy.host}:${cfg.proxy.port}`
     : undefined;
 
-  emitLog(`[lms_launcher] llama.cpp · 开始下载更新：${opts.download_url}`, 'sys');
+  emitLog(`[lms_launcher] ` + t('log.llama.dl.start', { url: opts.download_url }), 'sys');
   // 2026-09-18：所选变体含 CUDA 时，CUDA DLLs 下载地址同样落日志（便于排查 DLLs 缺失/下载失败）
   if (opts.cuda_dlls_url) {
-    emitLog(`[lms_launcher] llama.cpp · CUDA DLLs 下载地址：${opts.cuda_dlls_url}`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.dl.cuda', { url: opts.cuda_dlls_url }), 'sys');
   }
 
   const dl = await downloadLlamaZip({
@@ -797,7 +798,7 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     // 2026-09-17 三轮：404 自动重试（nightly 资产滞后于 release body，上传需数分钟）
     onRetry: (attempt) => {
       emitLog(
-        `[lms_launcher] llama.cpp · 下载 404——该版本资产可能还在上传（nightly 发布后资产陆续就位），等待 ${attempt}/3 次重试...`,
+        `[lms_launcher] ` + t('log.llama.dl.404', { n: attempt }),
         'sys'
       );
     },
@@ -806,11 +807,11 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
   if (!dl.ok) {
     // 2026-09-16：下载失败日志收敛为「更新失败，稍后再试」——dl.error 全文（404 友好错误等）
     // 已随 llama-complete 事件进渲染端「llama.cpp 更新失败 · …」行，此处重复且超长，简化之。
-    emitLog('[lms_launcher] llama.cpp · 更新失败，稍后再试', 'sys');
+    emitLog('[lms_launcher] ' + t('log.llama.dl.fail'), 'sys');
     return { success: false, error: dl.error };
   }
 
-  emitLog('[lms_launcher] llama.cpp · 下载完成', 'sys');
+  emitLog('[lms_launcher] ' + t('log.llama.dl.done'), 'sys');
 
   // 下载完成 → 判断 llama-server 是否运行（进程状态机 + 文件占用探测双通道：
   // 前者覆盖 launcher 托管进程；后者覆盖用户外部启动的 llama.cpp 进程）
@@ -822,9 +823,9 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     // 服务运行中：暂存 zip，等用户点「停止并更新」→ install_llama_update
     pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url), keepCudaMajor: cudaMajorFromDllsUrl(opts.cuda_dlls_url) };
     const reason = ps.isRunning() || ps.state === 'stopping'
-      ? 'llama-server 正在运行'
-      : `文件被占用（${locked.map((p) => p.split(/[\/\\]/).pop()).join(', ')}）`;
-    emitLog(`[lms_launcher] llama.cpp · ${reason}，停止服务后点「停止并更新」完成安装`, 'sys');
+      ? t('log.llama.install.busyRunning')
+      : t('log.llama.install.busyFiles', { names: locked.map((p) => p.split(/[\/\\]/).pop()).join(', ') });
+    emitLog(`[lms_launcher] ` + t('log.llama.install.busyHint', { reason }), 'sys');
     return { success: true, installed: false };
   }
 
@@ -873,16 +874,16 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
 
   // 1. 停止 launcher 托管的 llama-server（3s 优雅 → 强杀进程树）
   if (ps.isRunning() || ps.state === 'stopping') {
-    emitLog('[lms_launcher] llama.cpp · 停止 llama-server 后更新...', 'sys', ['llama-server']);
+    emitLog('[lms_launcher] ' + t('log.llama.install.stopFirst'), 'sys', ['llama-server']);
     await ps.stopGraceful(3);
-    emitLog('[lms_launcher] llama.cpp · llama-server 已停止', 'sys', ['llama-server']);
+    emitLog('[lms_launcher] ' + t('log.llama.install.stopped'), 'sys', ['llama-server']);
   }
 
   // 2. 解压覆盖（先探测外部进程占用，给出友好错误而非 EBUSY 堆栈）
   const locked = findLockedFiles(dir, llamaLockProbeFiles(dir));
   if (locked.length > 0) {
     const names = locked.map((p) => p.split(/[\\/]/).pop()).join(', ');
-    emitLog(`[lms_launcher] llama.cpp · 文件仍被占用：${names}（请关闭外部启动的 llama-server 后重试）`, 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.install.stillBusy', { names }), 'sys');
     return { success: false, busy: true, error: `文件仍被占用（${names}），请关闭外部启动的 llama.cpp 进程后重试` };
   }
   emitLog('[lms_launcher] llama.cpp · 开始安装更新...', 'sys');
