@@ -184,7 +184,7 @@ export function startGpuStats(scriptPath: string, onStats: (gpus: GpuStats[]) =>
           log(t('log.gpu.staticParseFail', { out: out.trim().slice(0, 200) }));
         }
       } else {
-        log(t('log.gpu.staticExit', { code }));
+        log(t('log.gpu.staticExit', { code: code ?? -1 }));
       }
     });
   }
