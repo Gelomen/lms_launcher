@@ -730,6 +730,10 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     expect(below!.classList.contains('llama-below--hint')).toBe(true);
     expect(below!.textContent).toContain('llama-server 正在运行');
     expect(below!.textContent).toContain('停止并更新');
+    // 2026-10-04 挪位：提示行统一渲染在版本下拉之后（llama.cpp 行末位）
+    const dropdown = document.querySelector('.llama-section .dropdown') as HTMLElement | null;
+    expect(dropdown).not.toBeNull();
+    expect(dropdown!.nextElementSibling).toBe(below);
     w.unmount();
   });
 

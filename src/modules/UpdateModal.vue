@@ -667,10 +667,6 @@ function llamaBelow(): { kind: string; text: string } | null {
                 >{{ llamaBtnLabel() }}</span>
               </button>
             </div>
-            <!-- 名称行下方提示行（2026-09 优化）：未配置灰字提示 / 错误红字，整行完整显示（可换行） -->
-            <div v-if="llamaBelow() !== null" class="llama-below"
-              :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
-            >{{ llamaBelow()?.text }}</div>
             <!-- 版本选项选择器：检查到更新或有选项时出现（独立成行，避免与状态文字挤占行宽）。
                  2026-09 统一视觉：原生 <select> → 共享 Dropdown 组件（与 LaunchBar/TemplateModal 下拉同风格：
                  白底卡片弹层 + .btn 触发按钮 + ▼ 指示符；选项 value 用索引字符串，选中态回写索引）
@@ -682,6 +678,12 @@ function llamaBelow(): { kind: string; text: string } | null {
               :disabled="llamaDownloading"
               @update:value="(v: string) => { llamaSelectedOptionIndex = Number(v); }"
             />
+            <!-- 名称行下方提示行（2026-09 优化）：未配置灰字提示 / 错误红字 / 两阶段「停止并更新」灰字说明，
+                 整行完整显示（可换行）。2026-10-04 挪位：统一渲染在版本下拉之后（llama.cpp 行末位）——
+                 下拉可见时提示位于下拉下方；下拉不渲染时（unconfigured/error）位置不变。 -->
+            <div v-if="llamaBelow() !== null" class="llama-below"
+              :class="llamaBelow()?.kind === 'error' ? 'llama-below--error' : 'llama-below--hint'"
+            >{{ llamaBelow()?.text }}</div>
           </div>
         </div>
       </div>
