@@ -468,19 +468,18 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
   const [cp] = yamlPaths();
   const cfg = appConfigLoad(cp);
   const fetchFn = makeUpdateFetch(cfg);
-  const proxyNote = buildProxyUri(cfg) ? `（代理 ${buildProxyUri(cfg)}）` : '';
   try {
     const res = await fetchFn(RELEASE_API_URL, {
       signal: ctrl.signal,
       headers: { 'User-Agent': 'lms_launcher' },
     });
     if (!res.ok) {
-      emitLog('[lms_launcher] ' + t('log.launcher.check.http', { status: res.status, proxy: proxyNote }), 'sys');
+      emitLog('[lms_launcher] ' + t('log.launcher.check.http', { status: res.status }), 'sys');
       return { available: false, status: 'error' };
     }
     const info = parseLatestRelease(await res.json());
     if (!info) {
-      emitLog('[lms_launcher] ' + t('log.launcher.check.parse', { proxy: proxyNote }), 'sys');
+      emitLog('[lms_launcher] ' + t('log.launcher.check.parse', {}), 'sys');
       return { available: false, status: 'error' };
     }
     const cur = app.getVersion();
@@ -491,7 +490,7 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
     pendingUpdate = info;
     return { available: true, status: 'update-available', version: info.tag };
   } catch (e) {
-    emitLog('[lms_launcher] ' + t('log.launcher.check.err', { msg: e instanceof Error ? e.message : String(e), proxy: proxyNote }), 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.check.err', { msg: e instanceof Error ? e.message : String(e) }), 'sys');
     return { available: false, status: 'error' };
   } finally {
     clearTimeout(timer);
@@ -510,7 +509,6 @@ ipcMain.handle('download_update', async (): Promise<
   const [dp] = yamlPaths();
   const cfg = appConfigLoad(dp);
   const fetchFn = makeUpdateFetch(cfg);
-  const proxyNote = buildProxyUri(cfg) ? `（代理 ${buildProxyUri(cfg)}）` : '';
   // 防御性清理：上一轮异常中断（主进程崩溃 / EPERM 残留）可能留下半成品；
   // createWriteStream 默认覆盖写，删除只是保险（残留时先清，失败不阻断）
   try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留由覆盖写处理 */ }
@@ -548,7 +546,7 @@ ipcMain.handle('download_update', async (): Promise<
   } catch (e) {
     try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
     const msg = e instanceof Error ? e.message : String(e);
-    emitLog('[lms_launcher] ' + t('log.launcher.dl.fail', { msg: msg, proxy: proxyNote }), 'sys');
+    emitLog('[lms_launcher] ' + t('log.launcher.dl.fail', { msg: msg }), 'sys');
     return { ok: false, reason: msg };
   } finally {
     clearTimeout(timer);
@@ -691,8 +689,7 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
   // 获取远程 release 信息
   const remoteInfo = await fetchLlamaReleaseInfo(proxy);
   if (!remoteInfo) {
-    const proxyNote = proxy ? `（代理 ${proxy}）` : '';
-    emitLog(`[lms_launcher] ` + t('log.llama.ver.remoteFail', { proxy: proxyNote }), 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.remoteFail', {}), 'sys');
     return { success: false, error: 'failed to fetch remote release info' };
   }
 
@@ -747,8 +744,7 @@ ipcMain.handle('get_llama_release_options', async (_e): Promise<
     : undefined;
   const remoteInfo = await fetchLlamaReleaseInfo(proxy);
   if (!remoteInfo) {
-    const proxyNote = proxy ? `（代理 ${proxy}）` : '';
-    emitLog(`[lms_launcher] ` + t('log.llama.ver.listFail', { proxy: proxyNote }), 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.listFail', {}), 'sys');
     return { success: false, error: 'failed to fetch remote release info' };
   }
   emitLog(`[lms_launcher] ` + t('log.llama.ver.list', { n: remoteInfo.versionOptions.length }), 'sys');
