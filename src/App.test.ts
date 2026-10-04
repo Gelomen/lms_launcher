@@ -920,8 +920,8 @@ describe('i18n / App 外壳（Slice 1）', () => {
     expect(box.textContent).toContain('llama-server will be stopped. Continue?');
     expect((document.querySelector('.confirm-cancel') as HTMLButtonElement).textContent).toBe('Cancel');
     expect((document.querySelector('.confirm-cancel') as HTMLButtonElement).getAttribute('aria-label')).toBe('Cancel');
-    expect((document.querySelector('.confirm-ok') as HTMLButtonElement).textContent).toBe('Quit');
-    expect((document.querySelector('.confirm-ok') as HTMLButtonElement).getAttribute('aria-label')).toBe('Quit');
+    expect((document.querySelector('.confirm-ok') as HTMLButtonElement).textContent).toBe('Exit');
+    expect((document.querySelector('.confirm-ok') as HTMLButtonElement).getAttribute('aria-label')).toBe('Exit');
     w.unmount();
   });
 
