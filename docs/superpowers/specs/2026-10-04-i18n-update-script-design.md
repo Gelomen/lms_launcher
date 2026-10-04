@@ -199,7 +199,7 @@ const PS_TARGETS = ['scripts/lms-launcher-update.ps1', 'scripts/verify-relaunch.
 | # | 检查 | 命令／方式 | 期望 |
 |---|---|---|---|
 | A1 | 守护用例（含自检） | `npx vitest run src-main/i18n/no-hardcoded.test.ts` | 绿；两脚本字符串字面量零汉字 |
-| A2 | 全量测试零回归 | `npm test` | 全绿（基线 35 文件 / 585 用例，S11 不新增渲染端用例） |
+| A2 | 全量测试零回归 | `npm test` | 全绿（基线实测 35 文件 / 583 用例；S11 新增 2 条守护用例 → 预期 585） |
 | A3 | PS 语法有效 | `[System.Management.Automation.Language.Parser]::ParseFile(...)` 对两脚本 | 零解析错误（改写前基线已实测 OK） |
 | A4 | 字符串零中文（人工复核） | 逐行过滤注释后正则扫 `[\u4e00-\u9fff]` | 两脚本非注释行命中数 = 0 |
 | A5 | 全表逐条落地 | 对照 §5 / §6 两张表 | 33 项 + 21 项，无遗漏、无残留中文串 |

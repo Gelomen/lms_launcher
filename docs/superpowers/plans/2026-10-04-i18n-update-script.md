@@ -95,7 +95,7 @@ powershell -NoProfile -Command "Get-Content scripts/lms-launcher-update.ps1 | Wh
 **步骤**：
 
 1. `npx vitest run src-main/i18n/no-hardcoded.test.ts` → 全绿（任务 1 的硬断言转绿）。
-2. `npm test` → 全绿（预期 **35 文件 / 587 用例**：基线 585 + 新增 2 条 `it`）。
+2. `npm test` → 全绿（预期 **35 文件 / 585 用例**：基线实测 583 + 新增 2 条 `it`）。
 3. PS 语法解析（对照改写前基线：两脚本均 OK）：
 
 ```powershell
@@ -123,5 +123,5 @@ powershell -NoProfile -Command "$e=$null;$t=$null;[System.Management.Automation.
 - [ ] C5 用 `.Contains('=== update run ===')`，无标记时回落全文件
 - [ ] 守护用例为**硬断言**（无 PENDING），显式列两脚本、未用通配
 - [ ] 编码 UTF-8 BOM + LF 未变
-- [ ] `npm test` 35 文件 / 587 用例全绿
+- [ ] `npm test` 35 文件 / 585 用例全绿
 - [ ] 未执行任何 ps1（Q7）；未改动 `dist-release`、`package-zip.ps1`、`build.bat`
