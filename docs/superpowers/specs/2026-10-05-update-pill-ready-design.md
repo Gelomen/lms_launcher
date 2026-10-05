@@ -60,7 +60,7 @@ winbar 的 pill 是**模板 v-if 链**，只有两个分支；下载完成会把
 | N2 | **不改弹窗按钮文案** | `update.btn.restart` 保持「重启应用」/ `"Restart"`；pill 用**新增的独立 key**。 |
 | N3 | **不新增 CSS** | pill 在 `ready` 态复用 `.update-pill`（实心紫）；不引入绿色/成功态新样式。 |
 | N4 | **不改状态机、不改主进程** | `UpdatePhase`、`runCheck/runDownload/onUpdateAction/onExitConfirmed`、`src-main/**` 全部零改动（i18n 词典除外）。 |
-| N5 | **`run_update` 失败时 pill 不降级** | 失败后相位仍是 `ready`（仅多出 `errorText`），pill 继续显示「重启以更新」；原因在弹窗红字 + 日志里看。 |
+| N5 | **`run_update` 失败时 pill 不降级** | 失败后相位仍是 `ready`（仅多出错误通道字段 `errorRaw`），pill 继续显示「重启以更新」；原因在弹窗红字 + 日志里看。 |
 | N6 | **S10 收尾不在本规格范围（已完成）** | `src-main/main.ts` 剩余 2 处硬编码中文 + 守护用例 `PENDING` 归零，已由 2026-10-05 分叉会话单独完成（见 §8）；本规格的实现会话对 `main.ts` 与 `no-hardcoded.test.ts` **零改动**。 |
 
 ---
