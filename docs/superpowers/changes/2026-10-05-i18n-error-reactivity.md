@@ -53,7 +53,8 @@
 | `download_update` | 完整性校验失败改传 `errorKey`（`err.update.incomplete` + `{actual,expected}` / `err.update.digestMismatch`）；`no-update-task` 的 reason 改 `errorKey` |
 | `update-verify.ts` | `IntegrityResult.reason`（译文）→ `reasonKey` + `reasonParams`（不在主进程定死译文） |
 | `llama-update-download.ts` | 404 重试耗尽改抛专用 `Dl404Error` → 携带 `errorKey`（原文保留作日志/兜底） |
-| `src/ipc.ts` / `src/llama-update-client.ts` | 结果类型补 `errorKey` / `errorParams` |
+| `run_update` | **失败由 throw 改结构化返回** `{ ok:false, errorKey }`（`err.update.filesMissing` / `err.update.taskStart` + `{err}`）；渲染端不再走 catch 而是按返回值走 `errFromIpc` → 红字随语言即时重译。意外异常仍走 `errorRaw` 透传 |
+| `src/ipc.ts` / `src/llama-update-client.ts` | 结果类型补 `errorKey` / `errorParams`（含新增 `RunUpdateResult`） |
 
 **状态字段迁移：** UpdateModal `llamaError`（原 `ref('')`）与 App `updateState.errorText` 均迁移为三通道；`emit('llama-complete', …)` 仍在事件时解析成字符串（日志是历史文本，**不**随语言变，属期望行为）。
 
@@ -78,14 +79,30 @@
 | LMS 行「key 重译 / 原文透传 / 未知 key 兜底」 | 组件级 3 条 | PASS |
 | 端到端（App 真实赋值路径） | 失败（中文）→ 切英文 → 红字变英文 | PASS |
 | IPC key 守护 | `dict.test.ts` 新增用例：`IPC_ERROR_KEYS` 在 zh/en 都存在 | PASS |
-| 全量测试 | `npm test` | **35 文件 / 590 用例全绿**（改前 584） |
+| `run_update` 结构化失败（先红后绿） | `App.test.ts`：`{ ok:false, errorKey:'err.update.filesMissing' }` → 中文 → 切英文 → 英文 | PASS |
+| 全量测试 | `npm test` | **35 文件 / 591 用例全绿**（改前 584） |
 | 构建 | `npm run build`（vite + tsc -p tsconfig.main.json） | exit 0 |
 
 > 环境提示：本机偶发 `EBUSY`（Vite 临时缓存文件被占用）导致并行跑全量时丢 1–6 个 happy-dom 文件的 environment，`npx vitest run --no-file-parallelism` 稳定全绿；与本改动无关（用例零失败），重跑即可恢复。
 
 ---
 
-## 6. 已知边界与发现（未在本轮改动）
+## 6. 后续补修（本轮内完成）
 
-1. **`run_update` 异常通道**：`ready` 态「更新文件缺失」经 IPC 异常（throw）传的是主进程译好的消息 → 落在 `errorRaw`，**不随语言重译**。彻底修复需把该 handler 的 throw 改为结构化返回（grill-me Q1 的选项 C，用户本轮未选），留作后续。
-2. **install busy 分支吞掉红字**（既有行为）：占用类安装失败进入 stop-update 态后，名称行下方显示的是「停止并更新」提示，`llamaError` 已写入但**不显示**。是否要在此处也显示错误原因，属独立 UX 决策，本轮未动。
+**`run_update` 异常通道**（原列为已知边界 ①，grill-me 追加一问后用户裁定「只修 ①」）：该 handler 原先 `throw new Error(t('err.update.filesMissing'/'err.update.taskStart'))`，
+译文串经 IPC 异常回到渲染端后落 `errorRaw` → 「不可译原文」透传 → **切语言不重译**（与本次报告的 bug 同类，只是通道不同）。
+现改为**结构化返回** `{ ok:false, errorKey }`，渲染端 `onExitConfirmed` 走 `errFromIpc`/`errTextOf`：
+
+- 红字随语言即时重译（`err.update.filesMissing` / `err.update.taskStart`）；
+- 成功路径仍由主进程 `app.exit(0)` 终止进程（渲染端收不到 `{ ok:true }`）；
+- **意外异常**（真正不可译的技术消息）保留 `catch → errorRaw` 原文透传；
+- 日志行 `log.app.update.startFailed` 仍按事件发生时的语言落定（历史日志不随语言变，属期望行为）。
+
+## 7. 剩余已知边界（未改）
+
+**install busy 分支吞掉红字**（既有行为、**非多语言问题**）：占用类安装失败（`busy:true`）进入 stop-update 态后，
+`llamaBelow()` 第一优先返回「停止并更新」提示（`update.hint.stopRunning`/`stopReady`，渲染时 `t()` → 切语言正常重译），
+`llamaError` 虽已写入却**不渲染**——中英用户**同样看不到占用原因**（原因只落在日志行）。
+
+唯一与多语言相邻之处：被吞掉的文案正是本轮 key 化的 `err.llama.busy` / `err.llama.targetBusy`，
+若将来要在红字里显示，直接走 `errTextOf` 即天然支持切语言（基建已就绪）。是否显示属独立 UX 决策，本轮未动。
