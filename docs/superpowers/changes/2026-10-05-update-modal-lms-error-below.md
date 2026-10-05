@@ -56,3 +56,28 @@ llama.cpp 行则不同：`.llama-section` 为 `flex-wrap: wrap` 布局，提示�
 | 构建 | `npm run build` | exit 0 |
 
 **人工目视**：建议打包/开发运行一次，确认「LMS 启动器行出错时下方红字整行显示、版本号仍在原位、长文案换行不截断」。
+
+---
+
+## 5. 追补修复：红字被染成公共灰（用户 2026-10-05 反馈）
+
+**现象**：位置正确（已在下一行、版本号留在中段），但文字颜色变成公共灰，红字效果丢失。
+
+**根因（CSS 层叠）**：错误色规则 `.update-row__error { color: var(--danger); }` 声明在共用布局规则
+`.update-row__below, .llama-below { … color: var(--muted); }` **之前**——两者同为单类选择器（特异性相同），
+**源码顺序决定胜负** → 靠后的共用规则把红字覆盖成灰。（llama 行的 `.llama-below--error` 恰好声明在共用规则之后，所以它没中招。）
+
+**修法**：
+1. 把错误色规则移到共用布局规则**之后**；
+2. 改用双类复合选择器 `.update-row__below.update-row__error`（特异性 0,2,0 > 0,1,0），今后即使调整声明顺序也不会静默失效。
+
+**守护**：新增源码级顺序断言（happy-dom 不注入 SFC `<style>`，故按仓库既有做法读组件源码断言声明顺序，
+与「七态按钮同尺寸」用例同思路）。**实测该断言在修复前为 FAIL**（旧源码里复合选择器不存在，`search` 返回 -1），
+修复后 PASS —— 是一条真正能拦住该回归的用例。
+
+| 检查 | 结果 |
+|---|---|
+| 顺序断言（改前 / 改后） | FAIL（danger=-1）→ PASS（shared=35042 < danger=35482） |
+| `npx vitest run src/modules/UpdateModal.test.ts` | 70 passed |
+| 全量 `npm test` | **35 文件 / 594 用例全绿** |
+| `npm run build` | exit 0 |
