@@ -703,6 +703,45 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     w.unmount();
   });
 
+  // 2026-10-05 i18n 响应性（②）：run_update 失败改**结构化返回** { ok:false, errorKey } →
+  // 红字存 key、渲染时翻译，切语言即时重译（旧契约经 throw 传译文串 → 渲染端当「不可译原文」透传而冻结）。
+  it('run_update 结构化失败（errorKey）→ 行内红字随语言即时重译', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    trayUpdateHandlers.at(-1)(); // 开弹窗
+    await flush();
+    updateBtns()[0].click(); // 下载更新
+    ctrl.download.resolve({ ok: true });
+    await flush();
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    updateBtns()[0].click(); // 重启应用 → 共用「退出程序」确认框
+    await flush();
+    expect(document.querySelector('.confirm-box')).not.toBeNull();
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      if (cmd === 'run_update') return Promise.resolve({ ok: false, errorKey: 'err.update.filesMissing' });
+      return Promise.resolve(undefined);
+    });
+    invoke.mockClear();
+    (document.querySelector('.confirm-box .confirm-ok') as HTMLButtonElement).click();
+    await flush();
+    const rowText = () => (document.querySelector('.update-modal') as HTMLElement).textContent ?? '';
+    expect(rowText()).toContain('更新文件缺失');
+    expect(document.querySelector('.update-row__error')).not.toBeNull();
+    // 切英文 → 同一行红字即时重译为英文（关键回归）
+    const { applyLangLocal } = await import('./i18n');
+    applyLangLocal('en');
+    await nextTick();
+    expect(rowText()).toContain('Update files missing');
+    applyLangLocal('zh');
+    await nextTick();
+    expect(rowText()).toContain('更新文件缺失');
+    // 失败后 ready 态保持：按钮仍「重启应用」可重试；确认框已复位
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    w.unmount();
+  });
+
   it('check 失败 → error 态；点「重试」→ 重新 invoke check_update', async () => {
     const { w, ctrl } = makeUpdateMount();
     ctrl.checkScript = [{ available: false, status: 'error' }];

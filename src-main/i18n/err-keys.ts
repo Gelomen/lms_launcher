@@ -11,6 +11,8 @@ export const ERR_UPDATE_INCOMPLETE = 'err.update.incomplete';
 export const ERR_UPDATE_DIGEST_MISMATCH = 'err.update.digestMismatch';
 export const ERR_UPDATE_VERIFY_FALLBACK = 'err.update.verifyFallback';
 export const ERR_UPDATE_NO_TASK = 'err.update.noTask';
+export const ERR_UPDATE_FILES_MISSING = 'err.update.filesMissing';
+export const ERR_UPDATE_TASK_START = 'err.update.taskStart';
 
 /** 守护清单（dict.test.ts 断言 zh/en 双词典都存在）。新增 IPC 错误 key 时必须登记。 */
 export const IPC_ERROR_KEYS: readonly string[] = [
@@ -21,4 +23,6 @@ export const IPC_ERROR_KEYS: readonly string[] = [
   ERR_UPDATE_DIGEST_MISMATCH,
   ERR_UPDATE_VERIFY_FALLBACK,
   ERR_UPDATE_NO_TASK,
+  ERR_UPDATE_FILES_MISSING,
+  ERR_UPDATE_TASK_START,
 ];

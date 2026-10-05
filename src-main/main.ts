@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'ele
 import { trayTooltipText } from './tray-tooltip';
 import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 // 2026-10-05 i18n 响应性修复：可译错误经 IPC 传 key（渲染端渲染时翻译，切语言即时重译；见 src/i18n.ts errTextOf）
-import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK } from './i18n/err-keys';
+import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK, ERR_UPDATE_FILES_MISSING, ERR_UPDATE_TASK_START } from './i18n/err-keys';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
@@ -564,13 +564,15 @@ ipcMain.handle('download_update', async (): Promise<
 //   3) schtasks /TR 有 261 字符上限：ps1+zip+installDir 三个绝对参数内联会超限
 //      （生产路径下 create 直接被拒）。解法：把命令写进安装目录的
 //      lms_launcher_update.cmd 短启动器，/TR 只引用该文件（~90 字符）。
-ipcMain.handle('run_update', async (): Promise<void> => {
+// 2026-10-05 i18n 响应性：失败改**结构化返回**（{ ok:false, errorKey }）而非 throw —— 渲染端据此存 key、
+// 渲染时翻译（切语言即时重译）；抛异常会把译文串当「不可译原文」透传而冻结在旧语言。
+ipcMain.handle('run_update', async (): Promise<{ ok: true } | ({ ok: false } & IpcErr)> => {
   stopGpuStats(); // app.exit 不触发 will-quit：先停 GPU 采样，防 powershell 采样子进程孤儿常驻（与 exit_app 同模式，stop() 幂等）
   const installDir = dataDir();
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip（与 download_update 一致）
   const ps1 = join(installDir, 'lms-launcher-update.ps1');
   if (!existsSync(ps1) || !existsSync(zipPath)) {
-    throw new Error(t('err.update.filesMissing'));
+    return { ok: false, errorKey: ERR_UPDATE_FILES_MISSING };
   }
   emitLog('[lms_launcher] ' + t('log.launcher.upd.started'), 'sys');
   const updateLogPath = join(installDir, 'lms_launcher_update.log');
@@ -608,11 +610,12 @@ ipcMain.handle('run_update', async (): Promise<void> => {
     if (taskScheduled) {
       try { execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); } catch { /* 忽略 */ }
     }
-    throw new Error(t('err.update.taskStart', { err: errText }));
+    return { ok: false, errorKey: ERR_UPDATE_TASK_START, errorParams: { err: errText } };
   }
   await ps.stopGraceful(3);
   await new Promise((resolve) => setTimeout(resolve, 3000)); // 等任务拉起脚本落地（/Run 后 ps1 需数秒才写到首行日志），避免 app.exit 抢先
   app.exit(0);
+  return { ok: true }; // app.exit 立即终止进程，此行为类型收敛（渲染端不会收到）
 });
 // 清理残留计划任务（两个）：
 //   LMSLauncherUpdate —— 更新脚本任务。上次 create 成功但 /Run 前应用崩溃（或用户强杀）会留下

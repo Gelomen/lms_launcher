@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest, onTraySettingsRequest, type DownloadUpdateResult } from './ipc';
+import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest, onTraySettingsRequest, type DownloadUpdateResult, type RunUpdateResult } from './ipc';
 import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
 import LaunchBar from './modules/LaunchBar.vue';
@@ -290,18 +290,28 @@ function onUpdateAction(_index: number, kind: string): void {
 
 // §D 共用退出确认 @confirm：按 exitAction 分流（'exit' → exit_app；'run_update' → run_update）。
 // finally 复位对话框（主进程 app.exit / spawn 更新脚本后窗口即销毁，此复位是防御性）。
-// run_update 失败（更新脚本/更新包缺失）→ 在 ready 态行内显示错误文案（errorRaw 通道：主进程经异常通道
-// 抛出的消息，非词典 key，故按原文透传——本条不随语言切换重译，属 2026-10-05 修复的已知边界）。
+// run_update 失败（更新脚本/更新包缺失、计划任务启动失败）→ 主进程**结构化返回** { ok:false, errorKey }：
+// 渲染端走三通道存 key、渲染时翻译（切语言即时重译）；只有意外异常才落 errorRaw 原文透传（不可译技术消息）。
 function onExitConfirmed(): void {
   const action = exitAction.value;
-  invoke(action === 'run_update' ? 'run_update' : 'exit_app')
-    .catch((e) => {
-      if (action === 'run_update') {
-        appendSys(t('log.app.update.startFailed', { err: errMsg(e) }));
-        updateState.value = { ...updateState.value, phase: 'ready', errorRaw: errMsg(e) };
-      }
+  const closeDialog = (): void => { exitConfirm.value = false; };
+  if (action !== 'run_update') {
+    invoke('exit_app').catch(() => { /* 退出失败无 UI 后果 */ }).finally(closeDialog);
+    return;
+  }
+  invoke<RunUpdateResult>('run_update')
+    .then((r) => {
+      // 成功路径：主进程 app.exit(0) 直接终止进程，不会走到这里；r.ok === false 才是失败
+      if (r.ok) return;
+      const fields = errFromIpc(r, 'update.err.unknown');
+      appendSys(t('log.app.update.startFailed', { err: errTextOf(fields, 'update.err.unknown') }));
+      updateState.value = { ...updateState.value, phase: 'ready', ...fields };
     })
-    .finally(() => { exitConfirm.value = false; });
+    .catch((e) => {
+      appendSys(t('log.app.update.startFailed', { err: errMsg(e) }));
+      updateState.value = { ...updateState.value, phase: 'ready', errorRaw: errMsg(e) };
+    })
+    .finally(closeDialog);
 }
 
 // §D 共用退出确认 @close（[取消]/遮罩）：复位开关与动作；run_update 入口取消时保持 ready 态

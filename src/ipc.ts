@@ -36,6 +36,12 @@ export type DownloadUpdateResult =
   | { ok: true; zipPath: string; size: number }
   | { ok: false; code?: 'no-update-task'; errorKey?: string; errorParams?: Record<string, string | number>; reason?: string };
 
+// run_update 返回类型（2026-10-05 i18n 响应性：失败由 throw 改结构化返回，可译错误传 errorKey）
+// 成功路径主进程 app.exit(0) 直接终止进程，渲染端收不到 { ok:true }。
+export type RunUpdateResult =
+  | { ok: true }
+  | { ok: false; errorKey?: string; errorParams?: Record<string, string | number>; error?: string };
+
 export function invoke<T = unknown>(cmd: string, ...args: unknown[]): Promise<T> {
   return window.lms.invoke(cmd, ...args) as Promise<T>;
 }
