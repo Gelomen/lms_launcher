@@ -39,6 +39,8 @@ describe('i18n dict', () => {
     expect(dict.zh['app.update.pill.downloading']).toBe('下载中 {pct}%');
     expect(dict.zh['app.update.tip.available']).toBe('发现新版本 v{version}，点击查看并安装');
     expect(dict.zh['app.update.tip.downloading']).toBe('下载中 {pct}%，点击查看进度');
+    expect(dict.zh['app.update.pill.ready']).toBe('重启以更新');
+    expect(dict.zh['app.update.tip.ready']).toBe('新版本 v{version} 已下载，点击查看并重启更新');
     expect(dict.zh['app.exit.title']).toBe('退出程序');
     expect(dict.zh['app.exit.message']).toBe('将停止 llama-server 并退出，是否确认？');
   });
@@ -50,6 +52,8 @@ describe('i18n dict', () => {
     expect(dict.en['app.update.pill.downloading']).toBe('{pct}%');
     expect(dict.en['app.update.tip.available']).toBe('Version {version} available, click to view and install');
     expect(dict.en['app.update.tip.downloading']).toBe('Downloading {pct}%, click to view progress');
+    expect(dict.en['app.update.pill.ready']).toBe('Restart to update');
+    expect(dict.en['app.update.tip.ready']).toBe('Version {version} downloaded, click to view and restart');
     expect(dict.en['app.exit.title']).toBe('Exit');
     expect(dict.en['app.exit.message']).toBe('llama-server will be stopped. Continue?');
   });

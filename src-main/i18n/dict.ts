@@ -29,6 +29,8 @@ export const dict = {
     'app.update.pill.downloading': '下载中 {pct}%',
     'app.update.tip.available': '发现新版本 v{version}，点击查看并安装',
     'app.update.tip.downloading': '下载中 {pct}%，点击查看进度',
+    'app.update.pill.ready': '重启以更新',
+    'app.update.tip.ready': '新版本 v{version} 已下载，点击查看并重启更新',
     'app.exit.title': '退出程序',
     'app.exit.message': '将停止 llama-server 并退出，是否确认？',
     // 目录卡片（S2 2026-09-23-i18n-dir-card）：值与 DirModule.vue 现状中文串逐字一致
@@ -305,6 +307,8 @@ export const dict = {
     'app.update.pill.downloading': '{pct}%',
     'app.update.tip.available': 'Version {version} available, click to view and install',
     'app.update.tip.downloading': 'Downloading {pct}%, click to view progress',
+    'app.update.pill.ready': 'Restart to update',
+    'app.update.tip.ready': 'Version {version} downloaded, click to view and restart',
     'app.exit.title': 'Exit',
     'app.exit.message': 'llama-server will be stopped. Continue?',
     // 目录卡片（S2 2026-09-23-i18n-dir-card）
