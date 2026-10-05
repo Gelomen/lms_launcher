@@ -157,15 +157,34 @@ function lmsMiddle(): HTMLElement | null {
     w.unmount();
   });
 
-  // ---- 用例 6：error（中段红字错误原因）----
-  it('error: 按钮「重试」; 中段显示错误原因文本', () => {
-    const w = mountModal({ items: [makeItem({ phase: 'error', errorRaw: '网络不可达' })] });
+  // ---- 用例 6：error（2026-10-05 起：错误提示移到本行下方整行红字，中段只显示版本号）----
+  it('error: 按钮「重试」; 错误原因在本行下方整行（中段回落显示本地版本号）', () => {
+    const w = mountModal({ items: [makeItem({ phase: 'error', errorRaw: '网络不可达', localVersion: '0.3.2' })] });
     const btn = actionBtns()[0];
     expect(btn.textContent?.trim()).toBe('重试');
     expect(btn.disabled).toBe(false);
-    const err = document.querySelector('.update-row__error');
+    const err = document.querySelector('.update-row__error') as HTMLElement | null;
     expect(err).not.toBeNull();
     expect(err?.textContent?.trim()).toBe('网络不可达');
+    // 位置：本行下方整行（与 llama.cpp 的 .llama-below 同款 class）
+    expect(err?.classList.contains('update-row__below')).toBe(true);
+    // 中段不再被错误占用 → 回落显示当前本地版本号
+    expect(document.querySelector('.update-row__middle')?.textContent?.trim()).toBe('0.3.2');
+    w.unmount();
+  });
+
+  it('error + 有新版本号：中段保留新版号（错误不挤走版本号）', () => {
+    const w = mountModal({ items: [makeItem({ phase: 'error', version: '9.9.9', errorKey: 'update.err.app.downloadUnknown', localVersion: '0.3.2' })] });
+    expect(document.querySelector('.update-row__middle')?.textContent?.trim()).toBe('9.9.9');
+    expect(document.querySelector('.update-row__error')?.textContent?.trim()).toBe('更新下载时发生未知错误，请稍后重试。');
+    w.unmount();
+  });
+
+  it('ready + 错误（run_update 失败）：中段仍是新版号，错误在下行整行', () => {
+    const w = mountModal({ items: [makeItem({ phase: 'ready', version: '9.9.9', errorRaw: '更新文件缺失（lms-launcher-update.zip）' })] });
+    expect(document.querySelector('.update-row__middle')?.textContent?.trim()).toBe('9.9.9');
+    expect(document.querySelector('.update-row__error')?.textContent?.trim()).toBe('更新文件缺失（lms-launcher-update.zip）');
+    expect(actionBtns()[0].textContent?.trim()).toBe('重启应用');
     w.unmount();
   });
 

@@ -405,22 +405,21 @@ function btnDisabled(item: Item): boolean {
   return b ? b.disabled : true;
 }
 
-// 中段渲染（12px）：available/downloading/ready → 新版号（--muted）；up-to-date → 灰字「已是最新版本 vX.Y.Z」；error → 红字错误原因
-// ready 带 errorText（run_update 失败）→ 红字错误优先展示；否则显示新版号
-// downloading 期间版本号为已知信息（来自 update-available），恒显示不隐藏
+// 中段渲染（12px）：available/downloading/ready → 新版号（--muted）；up-to-date → 灰字「已是最新版本 vX.Y.Z」
 // 2026-09-18：idle/checking → 'local'（灰字当前本地版本号，打开弹窗即见，与 llama.cpp
 // 行 unknown 态同款灰字）；localVersion 缺失时返回 ''（中段不渲染，保持旧行为兜底）
+// 2026-10-05 用户反馈：错误提示不再占中段（版本号位置）→ 中段恒为「版本号」语义：
+//   error 相位：有新版本号显示新版号，否则回落显示当前本地版本号（都不为空）；错误走下行 .update-row__below
 function middleKind(item: Item): string {
   switch (item.phase) {
     case 'ready':
-      return item.errorKey || item.errorRaw ? 'error' : 'version';
     case 'available':
     case 'downloading':
       return 'version';
     case 'up-to-date':
       return 'latest';
     case 'error':
-      return 'error';
+      return item.version ? 'version' : (item.localVersion ? 'local' : '');
     case 'idle':
     case 'checking':
       return item.localVersion ? 'local' : '';
@@ -437,11 +436,19 @@ function middleText(item: Item): string {
       return `${t('update.middle.latest')} ${item.version ?? ''}`;
     case 'local':
       return item.localVersion ?? '';
-    case 'error':
-      return errTextOf(item, 'update.err.check');
     default:
       return '';
   }
+}
+
+// 行下方错误整行（2026-10-05）：错误提示从「中段（版本号位置）」移到本行下方整行红字（同 llama.cpp 的 .llama-below）。
+// 渲染条件：error 相位，或带错误字段（ready + run_update 失败）——保证下方始终有可读原因；
+// 无具体原因时 errTextOf 回落通用文案（t('update.err.check')）。
+function rowHasError(item: Item): boolean {
+  return item.phase === 'error' || Boolean(item.errorKey || item.errorRaw);
+}
+function rowErrText(item: Item): string {
+  return errTextOf(item, 'update.err.check');
 }
 
 function onAction(index: number, item: Item): void {
@@ -617,11 +624,7 @@ function llamaBelow(): { kind: string; text: string } | null {
             <span
               v-if="middleKind(item) !== ''"
               class="update-row__middle"
-              :class="
-                middleKind(item) === 'version' ? 'update-row__version'
-                : middleKind(item) === 'latest' || middleKind(item) === 'local' ? 'update-row__latest'
-                : 'update-row__error'
-              "
+              :class="middleKind(item) === 'version' ? 'update-row__version' : 'update-row__latest'"
             >{{ middleText(item) }}</span>
             <div class="update-row__action">
               <!-- downloading：按钮本身即进度条——左侧紫填充宽 = pct%，文字白/灰双色渐变与填充边界对齐；文字与百分比不变 -->
@@ -636,6 +639,9 @@ function llamaBelow(): { kind: string; text: string } | null {
                 <span class="update-row__label" :style="textGradientStyle(item)">{{ btnLabel(item) }}</span>
               </button>
             </div>
+            <!-- 错误提示整行（2026-10-05 用户反馈）：与 llama.cpp 的 .llama-below 同款——本行下方独占整行、
+                 可换行、红字；中段因此恢复「版本号」语义（错误不再挤占版本号位置） -->
+            <div v-if="rowHasError(item)" class="update-row__below update-row__error">{{ rowErrText(item) }}</div>
           </div>
 
           <!-- Task 7: llama.cpp 更新区域（2026-09 需求：llama.cpp 行恒显示，打开弹窗即见，
@@ -755,11 +761,13 @@ function llamaBelow(): { kind: string; text: string } | null {
   gap: 8px;
 }
 
-/* 每行单行三段 flex：项目名（左） | 中段（中，12px） | 动作按钮（右） */
+/* 每行单行三段 flex：项目名（左） | 中段（中，12px） | 动作按钮（右）
+   2026-10-05：加 flex-wrap —— 行下方错误整行（.update-row__below，width:100%）据此换行到名称行下方 */
 .update-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 /* 2026-09-16 布局修复（截图 bug）：两行中段提示文字（「已是最新版本 …」）未与弹窗居中对齐。
    根因：名称列自然宽（「LMS 启动器」~78px /「llama.cpp」~63px）与按钮列（七态恒 99.03px）不对称——
@@ -784,6 +792,7 @@ function llamaBelow(): { kind: string; text: string } | null {
 }
 .update-row__version { color: var(--muted); }
 .update-row__latest { color: var(--muted); }
+/* 行下方错误整行（2026-10-05：LMS 启动器行的错误从「中段」移到本行下方整行）的文字颜色 */
 .update-row__error { color: var(--danger); }
 .update-row__action {
   flex: none;
@@ -866,9 +875,10 @@ function llamaBelow(): { kind: string; text: string } | null {
   font-size: var(--fs-label);
   color: var(--primary);
 }
-/* 名称行下方提示行（2026-09 优化）：.llama-section 为 flex-wrap:wrap 布局，
-   width:100% 使其独占换行到名称行下方；长提示（如「请先在主界面选择 llama.cpp 安装目录」）
-   允许换行完整显示，不再受名称行剩余宽度截断 */
+/* 名称行下方提示行（2026-09 优化；2026-10-05 起与 LMS 启动器行的 .update-row__below 共用本规则）：
+   所在行 flex-wrap:wrap + width:100% 使其独占换行到名称行下方；长提示（如「请先在主界面选择
+   llama.cpp 安装目录」）允许换行完整显示，不再受名称行剩余宽度截断 */
+.update-row__below,
 .llama-below {
   width: 100%;
   font-size: var(--fs-label);
