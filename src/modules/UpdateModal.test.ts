@@ -173,6 +173,17 @@ function lmsMiddle(): HTMLElement | null {
     w.unmount();
   });
 
+  // 2026-10-05 回归（用户反馈：红字变灰）：行下方错误颜色规则必须排在 .update-row__below 共用布局规则
+  // **之后**——两者同为单类选择器，源码顺序决定胜负；否则共用规则的 color: var(--muted) 把红字打成灰色。
+  // （happy-dom 不注入 SFC <style>，故按仓库既有做法直接读源码断言顺序，同「七态按钮同尺寸」用例）
+  it('CSS 顺序：行下方错误色在共用布局规则之后（红字不被灰色覆盖）', () => {
+    const src = readFileSync(resolve(__dirname, 'UpdateModal.vue'), 'utf-8');
+    const sharedIdx = src.search(/\.update-row__below,\s*\n\.llama-below\s*\{/);
+    const dangerIdx = src.search(/\.update-row__below\.update-row__error\s*\{/);
+    expect(sharedIdx).toBeGreaterThan(-1);
+    expect(dangerIdx).toBeGreaterThan(sharedIdx);
+  });
+
   it('error + 有新版本号：中段保留新版号（错误不挤走版本号）', () => {
     const w = mountModal({ items: [makeItem({ phase: 'error', version: '9.9.9', errorKey: 'update.err.app.downloadUnknown', localVersion: '0.3.2' })] });
     expect(document.querySelector('.update-row__middle')?.textContent?.trim()).toBe('9.9.9');

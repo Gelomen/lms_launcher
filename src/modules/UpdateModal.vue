@@ -792,8 +792,6 @@ function llamaBelow(): { kind: string; text: string } | null {
 }
 .update-row__version { color: var(--muted); }
 .update-row__latest { color: var(--muted); }
-/* 行下方错误整行（2026-10-05：LMS 启动器行的错误从「中段」移到本行下方整行）的文字颜色 */
-.update-row__error { color: var(--danger); }
 .update-row__action {
   flex: none;
   margin-left: auto; /* 动作按钮恒贴行右缘：中段不渲染（idle/checking）时不留白、不跳变 */
@@ -888,6 +886,11 @@ function llamaBelow(): { kind: string; text: string } | null {
   color: var(--muted);
 }
 .llama-below--error { color: var(--danger); }
+/* 行下方错误整行文字颜色（2026-10-05：LMS 启动器行的错误从「中段」移到本行下方整行）。
+   必须排在 .update-row__below 共用布局规则**之后**：两者同为单类选择器时源码顺序决定胜负，
+   否则共用规则的 color: var(--muted) 会把红字打成灰色（2026-10-05 用户反馈的实际 bug）。
+   此处再加双类复合选择器提高特异性，避免今后调整声明顺序时再次静默失效。 */
+.update-row__below.update-row__error { color: var(--danger); }
 .llama-section .update-row__middle {
   overflow: hidden;
   text-overflow: ellipsis;
