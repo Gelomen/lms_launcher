@@ -1,10 +1,10 @@
 # LMS 启动器：下载完成后顶栏按钮保持显示「重启以更新」 设计与实现规格
 
 **日期：** 2026-10-05
-**分支：** `master`（工作树干净，HEAD = `b7ca398`；版本 `0.3.2`）
-**性质：** 单点 UI 修复级规格（有界改动：1 处模板分支 + 2 个 i18n 词条 + 2 条新测试 + 1 行守护用例回归修复；无跨进程契约、无新状态机、无新依赖）
+**分支：** `master`（版本 `0.3.2`；本规格创建于 `b7ca398`）
+**性质：** 单点 UI 修复级规格（有界改动：1 处模板分支 + 2 个 i18n 词条 + 2 条新测试；无跨进程契约、无新状态机、无新依赖）
 **实现计划：** `../plans/2026-10-05-update-pill-ready.md`
-**状态：** 定稿（grill-me 8 问，2026-10-05），待实现
+**状态：** 定稿（grill-me 8 问，2026-10-05），待实现。原「既有守护用例红灯」一项已由 2026-10-05 分叉会话以「真归零」方案解决（见 §8），本规格实现范围内不再包含该文件。
 
 ---
 
@@ -61,7 +61,7 @@ winbar 的 pill 是**模板 v-if 链**，只有两个分支；下载完成会把
 | N3 | **不新增 CSS** | pill 在 `ready` 态复用 `.update-pill`（实心紫）；不引入绿色/成功态新样式。 |
 | N4 | **不改状态机、不改主进程** | `UpdatePhase`、`runCheck/runDownload/onUpdateAction/onExitConfirmed`、`src-main/**` 全部零改动（i18n 词典除外）。 |
 | N5 | **`run_update` 失败时 pill 不降级** | 失败后相位仍是 `ready`（仅多出 `errorText`），pill 继续显示「重启以更新」；原因在弹窗红字 + 日志里看。 |
-| N6 | 不做 S10 收尾 | 不把 `src-main/main.ts` 剩余 2 处硬编码中文接入 `t()`（见 §8）。 |
+| N6 | **S10 收尾不在本规格范围（已完成）** | `src-main/main.ts` 剩余 2 处硬编码中文 + 守护用例 `PENDING` 归零，已由 2026-10-05 分叉会话单独完成（见 §8）；本规格的实现会话对 `main.ts` 与 `no-hardcoded.test.ts` **零改动**。 |
 
 ---
 
@@ -73,9 +73,10 @@ winbar 的 pill 是**模板 v-if 链**，只有两个分支；下载完成会把
 | `src-main/i18n/dict.ts` | 修改 `zh:28-31` / `en:304-307` 相邻处各新增 2 个 key | 词条真源 |
 | `src/App.test.ts` | 新增 2 条用例（update describe 内，`updateBtns()` 助手之后） | 回归守护 |
 | `src-main/i18n/dict.test.ts` | 在既有 S1 zh/en 两条用例内各追加 2 条断言 | 文案逐字锁定 |
-| `src-main/i18n/no-hardcoded.test.ts` | 修复 `6a1d692` 引入的回归（恢复 `!PENDING.has()` 跳过 + 文件末尾换行） | 基线转绿（见 §8） |
 
-**零改动：** `src/modules/UpdateModal.vue`、`src/main.ts`、`src/ipc.ts`、`src-main/main.ts`（及其他 `src-main/**`）、`src/style.css`、`package.json`、`scripts/**`。
+**零改动：** `src/modules/UpdateModal.vue`、`src/main.ts`、`src/ipc.ts`、`src-main/main.ts`（及其他 `src-main/**`）、`src-main/i18n/no-hardcoded.test.ts`、`src/style.css`、`package.json`、`scripts/**`。
+
+> 分叉会话（2026-10-05）已在 `dict.test.ts` 内额外新增 1 条用例（锁定 `main.ts` 调用点依赖的两条 llama 词条），并在 `main.ts` / `no-hardcoded.test.ts` 完成 S10 收尾——这三处**不属于本规格**，见 §8。
 
 ---
 
@@ -146,17 +147,29 @@ winbar 的 pill 是**模板 v-if 链**，只有两个分支；下载完成会把
 
 ---
 
-## 8. 契约四：既有守护用例回归的最小修复
+## 8. 契约四（已由分叉会话完成）：main.ts 剩余 2 处中文 + 守护用例归零
 
-**背景（实现前实测，非本次需求引入）：** HEAD 上 `npm test` 为 **583 通过 / 1 失败（共 584）**，失败点是 `src-main/i18n/no-hardcoded.test.ts:143`「待清理清单之外的文件,字符串字面量不含汉字」，报 `src-main/main.ts` 含汉字「文」。
+**背景（本规格定稿时实测，非 pill 需求引入）：** HEAD（`b7ca398`）上 `npm test` 为 **583 通过 / 1 失败（共 584）**，失败点是 `src-main/i18n/no-hardcoded.test.ts`「待清理清单之外的文件,字符串字面量不含汉字」，报 `src-main/main.ts` 含汉字「文」。
 
-**成因：** 提交 `6a1d692`（S11）重写该用例时，把原来的
-`targets().filter((f) => !EXCLUDE.has(f) && !PENDING.has(f))`
-改成了只跳过 `EXCLUDE`，**漏掉 `PENDING` 跳过** —— 于是仍列在 `PENDING` 的 `src-main/main.ts` 也被硬断言。同时该次改动把文件末尾换行删掉了（`\ No newline at end of file`）。
+**双层成因：**
 
-**本规格的处置（用户裁定：最小修复）：** 恢复 `!PENDING.has(rel)` 跳过与文件末尾换行，使守护用例回到 S11 之前的语义（用例名本就写明「待清理清单**之外**的文件」）。**不**清零 `PENDING`、**不**改 `src-main/main.ts`（其剩余 2 处中文属 S10 收尾，见 §3 N6）。
+1. **真实缺口（S10 遗漏）**：`src-main/main.ts` 仍有 2 处硬编码中文，而词典里对应的**双语 key 早已按 S10 契约备好却从未被调用**（死 key）：
+   - `main.ts:884` 的占用错误文案 → 应为 `t('err.llama.busy', { names })`（key：`dict.ts:234` zh / `dict.ts:509` en）；
+   - `main.ts:903` 的旧 CUDA DLL 清理日志 → 应为 `t('log.llama.dll.cleaned', { list })`（key：`dict.ts:212` zh / `dict.ts:487` en）。
+2. **守护用例回归**：提交 `6a1d692`（S11）重写该用例时丢掉了 `!PENDING.has(f)` 跳过（并删掉文件末尾换行）——仍列在 `PENDING` 的 `main.ts` 从「已知未清理」变成硬断言红灯。另核实：S10 完成提交 `c6d5232` 里 `PENDING` **仍含** `main.ts`，即 S10 分片文档「PENDING 归零」的声明与代码不符。
 
-修复后：`src-main/main.ts` 仍在 `PENDING`，第二条用例「PENDING 中的文件确实仍含汉字」继续为其背书；`PENDING` 归零仍留给 S10 收尾。
+**处置（2026-10-05 分叉会话，用户裁定「现在就修」）：**
+
+| 项 | 决定 |
+|---|---|
+| 两处调用点 | 接入**已有** key（`err.llama.busy` / `log.llama.dll.cleaned`）——零新增词条、零死 key |
+| 列表分隔符 | 保持 `join(', ')` → 中文日志与改造前逐字一致（zh 零回归）；不改用 `common.listSep` |
+| `PENDING` 机制 | **删除**（集合 + 第二条用例 + 相关注释），第一个断言改为对全部目标**无条件硬断言** |
+| 新增测试 | `dict.test.ts` 增 1 条用例，锁定这两条 key 的 zh/en 值 |
+
+**验证证据（分叉会话实测）：** `no-hardcoded.test.ts` **2 passed**；`dict.test.ts` **9 passed**；`npm test` = **35 文件 / 584 用例全绿**（原 583 通过 + 1 失败；净 0：−1 条 PENDING 用例 + 1 条词典锁定用例）；`npx tsc -p tsconfig.main.json` exit 0；`npm run build` 通过。
+
+**对本规格实现会话的约束：** `src-main/main.ts` 与 `src-main/i18n/no-hardcoded.test.ts` 已收尾，**勿再改动**；本规格实现只碰 §4 表内 4 个文件。
 
 ---
 
@@ -165,9 +178,9 @@ winbar 的 pill 是**模板 v-if 链**，只有两个分支；下载完成会把
 | # | 检查 | 命令／方式 | 期望 |
 |---|---|---|---|
 | A1 | 新增回归用例先红后绿 | `npx vitest run src/App.test.ts` | 加模板分支前：2 条新用例 FAIL（pill 不存在）；加分支后 PASS |
-| A2 | 词条逐字锁定 | `npx vitest run src-main/i18n/dict.test.ts` | 8 用例全绿（含新增 4 条断言） |
-| A3 | 守护用例转绿 | `npx vitest run src-main/i18n/no-hardcoded.test.ts` | 3 用例全绿（此前 1 红） |
-| A4 | 全量零回归 | `npm test` | **35 文件 / 586 用例全绿**（基线 584：583 通过 + 1 失败；本次新增 2 条 App 用例） |
+| A2 | 词条逐字锁定 | `npx vitest run src-main/i18n/dict.test.ts` | 9 用例全绿（含新增 4 条断言） |
+| A3 | 守护用例全绿（回归确认） | `npx vitest run src-main/i18n/no-hardcoded.test.ts` | 2 用例全绿（`PENDING` 机制已由分叉会话删除，见 §8） |
+| A4 | 全量零回归 | `npm test` | **35 文件 / 586 用例全绿**（分叉会话后基线为 584 全绿；本次新增 2 条 App 用例） |
 | A5 | 构建通过 | `npm run build`（`vite build` + `tsc -p tsconfig.main.json`） | 零错误、零 TS 报错 |
 | A6 | 人工真机 | 打包版 + 真实新版本发布 | 下载完成后 pill 保持显示「重启以更新」；点击打开弹窗且按钮为「重启应用」；点「重启应用」→ 共用退出确认 → 更新流程与现状一致 |
 
@@ -183,7 +196,7 @@ winbar 的 pill 是**模板 v-if 链**，只有两个分支；下载完成会把
 | R2 | 用户误以为「重启以更新」会直接重启应用 | 预期不符 | 与 available/downloading 两态交互完全一致（点击只开弹窗），弹窗内再点「重启应用」才走确认 → 无破坏性动作 |
 | R3 | 英文 pill 文案过长挤压 winbar 品牌区 | 布局 | `Restart to update` 与既有 `New version!` 同量级；`.update-pill` 已有 `white-space: nowrap`，winbar 控件在右侧独立块，不换行 |
 | R4 | 新增 key 漏加 en → 词典对称用例红 | 构建 | `dict.test.ts`「zh 与 en 的 key 集合完全一致」直接拦截 |
-| R5 | 恢复 `PENDING` 跳过被误解为「放过硬编码中文」 | 误读 diff | 用例名与 S11 之前实现即为该语义；`PENDING` 非空由第二条用例守护，`PENDING` 清零留给 S10 收尾（§8） |
+| R5 | 守护用例被误读为「仍留白名单后门」 | 误读 diff | `PENDING` 机制已由分叉会话删除（§8），第一个断言对全部目标无条件硬断言 |
 | R6 | 跨重启场景下用户重新打开应用看不到「重启以更新」 | 需重新下载/检查 | 明确列为非目标 N1（用户已裁定）；本规格不引入「启动检测已下载包」的 IPC，避免残留 zip 误报 |
 
 ---
@@ -199,10 +212,11 @@ winbar 的 pill 是**模板 v-if 链**，只有两个分支；下载完成会把
 | Q5 | `run_update` 失败时 pill | **保持「重启以更新」**（不引入红色/失败态第三分支） |
 | Q6 | 交付方式 | **先写 spec + plan**，后续另起会话实现 |
 | Q7 | 设计是否定稿 | 定稿，写文档 |
-| Q8 | 既有守护用例红灯（`6a1d692` 回归） | **最小修复**：恢复 `!PENDING.has(rel)` 跳过（不清零 PENDING、不动 `src-main/main.ts`） |
+| Q8 | 既有守护用例红灯（`6a1d692` 回归） | 初稿裁定「最小修复（恢复 `!PENDING.has` 跳过）」；**2026-10-05 分叉会话已取代为「真归零」**：接入已有 key + 删除 `PENDING` 机制（见 §8） |
 
 ---
 
 ## 12. 变更记录
 
 - 2026-10-05：创建。grill-me 8 问定稿（保持范围=本次会话 / 实心紫 / 带版本号 tooltip / 独立 key / 失败不降级 / 先写文档 / 定稿 / 守护用例最小修复）；实测基线 584 用例 1 红并定位到 `6a1d692`。
+- 2026-10-05（分叉会话）：Q8 的「最小修复」被取代为「真归零」——`main.ts` 2 处接入已有 key、删除 `PENDING` 机制、补 1 条词典值锁定用例；`npm test` 584 全绿。§3 N6 / §4 / §8 / §9 / §10 / §11 同步修订。

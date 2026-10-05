@@ -9,7 +9,7 @@
 
 **技术栈：** Vue 3 `<script setup>` + vitest + happy-dom + `@vue/test-utils`；i18n 词典真源在 `src-main/i18n/dict.ts`（渲染端经 `src/i18n.ts` 的响应式 `t()` 读取）。
 
-**基线事实（实现前实测）：** `master` 工作树干净，HEAD `b7ca398`；`npm test` = 35 文件 / **584 用例，583 通过 + 1 失败**（失败点为 `src-main/i18n/no-hardcoded.test.ts`，成因见任务 1）。完成后期望 **586 用例全绿**。
+**基线事实（截至 2026-10-05 分叉会话 S10 收尾后实测）：** `master`；`npm test` = 35 文件 / **584 用例全绿**。分叉会话把 `src-main/main.ts` 最后 2 处中文接入词典并删除守护用例的 `PENDING` 机制（−1 条 PENDING 用例、+1 条词典值锁定用例，净 0），见 `../changes/2026-10-05-s10-main-cjk-cleanup.md`。本计划完成后期望 **586 用例全绿**。
 
 ---
 
@@ -17,81 +17,16 @@
 
 | 文件 | 责任 | 任务 |
 |---|---|---|
-| `src-main/i18n/no-hardcoded.test.ts` | 恢复 `!PENDING.has(rel)` 跳过 + 文件末尾换行（修复 `6a1d692` 回归） | 任务 1（独立，可与 2/3 并行） |
-| `src-main/i18n/dict.test.ts` | S1 zh/en 两条用例各追加 2 条逐字断言 | 任务 2 |
-| `src-main/i18n/dict.ts` | zh/en 各新增 `app.update.pill.ready` / `app.update.tip.ready` | 任务 2 |
-| `src/App.test.ts` | update describe 内新增 2 条用例（中文核心回归 + 英文文案） | 任务 3 |
-| `src/App.vue` | pill `v-if` 链尾部新增 `ready` 分支 | 任务 3 |
+| `src-main/i18n/dict.test.ts` | S1 zh/en 两条用例各追加 2 条逐字断言 | 任务 1 |
+| `src-main/i18n/dict.ts` | zh/en 各新增 `app.update.pill.ready` / `app.update.tip.ready` | 任务 1 |
+| `src/App.test.ts` | update describe 内新增 2 条用例（中文核心回归 + 英文文案） | 任务 2 |
+| `src/App.vue` | pill `v-if` 链尾部新增 `ready` 分支 | 任务 2 |
 
-**写作用域与依赖：** 任务 1 文件独立可并行；**任务 3 依赖任务 2**（词条缺失时 pill 会渲染成 key 字符串，用例 A 必然失败）；任务 2 与任务 3 触及不同文件，但必须串行执行（先 2 后 3）。
-
----
-
-## 任务 1：修复守护用例回归（`6a1d692`）
-
-**文件：**
-- 修改：`src-main/i18n/no-hardcoded.test.ts:143-152`（第一个 `it`）、文件末尾换行
-
-**背景：** 提交 `6a1d692` 把该用例从
-`targets().filter((f) => !EXCLUDE.has(f) && !PENDING.has(f))`
-改写成只跳过 `EXCLUDE`，导致仍列在 `PENDING` 的 `src-main/main.ts` 也被硬断言 → HEAD 上该用例红。用例名本身就是「待清理清单**之外**的文件」。
-
-- [ ] **步骤 1：恢复 PENDING 跳过**
-
-把 `src-main/i18n/no-hardcoded.test.ts` 中这段：
-
-```ts
-  it('待清理清单之外的文件,字符串字面量不含汉字', () => {
-    const failures = [];
-    for (const rel of targets()) {
-      if (EXCLUDE.has(rel)) continue;
-      const src = readFileSync(join(ROOT, rel), 'utf-8');
-      const found = literalText(src).match(HAS_HAN);
-      if (found) failures.push({ file: rel, char: found[0] });
-    }
-    expect(failures).toEqual([]);
-  });
-```
-
-改为：
-
-```ts
-  it('待清理清单之外的文件,字符串字面量不含汉字', () => {
-    const failures = [];
-    for (const rel of targets()) {
-      if (EXCLUDE.has(rel) || PENDING.has(rel)) continue; // PENDING = 待清理清单，之外的文件才硬断言
-      const src = readFileSync(join(ROOT, rel), 'utf-8');
-      const found = literalText(src).match(HAS_HAN);
-      if (found) failures.push({ file: rel, char: found[0] });
-    }
-    expect(failures).toEqual([]);
-  });
-```
-
-- [ ] **步骤 2：恢复文件末尾换行**
-
-该文件当前以 `});` 结尾且**无换行符**（`6a1d692` 引入）。在文件最后一个字符 `;` 之后补一个 `\n`（保存后 git 不再显示 `\ No newline at end of file`）。
-
-- [ ] **步骤 3：运行守护用例验证转绿**
-
-运行：
-
-```bash
-npx vitest run src-main/i18n/no-hardcoded.test.ts
-```
-
-预期：**3 passed**（修复前为 2 passed / 1 failed）。
-
-- [ ] **步骤 4：Commit**
-
-```bash
-git add src-main/i18n/no-hardcoded.test.ts
-git commit -m "fix(test): restore PENDING skip in no-hardcoded guard (S11 regression)"
-```
+**写作用域与依赖：** **任务 2 依赖任务 1**（词条缺失时 pill 会渲染成 key 字符串，用例 A 必然失败）；两任务触及不同文件，但必须串行执行（先 1 后 2）。`src-main/i18n/no-hardcoded.test.ts` 与 `src-main/main.ts` 已由分叉会话收尾，**本计划零改动**（见 spec §8）。
 
 ---
 
-## 任务 2：i18n 词条（先断言，后词条）
+## 任务 1：i18n 词条（先断言，后词条）
 
 **文件：**
 - 测试：`src-main/i18n/dict.test.ts:34-54`（两条 S1 用例）
@@ -123,7 +58,7 @@ git commit -m "fix(test): restore PENDING skip in no-hardcoded guard (S11 regres
 npx vitest run src-main/i18n/dict.test.ts
 ```
 
-预期：**FAIL**，两条 S1 用例报 `expected undefined to be '重启以更新'` / `expected undefined to be 'Restart to update'`（其余 6 条用例仍通过）。
+预期：**FAIL**，两条 S1 用例报 `expected undefined to be '重启以更新'` / `expected undefined to be 'Restart to update'`（其余 7 条用例仍通过）。
 
 - [ ] **步骤 4：zh 词条落地**
 
@@ -151,7 +86,7 @@ npx vitest run src-main/i18n/dict.test.ts
 npx vitest run src-main/i18n/dict.test.ts
 ```
 
-预期：**8 passed**（含「zh 与 en 的 key 集合完全一致」——新 key 双语对称）。
+预期：**9 passed**（含「zh 与 en 的 key 集合完全一致」——新 key 双语对称；含分叉会话新增的 1 条 llama 词条锁定用例）。
 
 - [ ] **步骤 7：Commit**
 
@@ -162,7 +97,7 @@ git commit -m "feat(i18n): add app.update.pill.ready / app.update.tip.ready"
 
 ---
 
-## 任务 3：App.vue 补 ready 分支（先用例，后实现）
+## 任务 2：App.vue 补 ready 分支（先用例，后实现）
 
 **文件：**
 - 测试：`src/App.test.ts`（`describe('App update modal (入口统一 + 共用退出确认 + 七态流转)')` 内，`updateBtns()` 助手函数之后）
@@ -279,7 +214,7 @@ git commit -m 'fix(App): keep update pill visible after download (重启以更�
 
 ---
 
-## 任务 4：收口验证
+## 任务 3：收口验证
 
 - [ ] **步骤 1：定向三文件**
 
@@ -287,7 +222,7 @@ git commit -m 'fix(App): keep update pill visible after download (重启以更�
 npx vitest run src/App.test.ts src-main/i18n/dict.test.ts src-main/i18n/no-hardcoded.test.ts
 ```
 
-预期：全绿（3 文件；`no-hardcoded` 为 3 passed）。
+预期：全绿（3 文件；`no-hardcoded` 为 **2 passed**——`PENDING` 机制已由分叉会话删除）。
 
 - [ ] **步骤 2：全量测试**
 
@@ -295,7 +230,7 @@ npx vitest run src/App.test.ts src-main/i18n/dict.test.ts src-main/i18n/no-hardc
 npm test
 ```
 
-预期：**35 文件 / 586 用例全绿**（基线 584 = 583 通过 + 1 失败；新增 2 条 App 用例；`dict.test.ts` 只加断言不加用例）。
+预期：**35 文件 / 586 用例全绿**（分叉会话后基线 584 全绿；本次新增 2 条 App 用例；`dict.test.ts` 只加断言不加用例）。
 
 - [ ] **步骤 3：构建**
 
@@ -307,7 +242,7 @@ npm run build
 
 - [ ] **步骤 4：交付说明**
 
-向用户报告：改动 5 个文件（`src/App.vue`、`src-main/i18n/dict.ts`、`src/App.test.ts`、`src-main/i18n/dict.test.ts`、`src-main/i18n/no-hardcoded.test.ts`）、测试与构建结果，并说明 **人工真机验收需打包版 + 远端更高版本**（dev 模式 `check_update` 直接返回 `status:'dev'`，走不通该流程，spec §9 A6）。
+向用户报告：改动 **4 个文件**（`src/App.vue`、`src-main/i18n/dict.ts`、`src/App.test.ts`、`src-main/i18n/dict.test.ts`）、测试与构建结果，并说明 **人工真机验收需打包版 + 远端更高版本**（dev 模式 `check_update` 直接返回 `status:'dev'`，走不通该流程，spec §9 A6）。
 
 ---
 
@@ -319,5 +254,5 @@ npm run build
 - [ ] zh/en 各新增 2 个 key，值为 spec §6 定稿文案，key 名一致
 - [ ] `update.btn.restart`（「重启应用」/ `"Restart"`）零改动
 - [ ] 未改 `src/modules/UpdateModal.vue`、`src/style.css`、`src-main/main.ts`、状态机与 IPC
-- [ ] `no-hardcoded.test.ts` 仅恢复 `PENDING.has` 跳过 + 末尾换行，未改 `PENDING` 内容
+- [ ] 未改 `src-main/i18n/no-hardcoded.test.ts`（S10 收尾已由分叉会话完成，spec §8）
 - [ ] 全量 `npm test` 586 用例全绿；`npm run build` 零错误
