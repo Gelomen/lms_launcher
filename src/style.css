@@ -76,7 +76,7 @@ body {
   display: grid;
   /* 三卡片绝对固定宽度 = 默认列宽 × 2/3（左 424→280、右 520→350）；GPU 卡（2026-09 挪位）= 模板右侧独立列，
      沿用原左列 280px 定稿宽度；靠左排布，右侧留白 */
-  grid-template-columns: 280px 350px 300px; /* GPU 卡 280→300（2026-07 用户微调 +20px） */
+  grid-template-columns: 280px 350px 330px; /* GPU 卡 300→330（2026-10-05 用户微调 +30px） */
   gap: var(--card-gap);
 }
 /* 左/右列堆叠容器：卡片间保持 --card-gap 间距 */
@@ -553,7 +553,7 @@ body {
    四格整体在卡片内水平垂直居中（margin:auto） */
 .gpu-title-row { flex: 0 0 auto; margin-bottom: 4px; }
 .gpu-chart {
-  width: calc(100% - 20px);
+  width: calc(100% - 40px);
   margin: 0 auto;
   height: 65px;
   margin-bottom: 8px;
