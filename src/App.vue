@@ -340,6 +340,13 @@ function onExitClose(): void {
           class="update-pill update-pill--busy tip-down"
           :data-tooltip="t('app.update.tip.downloading', { pct: updateState.pct })"
           @click="updateOpen = true">{{ t('app.update.pill.downloading', { pct: updateState.pct }) }}</button>
+        <!-- 2026-10-05：下载完成（ready）→ 按钮保持显示 -->
+        <button
+          v-else-if="updateState.phase === 'ready'"
+          type="button"
+          class="update-pill tip-down"
+          :data-tooltip="t('app.update.tip.ready', { version: updateState.version })"
+          @click="updateOpen = true">{{ t('app.update.pill.ready') }}</button>
       </div>
       <div class="winbar__controls">
         <!-- GitHub 键保留项目公共 tooltip（tip-down 向下定位，同 .update-pill）；三键 tooltip 已移除（2026-09-23：英文 "Close" 的 ::after 未变换盒越过窗口右缘 → 横向滚动条顶出边距），仅留 aria-label -->

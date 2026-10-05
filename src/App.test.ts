@@ -492,6 +492,56 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
     return [...document.querySelectorAll('.update-modal .btn-primary')] as HTMLButtonElement[];
   }
 
+  it('下载完成 → 顶栏 pill 不消失：文本变「重启以更新」，点击仍只开弹窗（不直接重启）', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    trayUpdateHandlers.at(-1)();
+    await flush();
+    updateBtns()[0].click();
+    await flush();
+    updateProgressHandlers.at(-1)!({ pct: 55 });
+    await flush();
+    expect(w.find('.update-pill--busy').text()).toContain('下载中 55%');
+    (document.querySelector('.update-modal .update-close') as HTMLButtonElement).click();
+    await flush();
+    ctrl.download.resolve({ ok: true });
+    await flush();
+    const pill = w.find('.update-pill');
+    expect(pill.exists()).toBe(true);
+    expect(pill.text()).toBe('重启以更新');
+    expect(pill.classes()).not.toContain('update-pill--busy');
+    expect(pill.classes()).toContain('tip-down');
+    expect(pill.attributes('data-tooltip')).toBe('新版本 v9.9.9 已下载，点击查看并重启更新');
+    expect(pill.attributes('title')).toBeUndefined();
+    await pill.trigger('click');
+    await flush();
+    expect(document.querySelector('.update-modal')).not.toBeNull();
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    expect(updateBtns()[0].textContent).toContain('重启应用');
+    w.unmount();
+  });
+
+  it('ready 态 pill 英文文案与 tooltip', async () => {
+    const { w, ctrl } = makeUpdateMount();
+    ctrl.checkScript = [AVAILABLE];
+    await flush();
+    trayUpdateHandlers.at(-1)();
+    await flush();
+    updateBtns()[0].click();
+    await flush();
+    ctrl.download.resolve({ ok: true });
+    await flush();
+    const { applyLangLocal } = await import('./i18n');
+    applyLangLocal('en');
+    await nextTick();
+    const pill = w.find('.update-pill');
+    expect(pill.text()).toBe('Restart to update');
+    expect(pill.attributes('data-tooltip')).toBe('Version 9.9.9 downloaded, click to view and restart');
+    applyLangLocal('zh');
+    w.unmount();
+  });
+
   // 2026 契约变更（2026-09-15 的「托盘开弹窗 + 自动 re-check」废止）：托盘「检查更新」/顶栏「有新版本!」
   // = 只开弹窗，零自动检查；手动「检查更新」按钮是 LMS 启动器行的唯一检查触发（与 llama.cpp 行对齐：
   // 打开时的自动动作仅是本地版本查询，不是网络检查）。启动静默检查之后发布的新版本，
