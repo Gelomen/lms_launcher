@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { dict, translate, resolveSystemLang } from './dict';
+import { IPC_ERROR_KEYS } from './err-keys';
 
 describe('i18n dict', () => {
   it('zh 与 en 的 key 集合完全一致', () => {
@@ -51,6 +52,15 @@ describe('i18n dict', () => {
     expect(dict.en['app.update.tip.downloading']).toBe('Downloading {pct}%, click to view progress');
     expect(dict.en['app.exit.title']).toBe('Exit');
     expect(dict.en['app.exit.message']).toBe('llama-server will be stopped. Continue?');
+  });
+
+  // 2026-10-05 i18n 响应性修复：IPC 错误通道改以 key 传可译错误（渲染端渲染时 t()）→
+  // 守护「这些 key 在 zh/en 词典中都存在」：漏登记/改名会让红字静默退化为通用文案，必须拦住。
+  it('IPC 错误通道使用的 key 在 zh/en 词典中都存在', () => {
+    for (const k of IPC_ERROR_KEYS) {
+      expect(dict.zh[k], k + '(zh)').toBeTypeOf('string');
+      expect(dict.en[k], k + '(en)').toBeTypeOf('string');
+    }
   });
 
   // 2026-10-05 S10 收尾：main.ts 两处调用点依赖的 llama 词条，值逐字锁定

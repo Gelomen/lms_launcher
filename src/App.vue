@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest, onTraySettingsRequest } from './ipc';
+import { invoke, errMsg, isMissing, isValidation, onLogLine, onProcessExit, onTrayExitRequest, onWinMaxChanged, onUpdateDownloadProgress, onTrayUpdateRequest, onTraySettingsRequest, type DownloadUpdateResult } from './ipc';
 import DirModule from './modules/DirModule.vue';
 import TemplateModule from './modules/TemplateModule.vue';
 import LaunchBar from './modules/LaunchBar.vue';
@@ -10,7 +10,7 @@ import { LOG_TABS, type LogTabId } from './modules/log-tabs';
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import UpdateModal from './modules/UpdateModal.vue';
 import SettingsModal from './modules/SettingsModal.vue';
-import { t } from './i18n';
+import { t, errFromIpc, errTextOf, type ErrFields } from './i18n';
 
 // frameless winbar：最小化 / 最大化(还原) / 关闭 三键（自绘，替代系统标题栏）
 import { library, config } from '@fortawesome/fontawesome-svg-core';
@@ -42,9 +42,12 @@ const version = ref(''); // 顶栏版本号（get_version IPC → app.getVersion
 type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
 const updateOpen = ref(false); // 弹窗开关；入口统一（托盘「检查更新」/ 顶栏「有新版本!」→ 只开弹窗，不 re-check）
 const settingsOpen = ref(false); // 设置弹窗（2026-10-01 update-proxy-settings）：托盘「设置」→ SettingsModal
-const updateState = ref<{ phase: UpdatePhase; version: string; pct: number; errorText: string }>({
-  phase: 'idle', version: '', pct: 0, errorText: '',
+// 2026-10-05 i18n 响应性修复：错误文案存「key(+params) / 原文」三通道，渲染时 t() 翻译（切语言即时重译）
+const updateState = ref<{ phase: UpdatePhase; version: string; pct: number } & ErrFields>({
+  phase: 'idle', version: '', pct: 0,
 });
+// 清空错误三通道（对象展开用；显式置 undefined 保持字段形状稳定）
+const NO_ERR: ErrFields = { errorKey: undefined, errorParams: undefined, errorRaw: undefined };
 // 状态行：恒单行，数据驱动便于扩展（UpdateModal items 契约）
 // llama.cpp 更新由 UpdateModal 内部管理，不再作为信号项传入
 // 2026-09-18：localVersion 随 items 下发（= 顶栏版本号，onMounted 经 get_version 取得）——
@@ -176,7 +179,7 @@ onMounted(async () => {
   try {
     const r = await invoke<UpdateCheckResult>('check_update');
     if (r.available) {
-      updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
+      updateState.value = { phase: 'available', version: r.version, pct: 0 };
       appendSys(t('log.app.update.found', { version: r.version }));
     }
   } catch { /* 检查失败不阻塞启动 */ }
@@ -210,62 +213,64 @@ function onTemplateChanged(): void {
 
 // ---------- 自动更新（规格 2026-09-01-update-modal）：七态状态机 + 弹窗 ----------
 async function runCheck(): Promise<void> {
-  updateState.value = { ...updateState.value, phase: 'checking', errorText: '' };
+  updateState.value = { ...updateState.value, phase: 'checking', ...NO_ERR };
   let r: UpdateCheckResult;
   try {
     r = await invoke<UpdateCheckResult>('check_update');
   } catch {
     lastFailure.value = 'check';
-    updateState.value = { phase: 'error', version: updateState.value.version, pct: 0, errorText: t('update.err.app.checkUnknown') };
+    updateState.value = { phase: 'error', version: updateState.value.version, pct: 0, errorKey: 'update.err.app.checkUnknown' };
     return;
   }
   if (r.available) {
     lastFailure.value = 'check'; // 非失败动作不清空也无妨，保持显式
     appendSys(t('log.app.update.found', { version: r.version }));
-    updateState.value = { phase: 'available', version: r.version, pct: 0, errorText: '' };
+    updateState.value = { phase: 'available', version: r.version, pct: 0 };
     return;
   }
   switch (r.status) {
     case 'up-to-date':
       appendSys(t('log.app.update.latest'));
-      updateState.value = { phase: 'up-to-date', version: r.version ?? '', pct: 0, errorText: '' };
+      updateState.value = { phase: 'up-to-date', version: r.version ?? '', pct: 0 };
       break;
     case 'error':
       lastFailure.value = 'check';
-      updateState.value = { phase: 'error', version: '', pct: 0, errorText: t('update.err.app.checkNetwork') };
+      updateState.value = { phase: 'error', version: '', pct: 0, errorKey: 'update.err.app.checkNetwork' };
       break;
     case 'dev':
       lastFailure.value = 'check';
-      updateState.value = { phase: 'error', version: '', pct: 0, errorText: t('update.err.app.dev') };
+      updateState.value = { phase: 'error', version: '', pct: 0, errorKey: 'update.err.app.dev' };
       break;
   }
 }
 
 async function runDownload(): Promise<void> {
-  updateState.value = { ...updateState.value, phase: 'downloading', pct: 0, errorText: '' };
+  updateState.value = { ...updateState.value, phase: 'downloading', pct: 0, ...NO_ERR };
   appendSys(t('log.app.update.downloading'));
-  let r: { ok: boolean; reason?: string };
+  let r: DownloadUpdateResult;
   try {
-    r = await invoke<{ ok: boolean; reason?: string }>('download_update');
+    r = await invoke<DownloadUpdateResult>('download_update');
   } catch {
     lastFailure.value = 'download';
-    updateState.value = { ...updateState.value, phase: 'error', errorText: t('update.err.app.downloadUnknown') };
+    updateState.value = { ...updateState.value, phase: 'error', errorKey: 'update.err.app.downloadUnknown' };
     return;
   }
   if (r.ok) {
     appendSys(t('log.app.update.complete'));
-    updateState.value = { ...updateState.value, phase: 'ready', errorText: '' };
+    updateState.value = { ...updateState.value, phase: 'ready', ...NO_ERR };
     return;
   }
   // 「尚无更新任务」= 渲染端状态机与主进程下载任务失步 → 回落 idle 并自动重新 check（重新同步）
   if (r.code === 'no-update-task') {
-    updateState.value = { phase: 'idle', version: updateState.value.version, pct: 0, errorText: '' };
+    updateState.value = { phase: 'idle', version: updateState.value.version, pct: 0 };
     void runCheck();
     return;
   }
   lastFailure.value = 'download';
-  appendSys(t('log.app.update.downloadFailed', { reason: r.reason ?? t('update.err.unknown') }));
-  updateState.value = { ...updateState.value, phase: 'error', errorText: r.reason ?? t('update.err.unknown') };
+  // 日志按事件发生时的语言落定（历史日志不随语言变）：用同一份三通道字段解析出可读原因
+  const errFields = errFromIpc(r, 'update.err.unknown');
+  appendSys(t('log.app.update.downloadFailed', { reason: errTextOf(errFields, 'update.err.unknown') }));
+  updateState.value = { ...updateState.value, phase: 'error', ...errFields };
 }
 
 // UpdateModal @action：check / download / retry / restart（restart 走共用退出确认框）
@@ -285,14 +290,15 @@ function onUpdateAction(_index: number, kind: string): void {
 
 // §D 共用退出确认 @confirm：按 exitAction 分流（'exit' → exit_app；'run_update' → run_update）。
 // finally 复位对话框（主进程 app.exit / spawn 更新脚本后窗口即销毁，此复位是防御性）。
-// run_update 失败（更新脚本/更新包缺失）→ 在 ready 态行内显示错误文案（errorText 通道），用户可重试。
+// run_update 失败（更新脚本/更新包缺失）→ 在 ready 态行内显示错误文案（errorRaw 通道：主进程经异常通道
+// 抛出的消息，非词典 key，故按原文透传——本条不随语言切换重译，属 2026-10-05 修复的已知边界）。
 function onExitConfirmed(): void {
   const action = exitAction.value;
   invoke(action === 'run_update' ? 'run_update' : 'exit_app')
     .catch((e) => {
       if (action === 'run_update') {
         appendSys(t('log.app.update.startFailed', { err: errMsg(e) }));
-        updateState.value = { ...updateState.value, phase: 'ready', errorText: errMsg(e) };
+        updateState.value = { ...updateState.value, phase: 'ready', errorRaw: errMsg(e) };
       }
     })
     .finally(() => { exitConfirm.value = false; });

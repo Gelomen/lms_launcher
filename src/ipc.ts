@@ -30,10 +30,11 @@ declare global {
   }
 }
 
-// download_update 返回类型（S10 Task 4：增加结构化 reasonCode）
+// download_update 返回类型（S10 Task 4：增加结构化 reasonCode；2026-10-05 i18n 响应性：可译错误改传 errorKey）
+// 可译错误 → errorKey(+errorParams)，由渲染端渲染时 t()（切语言即时重译）；不可译原文 → reason 透传。
 export type DownloadUpdateResult =
   | { ok: true; zipPath: string; size: number }
-  | { ok: false; reason: string; code?: 'no-update-task' };
+  | { ok: false; code?: 'no-update-task'; errorKey?: string; errorParams?: Record<string, string | number>; reason?: string };
 
 export function invoke<T = unknown>(cmd: string, ...args: unknown[]): Promise<T> {
   return window.lms.invoke(cmd, ...args) as Promise<T>;

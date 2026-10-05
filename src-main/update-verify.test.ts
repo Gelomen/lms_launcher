@@ -1,5 +1,6 @@
 import { evaluateDownloadIntegrity } from './update-verify';
 import { applyLang } from './i18n';
+import { dict, translate } from './i18n/dict';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,7 +16,7 @@ describe('update-verify.ts', () => {
       expectedSize: 100, actualSize: 100,
       expectedDigest: d, actualDigest: d,
     });
-    expect(r).toEqual({ ok: true, reason: null });
+    expect(r).toEqual({ ok: true, reasonKey: null });
   });
 
   it('size_mismatch_fails_even_before_digest', () => {
@@ -25,8 +26,8 @@ describe('update-verify.ts', () => {
       actualDigest: 'sha256:0'.repeat(32),
     });
     expect(r.ok).toBe(false);
-    expect(r.reason).toContain('50');
-    expect(r.reason).toContain('100');
+    expect(r.reasonKey).toBe('err.update.incomplete');
+    expect(r.reasonParams).toEqual({ actual: 50, expected: 100 });
   });
 
   it('digest_mismatch_fails_when_sizes_equal', () => {
@@ -36,7 +37,7 @@ describe('update-verify.ts', () => {
       actualDigest: 'sha256:' + 'b'.repeat(64),
     });
     expect(r.ok).toBe(false);
-    expect(r.reason).toContain('SHA-256');
+    expect(r.reasonKey).toBe('err.update.digestMismatch');
   });
 
   it('no_digest_and_size_ok_passes', () => {
@@ -44,7 +45,7 @@ describe('update-verify.ts', () => {
       expectedSize: 100, actualSize: 100,
       expectedDigest: null, actualDigest: null,
     });
-    expect(r).toEqual({ ok: true, reason: null });
+    expect(r).toEqual({ ok: true, reasonKey: null });
   });
 
   it('no_content_length_and_no_digest_passes', () => {
@@ -52,7 +53,7 @@ describe('update-verify.ts', () => {
       expectedSize: null, actualSize: 100,
       expectedDigest: null, actualDigest: null,
     });
-    expect(r).toEqual({ ok: true, reason: null });
+    expect(r).toEqual({ ok: true, reasonKey: null });
   });
 
   // ---------- sha256FileAsync：流式文件哈希 ----------
@@ -92,10 +93,14 @@ describe('update-verify.ts', () => {
     expect(digestMatches('not-a-digest', 'x')).toBe(false);
   });
 
-  it('en: 完整性 reason 英文', () => {
+  // 2026-10-05 i18n 响应性：主进程不再定死译文，只回 key(+params) → 翻译发生在渲染端（渲染时 t()）。
+  // 本用例等价于旧断言：key 在 en 词典下渲染出的仍是那句英文。
+  it('en: 完整性失败回 key，en 词典值为英文短句', () => {
     applyLang('en');
     const r = evaluateDownloadIntegrity({ expectedSize: 100, actualSize: 10, expectedDigest: null, actualDigest: null, path: 'x' });
-    expect(r.reason).toBe('Incomplete download: received 10 bytes / expected 100 bytes, retry');
+    expect(r.reasonKey).toBe('err.update.incomplete');
+    expect(translate(dict.en as Record<string, string>, r.reasonKey!, r.reasonParams))
+      .toBe('Incomplete download: received 10 bytes / expected 100 bytes, retry');
     applyLang('zh');
   });
 
@@ -105,7 +110,9 @@ describe('en prefix retention', () => {
   it('en: completeness reason in English', () => {
     applyLang('en');
     const r = evaluateDownloadIntegrity({ expectedSize: 100, actualSize: 10, expectedDigest: null, actualDigest: null, path: 'x' });
-    expect(r.reason).toBe('Incomplete download: received 10 bytes / expected 100 bytes, retry');
+    expect(r.reasonKey).toBe('err.update.incomplete');
+    expect(translate(dict.en as Record<string, string>, r.reasonKey!, r.reasonParams))
+      .toBe('Incomplete download: received 10 bytes / expected 100 bytes, retry');
     applyLang('zh');
   });
 });

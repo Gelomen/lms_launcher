@@ -34,3 +34,34 @@ export function t(key: string, params?: Record<string, string | number>): string
   }
   return translate(table, key, params);
 }
+
+/**
+ * 错误文案三通道（2026-10-05 i18n 响应性修复）：可译错误存 **key(+params)**、渲染时才翻译 → 切语言即时重译；
+ * 不可译原文（IO/系统消息）存 errorRaw 原样透传；两者皆无 → 回退 fallbackKey。
+ * 背景：此前把「赋值时刻翻译好的成品串」存进 ref/state（主进程经 IPC 传译串 / 渲染端赋值时 t()），
+ * 切语言只重渲染模板、不会重译已存字符串 → 红字冻结在旧语言（用户反馈的 llama.cpp 行错误提示）。
+ */
+export interface ErrFields {
+  errorKey?: string;
+  errorParams?: Record<string, string | number>;
+  errorRaw?: string;
+}
+
+/** key 是否存在于当前语言词典：渲染前校验「主进程传入的 key」，未知 key 回退通用文案而非显示调试串。 */
+export function hasKey(key: string): boolean {
+  return (dict[lang.value] as Readonly<Record<string, string>>)[key] !== undefined;
+}
+
+/** 解析错误文案（**渲染时**调用）：key → t()；未知 key → fallbackKey；errorRaw → 原文；皆无 → fallbackKey。 */
+export function errTextOf(e: ErrFields | null | undefined, fallbackKey: string): string {
+  if (e?.errorKey) return hasKey(e.errorKey) ? t(e.errorKey, e.errorParams) : t(fallbackKey);
+  if (e?.errorRaw) return e.errorRaw;
+  return t(fallbackKey);
+}
+
+/** IPC 错误结果 → 渲染端三通道字段：优先主进程给的 errorKey；否则原文 error；都没有 → fallbackKey（可译、随语言重译）。 */
+export function errFromIpc(r: ErrFields & { error?: string }, fallbackKey: string): ErrFields {
+  if (r.errorKey) return { errorKey: r.errorKey, errorParams: r.errorParams };
+  if (r.error) return { errorRaw: r.error };
+  return { errorKey: fallbackKey };
+}

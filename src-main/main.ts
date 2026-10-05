@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
 import { trayTooltipText } from './tray-tooltip';
 import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
+// 2026-10-05 i18n 响应性修复：可译错误经 IPC 传 key（渲染端渲染时翻译，切语言即时重译；见 src/i18n.ts errTextOf）
+import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK } from './i18n/err-keys';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
@@ -499,9 +501,9 @@ ipcMain.handle('check_update', async (): Promise<UpdateCheckResult> => {
 // download_update：流式下载 pendingUpdate.zipUrl → exe 目录 downloads/lms-launcher-update.zip
 // 进度经 update-download-progress 事件推渲染端；失败删半成品并报错（可重试）
 ipcMain.handle('download_update', async (): Promise<
-  { ok: true; zipPath: string; size: number } | { ok: false; reason: string; code?: 'no-update-task' }
+  { ok: true; zipPath: string; size: number } | ({ ok: false; code?: 'no-update-task' } & IpcErr)
 > => {
-  if (!pendingUpdate) return { ok: false, code: 'no-update-task', reason: t('err.update.noTask') } as const;
+  if (!pendingUpdate) return { ok: false, code: 'no-update-task', errorKey: ERR_UPDATE_NO_TASK } as const;
   const zipPath = updateZipPath(); // → downloads/lms-launcher-update.zip
   emitLog('[lms_launcher] ' + t('log.launcher.dl.start', { url: pendingUpdate.zipUrl }), 'sys');
   const ctrl = new AbortController();
@@ -538,8 +540,8 @@ ipcMain.handle('download_update', async (): Promise<
     });
     if (!integrity.ok) {
       try { unlinkSync(zipPath); } catch { /* 残留由下次下载覆盖 */ }
-      emitLog('[lms_launcher] ' + t('log.launcher.dl.reason', { reason: integrity.reason ?? t('err.update.verifyFallback') }), 'sys');
-      return { ok: false, reason: integrity.reason ?? t('err.update.verifyFallback') };
+      emitLog('[lms_launcher] ' + t('log.launcher.dl.reason', { reason: t(integrity.reasonKey ?? ERR_UPDATE_VERIFY_FALLBACK, integrity.reasonParams) }), 'sys');
+      return { ok: false, errorKey: integrity.reasonKey ?? ERR_UPDATE_VERIFY_FALLBACK, errorParams: integrity.reasonParams };
     }
     emitLog('[lms_launcher] ' + t('log.launcher.dl.done', { size: (size / 1024 / 1024).toFixed(1), digest: pendingUpdate.digest ? t('log.launcher.dl.digestOk') : '' }), 'sys');
     return { ok: true, zipPath, size };
@@ -547,7 +549,7 @@ ipcMain.handle('download_update', async (): Promise<
     try { if (existsSync(zipPath)) unlinkSync(zipPath); } catch { /* 残留半成品不阻断报错 */ }
     const msg = e instanceof Error ? e.message : String(e);
     emitLog('[lms_launcher] ' + t('log.launcher.dl.fail', { msg: msg }), 'sys');
-    return { ok: false, reason: msg };
+    return { ok: false, error: msg };
   } finally {
     clearTimeout(timer);
   }
@@ -765,7 +767,7 @@ ipcMain.handle('get_llama_release_options', async (_e): Promise<
 // 服务运行中 → 「停止并更新」；未运行 → 直接调 install_llama_update 安装。
 // 下载完成且服务未运行时，本 handler 自动执行安装+验证（等价旧行为，无需用户二次点击）。
 ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string; cuda_dlls_url?: string }): Promise<
-  { success: true; installed: boolean } | { success: false; error: string }
+  { success: true; installed: boolean } | ({ success: false } & IpcErr)
 > => {
   const [cp] = yamlPaths();
   const cfg = appConfigLoad(cp);
@@ -805,7 +807,7 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     // 2026-09-16：下载失败日志收敛为「更新失败，稍后再试」——dl.error 全文（404 友好错误等）
     // 已随 llama-complete 事件进渲染端「llama.cpp 更新失败 · …」行，此处重复且超长，简化之。
     emitLog('[lms_launcher] ' + t('log.llama.dl.fail'), 'sys');
-    return { success: false, error: dl.error };
+    return dl.errorKey ? { success: false, errorKey: dl.errorKey } : { success: false, error: dl.error };
   }
 
   emitLog('[lms_launcher] ' + t('log.llama.dl.done'), 'sys');
@@ -830,7 +832,9 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
   pendingLlamaUpdate = { zipPath: dl.zipPath, dlZipPath: dl.dlZipPath, tag: deriveTagFromDownloadUrl(opts.download_url), keepCudaMajor: cudaMajorFromDllsUrl(opts.cuda_dlls_url) };
   const inst = await installPendingLlama();
   if (inst.success) return { success: true, installed: true };
-  return { success: false, error: inst.error ?? 'unknown error' };
+  return inst.errorKey
+    ? { success: false, errorKey: inst.errorKey, errorParams: inst.errorParams }
+    : { success: false, error: inst.error ?? 'unknown error' };
 });
 
 // get_pending_llama_download：查询下载完成的 pending 包与服务运行状态（UI 决定「停止并更新」vs「检查更新」）
@@ -857,7 +861,10 @@ ipcMain.handle('get_pending_llama_download', (): {
 // 4. 运行 llama-server --version 验证（期望 tag 由下载 URL 推导）
 // busy=true 表示失败原因是文件仍被占用（而非其他错误）：UI 据此回到「停止并更新」
 // （pending 包保留，用户关闭外部进程后可再次点击）；其他错误走「重试」（完整重下）。
-async function installPendingLlama(): Promise<{ success: true } | { success: false; error: string; busy?: boolean }> {
+// IPC 错误三通道（2026-10-05）：可译错误给 errorKey(+errorParams)、不可译原文给 error
+// （渲染端 errFromIpc/errTextOf：优先 key，其次原文，都没有则回退可译的通用 key）。
+type IpcErr = { errorKey?: string; errorParams?: Record<string, string | number>; error?: string };
+async function installPendingLlama(): Promise<{ success: true } | ({ success: false; busy?: boolean } & IpcErr)> {
   if (!pendingLlamaUpdate) {
     return { success: false, error: 'no pending download' };
   }
@@ -881,7 +888,7 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
   if (locked.length > 0) {
     const names = locked.map((p) => p.split(/[\\/]/).pop()).join(', ');
     emitLog(`[lms_launcher] ` + t('log.llama.install.stillBusy', { names }), 'sys');
-    return { success: false, busy: true, error: t('err.llama.busy', { names }) };
+    return { success: false, busy: true, errorKey: ERR_LLAMA_BUSY, errorParams: { names } };
   }
   emitLog('[lms_launcher] ' + t('log.llama.install.start'), 'sys');
   const ext = extractLlamaZips(pendingLlamaUpdate, dir);
@@ -890,9 +897,9 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
     // 兜底：探测未命中但解压仍被锁（如锁定句柄在探测与解压之间出现）→ 同样视为占用
     const errText = ext.error ?? '';
     const busy = /EBUSY|EPERM|EACCES|resource busy|permission denied/i.test(errText);
-    return { success: false, busy, error: busy
-      ? t('err.llama.targetBusy')
-      : errText || 'unknown error' };
+    return busy
+      ? { success: false, busy, errorKey: ERR_LLAMA_TARGET_BUSY }
+      : { success: false, busy, error: errText || 'unknown error' };
   }
 
   // 3. 清理旧 CUDA DLL（2026-09-18：跨 CUDA 版本更新或切非 CUDA 变体后，
@@ -920,7 +927,7 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
 // install_llama_update：安装下载完成的 pending 包（「停止并更新」点击 / 外部进程退出后重试）
 // busy=true（占用类失败）→ UI 回「停止并更新」保留重入；其他错误 → 「重试」完整重下
 ipcMain.handle('install_llama_update', async (): Promise<
-  { success: true } | { success: false; error: string; busy?: boolean }
+  { success: true } | ({ success: false; busy?: boolean } & IpcErr)
 > => installPendingLlama());
 
 // set_llama_update_config：设置 llama.cpp 更新配置

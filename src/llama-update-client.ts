@@ -1,6 +1,15 @@
 // llama.cpp 更新 API（Task 6）——渲染端类型化调用入口，走 invoke 通道
 import { invoke } from './ipc';
 
+/**
+ * 2026-10-05 i18n 响应性修复：IPC 可译错误改传词典 key(+params)——渲染端**渲染时** t() 翻译，
+ * 切语言即时重译（此前传成品译文串，渲染端存下后无法重译）。不可译原文仍走各结果的 error 字段透传。
+ */
+export interface IpcErrText {
+  errorKey?: string;
+  errorParams?: Record<string, string | number>;
+}
+
 export type LlamaUpdateStatus = 'up-to-date' | 'update-available' | 'unknown';
 
 // 与主进程 LlamaVersion 契约一致（2026-09-14 修复：旧契约 {version, commit} 与主进程不匹配）
@@ -21,7 +30,7 @@ export interface CudaDll {
   downloadUrl: string;
 }
 
-export interface LlamaUpdateCheckResult {
+export interface LlamaUpdateCheckResult extends IpcErrText {
   success: boolean;
   status?: LlamaUpdateStatus;
   localVersion?: LlamaVersion;
@@ -35,7 +44,7 @@ export interface LlamaUpdateCheckResult {
 // unconfigured 判定 + 当前本地版本显示（unknown 态）。检查落定后本地版本显示
 // 统一改由 check_llama_update 返回的 localVersion 派生（避免 --version 跑两次、
 // 「本地版本」日志落两条）。
-export interface LlamaLocalVersionResult {
+export interface LlamaLocalVersionResult extends IpcErrText {
   success: boolean;
   localVersion?: LlamaVersion;
   error?: string;   // 'unconfigured'：llama_dir 未配置
@@ -46,13 +55,13 @@ export interface LlamaUpdateConfig {
 }
 // 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）
 
-export interface LlamaUpdateConfigResult {
+export interface LlamaUpdateConfigResult extends IpcErrText {
   success: boolean;
   config?: LlamaUpdateConfig;
   error?: string;
 }
 
-export interface LlamaDownloadResult {
+export interface LlamaDownloadResult extends IpcErrText {
   success: boolean;
   error?: string;
   /** 2026-09-17 两阶段更新：true=下载完且服务未运行，已自动安装完成；
@@ -80,7 +89,7 @@ export function getLlamaLocalVersion(): Promise<LlamaLocalVersionResult> {
 // （versionOptions + cudaDlls + 最新 tag），不执行本地 --version、不做版本比对、无 status
 // （日志去重不变量：打开时唯一本地日志行仍来自 get_llama_local_version）。失败静默
 // （渲染端不进入错误态，下拉不出现，用户手动「检查更新」恢复）。
-export interface LlamaReleaseOptionsResult {
+export interface LlamaReleaseOptionsResult extends IpcErrText {
   success: boolean;
   versionOptions?: VersionOption[];
   cudaDlls?: CudaDll[];

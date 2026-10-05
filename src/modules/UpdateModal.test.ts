@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 
 type Phase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'up-to-date';
-type Item = { name: string; phase: Phase; version?: string; pct?: number; errorText?: string; localVersion?: string };
+type Item = { name: string; phase: Phase; version?: string; pct?: number; errorKey?: string; errorParams?: Record<string, string | number>; errorRaw?: string; localVersion?: string };
 
 // 构造一行更新项（默认 idle），按需覆盖字段
 function makeItem(over: Partial<Item> = {}): Item {
@@ -159,13 +159,54 @@ function lmsMiddle(): HTMLElement | null {
 
   // ---- 用例 6：error（中段红字错误原因）----
   it('error: 按钮「重试」; 中段显示错误原因文本', () => {
-    const w = mountModal({ items: [makeItem({ phase: 'error', errorText: '网络不可达' })] });
+    const w = mountModal({ items: [makeItem({ phase: 'error', errorRaw: '网络不可达' })] });
     const btn = actionBtns()[0];
     expect(btn.textContent?.trim()).toBe('重试');
     expect(btn.disabled).toBe(false);
     const err = document.querySelector('.update-row__error');
     expect(err).not.toBeNull();
     expect(err?.textContent?.trim()).toBe('网络不可达');
+    w.unmount();
+  });
+
+  // ---- 2026-10-05 i18n 响应性修复：错误红字存 key + 渲染时翻译（切语言即时重译）----
+  // 背景：此前 errorText 存的是「赋值时刻已翻译好的成品串」（主进程经 IPC 传译串 / 渲染端赋值时 t()），
+  // 切语言只重渲染模板、不会重译已存字符串 → 红字冻结在旧语言。
+  it('LMS 行 errorKey：切换语言后红字即时重译（不再冻结在赋值时语言）', async () => {
+    const w = mountModal({ items: [makeItem({ phase: 'error', errorKey: 'update.err.app.checkNetwork' })] });
+    await nextTick();
+    const err = () => document.querySelector('.update-row__error')?.textContent?.trim();
+    expect(err()).toBe('无法连接更新服务器');
+    applyLangLocal('en');
+    await nextTick();
+    expect(err()).toBe('Update server unreachable.');
+    applyLangLocal('zh');
+    await nextTick();
+    expect(err()).toBe('无法连接更新服务器');
+    w.unmount();
+  });
+
+  it('LMS 行 errorRaw（不可译原文）：透传且不随语言变化', async () => {
+    const w = mountModal({ items: [makeItem({ phase: 'error', errorRaw: 'EBUSY: resource busy or locked' })] });
+    await nextTick();
+    const err = () => document.querySelector('.update-row__error')?.textContent?.trim();
+    expect(err()).toBe('EBUSY: resource busy or locked');
+    applyLangLocal('en');
+    await nextTick();
+    expect(err()).toBe('EBUSY: resource busy or locked');
+    applyLangLocal('zh');
+    w.unmount();
+  });
+
+  it('LMS 行未知 errorKey：回退通用文案，不把调试串显示给用户', async () => {
+    const w = mountModal({ items: [makeItem({ phase: 'error', errorKey: 'err.does.not.exist' })] });
+    await nextTick();
+    const err = () => document.querySelector('.update-row__error')?.textContent?.trim();
+    expect(err()).toBe('检查更新失败');
+    applyLangLocal('en');
+    await nextTick();
+    expect(err()).toBe('Update check failed');
+    applyLangLocal('zh');
     w.unmount();
   });
 
@@ -890,6 +931,42 @@ describe('UpdateModal · llama.cpp 重新打开弹窗（回归）', () => {
     await nextTick();
     const installCalls = invokeMock.mock.calls.filter((c: unknown[]) => c[0] === 'install_llama_update');
     expect(installCalls.length).toBe(2);
+    w.unmount();
+  });
+
+  // 2026-10-05 i18n 响应性修复：llama 行错误红字同样存 key（新 IPC 契约 errorKey）→ 切语言即时重译。
+  // 复现用户场景：下载完成后主进程自动安装遇 EBUSY → download_llama_update 返回 { success:false,
+  // errorKey:'err.llama.targetBusy' } → 名称行下方红字显示该错误。
+  // （注意：install_llama_update 的 busy 分支走的是 stop-update 提示、不显示红字，故必须用下载路径驱动。）
+  it('llama 行 errorKey（新 IPC 契约）：切换语言后红字即时重译', async () => {
+    invokeMock = vi.fn(async (cmd: string) => {
+      if (cmd === 'get_llama_local_version') return { success: true, localVersion: { type: 'prerelease', build: 10996 } };
+      if (cmd === 'check_llama_update') return { success: true, status: 'update-available', remoteVersion: 'b10997', versionOptions: [{ label: 'Windows x64 (CPU)', downloadUrl: 'https://example.com/a.zip' }] };
+      if (cmd === 'download_llama_update') return { success: false, errorKey: 'err.llama.targetBusy' };
+      return {};
+    });
+    window.lms.invoke = invokeMock as any;
+    const w = mountModal();
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const llamaBtn = () => document.querySelector('.llama-section .btn-primary') as HTMLButtonElement | null;
+    llamaBtn()!.click(); // 检查更新 → available
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    llamaBtn()!.click(); // 下载更新 → 自动安装遇占用失败（仅 errorKey，无 error 串）
+    await nextTick();
+    await new Promise((r) => setTimeout(r, 0));
+    await nextTick();
+    const below = () => document.querySelector('.llama-below')?.textContent?.trim() ?? '';
+    expect(below()).toContain('目标文件仍被占用');
+    applyLangLocal('en');
+    await nextTick();
+    expect(below()).toContain('Target files still in use'); // 关键：切语言后即时重译
+    applyLangLocal('zh');
+    await nextTick();
+    expect(below()).toContain('目标文件仍被占用');
     w.unmount();
   });
 
@@ -1888,7 +1965,7 @@ describe('UpdateModal i18n（S8）', () => {
     makeItem({ phase: 'available', version: '0.2.0' }),
     makeItem({ phase: 'downloading', pct: 42 }),
     makeItem({ phase: 'ready', version: '0.2.0' }),
-    makeItem({ phase: 'error', errorText: 'boom' }),
+    makeItem({ phase: 'error', errorRaw: 'boom' }),
     makeItem({ phase: 'up-to-date', version: '0.1.0' }),
   ];
   const labels = () => actionBtns().map((b) => b.textContent?.trim());

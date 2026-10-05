@@ -10,6 +10,10 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ERR_LLAMA_DL404 } from './i18n/err-keys';
+
+/** 404 重试耗尽的专用错误：外层 catch 据此转成 errorKey 走 IPC（渲染端渲染时翻译，随语言即时重译）。 */
+export class Dl404Error extends Error {}
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { parseLlamaVersion } from './llama-update-version';
 
@@ -201,7 +205,7 @@ export async function downloadLlamaZip({
   onRetry?: (attempt: number) => void;
 }): Promise<
   | { ok: true; zipPath: string; dlZipPath?: string }
-  | { ok: false; error: string }
+  | { ok: false; error?: string; errorKey?: string }
 > {
   const zipPath = join(tmpdir(), 'llama-cpp-download-' + Date.now() + '.zip');
   const dlZipPath = join(tmpdir(), 'llama-cpp-dlls-' + Date.now() + '.zip');
@@ -214,6 +218,8 @@ export async function downloadLlamaZip({
     return { ok: true, zipPath, dlZipPath: cudaDllsUrl ? dlZipPath : undefined };
   } catch (e) {
     cleanupLlamaZips({ zipPath, dlZipPath });
+    // 2026-10-05 i18n 响应性：404 友好文案可译 → 以 errorKey 走 IPC（原文同时保留作日志/兜底）
+    if (e instanceof Dl404Error) return { ok: false, errorKey: ERR_LLAMA_DL404, error: e.message };
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -269,9 +275,7 @@ async function downloadZipWith404Retry(
       const isTransient404 = msg.includes('Download failed: HTTP 404');
       if (!isTransient404) throw e;
       if (attempt >= maxAttempts) {
-        throw new Error(
-          t('err.llama.dl404')
-        );
+        throw new Dl404Error(t(ERR_LLAMA_DL404));
       }
       onRetry?.(attempt);
       await new Promise<void>((r) => setTimeout(r, waitMs));

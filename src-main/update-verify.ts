@@ -1,7 +1,8 @@
-import { t } from './i18n';
+import { ERR_UPDATE_INCOMPLETE, ERR_UPDATE_DIGEST_MISMATCH } from './i18n/err-keys';
 // 自动更新（spec 2026-09-05-download-integrity-check-design）：更新包下载完整性校验。
 // 纯函数判定 + 流式文件哈希（可单测）；main.ts download_update 在落盘完成后调用，
-// 失败时删半成品并返回 { ok: false, reason }。
+// 失败时删半成品并返回 { ok: false, reasonKey(+params) }——2026-10-05 i18n 响应性修复：
+// 不在这里就把译文定死，改传词典 key，由渲染端渲染时翻译（切语言即时重译）。
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 
@@ -22,7 +23,8 @@ export interface IntegrityInput {
 
 export interface IntegrityResult {
   ok: boolean;
-  reason: string | null;   // 中文失败原因（渲染端 error 态直接展示）
+  reasonKey: string | null;                          // 失败原因 key（渲染端渲染时 t()）
+  reasonParams?: Record<string, string | number>;    // 插值参数（如 {actual, expected}）
 }
 
 // 两级校验判定（纯函数）：大小优先，其次 SHA-256
@@ -30,18 +32,16 @@ export function evaluateDownloadIntegrity(i: IntegrityInput): IntegrityResult {
   if (i.expectedSize !== null && i.actualSize !== i.expectedSize) {
     return {
       ok: false,
-      reason: t('err.update.incomplete', { actual: i.actualSize, expected: i.expectedSize }),
+      reasonKey: ERR_UPDATE_INCOMPLETE,
+      reasonParams: { actual: i.actualSize, expected: i.expectedSize },
     };
   }
   if (i.expectedDigest !== null) {
     if (i.actualDigest === null || i.actualDigest !== i.expectedDigest) {
-      return {
-        ok: false,
-        reason: t('err.update.digestMismatch'),
-      };
+      return { ok: false, reasonKey: ERR_UPDATE_DIGEST_MISMATCH };
     }
   }
-  return { ok: true, reason: null };
+  return { ok: true, reasonKey: null };
 }
 
 // 流式计算文件 SHA-256（hex）；文件不存在/IO 错 → reject（调用方走下载失败分支）

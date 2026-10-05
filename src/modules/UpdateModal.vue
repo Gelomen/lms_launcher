@@ -7,7 +7,7 @@
 // Task 7 扩展：新增 llama.cpp 更新区域（版本选择器 + 下载进度）
 
 import { ref, watch, onBeforeUnmount } from 'vue';
-import { t } from '../i18n';
+import { t, errTextOf, errFromIpc, type ErrFields } from '../i18n';
 // 2026-09 视觉统一：llama.cpp Windows 版本下拉改用共享 Dropdown 组件（原生 <select> 样式与应用其他下拉不一致）
 import Dropdown from '../components/Dropdown.vue';
 import {
@@ -35,7 +35,10 @@ type Item = {
   phase: Phase;
   version?: string;
   pct?: number;
-  errorText?: string;
+  // 2026-10-05 i18n 响应性：错误文案三通道——可译 key(+params) 渲染时翻译 / 不可译原文透传
+  errorKey?: string;
+  errorParams?: Record<string, string | number>;
+  errorRaw?: string;
   // 2026-09-18：当前本地版本号（App 经 get_version 取得）——idle/checking 态中段显示，
   // 避免打开弹窗后「LMS 启动器」与「检查更新」按钮之间默认空白
   localVersion?: string;
@@ -70,7 +73,9 @@ const llamaSelectedOptionIndex = ref(0);
 const llamaLastVersionType = ref('');
 const llamaDownloading = ref(false);
 const llamaDownloadPct = ref(0);
-const llamaError = ref('');
+// 2026-10-05 i18n 响应性修复：错误文案改存「key(+params) / 原文」三通道，渲染时才 t() 翻译
+// （此前存成品串 → 切语言不重译，用户反馈的 llama.cpp 行错误提示冻结在旧语言）
+const llamaError = ref<ErrFields | null>(null);
 // 2026-09-17 两阶段更新：stop-update 态下服务是否仍在运行（影响名称行下方提示文案）
 const llamaStopUpdateRunning = ref(false);
 // 2026-09-17：pre-release 勾选框移除——llama.cpp stable release 无 Windows 包（仅 nightly-tag.txt，
@@ -163,7 +168,7 @@ async function checkLlamaUpdateInternal() {
     await runLlamaUpdateCheck();
   } catch (e) {
     llamaUpdateStatus.value = 'error';
-    llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaError.value = { errorRaw: e instanceof Error ? e.message : String(e) };
     llamaPhase.value = 'error';
   }
 }
@@ -222,13 +227,13 @@ async function runLlamaUpdateCheck() {
         llamaPhase.value = 'idle'; // 未配置目录：按钮保持「检查更新」可点（重新检查）
       } else {
         llamaUpdateStatus.value = 'error';
-        llamaError.value = result.error ?? t('update.err.unknown');
+        llamaError.value = errFromIpc(result, 'update.err.unknown');
         llamaPhase.value = 'error'; // 红字错误 + 「重试」
       }
     }
   } catch (e) {
     llamaUpdateStatus.value = 'error';
-    llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaError.value = { errorRaw: e instanceof Error ? e.message : String(e) };
     llamaPhase.value = 'error';
   }
 }
@@ -252,7 +257,7 @@ async function downloadLlamaUpdateInternal() {
   llamaDownloading.value = true;
   llamaPhase.value = 'downloading';
   llamaDownloadPct.value = 0;
-  llamaError.value = '';
+  llamaError.value = null;
 
   try {
     const result = await downloadLlamaUpdate(option.downloadUrl, option.cudaDllsUrl);
@@ -273,16 +278,16 @@ async function downloadLlamaUpdateInternal() {
       // 重新检查更新状态
       await checkLlamaUpdateInternal();
     } else {
-      llamaError.value = result.error ?? t('update.err.download');
+      llamaError.value = errFromIpc(result, 'update.err.download');
       llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示
       llamaPhase.value = 'error'; // 下载失败 → 「重试」（重发检查，同步主进程状态）
-      emit('llama-complete', false, result.error);
+      emit('llama-complete', false, errTextOf(llamaError.value, 'update.err.download'));
     }
   } catch (e) {
-    llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaError.value = { errorRaw: e instanceof Error ? e.message : String(e) };
     llamaUpdateStatus.value = 'error';
     llamaPhase.value = 'error';
-    emit('llama-complete', false, llamaError.value);
+    emit('llama-complete', false, errTextOf(llamaError.value, 'update.err.unknown'));
   } finally {
     llamaDownloading.value = false;
   }
@@ -294,7 +299,7 @@ async function installLlamaUpdateInternal() {
   llamaDownloading.value = true;
   llamaPhase.value = 'downloading';
   llamaDownloadPct.value = 0;
-  llamaError.value = '';
+  llamaError.value = null;
   try {
     const result = await installLlamaUpdate();
     if (result.success) {
@@ -311,21 +316,21 @@ async function installLlamaUpdateInternal() {
       // 2026-09-17 修复（二轮）：占用类失败（如 ggml-cuda.dll 被外部 CUDA 版 llama-server 锁住）
       // → 回到「停止并更新」（pending 包仍在主进程，关闭外部进程后再点一次即可），
       // 而不是「重试」（会重走完整下载，浪费且包并未失效）
-      llamaError.value = result.error ?? t('update.err.busy');
+      llamaError.value = errFromIpc(result, 'update.err.busy');
       llamaStopUpdateRunning.value = true;
       llamaPhase.value = 'stop-update';
-      emit('llama-complete', false, llamaError.value);
+      emit('llama-complete', false, errTextOf(llamaError.value, 'update.err.unknown'));
     } else {
-      llamaError.value = result.error ?? t('update.err.install');
+      llamaError.value = errFromIpc(result, 'update.err.install');
       llamaUpdateStatus.value = 'error'; // 错误原因移到名称行下方红字显示
       llamaPhase.value = 'error'; // →「重试」重新走完整检查+下载流程
-      emit('llama-complete', false, llamaError.value);
+      emit('llama-complete', false, errTextOf(llamaError.value, 'update.err.unknown'));
     }
   } catch (e) {
-    llamaError.value = e instanceof Error ? e.message : String(e);
+    llamaError.value = { errorRaw: e instanceof Error ? e.message : String(e) };
     llamaUpdateStatus.value = 'error';
     llamaPhase.value = 'error';
-    emit('llama-complete', false, llamaError.value);
+    emit('llama-complete', false, errTextOf(llamaError.value, 'update.err.unknown'));
   } finally {
     llamaDownloading.value = false;
   }
@@ -408,7 +413,7 @@ function btnDisabled(item: Item): boolean {
 function middleKind(item: Item): string {
   switch (item.phase) {
     case 'ready':
-      return item.errorText ? 'error' : 'version';
+      return item.errorKey || item.errorRaw ? 'error' : 'version';
     case 'available':
     case 'downloading':
       return 'version';
@@ -433,7 +438,7 @@ function middleText(item: Item): string {
     case 'local':
       return item.localVersion ?? '';
     case 'error':
-      return item.errorText ?? '';
+      return errTextOf(item, 'update.err.check');
     default:
       return '';
   }
@@ -585,7 +590,7 @@ function llamaBelow(): { kind: string; text: string } | null {
     case 'unconfigured':
       return { kind: 'hint', text: t('update.hint.unconfigured') };
     case 'error':
-      return { kind: 'error', text: llamaError.value || t('update.err.check') };
+      return { kind: 'error', text: errTextOf(llamaError.value, 'update.err.check') };
     default:
       return null;
   }

@@ -946,6 +946,28 @@ describe('i18n / App 外壳（Slice 1）', () => {
     w.unmount();
   });
 
+  it('LMS 行错误红字：失败时中文 → 切英文后即时重译（i18n 响应性，2026-10-05）', async () => {
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve(READY);
+        case 'get_configs': return Promise.resolve(cfg());
+        case 'check_update': return Promise.reject(new Error('net down'));
+        default: return Promise.resolve(undefined);
+      }
+    });
+    const w = mount(App);
+    await flush();
+    trayUpdateHandlers.at(-1)!(); // 托盘「检查更新」→ 开弹窗（不自动检查）
+    await nextTick();
+    updateBtns()[0].click(); // 手动「检查更新」→ reject → 按当次语言落库
+    await flush();
+    const err = () => document.querySelector('.update-modal .update-row__error')?.textContent?.trim();
+    expect(err()).toBe('检查更新时发生未知错误，请稍后重试。');
+    await applyEn(); // 切英文：同一个红字节点应即时重译为英文
+    expect(err()).toBe('Update check failed. Try again.');
+    w.unmount();
+  });
+
   it('S8：无法连接 / 开发模式 errorText 为英文短句', async () => {
     invoke.mockImplementation((cmd: string): Promise<unknown> => {
       switch (cmd) {
