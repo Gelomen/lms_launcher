@@ -52,4 +52,13 @@ describe('i18n dict', () => {
     expect(dict.en['app.exit.title']).toBe('Exit');
     expect(dict.en['app.exit.message']).toBe('llama-server will be stopped. Continue?');
   });
+
+  // 2026-10-05 S10 收尾：main.ts 两处调用点依赖的 llama 词条，值逐字锁定
+  // （zh 与改造前的硬编码完全相同 → 中文界面零回归；en 保证英文界面不再出现中文）
+  it('main.ts 调用点依赖的 llama 词条 zh/en 齐备', () => {
+    expect(dict.zh['err.llama.busy']).toBe('文件仍被占用（{names}），请关闭外部启动的 llama.cpp 进程后重试');
+    expect(dict.en['err.llama.busy']).toBe('Files still in use ({names}). Close the externally started llama.cpp process and retry.');
+    expect(dict.zh['log.llama.dll.cleaned']).toBe('llama.cpp · 清理旧 CUDA DLL：{list}');
+    expect(dict.en['log.llama.dll.cleaned']).toBe('llama.cpp · stale CUDA DLLs removed: {list}');
+  });
 });

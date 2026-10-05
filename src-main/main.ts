@@ -881,7 +881,7 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
   if (locked.length > 0) {
     const names = locked.map((p) => p.split(/[\\/]/).pop()).join(', ');
     emitLog(`[lms_launcher] ` + t('log.llama.install.stillBusy', { names }), 'sys');
-    return { success: false, busy: true, error: `文件仍被占用（${names}），请关闭外部启动的 llama.cpp 进程后重试` };
+    return { success: false, busy: true, error: t('err.llama.busy', { names }) };
   }
   emitLog('[lms_launcher] ' + t('log.llama.install.start'), 'sys');
   const ext = extractLlamaZips(pendingLlamaUpdate, dir);
@@ -900,7 +900,7 @@ async function installPendingLlama(): Promise<{ success: true } | { success: fal
   // 被锁文件跳过、删除失败不阻塞安装，只记日志）
   const stale = cleanupStaleCudaDlls(dir, pendingLlamaUpdate.keepCudaMajor);
   if (stale.deleted.length > 0) {
-    emitLog(`[lms_launcher] llama.cpp · 清理旧 CUDA DLL：${stale.deleted.join(', ')}`, 'sys');
+    emitLog('[lms_launcher] ' + t('log.llama.dll.cleaned', { list: stale.deleted.join(', ') }), 'sys');
   }
   if (stale.skipped.length > 0) {
     emitLog('[lms_launcher] ' + t('log.llama.dll.skipped', { list: stale.skipped.join(t('common.listSep')) }), 'sys');

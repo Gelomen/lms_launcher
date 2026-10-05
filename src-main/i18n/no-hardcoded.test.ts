@@ -1,17 +1,13 @@
 // src-main/i18n/no-hardcoded.test.ts
 // S10 守护: 主进程与 App 外壳的字符串字面量不得含汉字
 // S11 扩展: scripts/ 目录的 PowerShell 脚本也须走英文词典
-// PENDING 为待清理清单, 随任务批次逐项移除; 归零即 S10 验收达成.
+// 2026-10-05 S10 收尾: 待清理清单已归零 → 守护改为全量硬断言(无 PENDING 白名单).
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..', '..');
 const EXCLUDE = new Set(['src-main/i18n/dict.ts']);
-
-const PENDING = new Set<string>([
-  'src-main/main.ts',
-]);
 
 // S11: PowerShell script targets
 const PS_TARGETS = ['scripts/lms-launcher-update.ps1', 'scripts/verify-relaunch.ps1'];
@@ -140,7 +136,7 @@ export function psLiteralText(src: string): string {
 const HAS_HAN = /\p{Script=Han}/u;
 
 describe('i18n: 零硬编码中文', () => {
-  it('待清理清单之外的文件,字符串字面量不含汉字', () => {
+  it('全部目标文件(词典除外)的字符串字面量不含汉字', () => {
     const failures = [];
     for (const rel of targets()) {
       if (EXCLUDE.has(rel)) continue;
@@ -149,14 +145,6 @@ describe('i18n: 零硬编码中文', () => {
       if (found) failures.push({ file: rel, char: found[0] });
     }
     expect(failures).toEqual([]);
-  });
-
-  it('PENDING 中的文件确实仍含汉字(清理后须同步移除)', () => {
-    for (const rel of PENDING) {
-      if (!existsSync(join(ROOT, rel))) continue;
-      const src = readFileSync(join(ROOT, rel), 'utf-8');
-      expect(literalText(src).match(HAS_HAN)).toBeTruthy();
-    }
   });
 
   // S11: PowerShell script targets
