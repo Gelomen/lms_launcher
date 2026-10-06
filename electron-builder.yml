@@ -17,6 +17,10 @@ extraFiles:
     to: lms-launcher-update.ps1
   - from: src-main/gpu-counters.ps1
     to: gpu-counters.ps1
+  # 参数表随包分发（2026-10-06）：configs/llama_params.yaml 是唯一真相源，
+  # 用户解压覆盖即完成参数表升级；另两份 yaml 是用户数据，不进包。
+  - from: configs/llama_params.yaml
+    to: configs/llama_params.yaml
 extraResources:
   - from: src-main/icon.ico
     to: icon.ico

@@ -1,7 +1,8 @@
-﻿# lms-launcher-update.ps1 —— LMS 启动器更新脚本（2026-09-05 起取代 Electron update.exe）。
+# lms-launcher-update.ps1 —— LMS 启动器更新脚本（2026-09-05 起取代 Electron update.exe）。
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File lms-launcher-update.ps1 <zipPath> <installDir>
 # 流程：等待安装目录内的 lms_launcher.exe 退出（最多 60s）→ .NET 解压整包到 __update_tmp →
-#       校验关键条目 → 全量覆盖 installDir（zip 不含 yaml/downloads，用户数据不受影响）→
+#       校验关键条目 → 全量覆盖 installDir（2026-10-06 起 zip 内含 configs/llama_params.yaml，
+#       解压即完成参数表升级；configs/ 下另两份 yaml 与 downloads 不进 zip，用户数据不受影响）→
 #       清理（含旧版 update.exe 残留）→ 启动新版。
 # 日志：追加写 <installDir>\lms_launcher_update.log，主应用下次启动时回显并删除。
 # 启动新版（2026-09-21 评审修订）：不再 Start-Process —— 它的子进程会继承本脚本的控制台，
