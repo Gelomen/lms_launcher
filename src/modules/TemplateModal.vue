@@ -58,8 +58,8 @@ const attemptedSave = ref(false);
 function normalizeOption(key: string, value: string, opts: string[]): string {
   if (key === 'fa') {
     const lower = value.toLowerCase();
-    if (lower === 'true' || lower === 'on') return 'on';
-    if (lower === 'false' || lower === 'off') return 'off';
+    if (lower === 'true' || lower === 'on' || lower === '1' || lower === 'yes') return 'on';
+    if (lower === 'false' || lower === 'off' || lower === '0' || lower === 'no') return 'off';
     if (opts.includes(value)) return value;
     return 'auto';
   }
