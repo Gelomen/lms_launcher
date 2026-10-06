@@ -1,6 +1,6 @@
 import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir } from './config';
 import { tmpPath, rm, writeText, jp, repoParams, repoParamsText } from './test-utils';
 
 describe('config.ts', () => {
@@ -13,16 +13,14 @@ describe('config.ts', () => {
     expect(appConfigLoad(p).llama_dir).toBe('C:\\llama-cpp');
   });
 
-  it('params_default_written_only_when_missing', () => {
+  it('params_missing_reports_missing', () => {
     const p = tmpPath('params1.yaml');
     rm(p);
-    const pf = paramsLoad(p);
-    expect(pf.params['m']).toBe('-m');
-    expect(pf.required).toEqual(['m']);
+    expect(() => paramsLoad(p)).toThrow(/^MISSING:/);
     writeText(p, 'params:\n  zz: "--zz"\nrequired: []\n');
-    const pf2 = paramsLoad(p);
-    expect(pf2.params['zz']).toBe('--zz');
-    expect(pf2.required.length).toBe(0);
+    const pf = paramsLoad(p);
+    expect(pf.params['zz']).toBe('--zz');
+    expect(pf.required.length).toBe(0);
     rm(p);
   });
 
@@ -132,19 +130,17 @@ describe('config.ts', () => {
     expect(validateConfigId('1abc')).toBe(false);
   });
 
-  it('default_params_covers_run_bat_common', () => {
-    const pf = defaultParams();
+  it('repo_params_covers_run_bat_common', () => {
+    const pf = repoParams();
     const keys = ['m','mmproj','spec_type','ngl','fa','load_mode','np','c','b','ub','t','tb','ctk','ctv','jinja','chat_template_file','reasoning_format','reasoning_effort','spec_draft_n_max','md','temp','top_p','top_k','min_p','presence_penalty','repeat_penalty','port','alias'];
     for (const k of keys) expect(pf.params[k], k).toBeDefined();
     expect(pf.required).toEqual(['m']);
   });
 
-  it('params_reread_after_default_write_succeeds', () => {
+  it('params_reread_from_disk_validates_keys_without_throwing', () => {
     const p = tmpPath('params_reread.yaml');
     rm(p);
-    // First load writes defaultParams yaml (includes 16 underscore keys)
-    paramsLoad(p);
-    // Second load rereads the on-disk file and validates keys — must not throw VALIDATION
+    writeText(p, repoParamsText());
     const pf2 = paramsLoad(p);
     expect(Object.keys(pf2.params)).toHaveLength(38);
     expect(pf2.params['spec_type']).toBe('--spec-type');
@@ -183,8 +179,8 @@ params_file:
     rm(p);
   });
 
-  it('default_params_includes_v1_1_keys_and_sections', () => {
-    const pf = defaultParams();
+  it('repo_params_includes_v1_1_keys_and_sections', () => {
+    const pf = repoParams();
     expect(pf.params['reasoning']).toBe('-rea');
     expect(pf.params['reasoning_preserve']).toBe('--reasoning-preserve');
     // #14：五个新参数（n_cpu_moe / fit / fit_ctx / fit_target 为普通文本参数；metrics 为 boolean flag）
@@ -199,7 +195,7 @@ params_file:
     expect(pf.params['image_min_tokens']).toBe('--image-min-tokens');
     const pk = Object.keys(pf.params);
     expect(pk[pk.indexOf('mmproj') + 1]).toBe('image_min_tokens');
-    // spec_type 与 config.ts defaultParams 对齐（收敛为 4 项）
+    // spec_type 与 configs/llama_params.yaml 对齐（收敛为 4 项）
     expect(pf.params_options?.spec_type).toEqual(['none','draft-mtp','draft-dflash','draft-dspark']);
     expect(pf.params_options?.load_mode).toEqual(['none','auto','mmap','mlock','mmap+mlock','dio']);
     expect(pf.params_options?.reasoning).toEqual(['auto','on','off']);
@@ -249,19 +245,17 @@ params_file:
     rm(p);
   });
 
-  it('default_params_includes_params_default_and_fit_options', () => {
-    // params_default：新建模板自动填写的默认值（port/fit）；fit 同时是下拉（off/on），非 boolean
-    const pf = defaultParams();
+  it('repo_params_includes_params_default_and_fit_options', () => {
+    const pf = repoParams();
     expect(pf.params_default).toEqual({ port: '9931', fit: 'off' });
     expect(pf.params_options?.fit).toEqual(['off', 'on']);
     expect(pf.params_boolean ?? []).not.toContain('fit');
   });
 
   it('params_yaml_roundtrip_preserves_params_default', () => {
-    // 首次加载把默认 params 写盘 → 再读回 params_default / fit 选项仍在（往返不丢）
     const p = tmpPath('params_default_rt.yaml');
     rm(p);
-    paramsLoad(p);
+    writeText(p, repoParamsText());
     const pf = paramsLoad(p);
     expect(pf.params_default).toEqual({ port: '9931', fit: 'off' });
     expect(pf.params_options?.fit).toEqual(['off', 'on']);
@@ -272,7 +266,7 @@ params_file:
     // 存量模板缺 port/fit → 保存时自动补默认值（用户已设的 port 不覆盖）
     const p = tmpPath('cfg_backfill.yaml');
     rm(p);
-    saveConfigEntry(p, 'old', '存量', { m: 'x.gguf', port: '8080' }, defaultParams());
+    saveConfigEntry(p, 'old', '存量', { m: 'x.gguf', port: '8080' }, repoParams());
     const map = configsLoad(p);
     expect(map.old.values['port']).toBe('8080'); // 已有用户值保留
     expect(map.old.values['fit']).toBe('off');   // 缺失 fit → 默认补齐
@@ -283,7 +277,7 @@ params_file:
     // 用户显式 fit=on → 不覆盖；缺失的 port 补默认
     const p = tmpPath('cfg_backfill2.yaml');
     rm(p);
-    saveConfigEntry(p, 'u', '用户', { m: 'x.gguf', fit: 'on' }, defaultParams());
+    saveConfigEntry(p, 'u', '用户', { m: 'x.gguf', fit: 'on' }, repoParams());
     const map = configsLoad(p);
     expect(map.u.values['fit']).toBe('on');
     expect(map.u.values['port']).toBe('9931');

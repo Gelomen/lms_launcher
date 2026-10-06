@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import TemplateModule from './TemplateModule.vue';
 import { t, applyLangLocal } from '../i18n';
-import { defaultParams } from '../../src-main/config';
+import { repoParams } from '../../src-main/test-utils';
 
 // 注入真实 style.css —— 组件测试不挂载 App,全局样式不会自动进入 DOM;CSS 契约断言(getComputedStyle)需要它
 // 注入真实 style.css —— 组件测试不挂载 App,全局样式不会自动进入 DOM;CSS 契约断言(getComputedStyle)需要它
@@ -28,7 +28,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -63,7 +63,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LONG);
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -90,7 +90,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_SHORT);
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -114,7 +114,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LATIN);
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -136,7 +136,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS_LATIN);
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -171,7 +171,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -191,7 +191,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -220,7 +220,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string, ...args: unknown[]) => {
         if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS)));
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         if (over[cmd]) return Promise.resolve(over[cmd](...args));
         return Promise.resolve(null);
       },
@@ -279,7 +279,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string, ...args: unknown[]) => {
         if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS_COPY)));
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         if (cmd === 'suggest_config_id') return Promise.resolve('tplc2');
         if (cmd === 'save_config') return Promise.resolve(null);
         return Promise.resolve(null);
@@ -313,7 +313,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS_TAKEN)));
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         if (cmd === 'suggest_config_id') return Promise.resolve('tplc3');
         return Promise.resolve(null);
       },
@@ -334,7 +334,7 @@ describe('TemplateModule', () => {
     (window as any).lms = {
       invoke: (cmd: string) => {
         if (cmd === "get_configs") return Promise.resolve(CONFIGS);
-        if (cmd === "get_params") return Promise.resolve(defaultParams());
+        if (cmd === "get_params") return Promise.resolve(repoParams());
         return Promise.resolve(null);
       },
       onLogLine: () => () => {},
@@ -375,7 +375,7 @@ describe('TemplateModule en 冒烟', () => {
       invoke: (cmd: string, ...args: unknown[]) => {
         if (over[cmd]) return Promise.resolve(over[cmd](...args)); // 用例覆盖优先（MISSING 用例的 get_configs reject 等）
         if (cmd === 'get_configs') return Promise.resolve(JSON.parse(JSON.stringify(CONFIGS)));
-        if (cmd === 'get_params') return Promise.resolve(defaultParams());
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
         if (cmd === 'get_app_config') return Promise.resolve({ llama_dir: 'x' });
         return Promise.resolve(null);
       },

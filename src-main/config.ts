@@ -72,13 +72,10 @@ export function appConfigSave(path: string, cfg: AppConfig): void {
   writeFileSync(path, dump(cfg));
 }
 
-// params：缺失 → 写入默认模板并返回；已存在 → 不覆盖，只校验 key 合法性
+// params：缺失 → MISSING（2026-10-06：参数表改为随包分发的受控资产，代码不再生成默认表）。
+// 已存在 → 只校验 key 合法性；文件由仓库 configs/llama_params.yaml 提供，用户不可在应用内编辑。
 export function paramsLoad(path: string): ParamsFile {
-  if (!existsSync(path)) {
-    const pf = defaultParams();
-    writeFileSync(path, dump(pf));
-    return pf;
-  }
+  if (!existsSync(path)) throw new Error('MISSING: ' + t('err.config.paramsMissing'));
   const s = readFileSync(path, 'utf8');
   const pf = parseYaml(path, s, 'llama_params.yaml') as ParamsFile;
   for (const k of Object.keys(pf.params)) {
@@ -181,42 +178,7 @@ export function validateParamKey(key: string): boolean {
   return /^[a-z0-9_]+$/.test(key);
 }
 
-// params_options / params_boolean / params_file
-export function defaultParams(): ParamsFile {
-  const items: Array<[string, string]> = [
-    ['m', '-m'], ['mmproj', '-mm'], ['image_min_tokens', '--image-min-tokens'],
-    ['alias', '-a'], ['ngl', '-ngl'],
-    ['fa', '-fa'], ['n_cpu_moe', '-ncmoe'], ['load_mode', '-lm'],
-    ['np', '-np'], ['c', '-c'], ['b', '-b'], ['ub', '-ub'], ['t', '-t'], ['tb', '-tb'],
-    ['ctk', '-ctk'], ['ctv', '-ctv'], ['spec_type', '--spec-type'], ['spec_draft_n_max', '--spec-draft-n-max'], ['md', '-md'], ['ngld', '-ngld'],
-    ['temp', '--temp'], ['top_p', '--top-p'], ['top_k', '--top-k'], ['min_p', '--min-p'],
-    ['presence_penalty', '--presence_penalty'], ['repeat_penalty', '--repeat_penalty'],
-    ['jinja', '--jinja'], ['chat_template_file', '--chat-template-file'],
-    ['reasoning', '-rea'], ['reasoning_format', '--reasoning-format'],
-    ['reasoning_effort', '--reasoning-effort'], ['reasoning_preserve', '--reasoning-preserve'],
-    ['no_reasoning_preserve', '--no-reasoning-preserve'],
-    ['port', '--port'],
-    ['metrics', '--metrics'], ['fit', '-fit'], ['fit_ctx', '-fitc'], ['fit_target', '-fitt'],
-  ];
-  const params: Record<string, string> = Object.fromEntries(items);
-  return {
-    params,
-    required: ['m'],
-    params_options: {
-      ctk: ['q4_0', 'q5_0', 'q8_0', 'f16'], // KV cache dtype（ctk/ctv 同表），精度从低到高，q4_0 为默认
-      ctv: ['q4_0', 'q5_0', 'q8_0', 'f16'],
-      spec_type: ['none', 'draft-mtp', 'draft-dflash', 'draft-dspark'],
-      load_mode: ['none', 'auto', 'mmap', 'mlock', 'mmap+mlock', 'dio'],
-      reasoning: ['auto', 'on', 'off'],
-      reasoning_format: ['none', 'hide', 'deepseek'],
-      reasoning_effort: ['default', 'low', 'medium', 'high', 'xhigh', 'max'],
-      fit: ['off', 'on'], // -fit 显存自动调整开关（默认 off：llama-server 自身默认 on，launcher 显式 off 保持参数显式可控）
-    },
-    params_boolean: ['jinja', 'reasoning_preserve', 'no_reasoning_preserve', 'metrics'],
-    params_file: ['m', 'mmproj', 'chat_template_file', 'md'],
-    params_default: { port: '9931', fit: 'off' }, // 新建模板自动填写 + 保存时写入用户模板；存量配置由 configsBackfillDefaults 补齐
-  };
-}
+
 
 /**
  * 保存 llama.cpp 安装目录（2026-09-14 修复）。

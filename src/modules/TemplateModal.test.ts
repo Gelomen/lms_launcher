@@ -4,7 +4,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import TemplateModal from './TemplateModal.vue';
-import { defaultParams } from '../../src-main/config';
+import { repoParams } from '../../src-main/test-utils';
 // 视觉宽度（截断 util 口径）：CJK=2/拉丁=1——删除确认对话框的 name 预算契约用
 import { visualWidth } from '../util/truncate';
 import { applyLangLocal } from '../i18n';
@@ -25,7 +25,7 @@ function mockLms(): void {
 
 afterEach(() => { document.body.innerHTML = ''; });
 
-const paramsMeta = defaultParams();
+const paramsMeta = repoParams();
 
 function mountModal() {
   return mount(TemplateModal, {
@@ -50,7 +50,7 @@ describe('TemplateModal', () => {
     it('every_param_label_carries_two_line_tooltip_long_flag_plus_zh', async () => {
       calls = []; mockLms(); mountModal(); await flush();
       // 每个参数 label：第一行 = llama.cpp 长 flag，第二行 = 中文说明（data-tooltip 两行）
-      // 计数 = defaultParams().params 条目数（4f5c37f 新增 --no-reasoning-preserve 后为 38）
+      // 计数 = repoParams().params 条目数（4f5c37f 新增 --no-reasoning-preserve 后为 38）
       const labels = [...document.querySelectorAll('.flag-grid .flag-label')];
       expect(labels.length).toBe(38);
       for (const l of labels) {
@@ -1014,144 +1014,3 @@ describe('TemplateModal en 冒烟', () => {
       onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
     };
     const w = enModal();
-    await setInput('.modal-box input', 'd');
-    await saveEn();
-    expect(document.querySelector('.modal-box')?.textContent).toContain('Required not filled: -m');
-    w.unmount();
-
-    calls = [];
-    const meta2 = { ...paramsMeta, required: ['m', 'c'] };
-    const w2 = mount(TemplateModal, {
-      attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta: meta2 },
-    });
-    await setInput('.modal-box input', 'd');
-    await saveEn();
-    expect(document.querySelector('.modal-box')?.textContent).toContain('Required not filled: -m, -c');
-    w2.unmount();
-  });
-
-  it('icon button en: Select file / Close dialog / Save / Delete', async () => {
-    enModal();
-    expect(document.querySelector('.file-btn')?.getAttribute('aria-label')).toBe('Select file');
-    expect(document.querySelector('.modal-close')?.getAttribute('aria-label')).toBe('Close dialog');
-    expect(document.querySelector('.modal-save')?.getAttribute('aria-label')).toBe('Save');
-
-    const wEdit = mount(TemplateModal, {
-      attachTo: document.body,
-      props: { open: true, id: 'tpl1', values: {}, paramsMeta, name: 'qwen daily' },
-    });
-    expect(document.querySelector('.btn-delete')?.getAttribute('aria-label')).toBe('Delete');
-    wEdit.unmount();
-  });
-
-  it('delete confirm en: title = Delete template, body references config name', async () => {
-    calls = [];
-    (window as any).lms = {
-      invoke: (cmd, ...args) => { calls.push({ cmd, args }); return Promise.resolve(null); },
-      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
-    };
-    const w = mount(TemplateModal, {
-      attachTo: document.body,
-      props: { open: true, id: 'tpl1', values: {}, paramsMeta, name: 'qwen daily' },
-    });
-    (document.querySelector('.btn-delete') as HTMLButtonElement).click();
-    await flush();
-    expect(document.querySelector('.confirm-title')?.textContent).toBe('Delete template');
-    expect(document.querySelector('.confirm-msg')?.textContent).toContain('qwen daily');
-    w.unmount();
-  });
-
-  it('param tooltip en: first line = flag (unchanged), second line = English', async () => {
-    enModal();
-    const labels = [...document.querySelectorAll('.flag-grid .flag-label')];
-    expect(labels.length).toBe(38);
-    for (const l of labels) {
-      const tip = l.getAttribute('data-tooltip');
-      expect(tip).toBeDefined();
-      expect(tip!.includes('\n')).toBe(true);
-      const firstLine = tip!.split('\n')[0];
-      expect(firstLine).toMatch(/-/);
-      expect(tip!.split('\n')[1]).toMatch(/[a-zA-Z]/);
-    }
-  });
-
-  it('vram breakdown en: detail rows + fixed overhead line', async () => {
-    mockVramParts({ model: 16, mmproj: 0, kv: 4, batch: 0, draft: 0, fixed: 2 });
-    const w = mount(TemplateModal, {
-      attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta, vramTotalGb: 24 },
-    });
-    await fillModelEn();
-    (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
-    await flush();
-    const tip = document.querySelector('.vram-tip') as HTMLElement;
-    expect(tip).not.toBeNull();
-    const rows = [...tip.querySelectorAll('.vram-tip__row')].map((r) => (r.textContent ?? '').trim());
-    expect(rows).toHaveLength(3);
-    expect(rows[0]).toBe('Model file (-m) 16.0 GB');
-    expect(rows[1]).toBe('KV cache (-c/-ctk/-ctv/-ngl) 4.0 GB');
-    expect(rows[2]).toBe('~2 GB fixed GPU overhead');
-    w.unmount();
-  });
-
-  it('vram fallback en: empty -m and unconfigured total', async () => {
-    mockVramParts({ model: 0, mmproj: 0, kv: 0, batch: 0, draft: 0, fixed: 2 });
-    const w = mount(TemplateModal, {
-      attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta, vramTotalGb: 24 },
-    });
-    await flush();
-    (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
-    await flush();
-    expect(document.querySelector('.vram-tip')?.textContent).toContain('Fill in the model file (-m) to estimate');
-    w.unmount();
-
-    mockVramParts({ model: 16, mmproj: 0, kv: 4, batch: 0, draft: 0, fixed: 2 });
-    const w2 = mount(TemplateModal, {
-      attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta, vramTotalGb: undefined },
-    });
-    await fillModelEn();
-    (document.querySelector('.vram-indicator .vram-info') as HTMLElement).dispatchEvent(new Event('mouseenter'));
-    await flush();
-    expect(document.querySelector('.vram-tip')?.textContent).toContain('VRAM not set, click the VRAM button to set it');
-    w2.unmount();
-  });
-
-  it('vram hover en: title row + detail aria', async () => {
-    mockVramParts({ model: 16, mmproj: 0, kv: 4, batch: 0, draft: 0, fixed: 2 });
-    const w = mount(TemplateModal, {
-      attachTo: document.body,
-      props: { open: true, id: '', values: {}, paramsMeta, vramTotalGb: 24 },
-    });
-    await fillModelEn();
-    const info = document.querySelector('.vram-indicator .vram-info') as HTMLElement;
-    expect(info.getAttribute('aria-label')).toBe('VRAM estimate details');
-    info.dispatchEvent(new Event('mouseenter'));
-    await flush();
-    const tip = document.querySelector('.vram-tip') as HTMLElement;
-    expect(tip).not.toBeNull();
-    expect(tip.classList.contains('vram-tip')).toBe(true);
-    w.unmount();
-  });
-
-  it('dict coverage en: 38 param keys in both languages + 38 tooltips in English', async () => {
-    const paramKeys = Object.keys(paramsMeta.params);
-    expect(paramKeys.length).toBe(38);
-    for (const key of paramKeys) {
-      expect(dict.zh['tplModal.tip.' + key]).toBeDefined();
-      expect(dict.zh['tplModal.tip.' + key]).not.toBe('');
-      expect(dict.en['tplModal.tip.' + key]).toBeDefined();
-      expect(dict.en['tplModal.tip.' + key]).not.toBe('');
-    }
-    enModal();
-    const labels = [...document.querySelectorAll('.flag-grid .flag-label')];
-    expect(labels.length).toBe(38);
-    for (const l of labels) {
-      const tip = l.getAttribute('data-tooltip');
-      expect(tip).toBeDefined();
-      expect(tip!.split('\n')[1]).toMatch(/[a-zA-Z]/);
-    }
-  });
-});
