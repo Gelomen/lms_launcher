@@ -40,6 +40,7 @@ function onVramSaved(): void {
 const configs = ref<ConfigMap | null>(null);
 const paramsMeta = ref<ParamMeta>({ params: {}, required: [] });
 const error = ref<string | null>(null);
+const paramsMissing = ref(false);
 const missing = ref(false);
 
 // 弹窗：editingId === null → 新建；否则编辑（值原样进表单，空值不回填）
@@ -61,7 +62,8 @@ async function reload(): Promise<void> {
     paramsMeta.value = await invoke<ParamMeta>('get_params');
   } catch (e) {
     const msg = errMsg(e);
-    if (!isMissing(msg) && !isValidation(msg)) error.value = msg; // 映射表本身坏了才报错，MISSING 沿用空表
+    paramsMissing.value = isMissing(msg); // 参数表随包分发：MISSING 不再沿用空表（2026-10-06）
+    if (!isMissing(msg) && !isValidation(msg)) error.value = msg; // 映射表本身坏了才报错
   }
 }
 
@@ -158,6 +160,7 @@ onMounted(() => { void reload(); void loadVramTotal(); });
     <div style="display: flex; justify-content: flex-start; align-items: center; gap: 2px;">
       <h2 style="margin-bottom: 0;">{{ t('tpl.title') }}</h2>
       <button class="icon-btn icon-btn--sm" :data-tooltip="t('tpl.btn.new')" :aria-label="t('tpl.btn.new')"
+        :disabled="paramsMissing"
         @click="openNew">
         <FontAwesomeIcon :icon="byPrefixAndName.fat['file-circle-plus']" />
       </button>
@@ -169,6 +172,8 @@ onMounted(() => { void reload(); void loadVramTotal(); });
       {{ vramTotal !== undefined ? vramTotal + ' GB' : 'VRAM' }}
     </button>
     <div class="template-list">
+      <!-- 参数表缺失（2026-10-06）：显式报错，配合下方按钮禁用 -->
+      <p v-if="paramsMissing" class="error-text">{{ t('tpl.paramsMissing') }}</p>
       <p v-if="missing && error" class="label">{{ t('tpl.empty.missing') }}</p>
       <p v-else-if="error && !missing" class="error-text">{{ error }}</p>
       <!-- 行卡片化（2026-08-26 spec）：每配置一个 .tpl-row —— 灰边框圆角独立卡片，
@@ -192,6 +197,7 @@ onMounted(() => { void reload(); void loadVramTotal(); });
               <FontAwesomeIcon :icon="byPrefixAndName.fat['copy']" />
             </button>
             <button class="icon-btn icon-btn--sm" :data-tooltip="t('tpl.btn.edit')" :aria-label="t('tpl.btn.edit')"
+              :disabled="paramsMissing"
               @click="openEdit(id)">
               <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
             </button>
@@ -229,4 +235,6 @@ onMounted(() => { void reload(); void loadVramTotal(); });
   background: var(--primary); color: #fff;
 }
 .vram-badge:hover { background: var(--primary-hover); }
+/* 禁用态（参数表缺失）：新建/编辑置灰，保留占位不改变布局 */
+.icon-btn:disabled { opacity: .4; cursor: not-allowed; }
 </style>

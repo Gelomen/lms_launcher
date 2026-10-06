@@ -461,4 +461,27 @@ describe('TemplateModule en 冒烟', () => {
     expect(w2.find('.module-template p.label').text()).toBe('No templates');
     w2.unmount();
   });
+
+  it('params_missing_shows_error_and_disables_new_and_edit_but_not_copy', async () => {
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
+        if (cmd === 'get_params') return Promise.reject(new Error('MISSING: llama_params.yaml'));
+        if (cmd === 'get_app_config') return Promise.resolve({ llama_dir: 'x' });
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const w = mount(TemplateModule);
+    await flush();
+    expect(w.find('.error-text').text()).toContain('llama_params.yaml');
+    expect(w.find('.module-template .icon-btn').attributes('disabled')).toBeDefined(); // 新建禁用
+    const rowButtons = w.findAll('.tpl-row__actions button');
+    expect(rowButtons[0].attributes('disabled')).toBeUndefined(); // 复制不禁用
+    expect(rowButtons[1].attributes('disabled')).toBeDefined();   // 编辑禁用
+    w.unmount();
+  });
+
 });
