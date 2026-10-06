@@ -1,7 +1,7 @@
 import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, defaultParams, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir } from './config';
-import { tmpPath, rm, writeText, jp } from './test-utils';
+import { tmpPath, rm, writeText, jp, repoParams, repoParamsText } from './test-utils';
 
 describe('config.ts', () => {
 
@@ -30,6 +30,13 @@ describe('config.ts', () => {
     const p = tmpPath('cfg_missing.yaml');
     rm(p);
     expect(() => configsLoad(p)).toThrow(/^MISSING:/);
+  });
+
+  it('repo_params_file_exists_and_declares_fa_options', () => {
+    const pf = repoParams();
+    expect(pf.params['fa']).toBe('-fa');
+    expect(pf.params_options?.fa).toEqual(['auto', 'on', 'off']);
+    expect(pf.required).toEqual(['m']);
   });
 
   it('config_entry_uses_name_key_not_desc', () => {

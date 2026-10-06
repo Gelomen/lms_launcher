@@ -14,7 +14,8 @@ node_modules/
 .temp/
 .tmp-*
 logs/
-llama_params.yaml
-llama_launch_configs.yaml
-lms_launcher.yaml
+# configs/（2026-10-06）：llama_params.yaml 是随包分发的受控资产，进版本管理；
+# 另两份是运行时用户数据。
+configs/lms_launcher.yaml
+configs/llama_launch_configs.yaml
 .temp-build/

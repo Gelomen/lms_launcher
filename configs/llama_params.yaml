@@ -1,0 +1,99 @@
+params:
+  m: -m
+  mmproj: -mm
+  image_min_tokens: --image-min-tokens
+  alias: -a
+  ngl: -ngl
+  fa: -fa
+  n_cpu_moe: -ncmoe
+  load_mode: -lm
+  np: -np
+  c: -c
+  b: -b
+  ub: -ub
+  t: -t
+  tb: -tb
+  ctk: -ctk
+  ctv: -ctv
+  spec_type: --spec-type
+  spec_draft_n_max: --spec-draft-n-max
+  md: -md
+  ngld: -ngld
+  temp: --temp
+  top_p: --top-p
+  top_k: --top-k
+  min_p: --min-p
+  presence_penalty: --presence_penalty
+  repeat_penalty: --repeat_penalty
+  jinja: --jinja
+  chat_template_file: --chat-template-file
+  reasoning: -rea
+  reasoning_format: --reasoning-format
+  reasoning_effort: --reasoning-effort
+  reasoning_preserve: --reasoning-preserve
+  no_reasoning_preserve: --no-reasoning-preserve
+  port: --port
+  metrics: --metrics
+  fit: -fit
+  fit_ctx: -fitc
+  fit_target: -fitt
+required:
+  - m
+params_options:
+  fa:
+    - auto
+    - on
+    - off
+  ctk:
+    - q4_0
+    - q5_0
+    - q8_0
+    - f16
+  ctv:
+    - q4_0
+    - q5_0
+    - q8_0
+    - f16
+  spec_type:
+    - none
+    - draft-mtp
+    - draft-dflash
+    - draft-dspark
+  load_mode:
+    - none
+    - auto
+    - mmap
+    - mlock
+    - mmap+mlock
+    - dio
+  reasoning:
+    - auto
+    - on
+    - off
+  reasoning_format:
+    - none
+    - hide
+    - deepseek
+  reasoning_effort:
+    - default
+    - low
+    - medium
+    - high
+    - xhigh
+    - max
+  fit:
+    - off
+    - on
+params_boolean:
+  - jinja
+  - reasoning_preserve
+  - no_reasoning_preserve
+  - metrics
+params_file:
+  - m
+  - mmproj
+  - chat_template_file
+  - md
+params_default:
+  port: "9931"
+  fit: off

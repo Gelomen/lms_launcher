@@ -1,4 +1,4 @@
-import { rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -22,4 +22,22 @@ export function mkDir(p: string): void {
 
 export function jp(dir: string, name: string): string {
   return join(dir, name);
+}
+
+import { parse } from 'yaml';
+import type { ParamsFile } from './config';
+
+/** 参数表真相源路径（2026-10-06）：仓库 configs/llama_params.yaml，代码不再内置参数表。 */
+export function repoParamsPath(): string {
+  return join(__dirname, '..', 'configs', 'llama_params.yaml');
+}
+
+/** 参数表原文（写临时文件用的往返夹具）。 */
+export function repoParamsText(): string {
+  return readFileSync(repoParamsPath(), 'utf8');
+}
+
+/** 解析后的参数表（等价于主进程 paramsLoad 的产物，供组件测试与断言使用）。 */
+export function repoParams(): ParamsFile {
+  return parse(repoParamsText()) as ParamsFile;
 }
