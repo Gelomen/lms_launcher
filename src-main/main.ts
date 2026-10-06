@@ -71,8 +71,11 @@ function dataDir(): string {
   if (app.isPackaged) return process.execPath ? join(process.execPath, "..") : process.cwd();
   return process.cwd();
 }
+// 配置目录（2026-10-06）：三份 yaml 统一收纳在 <dataDir>/configs/ 下。
+// llama_params.yaml 随包分发（electron-builder extraFiles），另两份为运行时用户数据。
+function configDir(): string { return join(dataDir(), 'configs'); }
 function yamlPaths(): [string, string, string] {
-  const d = dataDir();
+  const d = configDir();
   return [join(d, 'lms_launcher.yaml'), join(d, 'llama_params.yaml'), join(d, 'llama_launch_configs.yaml')];
 }
 // i18n（spec §3.3）：主进程为语言权威，whenReady 最先解析。托盘菜单使用该初值；
@@ -963,6 +966,8 @@ ipcMain.handle('get_llama_update_config', (): { success: true; config: LlamaUpda
 
 // ---------- app lifecycle ----------
 app.whenReady().then(() => {
+  // configs/ 兜底（2026-10-06）：随包已带该目录；用户误删后在此补建，否则后续保存会 ENOENT
+  try { mkdirSync(configDir(), { recursive: true }); } catch { /* 建目录失败由后续读写报错暴露 */ }
   initI18n(); // i18n（spec §3.3）：主进程为语言权威，whenReady 最先解析（须在托盘/日志文案使用前）
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
   Menu.setApplicationMenu(null);
