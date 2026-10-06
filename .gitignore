@@ -19,3 +19,4 @@ logs/
 configs/lms_launcher.yaml
 configs/llama_launch_configs.yaml
 .temp-build/
+%SystemDrive%/
