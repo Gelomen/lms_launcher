@@ -1014,3 +1014,158 @@ describe('TemplateModal en 冒烟', () => {
       onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
     };
     const w = enModal();
+describe('TemplateModal fa dropdown', () => {
+  function rowControl(flagText: string): Element {
+    const label = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === flagText)!;
+    return label.nextElementSibling!;
+  }
+  function faTrigger(): HTMLElement {
+    return rowControl('-fa').querySelector('.select-label')! as HTMLElement;
+  }
+  function mountEdit(values: Record<string, string>) {
+    return mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: 'tplx', name: 'x', values, paramsMeta },
+    });
+  }
+
+  it('fa_row_renders_as_dropdown_not_text_input', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    const cell = rowControl('-fa');
+    expect(cell.classList.contains('dropdown')).toBe(true);
+    expect(cell.querySelector('input')).toBeNull();
+    w.unmount();
+  });
+
+  it('fa_new_template_defaults_to_auto', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('auto');
+    w.unmount();
+  });
+
+  it('fa_stored_off_is_preserved', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'off' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('off');
+    w.unmount();
+  });
+
+  it('fa_stored_uppercase_on_normalizes_to_on', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'ON' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('on');
+    w.unmount();
+  });
+
+  it('fa_stored_false_normalizes_to_off', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'false' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('off');
+    w.unmount();
+  });
+
+  it('fa_stored_garbage_falls_back_to_auto', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'yes please' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('auto');
+    w.unmount();
+  });
+
+  it('fa_saved_value_is_canonical_after_normalization', async () => {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => { calls.push({ cmd, args }); return Promise.resolve(null); },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+    const w = mountEdit({ m: 'D:/models/x.gguf', fa: 'true' });
+    await flush();
+    (document.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+    const saved = calls.find((c) => c.cmd === 'save_config');
+    expect(saved).toBeDefined();
+    const values = (saved!.args as unknown[])[2] as Record<string, string>;
+    expect(values['fa']).toBe('on');
+    w.unmount();
+  });
+});
+  });
+});
+
+describe('TemplateModal fa dropdown', () => {
+  function rowControl(flagText: string): Element {
+    const label = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === flagText)!;
+    return label.nextElementSibling!;
+  }
+  function faTrigger(): HTMLElement {
+    return rowControl('-fa').querySelector('.select-label')! as HTMLElement;
+  }
+  function mountEdit(values: Record<string, string>) {
+    return mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: 'tplx', name: 'x', values, paramsMeta },
+    });
+  }
+
+  it('fa_row_renders_as_dropdown_not_text_input', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    const cell = rowControl('-fa');
+    expect(cell.classList.contains('dropdown')).toBe(true);
+    expect(cell.querySelector('input')).toBeNull();
+    w.unmount();
+  });
+
+  it('fa_new_template_defaults_to_auto', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('auto');
+    w.unmount();
+  });
+
+  it('fa_stored_off_is_preserved', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'off' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('off');
+    w.unmount();
+  });
+
+  it('fa_stored_uppercase_on_normalizes_to_on', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'ON' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('on');
+    w.unmount();
+  });
+
+  it('fa_stored_false_normalizes_to_off', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'false' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('off');
+    w.unmount();
+  });
+
+  it('fa_stored_garbage_falls_back_to_auto', async () => {
+    calls = []; mockLms();
+    const w = mountEdit({ m: 'x.gguf', fa: 'yes please' }); await flush();
+    expect(faTrigger().textContent!.trim()).toBe('auto');
+    w.unmount();
+  });
+
+  it('fa_saved_value_is_canonical_after_normalization', async () => {
+    calls = [];
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => { calls.push({ cmd, args }); return Promise.resolve(null); },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+    const w = mountEdit({ m: 'D:/models/x.gguf', fa: 'true' });
+    await flush();
+    (document.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+    const saved = calls.find((c) => c.cmd === 'save_config');
+    expect(saved).toBeDefined();
+    const values = (saved!.args as unknown[])[2] as Record<string, string>;
+    expect(values['fa']).toBe('on');
+    w.unmount();
+  });
+});

@@ -54,6 +54,18 @@ const saving = ref(false);
 // 打开（fill）重置为 false，点保存后置 true——保存失败不重置（下次点保存仍保留上次状态）。
 const attemptedSave = ref(false);
 
+// Normalize option values for editing
+function normalizeOption(key: string, value: string, opts: string[]): string {
+  if (key === 'fa') {
+    const lower = value.toLowerCase();
+    if (lower === 'true' || lower === 'on') return 'on';
+    if (lower === 'false' || lower === 'off') return 'off';
+    if (opts.includes(value)) return value;
+    return 'auto';
+  }
+  return opts.includes(value) ? value : opts[0];
+}
+
 function fill(): void {
   attemptedSave.value = false; // 打开弹窗重置（步骤 1）
   formDesc.value = props.name ?? '';
@@ -79,7 +91,7 @@ function fill(): void {
       if (t.length === 0) continue;
       const row = rows.value.find((r) => r.key === k);
       if (!row) continue; // 存值 key 不在 params 表（开发阶段无兼容）
-      if (row.type === 'options' && !row.opts.includes(t)) init[k] = row.opts[0]; // 回落首个
+      if (row.type === 'options') { init[k] = normalizeOption(row.key, t, row.opts); } // 回落首个
       else init[k] = t;
     }
   }
