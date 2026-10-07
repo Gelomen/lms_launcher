@@ -76,7 +76,9 @@ describe('writeUpdateBootstrap：wscript 缺失 → .cmd 回退（可见窗口�
   });
 });
 
-// 中文子目录：安装目录含非 ASCII 字符是本次一并修掉的既存缺陷（规格 F12），也是编码断言的真实场景
+// 实跑守卫：安装目录名是本次要修的真实输入（规格 F12 的既存缺陷、F11/F13 的编码前提），
+// 所以两条分支都在「含中文」与「含中文且含空格」的目录下各跑一次 —— 规格行为行逐字要求
+// 「安装目录含中文/空格 → .vbs 与回退 .cmd 均正确传参」，只测纯中文目录等于漏掉空格那一半。
 function makeFakeScript(dir: string): { ps1: string; marker: string } {
   const ps1 = join(dir, 'fake-update.ps1');
   writeFileSync(ps1,
@@ -86,32 +88,75 @@ function makeFakeScript(dir: string): { ps1: string; marker: string } {
   return { ps1, marker: join(dir, 'marker.txt') };
 }
 
-describe('生成的启动器在 Windows 上实跑（cscript / cmd.exe）', () => {
-  it('.vbs 经 cscript 无语法错误，并把 zip/installDir 原样传给脚本（中文目录）', () => {
-    if (!WIN) return;
-    const dir = join(base, '中文目录');
-    mkdirSync(dir, { recursive: true });
-    const { ps1, marker } = makeFakeScript(dir);
-    const plan = writeUpdateBootstrap(
-      { ...input, installDir: dir, ps1Path: ps1, zipPath: join(dir, 'pkg.zip'), updateLogPath: join(dir, 'lms_launcher_update.log') },
-      true,
-    );
-    execFileSync('cscript.exe', ['//nologo', plan.filePath], { encoding: 'utf8' });
-    expect(existsSync(marker)).toBe(true);
-    expect(readFileSync(marker, 'utf8')).toContain(join(dir, 'pkg.zip') + '|' + dir);
-  });
+/** 在 dir 里搭好假更新脚本并生成对应启动器：dir 本身就是被测输入，每条用例独占一个子目录以免 marker 串档。 */
+function bootstrapIn(dir: string, hasWscript: boolean): { plan: ReturnType<typeof writeUpdateBootstrap>; marker: string; zipPath: string } {
+  mkdirSync(dir, { recursive: true });
+  const { ps1, marker } = makeFakeScript(dir);
+  const zipPath = join(dir, 'pkg.zip');
+  const plan = writeUpdateBootstrap(
+    { ...input, installDir: dir, ps1Path: ps1, zipPath, updateLogPath: join(dir, 'lms_launcher_update.log') },
+    hasWscript,
+  );
+  return { plan, marker, zipPath };
+}
 
-  it('.cmd 回退经 cmd.exe 同样把参数原样送达（chcp 65001 生效）', () => {
-    if (!WIN) return;
-    const dir = join(base, '中文目录-cmd');
-    mkdirSync(dir, { recursive: true });
-    const { ps1, marker } = makeFakeScript(dir);
-    const plan = writeUpdateBootstrap(
-      { ...input, installDir: dir, ps1Path: ps1, zipPath: join(dir, 'pkg.zip'), updateLogPath: join(dir, 'lms_launcher_update.log') },
-      false,
-    );
-    execFileSync('cmd.exe', ['/c', plan.filePath], { encoding: 'utf8' });
-    expect(existsSync(marker)).toBe(true);
-    expect(readFileSync(marker, 'utf8')).toContain(join(dir, 'pkg.zip') + '|' + dir);
+/** fake-update.ps1 用 Set-Content -Encoding UTF8 写 marker（PowerShell 5.1 会加 BOM 与行尾）：比对前先剥掉，
+ *  然后要求逐字相等 —— 多一个引号残留、多一个参数都算失败（toContain 对这些是瞎的）。 */
+const markerValue = (marker: string): string =>
+  readFileSync(marker, 'utf8').replace(/^\uFEFF/, '').replace(/[\r\n]+$/, '');
+
+const DIR_FIXTURES = [
+  ['纯中文目录', '中文目录'],
+  ['中文加空格目录', '中文 目录 空格'],
+] as const;
+
+// runIf 而不是 if (!WIN) return：非 Windows 上这两组必须在报告里显形为 skipped，
+// 不能以 passed 的姿态断言零件事（cscript/cmd.exe 都不存在时，什么都没被验证）。
+describe.runIf(WIN)('生成的启动器在 Windows 上实跑（cscript / cmd.exe）', () => {
+  for (const [label, suffix] of DIR_FIXTURES) {
+    it(`.vbs 经 cscript 无语法错误，并把 zip/installDir 原样送达（${label}）`, () => {
+      const dir = join(base, suffix);
+      const { plan, marker, zipPath } = bootstrapIn(dir, true);
+      // cscript 对 VBScript 编译错误是「打到 stderr + 非零退出」，不弹模态框 → execFileSync throw
+      execFileSync('cscript.exe', ['//nologo', plan.filePath], { encoding: 'utf8' });
+      expect(existsSync(marker)).toBe(true);
+      expect(markerValue(marker)).toBe(zipPath + '|' + dir);
+    });
+  }
+
+  for (const [label, suffix] of DIR_FIXTURES) {
+    it(`UTF-8 无 BOM 的 .cmd 经 cmd.exe 把参数原样送达（${label}）`, () => {
+      const dir = join(base, suffix);
+      const { plan, marker, zipPath } = bootstrapIn(dir, false);
+      execFileSync('cmd.exe', ['/c', plan.filePath], { encoding: 'utf8' });
+      expect(existsSync(marker)).toBe(true);
+      expect(markerValue(marker)).toBe(zipPath + '|' + dir);
+    });
+  }
+
+  // 正向用例只说「生成物能跑」，没说它凭什么能跑。这条钉住机制本身：把 chcp 65001 改一个数字，
+  // cmd.exe 就按 936 解 UTF-8 正文，中文路径解错 → PowerShell 报 -File 的 .ps1 不存在 →
+  // 非零退出、marker 不写（2026-10-08 复现：chcp 936、去掉该行、rem 掉该行三种形态都失败，
+  // .temp/hide-console/probe-task3-results.md A2/A3）。它顺带要求 fixture 目录真的含非 ASCII
+  // 字符——目录名退化成 ASCII 时 chcp 936 也能跑通，这条会失败而不是空过。
+  // 断言只依赖同步 execFileSync 的退出码与 marker 是否存在，不依赖任何时序。
+  it('把生成 .cmd 里的 chcp 65001 改写为 chcp 936 后参数不再送达（chcp 65001 是必要条件）', () => {
+    const dir = join(base, '中文 目录 空格-chcp-936');
+    const { plan, marker } = bootstrapIn(dir, false);
+    const generated = readFileSync(plan.filePath, 'utf8');
+    // 前置：生成物里确实是 chcp 65001，否则下面的改写是空操作，这条就成了空断言
+    expect(generated).toContain('chcp 65001');
+    const broken = generated.replace('chcp 65001', 'chcp 936');
+    expect(broken).not.toBe(generated);
+    const brokenPath = join(dir, 'chcp-936.cmd');
+    writeFileSync(brokenPath, broken, 'utf8');
+    let exitedNonZero = false;
+    try {
+      execFileSync('cmd.exe', ['/c', brokenPath], { encoding: 'utf8' });
+    } catch {
+      exitedNonZero = true;
+    }
+    expect(exitedNonZero).toBe(true);
+    expect(existsSync(marker)).toBe(false);
   });
 });
