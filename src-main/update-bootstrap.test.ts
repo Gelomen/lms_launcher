@@ -57,3 +57,21 @@ describe('writeUpdateBootstrap：wscript 存在 → .vbs 隐藏启动', () => {
     expect(buf.subarray(2).toString('utf16le')).toContain('q = Chr(34)');
   });
 });
+
+describe('writeUpdateBootstrap：wscript 缺失 → .cmd 回退（可见窗口，但更新完成）', () => {
+  it('返回 cmd 计划并标记 degraded，/TR 只引用 .cmd', () => {
+    const plan = writeUpdateBootstrap(input, false);
+    expect(plan.kind).toBe('cmd');
+    expect(plan.degraded).toBe(true);
+    expect(plan.filePath).toBe(join(base, BOOTSTRAP_CMD_NAME));
+    expect(plan.trValue).toBe(esc('"' + plan.filePath + '"'));
+  });
+
+  it('.cmd 落盘无 BOM，且 chcp 65001 出现在任何路径之前（规格 F12/F13/H7）', () => {
+    const plan = writeUpdateBootstrap(input, false);
+    const c = readFileSync(plan.filePath, 'utf8');
+    expect(c.startsWith('\uFEFF')).toBe(false);
+    expect(c).toContain('chcp 65001');
+    expect(c.indexOf('chcp 65001')).toBeLessThan(c.indexOf(input.ps1Path));
+  });
+});
