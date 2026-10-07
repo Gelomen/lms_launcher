@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { migrateLegacyConfigs } from './config-migrate';
 import { tmpPath, rm, writeText, mkDir, jp } from './test-utils';
 
@@ -63,6 +63,31 @@ describe('config-migrate.ts', () => {
     expect(existsSync(jp(root, PARAMS_YAML))).toBe(true);
     expect(existsSync(jp(cfg, PARAMS_YAML))).toBe(false);
     expect(existsSync(jp(cfg, TPL_YAML))).toBe(true); // 同一次调用里另两份照常
+    rm(root);
+  });
+
+  it('rename_failure_falls_back_to_copy_and_keeps_original', () => { // §4-5 / S3；顺带覆盖 §4-4（configs/ 不存在）
+    const { root, cfg } = legacyRoot('mig_copy', false);
+    const tplText = 'tpl_a:\n  values: {}\n';
+    writeText(jp(root, TPL_YAML), tplText);
+    migrateLegacyConfigs(root, cfg, {
+      move: () => { throw new Error('EBUSY'); },
+      copy: copyFileSync,
+    });
+    expect(existsSync(jp(root, TPL_YAML))).toBe(true); // 兜底保留原件（S3）
+    expect(readFileSync(jp(cfg, TPL_YAML), 'utf8')).toBe(tplText);
+    rm(root);
+  });
+
+  it('both_moves_fail_is_silent', () => { // §4-6 / S6
+    const { root, cfg } = legacyRoot('mig_fail');
+    writeText(jp(root, TPL_YAML), 'tpl_a:\n  values: {}\n');
+    migrateLegacyConfigs(root, cfg, {
+      move: () => { throw new Error('EPERM'); },
+      copy: () => { throw new Error('EPERM'); },
+    });
+    expect(existsSync(jp(root, TPL_YAML))).toBe(true); // 原件留在原位，下次启动重试
+    expect(existsSync(jp(cfg, TPL_YAML))).toBe(false);
     rm(root);
   });
 });
