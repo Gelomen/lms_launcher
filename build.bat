@@ -48,30 +48,30 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [build] Packaging portable exe (this takes several minutes - do NOT touch this window)...
+echo [build] Building win-unpacked only (no portable archive)...
 rem Note: npm/npx are .cmd files, so they MUST be prefixed with call here, or control
 rem would not return to this script after the build.
-rem "Break signaled" / exit code 255: 7za is a console program in THIS console group;
-rem a second Ctrl+C or window close during archiving aborts it. Leave this window
-rem open, do not press Ctrl+C during packaging. lms_launcher.exe (GUI, own session)
-rem cannot cause it.
+rem "--win dir" overrides win.target in electron-builder.yml: electron-builder stops
+rem after the unpacked stage and writes only dist-release\win-unpacked\ (app asar +
+rem extraFiles/extraResources + the icon/version-patched lms_launcher.exe). The 7za
+rem archiving step that produced lms-launcher-<version>-portable.exe is skipped, so
+rem packaging is faster and no self-extracting exe is written.
+rem To go back to a single-file exe, change "dir" to "portable" in the two calls below.
 rem "Fatal error: Unable to commit changes" (rcedit): a transient file lock, usually
 rem Windows Defender scanning right after the 177 MB exe is copied into win-unpacked,
 rem or a lms_launcher.exe that just quit from that folder. The auto-retry covers it;
 rem add the workspace to Defender exclusions (admin) to eliminate it.
-call npx electron-builder --config electron-builder.yml --win portable
+call npx electron-builder --config electron-builder.yml --win dir
 if errorlevel 1 goto pack_retry
 goto pack_done
 
 :pack_retry
 echo.
-echo [build] Packaging failed. Retrying once (transient lock / break event is the common cause)...
-call npx electron-builder --config electron-builder.yml --win portable
+echo [build] Packaging failed. Retrying once (a transient file lock is the common cause)...
+call npx electron-builder --config electron-builder.yml --win dir
 if errorlevel 1 (
   echo.
   echo [build] FAILED: electron-builder packaging failed twice.
-  echo         "Break signaled" / "Exit code: 255": a break event reached the build console
-  echo         while 7za was archiving. Keep this window open, do not press Ctrl+C.
   echo         "Fatal error: Unable to commit changes" (rcedit): a transient file lock
   echo         (usually Defender scanning). Wait a few seconds and re-run .\build.bat;
   echo         to eliminate it, from an admin PowerShell: Add-MpPreference -ExclusionPath "%~dp0"
@@ -79,6 +79,12 @@ if errorlevel 1 (
 )
 
 :pack_done
+rem Drop leftovers from older portable runs so dist-release holds only the unpacked build.
+if exist "dist-release\lms-launcher-*-portable.exe" (
+  echo [build] Removing leftover portable exe from an earlier run...
+  del /q "dist-release\lms-launcher-*-portable.exe"
+)
 echo.
-echo [build] Done. Artifact: dist-release\lms-launcher-*-portable.exe
+echo [build] Done. Output folder: dist-release\win-unpacked\
+echo [build] Start it with: dist-release\win-unpacked\lms_launcher.exe
 exit /b 0
