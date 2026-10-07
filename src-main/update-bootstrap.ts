@@ -83,7 +83,8 @@ const escapeForTr = (s: string): string => s.split('"').join('\\"');
 export function writeUpdateBootstrap(i: BootstrapInput, hasWscript: boolean): BootstrapPlan {
   if (hasWscript) {
     const filePath = join(i.installDir, BOOTSTRAP_VBS_NAME);
-    // Node 的 'utf16le' 不写 BOM，而 WSH 只按 BOM 识别 UTF-16：缺 BOM 会按 ANSI 解，中文路径乱码。
+    // Node 的 'utf16le' 不写 BOM；WSH 只接受 UTF-16LE（无 BOM 也能解，但 UTF-8 与 UTF-16BE 都不被接受），
+    // 显式加 BOM 是被测试钉住的、各方都认的形态。
     writeFileSync(filePath, '\uFEFF' + vbsContent(i), 'utf16le');
     return { kind: 'vbs', filePath, trValue: escapeForTr(quote(i.wscriptPath) + ' ' + quote(filePath)), degraded: false };
   }
