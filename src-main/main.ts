@@ -6,6 +6,7 @@ import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
+import { migrateLegacyConfigs } from './config-migrate';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
 import { parseGgufHeader, estimateUsedBytes } from './vram';
@@ -73,6 +74,7 @@ function dataDir(): string {
 }
 // 配置目录（2026-10-06）：三份 yaml 统一收纳在 <dataDir>/configs/ 下。
 // llama_params.yaml 随包分发（electron-builder extraFiles），另两份为运行时用户数据。
+// 老用户升级时根目录遗留的两份用户 yaml 由 config-migrate.ts 在 whenReady 最早段静默搬入（2026-10-08）。
 function configDir(): string { return join(dataDir(), 'configs'); }
 function yamlPaths(): [string, string, string] {
   const d = configDir();
@@ -968,6 +970,9 @@ ipcMain.handle('get_llama_update_config', (): { success: true; config: LlamaUpda
 app.whenReady().then(() => {
   // configs/ 兜底（2026-10-06）：随包已带该目录；用户误删后在此补建，否则后续保存会 ENOENT
   try { mkdirSync(configDir(), { recursive: true }); } catch { /* 建目录失败由后续读写报错暴露 */ }
+  // 老用户存量迁移（2026-10-08）：根目录两份用户 yaml 静默搬进 configs/，无日志无提示、不抛异常。
+  // 顺序硬要求：必须在 initI18n() 之前——language 就在 lms_launcher.yaml 里（spec §6）。
+  migrateLegacyConfigs(dataDir(), configDir());
   initI18n(); // i18n（spec §3.3）：主进程为语言权威，whenReady 最先解析（须在托盘/日志文案使用前）
   // 隐藏默认菜单栏（File / Edit / View / Window / Help 整行）
   Menu.setApplicationMenu(null);
