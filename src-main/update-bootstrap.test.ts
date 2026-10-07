@@ -75,3 +75,43 @@ describe('writeUpdateBootstrap：wscript 缺失 → .cmd 回退（可见窗口�
     expect(c.indexOf('chcp 65001')).toBeLessThan(c.indexOf(input.ps1Path));
   });
 });
+
+// 中文子目录：安装目录含非 ASCII 字符是本次一并修掉的既存缺陷（规格 F12），也是编码断言的真实场景
+function makeFakeScript(dir: string): { ps1: string; marker: string } {
+  const ps1 = join(dir, 'fake-update.ps1');
+  writeFileSync(ps1,
+    "param([string]$ZipPath, [string]$InstallDir)\r\n" +
+    "Set-Content -LiteralPath (Join-Path $InstallDir 'marker.txt') -Value ($ZipPath + '|' + $InstallDir) -Encoding UTF8\r\n",
+    'utf8');
+  return { ps1, marker: join(dir, 'marker.txt') };
+}
+
+describe('生成的启动器在 Windows 上实跑（cscript / cmd.exe）', () => {
+  it('.vbs 经 cscript 无语法错误，并把 zip/installDir 原样传给脚本（中文目录）', () => {
+    if (!WIN) return;
+    const dir = join(base, '中文目录');
+    mkdirSync(dir, { recursive: true });
+    const { ps1, marker } = makeFakeScript(dir);
+    const plan = writeUpdateBootstrap(
+      { ...input, installDir: dir, ps1Path: ps1, zipPath: join(dir, 'pkg.zip'), updateLogPath: join(dir, 'lms_launcher_update.log') },
+      true,
+    );
+    execFileSync('cscript.exe', ['//nologo', plan.filePath], { encoding: 'utf8' });
+    expect(existsSync(marker)).toBe(true);
+    expect(readFileSync(marker, 'utf8')).toContain(join(dir, 'pkg.zip') + '|' + dir);
+  });
+
+  it('.cmd 回退经 cmd.exe 同样把参数原样送达（chcp 65001 生效）', () => {
+    if (!WIN) return;
+    const dir = join(base, '中文目录-cmd');
+    mkdirSync(dir, { recursive: true });
+    const { ps1, marker } = makeFakeScript(dir);
+    const plan = writeUpdateBootstrap(
+      { ...input, installDir: dir, ps1Path: ps1, zipPath: join(dir, 'pkg.zip'), updateLogPath: join(dir, 'lms_launcher_update.log') },
+      false,
+    );
+    execFileSync('cmd.exe', ['/c', plan.filePath], { encoding: 'utf8' });
+    expect(existsSync(marker)).toBe(true);
+    expect(readFileSync(marker, 'utf8')).toContain(join(dir, 'pkg.zip') + '|' + dir);
+  });
+});
