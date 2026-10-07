@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { migrateLegacyConfigs } from './config-migrate';
 import { tmpPath, rm, writeText, mkDir, jp } from './test-utils';
 
@@ -79,15 +79,30 @@ describe('config-migrate.ts', () => {
     rm(root);
   });
 
-  it('both_moves_fail_is_silent', () => { // §4-6 / S6
+  it('both_moves_fail_is_silent', () => { // §4-6 / S6：两份都失败 → 都不动，且一份失败不影响另一份
     const { root, cfg } = legacyRoot('mig_fail');
+    writeText(jp(root, APP_YAML), 'llama_dir: OLD\n');
     writeText(jp(root, TPL_YAML), 'tpl_a:\n  values: {}\n');
     migrateLegacyConfigs(root, cfg, {
       move: () => { throw new Error('EPERM'); },
       copy: () => { throw new Error('EPERM'); },
     });
-    expect(existsSync(jp(root, TPL_YAML))).toBe(true); // 原件留在原位，下次启动重试
+    expect(existsSync(jp(root, APP_YAML))).toBe(true); // 原件留在原位，下次启动重试
+    expect(existsSync(jp(root, TPL_YAML))).toBe(true);
+    expect(existsSync(jp(cfg, APP_YAML))).toBe(false);
     expect(existsSync(jp(cfg, TPL_YAML))).toBe(false);
+    rm(root);
+  });
+
+  it('copy_failing_halfway_leaves_no_partial_target', () => { // §4-6「不留半成品」
+    const { root, cfg } = legacyRoot('mig_partial');
+    writeText(jp(root, APP_YAML), 'llama_dir: OLD\n');
+    migrateLegacyConfigs(root, cfg, {
+      move: () => { throw new Error('EBUSY'); },
+      copy: (from, to) => { writeFileSync(to, 'PARTIAL'); throw new Error('ENOSPC'); }, // 写到一半才失败
+    });
+    expect(existsSync(jp(cfg, APP_YAML))).toBe(false); // 半份目标被清掉，否则下次启动把它当已迁移
+    expect(existsSync(jp(root, APP_YAML))).toBe(true); // 根原件仍在，下次启动重试
     rm(root);
   });
 });
