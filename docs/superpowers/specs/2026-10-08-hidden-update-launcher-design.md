@@ -22,6 +22,7 @@
 | F14 | `/TR "\"<wscript>\" \"<vbs>\""`（内层引号全部反斜杠转义）经 `execSync`（cmd.exe）注册成功，任务 XML 中 Command/Arguments 切分正确，实跑通过 | 本轮实测 |
 | F15 | 更新日志 `<installDir>\lms_launcher_update.log` 在下次启动由 `replayUpdateLog()` 原样回显到应用日志区 | `src-main/main.ts:643-660` |
 | F16 | 主进程与 `scripts/*.ps1` 的字符串字面量不得含汉字（词典除外）；生成的 `.vbs`/`.cmd` 里**我们自己的模板文本**来自 main.ts 的字面量 → 不含汉字（见 §5.1 的准确表述：路径本身可能非 ASCII，`Err.Description` 是本地化的例外） | `src-main/i18n/no-hardcoded.test.ts` |
+| F17 | **Windows PowerShell 5.1 读无 BOM 的 `.ps1` 时按系统 ANSI 代码页（中文系统 = GBK 936）解码**：UTF-8 中文注释里未配对的字节会把紧随其后的 LF 当作 GBK 尾字节吞掉。实测无 BOM 的 `scripts/lms-launcher-update.ps1` 被读成 304 行（真实 338 行，吞 34 个换行），`param()` 被并进上面的注释 → 5 个解析错误 → `powershell -File` 只把错误写进 stderr 并 exit 1，**一行更新日志都不写**；`.vbs` 的 `sh.Run` 成功启动了 powershell（`Err.Number=0`），于是也不写 `[vbs]` 行，只把退出码透传成任务的 `Last Result=1` —— 用户点「重启以更新」后完全静默。该文件的 BOM 在 `78be5ae`（2026-10-06）被丢掉，自那以后自更新一直静默失败（已安装目录里那份仍是 09-21 的带 BOM 版本，所以旧包能跑）。同批 `scripts/package-zip.ps1` 也是 4 个解析错误；`src-main/gpu-counters.ps1` 吞 8 行但侥幸解析通过 | `src-main/ps1-encoding.test.ts`（断言每个 `.ps1` 前 3 字节 = `EF BB BF`，并用 `powershell.exe` 的解析器断言 0 错误） |
 
 ## 2. 目标与非目标
 
@@ -112,6 +113,7 @@ export function writeUpdateBootstrap(i: BootstrapInput, hasWscript: boolean): Bo
   ④ 更新中止（校验失败、目标文件被占用等）时 exe 未被覆盖，锚点还是上一轮的构建时间，判定失效；
   ⑤ 不经更新脚本而手动复制/还原 `lms_launcher.exe` 会把 exe 的 mtime 刷成「现在」，于是任何更早的采样都被判陈旧（安全侧的假 skip）。
 - 编码留档（仓库没有 CI，也没有 `.gitattributes`，这两件事只能靠人复核）：本文件必须保持 **UTF-8 BOM + LF**（PowerShell 5.1 按 ANSI 解码中文注释所需；编辑工具已四次吞掉该 BOM，PS 5.1 会因此报假语法错误）。改完必须实测**前 3 字节 = `EF BB BF`、CR 计数 = 0**，并用 `[System.Management.Automation.Language.Parser]::ParseFile(...)` 确认 0 错误，再用 `powershell.exe`（5.1）实跑一次。
+- **仪器警告（F17）**：验证 `.ps1` 可解析性必须用 `powershell.exe`（Windows PowerShell 5.1）——`pwsh` 7 的 `Parser::ParseFile` 按 UTF-8 读无 BOM 文件，对同一份在 5.1 下报 5 个解析错误的文件永远报 0 错误，本轮的静默失败正是被它掩盖的。仓库级守护见 `src-main/ps1-encoding.test.ts`（BOM + 5.1 解析 0 错误两条），检查器本身是 `scripts/ps1-parse-check.ps1`。
 
 ## 6. 顺序约束与不变量
 
