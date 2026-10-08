@@ -5,7 +5,7 @@ import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK, ERR_UPDATE_FILES_MISSING, ERR_UPDATE_TASK_START } from './i18n/err-keys';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig, saveVramTotal } from './config';
+import { appConfigLoad, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig, saveVramTotal } from './config';
 import { migrateLegacyConfigs } from './config-migrate';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
@@ -447,7 +447,7 @@ ipcMain.handle('vram_estimate', async (_e, args: {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
 });
-// save_vram_total：持久化显卡显存总量（lms_launcher.yaml 的 vram_total_gb 字段）；gb ≤ 0 → 视为未配置（不写入）
+// save_vram_total：持久化显卡显存总量（lms_launcher.yaml 的 vram_total_gb 字段）；gb ≤ 0 → 目标为「无该键」（落盘时该键消失）；与文件现值相同则完全不写（2026-10-09 spec D3/D6）
 ipcMain.handle('save_vram_total', (_e, gb: number): void => {
   const [p] = yamlPaths();
   saveVramTotal(p, gb);
