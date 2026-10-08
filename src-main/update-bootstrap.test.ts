@@ -50,6 +50,40 @@ describe('writeUpdateBootstrap：wscript 存在 → .vbs 隐藏启动', () => {
     expect(cmdContent(input)).not.toMatch(/\p{Script=Han}/u);
   });
 
+  // 顺序断言：错误守卫必须排在任何可能抛错的语句之前（规格 §4 行 4：失败 = 日志一行 + LastTaskResult=1）。
+  // 守卫排在 CreateObject 之后时，CreateObject 抛错就是「未处理错误」：脚本当场中止、一行日志都不写，
+  // 计划任务仍报成功。2026-10-08 用 cscript 两侧实测（.temp/final-fix/）：当前形态 exit 0 且无日志文件，
+  // 修复形态 exit 1 且写入日志行。这条断言只比较下标，不依赖任何实跑。
+  it('On Error Resume Next 必须出现在 CreateObject 之前（规格 §4 行 4 的守卫顺序）', () => {
+    const c = vbsContent(input);
+    const guard = c.indexOf('On Error Resume Next');
+    expect(guard, '生成的 .vbs 必须含错误守卫').toBeGreaterThan(-1);
+    // 两处 CreateObject（WScript.Shell 与 Scripting.FileSystemObject）都必须在守卫之后。
+    // 计数用 split 而不是正则：i18n 守护的扫描器不识别正则字面量（见 update-bootstrap.ts 中 escapeForTr 上方的说明）。
+    const createSites = c.split('CreateObject').length - 1;
+    expect(createSites, '两处 CreateObject 都在生成文本里').toBe(2);
+    let at = c.indexOf('CreateObject');
+    for (let k = 0; k < createSites; k++) {
+      expect(at, 'CreateObject 站点 #' + k + ' 找不到').toBeGreaterThan(-1);
+      expect(guard, '守卫必须早于 CreateObject 站点 #' + k).toBeLessThan(at);
+      at = c.indexOf('CreateObject', at + 1);
+    }
+  });
+
+  // CRLF 契约（规格 §5.1「两者 CRLF」）：此前只靠产物实测，没有任何断言守着。
+  // 裸 LF 在 .cmd 上会让 cmd.exe 把整行当一条命令读；在 .vbs 上 VBScript 也能解，
+  // 但契约写的是 CRLF，就得由测试钉住。同样不用正则形式，改用 split 逐行检查。
+  it('生成的文本必须是 CRLF 行尾且不含裸 LF（规格 §5.1）', () => {
+    for (const [label, c] of [['vbsContent', vbsContent(input)], ['cmdContent', cmdContent(input)]] as [string, string][]) {
+      expect(c.includes('\r\n'), label + ' 必须含 CRLF').toBe(true);
+      const parts = c.split('\n');
+      // 最后一个片段之后没有换行，其余每一个 \n 之前必须是 \r
+      for (let k = 0; k < parts.length - 1; k++) {
+        expect(parts[k].endsWith('\r'), label + ' 第 ' + (k + 1) + ' 行之后是裸 LF').toBe(true);
+      }
+    }
+  });
+
   // 这条钉住的是「落盘形态 = UTF-16LE 且带 BOM」这个被测试保护的事实本身。
   // 机制解释按实测写（规格 F11）：WSH 只接受 UTF-16LE —— 无 BOM 的 UTF-16LE 也能解码，
   // UTF-8（有/无 BOM）与 UTF-16BE+BOM 全部失败。所以去掉 BOM 实跑不会坏，坏的是这条断言。
