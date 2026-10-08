@@ -2,7 +2,8 @@
 # 用法：
 #   更新前留基线：powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 -Snapshot [-InstallDir <dir>]
 #   更新前采样窗口：powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 -Watch [-Seconds <n>] [-IntervalMs <n>] [-InstallDir <dir>]
-#                  （-Watch 是纯采集器：除探针类型不可解析时 exit 1，其余无论命中多少都 exit 0，判定由更新后默认模式的 C3 读它的结果文件）
+#                  （-Watch 是纯采集器：除安装目录不存在或探针类型不可解析时 exit 1，其余无论命中多少都 exit 0，
+#                  判定由更新后默认模式的 C3 读它的结果文件）
 #   更新后验证：  powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 [-InstallDir D:\AI\LMS-Launcher]
 # 5 项检查（只读诊断：不创建/删除任何计划任务，不启动/杀掉任何进程）：
 #   C1 新版存活     安装目录内的 lms_launcher.exe 进程存在（按路径过滤，多实例下不会拿错）
@@ -12,24 +13,35 @@
 #                  旧口径「无新增 conhost 进程」是错的：隐藏启动（wscript + sh.Run style 0）之后仍存在
 #                  不可见的 conhost/cmd 进程，而用户要的是「看不到窗口」。conhost 进程差值已降为 C3b
 #                  [INFO] 信息项，不计入 PASS/FAIL。
-#                  陈旧性判定（锚点：安装目录内 lms_launcher.exe 的 LastWriteTime——更新脚本会覆盖它，见
-#                  scripts/lms-launcher-update.ps1:138 与 :163 的 Copy-Item；更新日志则会被应用在重启后
-#                  读取并删除（src-main/main.ts:669 的 unlinkSync，由 :1001 的 replayUpdateLog 调用），
-#                  exe 一直在，所以它是「本次更新完成时刻」的锚点）：若 console-watch.txt 的
-#                  LastWriteTime 早于该 exe 的 LastWriteTime，说明这份采样在当次构建落地之前就结束了、
-#                  没有覆盖到更新 → [INFO] 并计入 skip，不打 PASS。
-#                  exe 不存在时不做这条判定（没有「本次构建落地」的时间基准），退回按内容形态判定。
+#                  陈旧性判定（锚点：安装目录内 lms_launcher.exe 的 LastWriteTime = 构建产物落地时间，
+#                  不是本次更新完成时刻：Copy-Item 保留源文件的 LastWriteTime，打包链
+#                  scripts/package-zip.ps1:19/:22（Copy-Item + Compress-Archive）→
+#                  scripts/lms-launcher-update.ps1:116 的 ZipFile::ExtractToDirectory → :163 的 Copy-Item -Force
+#                  把它原样带进安装目录（实测整链保留，zip 只有 2 秒粒度），所以它 ≤ 更新时刻、可能早任意久；
+#                  现场证据：同目录里 lms_launcher.exe 22:03:06 与 lms-launcher-update.ps1 22:01:30 相差 96 秒，
+#                  一次 Copy-Item 写不出两个时刻。不拿更新日志作锚点：更新成功后应用会在重启后读取并删除它
+#                  （src-main/main.ts:669 的 unlinkSync，由 :1001 的 replayUpdateLog 调用），正常时序里不存在。
+#                  所以这条判定是保守下界、不是精确时刻：采样文件的 LastWriteTime 早于该 exe 的 LastWriteTime
+#                  → 这份采样必然在当次构建落地之前就结束了、没覆盖到本次更新 → [INFO] 并计入 skip，不打 PASS；
+#                  「不早于」只说明没被这条下界排除，不等于采样真的覆盖了更新（见下面局限③）。
+#                  exe 不存在时不做这条判定（没有「构建产物落地」的时间基准），退回按内容形态判定。
 #                  缺这条判定就是假绿：-Watch 只在启动时覆盖该文件，更新脚本既不生成也不清理它，
 #                  忘跑 -Watch 时会拿几天前的 hits=0 打 PASS。
-#                  换用 exe 作锚点的两条局限：① 更新之后才补跑 -Watch 时采样文件比 exe 新，判不出来；
-#                  ② 手动复制/还原 console-watch.txt 会把它的 mtime 刷新成「新」，同样使判定失效。
+#                  换用 exe 作锚点的四条局限：① 更新之后才补跑 -Watch 时采样文件比 exe 新，判不出来；
+#                  ② 手动复制/还原 console-watch.txt 会把它的 mtime 刷新成「新」，同样使判定失效；
+#                  ③ 安装的是比采样文件更早打包的构建时判定不触发（例：3 天前跑的采样 + 今天安装一个 7 天前
+#                     打包的包 → 采样 mtime 晚于 exe mtime），此时仍可能假绿；
+#                  ④ 更新中止（校验失败、目标文件被占用等）时 exe 未被覆盖，锚点还是上一轮那次的构建时间，
+#                     判定失效。
 #                  -Watch 的已知局限：基线只排除采样器启动时已存在的窗口句柄，因此采样期间用户自己新开
 #                  的终端窗口会被记为 HIT；HIT 行的 pid 是窗口属主（Windows Terminal）的 pid，
 #                  不是被启动进程的 pid。
 #   C4 任务不残留   计划任务 LMSLauncherUpdate 不存在（更新脚本启动即自删）
 #   C5 日志无 ERROR  lms_launcher_update.log 最后一段（自最后一个 `=== update run ===` 标记行起）无 [ERROR] 行
 # 退出码：全部 PASS exit 0；任一 FAIL exit 1；[INFO] 跳过不算失败。
-# 编码：UTF-8 with BOM + LF（与仓库其他 ps1 一致，PS 5.1 兼容）。
+# 编码：本文件自带 BOM（UTF-8 BOM + LF，PowerShell 5.1 按 ANSI 解码中文注释所需）；仓库其他 .ps1 均无 BOM
+#       （实测 scripts/lms-launcher-update.ps1、scripts/package-zip.ps1、src-main/gpu-counters.ps1 都没有）。
+#       编辑工具可能吞掉 BOM，改完必须复核前 3 字节 = EF BB BF 且 CR 计数 = 0。
 param(
   [string]$InstallDir = 'D:\AI\LMS-Launcher',
   [switch]$Snapshot,
@@ -212,20 +224,29 @@ if (-not (Test-Path $WatchPath)) {
   # 存在，且采样文件比它更早 —— 即这份采样在当次构建落地之前就结束了，没有覆盖到更新。
   # 锚点是 exe（复用 C1 算好的 $targetExe）而不是更新日志：更新成功后应用会在启动时读取并删除
   # lms_launcher_update.log（src-main/main.ts:669 的 unlinkSync，由 :1001 的 replayUpdateLog 调用），
-  # 「更新后跑本脚本」的正常时序里日志根本不存在，判定恒为假 → 假绿照旧；而更新脚本会覆盖 exe
-  # （scripts/lms-launcher-update.ps1:138 与 :163 的 Copy-Item）。
-  # 前提：exe 不存在时不做这条判定（没有「本次构建落地」的时间基准），退回按内容形态判定。
+  # 「更新后跑本脚本」的正常时序里日志根本不存在，判定恒为假 → 假绿照旧。
+  # exe 的 LastWriteTime 是【构建产物落地时间】，不是本次更新完成时刻：Copy-Item 保留源文件的 LastWriteTime，
+  # 打包链 scripts/package-zip.ps1:19/:22 → ZipFile::ExtractToDirectory（scripts/lms-launcher-update.ps1:116）
+  # → Copy-Item -Force（:163）把它原样带进安装目录，所以它 ≤ 更新时刻、可能比本次更新早任意久。
+  # 因此这条判定是保守下界、不是精确时刻：早于它 → 必然没覆盖本次更新；不早于它 → 只是没被下界排除。
+  # 前提：exe 不存在时不做这条判定（没有「构建产物落地」的时间基准），退回按内容形态判定。
   # 位置：放在 HIT 判定之后，不改变既有顺序（HIT 优先于「未跑完」），只把本来要打 PASS 的情况降级为 [INFO]。
   $stale = $false
   $watchStamp = ''
   $exeStamp = ''
-  if (Test-Path -LiteralPath $targetExe) {
-    $watchItem = Get-Item -LiteralPath $WatchPath
-    $exeItem = Get-Item -LiteralPath $targetExe
-    $watchStamp = $watchItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
-    $exeStamp = $exeItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
-    if ($watchItem.LastWriteTime -lt $exeItem.LastWriteTime) { $stale = $true }
-  }
+  # 元数据访问防护（对齐 C1 取 $proc.Path、C4 取 schtasks 的 try/catch 口径）：Test-Path 与 Get-Item 之间
+  # 存在竞态——采样文件此刻被清理 → 以空时间戳打陈旧 [INFO]（安全侧但文案畸形）；exe 被更新覆盖中 → 取不到
+  # 时间戳就不判陈旧而打 PASS（不安全侧）。整块（两个 Get-Item 与比较）进 try 并 -ErrorAction Stop，
+  # 异常时保持 $stale = $false：判定语义与顺序都不变，只是不输出畸形时间戳。
+  try {
+    if (Test-Path -LiteralPath $targetExe) {
+      $watchItem = Get-Item -LiteralPath $WatchPath -ErrorAction Stop
+      $exeItem = Get-Item -LiteralPath $targetExe -ErrorAction Stop
+      $watchStamp = $watchItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+      $exeStamp = $exeItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+      if ($watchItem.LastWriteTime -lt $exeItem.LastWriteTime) { $stale = $true }
+    }
+  } catch { }
   if (-not $started) {
     Write-Host ('[INFO] C3 no visible console window: watch log has no "watch start" header (' + $WatchPath + '); skipping (not a failure)')
     $skip++
