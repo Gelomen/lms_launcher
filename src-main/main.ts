@@ -594,7 +594,7 @@ ipcMain.handle('run_update', async (): Promise<{ ok: true } | ({ ok: false } & I
     // 启动器：/TR 只引用它（261 上限，见上方复盘注释）。2026-10-08 起默认是 .vbs ——
     // 任务直接跑 .cmd 会弹控制台窗口（本机实测新增 1 个可见顶层窗口，hwnd 口径；旧探针按
     // class+title+pid 去重会记成 2 条；默认控制台宿主为 Windows Terminal）；wscript + sh.Run(..., 0, True)
-    // 实测全程 0 可见窗口。wscript.exe 缺失时回退
+    // 实测全程 0 个新增可见控制台窗口（口径见规格 H2）。wscript.exe 缺失时回退
     // .cmd：会出现可见窗口，但更新照常完成。规格 docs/superpowers/specs/2026-10-08-hidden-update-launcher-design.md
     const bootstrap = writeUpdateBootstrap(
       { installDir, wscriptPath: WSCRIPT_PATH, ps1Path: ps1, zipPath, updateLogPath },

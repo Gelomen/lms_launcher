@@ -1,7 +1,7 @@
 // src-main/update-bootstrap.ts
 // 更新启动器（bootstrap）生成。计划任务 /TR 有 261 字符上限（main.ts:569 的 2026-09-05 复盘），
 // ps1/zip/installDir 三个绝对参数必须经安装目录里的一个短启动器文件中转；本模块生成它并给出 /TR 值。
-// 2026-10-08：默认生成 .vbs —— wscript + sh.Run(cmd, 0, True) 实测全程 0 个可见窗口；
+// 2026-10-08：默认生成 .vbs —— wscript + sh.Run(cmd, 0, True) 实测全程 0 个新增可见控制台窗口（口径见规格 H2）；
 // 原先的 .cmd 实测新增 1 个可见顶层窗口（hwnd 口径；旧探针按 class+title+pid 去重会记成 2 条；
 // 默认控制台宿主是 Windows Terminal）。
 // wscript.exe 缺失（Win11 已把 WSH 列为可选组件）→ 回退 .cmd：会出现可见窗口，但更新照常完成。
@@ -63,7 +63,7 @@ export function vbsContent(i: BootstrapInput): string {
   ].join('\r\n');
 }
 
-// 回退启动器：cmd.exe 按当前控制台代码页解码批处理正文，因此第二行先 chcp 65001，
+// 回退启动器：cmd.exe 按当前控制台代码页解码批处理正文，因此在任何路径出现之前先 chcp 65001（本函数生成时在第 4 行、两条 rem 之后；被测试钉住的是顺序不是行号），
 // 之后出现的非 ASCII 安装路径才不会被解错（2026-10-08 实测：'ascii' 写法在中文目录下直接失败）。
 export function cmdContent(i: BootstrapInput): string {
   return [
