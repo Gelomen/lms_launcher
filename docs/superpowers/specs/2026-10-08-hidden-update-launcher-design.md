@@ -50,7 +50,7 @@
 | H6 | 回退 | 探测 `%SystemRoot%\System32\wscript.exe`；缺失 → 写 `.cmd`（可见窗口，但更新完成）+ 一条降级日志 | WSH 在 Win11 已是可选组件；不做三级回退（YAGNI），不引入硬失败 |
 | H7 | 回退 `.cmd` 编码 | UTF-8（无 BOM）+ 在任何路径出现之前 `chcp 65001 >nul`（生成物第 4 行） | F12/F13；不新增依赖（Node 无 GBK 编码器，仓库无 iconv-lite） |
 | H8 | `/TR` 写法 | `"\"<wscript>\" \"<vbs>\""`；回退时 `"\"<cmd>\""` | F14 实测；仍远低于 261 上限（生产路径约 75 字符） |
-| H9 | VBS 自身失败路径 | `On Error Resume Next`；失败时**不弹 WSH 错误框**，改为向更新日志追加一行带时间戳的 `[ERROR]` 并 `WScript.Quit 1` | 弹窗就是可见窗口；日志会在下次启动回显（F15）。该行必须纯 ASCII（WSH 按系统 ANSI 写文件，与日志的 UTF-8 只在 ASCII 上等价） |
+| H9 | VBS 自身失败路径 | `On Error Resume Next` **必须排在任何可能抛错的语句之前**（即 `Dim` 之后、`CreateObject` 之前）；失败时**不弹 WSH 错误框**，改为向更新日志追加一行带时间戳的 `[ERROR]`（含 `Err.Description` 与 `number=<Err.Number>`）并 `WScript.Quit 1` | 弹窗就是可见窗口；日志会在下次启动回显（F15）。守卫排在 `CreateObject` 之后时，`CreateObject` 抛错就是未处理错误：脚本当场中止、一行日志都不写，任务仍报 `LastTaskResult=0`（2026-10-08 cscript 两侧实测：当前形态 exit 0 无日志、修复形态 exit 1 有日志；生产宿主是 wscript，未处理错误按 WSH 语义会弹模态框——这半句是推断，未实测）。文案里我们自己的部分保持 ASCII；`Err.Description` 由 WSH 按系统 ANSI 代码页写出，本地化且可能为空，所以 `Err.Number` 是必须记的那一半 |
 | H10 | 启动器文件残留 | 保留，不新增清理步骤 | 用户明确选择；每次更新覆盖重写，不累积 |
 | H11 | 生成逻辑放哪 | 新模块 `src-main/update-bootstrap.ts` + 同名测试 | main.ts 无测试覆盖；生成内容（引号、BOM、编码）是本次全部风险所在，必须可测（F10 正是靠测试守住的） |
 | H12 | 验收脚本 C3 | 改为「更新期间无新增可见控制台窗口」；新增 `-Watch` 采样模式（更新前启动，写 `console-watch.txt`），默认模式读该文件断言 0 命中；conhost 进程差值降为 `[INFO]` | 窗口是瞬态的，更新结束后再 diff 窗口句柄必然抓不到；采样器实测能区分 E（1 个新增句柄；旧探针按 class+title+pid 字符串去重会报 2 条，见 F4）/A（0 命中） |
@@ -84,8 +84,8 @@ export function writeUpdateBootstrap(i: BootstrapInput, hasWscript: boolean): Bo
 
 - `trValue`：放进 `/TR "…"` 里的内容，内部 `"` 已按 `CommandLineToArgvW` 规则转义为 `\"`（H8）。
 - `hasWscript` 由调用方用 `existsSync` 计算；模块自身不探测环境（可测）。
-- 落盘：`.vbs` → `'\uFEFF' + vbsContent`，`'utf16le'`；`.cmd` → `cmdContent`，`'utf8'`（无 BOM）。两者 CRLF。
-- 生成的文本一律 ASCII/英文（F16、H9）。
+- 落盘：`.vbs` → `'\uFEFF' + vbsContent`，`'utf16le'`；`.cmd` → `cmdContent`，`'utf8'`（无 BOM）。两者 CRLF（2026-10-08 终审起由测试断言：输出含 `\r\n` 且不含裸 `\n`；此前这条契约只靠产物实测，没有任何断言守着）。
+- 生成的文本**不含汉字**——F16 的守护断言就是这个（`update-bootstrap.test.ts` 对 `vbsContent`/`cmdContent` 的返回值断言 `not.toMatch(/\p{Script=Han}/u)`）。早期写的「一律 ASCII/英文」不准确，且与 §4「安装目录含中文/空格必须可用」自相矛盾：生成的文本里**必然**出现安装目录路径，非 ASCII 目录就不可能全 ASCII。准确表述是：模板文本（我们自己写的文案与注释）不含汉字、保持 ASCII；`Err.Description` 是例外——WSH 按系统 ANSI 代码页写出它，中文系统上是本地化的非 ASCII 字节（实测 8 个 GBK 字节，例 `缺少对象`），且可能为空串，所以失败行必须同时记 `Err.Number`（H9）。
 
 ### 5.2 词典 `src-main/i18n/dict.ts`
 
@@ -96,9 +96,22 @@ export function writeUpdateBootstrap(i: BootstrapInput, hasWscript: boolean): Bo
 ### 5.3 `scripts/verify-relaunch.ps1`
 
 - 新增 `-Watch [-Seconds <n>] [-IntervalMs <n>]`：基线 = 启动时可见控制台类窗口句柄集合；采样期内任何**新增**句柄写一行 `HIT …`；首行 `watch start …`，结束行 `watch end samples=… hits=…`；文件 `<InstallDir>\console-watch.txt`。
-- C3 改为读该文件：无 `watch start` → `[INFO]` 跳过；有 `HIT` → FAIL；有 `watch end` 且无 `HIT` → PASS；有 start 无 end → `[INFO]` 跳过并打印已捕获的 HIT。
+- C3 改为读该文件。判定顺序（2026-10-08 终审按实现核对；分支互斥、每条恰好计数一次，因此 `pass+fail+skip` 恒为 5）：
+  1. 无 `watch start` → `[INFO]` 跳过；
+  2. 有 `HIT` → FAIL（逐行列出 HIT；这份文件比当前构建更早时附一行时间戳说明）；
+  3. 有 start 无 `watch end` → `[INFO]` 跳过。**不打印「已捕获的 HIT」**：该分支排在第 2 条之后，能走到这里说明一行 HIT 都没有——早期写的「并打印已捕获的 HIT」按实现顺序不可达，已删；
+  4. 采样文件比安装目录内的 `lms_launcher.exe` 更早 → `[INFO]` 跳过（陈旧性判定，锚点与局限见下）；
+  5. `watch end` 行的 `samples=0`（或该行根本没有 `samples=` 字段）→ `[INFO]` 跳过，**不打 PASS**（2026-10-08 终审：`-Seconds`/`-IntervalMs` 无校验，`-Seconds 0` 产出的就是「文件新鲜但一次都没采样」，而 C3 是 G1 唯一的自动化门槛）；
+  6. 以上都不成立 → PASS，文案打印 `samples=` 与采样的起止时间（取自 `watch start`/`watch end` 行的时间戳）。
 - 原 conhost 进程差值检查降为 `[INFO]`（C3b），不计入 PASS/FAIL。
 - 已知局限：窗口句柄在窗口销毁后可能被复用；采样间隔内复用概率极低，记为可接受。
+- 陈旧性判定的五条局限（留档；权威版本在 `scripts/verify-relaunch.ps1` 头部注释里编号①–⑤的那一段，现约 :35-41）：
+  ① 更新之后才补跑 `-Watch` → 采样文件比 exe 新，判不出来；
+  ② 手动复制/还原 `console-watch.txt` 会把它的 mtime 刷成「新」，同样判不出来；
+  ③ 安装的是比采样文件更早打包的构建时判定不触发（采样 mtime 晚于 exe mtime），此时仍可能假绿；
+  ④ 更新中止（校验失败、目标文件被占用等）时 exe 未被覆盖，锚点还是上一轮的构建时间，判定失效；
+  ⑤ 不经更新脚本而手动复制/还原 `lms_launcher.exe` 会把 exe 的 mtime 刷成「现在」，于是任何更早的采样都被判陈旧（安全侧的假 skip）。
+- 编码留档（仓库没有 CI，也没有 `.gitattributes`，这两件事只能靠人复核）：本文件必须保持 **UTF-8 BOM + LF**（PowerShell 5.1 按 ANSI 解码中文注释所需；编辑工具已四次吞掉该 BOM，PS 5.1 会因此报假语法错误）。改完必须实测**前 3 字节 = `EF BB BF`、CR 计数 = 0**，并用 `[System.Management.Automation.Language.Parser]::ParseFile(...)` 确认 0 错误，再用 `powershell.exe`（5.1）实跑一次。
 
 ## 6. 顺序约束与不变量
 

@@ -572,7 +572,7 @@ ipcMain.handle('download_update', async (): Promise<
 //      与应用无父子关系）；以当前用户身份运行，本地目录写无需管理员。
 //   3) schtasks /TR 有 261 字符上限：ps1+zip+installDir 三个绝对参数内联会超限
 //      （生产路径下 create 直接被拒）。解法：把命令写进安装目录的
-//      lms_launcher_update.cmd 短启动器，/TR 只引用该文件（~90 字符）。
+//      lms_launcher_update.vbs 短启动器（wscript.exe 缺失时回退 .cmd），/TR 只引用该文件（~90 字符）。
 // 2026-10-05 i18n 响应性：失败改**结构化返回**（{ ok:false, errorKey }）而非 throw —— 渲染端据此存 key、
 // 渲染时翻译（切语言即时重译）；抛异常会把译文串当「不可译原文」透传而冻结在旧语言。
 ipcMain.handle('run_update', async (): Promise<{ ok: true } | ({ ok: false } & IpcErr)> => {
