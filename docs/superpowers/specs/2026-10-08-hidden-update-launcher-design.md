@@ -21,7 +21,7 @@
 | F13 | `.cmd` 用 UTF-8（无 BOM）+ 在任何路径出现之前 `chcp 65001 >nul`（手写探针 `b.cmd` 里在第 2 行，产品生成物里在第 4 行——被钉住的是顺序不是行号）可正确处理中文路径；不加 `chcp` 则失败（2026-10-08 二次复现：`chcp 936` 与完全去掉 `chcp` 行均失败——PowerShell 报 `-File` 的 .ps1 不存在；`chcp 65001` 是必要条件。探针 `.temp/probe-t3.cjs`） | 本轮实测（`b.cmd` 成功 / `c.cmd` 失败）；二次复现见 `.temp/hide-console/probe-task3-results.md` A2/A3，可重跑脚本 `.temp/probe-t3.cjs` |
 | F14 | `/TR "\"<wscript>\" \"<vbs>\""`（内层引号全部反斜杠转义）经 `execSync`（cmd.exe）注册成功，任务 XML 中 Command/Arguments 切分正确，实跑通过 | 本轮实测 |
 | F15 | 更新日志 `<installDir>\lms_launcher_update.log` 在下次启动由 `replayUpdateLog()` 原样回显到应用日志区 | `src-main/main.ts:643-660` |
-| F16 | 主进程与 `scripts/*.ps1` 的字符串字面量不得含汉字（词典除外）；生成的 `.vbs`/`.cmd` 内容来自 main.ts 的字面量 → 必须英文 | `src-main/i18n/no-hardcoded.test.ts` |
+| F16 | 主进程与 `scripts/*.ps1` 的字符串字面量不得含汉字（词典除外）；生成的 `.vbs`/`.cmd` 里**我们自己的模板文本**来自 main.ts 的字面量 → 不含汉字（见 §5.1 的准确表述：路径本身可能非 ASCII，`Err.Description` 是本地化的例外） | `src-main/i18n/no-hardcoded.test.ts` |
 
 ## 2. 目标与非目标
 
@@ -50,7 +50,7 @@
 | H6 | 回退 | 探测 `%SystemRoot%\System32\wscript.exe`；缺失 → 写 `.cmd`（可见窗口，但更新完成）+ 一条降级日志 | WSH 在 Win11 已是可选组件；不做三级回退（YAGNI），不引入硬失败 |
 | H7 | 回退 `.cmd` 编码 | UTF-8（无 BOM）+ 在任何路径出现之前 `chcp 65001 >nul`（生成物第 4 行） | F12/F13；不新增依赖（Node 无 GBK 编码器，仓库无 iconv-lite） |
 | H8 | `/TR` 写法 | `"\"<wscript>\" \"<vbs>\""`；回退时 `"\"<cmd>\""` | F14 实测；仍远低于 261 上限（生产路径约 75 字符） |
-| H9 | VBS 自身失败路径 | `On Error Resume Next` **必须排在任何可能抛错的语句之前**（即 `Dim` 之后、`CreateObject` 之前）；失败时**不弹 WSH 错误框**，改为向更新日志追加一行带时间戳的 `[ERROR]`（含 `Err.Description` 与 `number=<Err.Number>`）并 `WScript.Quit 1` | 弹窗就是可见窗口；日志会在下次启动回显（F15）。守卫排在 `CreateObject` 之后时，`CreateObject` 抛错就是未处理错误：脚本当场中止、一行日志都不写，任务仍报 `LastTaskResult=0`（2026-10-08 cscript 两侧实测：当前形态 exit 0 无日志、修复形态 exit 1 有日志；生产宿主是 wscript，未处理错误按 WSH 语义会弹模态框——这半句是推断，未实测）。文案里我们自己的部分保持 ASCII；`Err.Description` 由 WSH 按系统 ANSI 代码页写出，本地化且可能为空，所以 `Err.Number` 是必须记的那一半 |
+| H9 | VBS 自身失败路径 | `On Error Resume Next` **必须排在任何可能抛错的语句之前**（即 `Dim` 之后、`CreateObject` 之前）；失败时**不弹 WSH 错误框**，改为向更新日志追加一行带时间戳的 `[ERROR]`（含 `Err.Description` 与 `number=<Err.Number>`）并 `WScript.Quit 1` | 弹窗就是可见窗口；日志会在下次启动回显（F15）。守卫排在 `CreateObject` 之后时，`CreateObject` 抛错就是未处理错误：脚本当场中止、一行日志都不写，任务看起来是成功的（实测的是 cscript 退出码 0/1；`LastTaskResult` 由退出码推得，**未实测**）（2026-10-08 cscript 两侧实测：当前形态 exit 0 无日志、修复形态 exit 1 有日志；生产宿主是 wscript，未处理错误按 WSH 语义会弹模态框——这半句是推断，未实测）。文案里我们自己的部分保持 ASCII；`Err.Description` 由 WSH 按系统 ANSI 代码页写出，本地化且可能为空，所以 `Err.Number` 是必须记的那一半 |
 | H10 | 启动器文件残留 | 保留，不新增清理步骤 | 用户明确选择；每次更新覆盖重写，不累积 |
 | H11 | 生成逻辑放哪 | 新模块 `src-main/update-bootstrap.ts` + 同名测试 | main.ts 无测试覆盖；生成内容（引号、BOM、编码）是本次全部风险所在，必须可测（F10 正是靠测试守住的） |
 | H12 | 验收脚本 C3 | 改为「更新期间无新增可见控制台窗口」；新增 `-Watch` 采样模式（更新前启动，写 `console-watch.txt`），默认模式读该文件断言 0 命中；conhost 进程差值降为 `[INFO]` | 窗口是瞬态的，更新结束后再 diff 窗口句柄必然抓不到；采样器实测能区分 E（1 个新增句柄；旧探针按 class+title+pid 字符串去重会报 2 条，见 F4）/A（0 命中） |
@@ -63,9 +63,9 @@
 | wscript 存在（正常路径） | 生成 `.vbs`（UTF-16LE+BOM）；`/TR` 值为 `\"<wscript>\" \"<vbs>\"`；更新全程 0 新增可见控制台窗口（H2 口径）；日志 `wroteBootstrap` 的 `launcher=` 指向 `.vbs` |
 | wscript 缺失 | 生成 `.cmd`（UTF-8 无 BOM + `chcp 65001`）；`/TR` 值为 `\"<cmd>\"`；日志多一条 `wscriptFallback` 降级说明；更新仍完成（此时允许出现可见窗口） |
 | ps1 或 zip 不存在 | 不变：`{ ok:false, errorKey: ERR_UPDATE_FILES_MISSING }`，不生成任何启动器 |
-| VBS 启动 powershell 失败（如 WSH 组件损坏） | 无 WSH 弹窗；更新日志出现一行 `… [ERROR] [vbs] Could not start the update script: …`；任务 LastTaskResult=1；下次启动回显该行 |
+| VBS 启动 powershell 失败（如 WSH 组件损坏） | 无 WSH 弹窗；更新日志出现一行 `… [ERROR] [vbs] Could not start the update script: …`；任务 `LastTaskResult=1`（该值由 `WScript.Quit 1` 的退出码推得，未实测）；下次启动回显该行。**范围**：本行只覆盖「WSH 自身抛错」这条路径；`sh.Run` 成功但 powershell 失败时 `.vbs` 透传其退出码（实测 `-File` 指向不存在的文件时为 -196608），不是 1 |
 | 安装目录含中文/空格 | `.vbs` 与回退 `.cmd` 均正确传参（F11/F13） |
-| 更新期间用户自己的终端窗口 | 基线只排除采样器**启动时已存在**的窗口句柄，这些不算命中；采样期间用户自己新开的终端会被记为 HIT——已知局限，见 `scripts/verify-relaunch.ps1:138-139` 与 §5.3 的基线条目（:98） |
+| 更新期间用户自己的终端窗口 | 基线只排除采样器**启动时已存在**的窗口句柄，这些不算命中；采样期间用户自己新开的终端会被记为 HIT——已知局限，见 `scripts/verify-relaunch.ps1:151-152` 与 §5.3 的基线条目（:98） |
 | 采样器未运行 | C3 记 `[INFO]` 跳过，不判失败；C1/C2/C4/C5 照常 |
 
 ## 5. 契约

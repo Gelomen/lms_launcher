@@ -25,14 +25,14 @@
 #                  把它原样带进安装目录（实测整链保留，zip 只有 2 秒粒度），所以它 ≤ 更新时刻、可能早任意久；
 #                  现场证据：同目录里 lms_launcher.exe 22:03:06 与 lms-launcher-update.ps1 22:01:30 相差 96 秒——
 #                  若 mtime 是复制时刻，同一次复制产出的文件应共享同一时刻，实测并非如此，故它不是复制时刻。不拿更新日志作锚点：更新成功后应用会在重启后读取并删除它
-#                  （src-main/main.ts:669 的 unlinkSync，由 :1001 的 replayUpdateLog 调用），正常时序里不存在。
+#                  （src-main/main.ts:670 的 unlinkSync，由 :1002 的 replayUpdateLog 调用），正常时序里不存在。
 #                  所以这条判定是保守下界、不是精确时刻：采样文件的 LastWriteTime 早于该 exe 的 LastWriteTime
 #                  → 这份采样必然在当次构建落地之前就结束了、没覆盖到本次更新 → [INFO] 并计入 skip，不打 PASS；
 #                  「不早于」只说明没被这条下界排除，不等于采样真的覆盖了更新（见下面局限③）。
 #                  exe 不存在时不做这条判定（没有「构建产物落地」的时间基准），退回按内容形态判定。
 #                  缺这条判定就是假绿：-Watch 只在启动时覆盖该文件，更新脚本既不生成也不清理它，
 #                  忘跑 -Watch 时会拿几天前的 hits=0 打 PASS。
-#                  换用 exe 作锚点的四条局限：① 更新之后才补跑 -Watch 时采样文件比 exe 新，判不出来；
+#                  换用 exe 作锚点的五条局限（① – ⑤，权威版本在规格 §5.3）：① 更新之后才补跑 -Watch 时采样文件比 exe 新，判不出来；
 #                  ② 手动复制/还原 console-watch.txt 会把它的 mtime 刷新成「新」，同样使判定失效；
 #                  ③ 安装的是比采样文件更早打包的构建时判定不触发（例：3 天前跑的采样 + 今天安装一个 7 天前
 #                     打包的包 → 采样 mtime 晚于 exe mtime），此时仍可能假绿；
@@ -254,7 +254,7 @@ if (-not (Test-Path $WatchPath)) {
   # hits=0 文件会让「忘跑 -Watch」这一轮被当成「已验证且通过」。判定条件：安装目录内的 lms_launcher.exe
   # 存在，且采样文件比它更早 —— 即这份采样在当次构建落地之前就结束了，没有覆盖到更新。
   # 锚点是 exe（复用 C1 算好的 $targetExe）而不是更新日志：更新成功后应用会在启动时读取并删除
-  # lms_launcher_update.log（src-main/main.ts:669 的 unlinkSync，由 :1001 的 replayUpdateLog 调用），
+  # lms_launcher_update.log（src-main/main.ts:670 的 unlinkSync，由 :1002 的 replayUpdateLog 调用），
   # 「更新后跑本脚本」的正常时序里日志根本不存在，判定恒为假 → 假绿照旧。
   # exe 的 LastWriteTime 是【构建产物落地时间】，不是本次更新完成时刻：Copy-Item 保留源文件的 LastWriteTime，
   # 打包链 scripts/package-zip.ps1:19/:22 → ZipFile::ExtractToDirectory（scripts/lms-launcher-update.ps1:116）
