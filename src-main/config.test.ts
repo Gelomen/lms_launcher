@@ -13,6 +13,30 @@ describe('config.ts', () => {
     expect(appConfigLoad(p).llama_dir).toBe('C:\\llama-cpp');
   });
 
+  it('app_config_fallback_returns_a_fresh_clean_object', () => {
+    // appConfigLoad 的契约（2026-10-08 settings-save-change-only）：两条 fallback 路径
+    // ——A 文件不存在、B 文件存在但内容为空——必须每次新建干净的默认对象。
+    // 调用方（saveProxy/saveLlamaDir/set_language）拿到 cfg 后就地写脏再落盘，
+    // 共享单例会被写脏：下一次读取读到的是「上一次保存留下的值」，
+    // 而 saveProxy 的判定基线正是这个读取结果（spec H2）→ 真实变化被误判为未变化，设置静默丢失。
+    // 上面的 app_config_defaults_when_missing 从不写脏返回值，共享单例回归它照样绿——本用例补的就是这条契约。
+    const p = tmpPath('app_fallback_purity.yaml');
+    for (const pre of ['missing', 'blank'] as const) {
+      rm(p);
+      if (pre === 'blank') writeText(p, '  \n'); // 前置 B：文件存在但内容为空
+      const a = appConfigLoad(p);
+      expect(a, pre).toEqual({ llama_dir: '' });
+      a.proxy = { host: '1.2.3.4', port: 1 }; // 调用方的就地写脏
+      a.llama_dir = 'X';
+      const b = appConfigLoad(p);
+      expect(b, pre).not.toBe(a); // 不得是同一个对象
+      expect(b.llama_dir, pre).toBe('');
+      expect(b.proxy, pre).toBeUndefined();
+      expect(b, pre).toEqual({ llama_dir: '' });
+    }
+    rm(p);
+  });
+
   it('params_missing_reports_missing', () => {
     const p = tmpPath('params1.yaml');
     rm(p);
@@ -363,6 +387,8 @@ describe('saveProxy', () => {
     const p = tmpPath('saveproxy_noport.yaml');
     rm(p);
     expect(() => saveProxy(p, '127.0.0.1', '')).toThrow('端口不能为空');
+    // P8 的「不写」半边：校验先于判定，throw 路径不得创建/改动文件
+    expect(require('node:fs').existsSync(p)).toBe(false);
     rm(p);
   });
   it('port 非法（0 / 99999 / abc）→ throw', () => {
@@ -371,6 +397,8 @@ describe('saveProxy', () => {
     expect(() => saveProxy(p, 'h', '0')).toThrow('端口须为 1–65535');
     expect(() => saveProxy(p, 'h', '99999')).toThrow('端口须为 1–65535');
     expect(() => saveProxy(p, 'h', 'abc')).toThrow('端口须为 1–65535');
+    // P8 的「不写」半边：三次非法端口均未落盘，文件从未被创建
+    expect(require('node:fs').existsSync(p)).toBe(false);
     rm(p);
   });
 
@@ -406,6 +434,23 @@ describe('saveProxy', () => {
     const r = saveProxy(p, '', '');
     expect(r.changed).toBe(false);
     expect(mtime(p)).toBe(0);
+    // cfg.proxy 是**文件原样**（{}），不是归一化后的 undefined：归一只发生在比较内部，不回写 cfg。
+    // 调用方只能凭 changed 决定是否记日志，不得把 cfg.proxy 当「已归一的当前代理」用（spec H8）。
+    expect(r.cfg.proxy).toEqual({});
+    rm(p);
+  });
+
+  it('P2 只有 host 的畸形节 + 输入均空 → changed=false 且不写盘', () => {
+    // H8：proxy 节缺 port 与 proxy: {}、无节三者语义相同（都归一为直连）→ 输入均空不算变化
+    const p = tmpPath('saveproxy_hostonly_shell.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: /x\nproxy:\n  host: h\n');
+    pinMtime(p);
+    const r = saveProxy(p, '', '');
+    expect(r.changed).toBe(false);
+    expect(r.cfg.proxy).toEqual({ host: 'h' }); // 原样返回，未被归一化抹平
+    expect(mtime(p)).toBe(0);
+    expect(require('node:fs').readFileSync(p, 'utf8')).toBe('llama_dir: /x\nproxy:\n  host: h\n');
     rm(p);
   });
 
@@ -438,6 +483,18 @@ describe('saveProxy', () => {
     const r = saveProxy(p, '127.0.0.1', '7890');
     expect(r.changed).toBe(true);
     expect(appConfigLoad(p).proxy).toEqual({ host: '127.0.0.1', port: 7890 });
+    rm(p);
+  });
+
+  it('P6 只改 host 不改 port = 变化：changed=true 且覆盖为新 host', () => {
+    // sameProxy 的 host 分支：port 相同不足以判「未变」，host 不同即变化
+    const p = tmpPath('saveproxy_change_host.yaml');
+    rm(p);
+    saveProxy(p, '127.0.0.1', '10808');
+    const r = saveProxy(p, 'proxy.example.com', '10808');
+    expect(r.changed).toBe(true);
+    expect(r.cfg.proxy).toEqual({ host: 'proxy.example.com', port: 10808 });
+    expect(appConfigLoad(p).proxy).toEqual({ host: 'proxy.example.com', port: 10808 });
     rm(p);
   });
 
