@@ -743,14 +743,42 @@ describe('saveLlamaUpdateConfig', () => {
     rm(p);
   });
 
+  it('U4b 文件已有 update.last_llama_type + opts 不含该键 → changed=false，该节原样保留（D4：缺键 = 不触碰，绝不删节）', () => {
+    // U4 的「文件当前 = 任意」半边：既有 U4 只跑「文件无 update 节」，缺键被实现成
+    // target = undefined 时它照样绿。文件里真有值时，缺键若走「清除」分支就会把整个 update 节删掉。
+    const p = tmpPath('upd_u4b.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'A' } });
+    pinMtime(p);
+    const before = bytes(p);
+    const r = saveLlamaUpdateConfig(p, {});
+    expect(r.changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    expect(bytes(p)).toBe(before);
+    expect(appConfigLoad(p).update).toEqual({ last_llama_type: 'A' });
+    rm(p);
+  });
+
   it('U5 有值 + 空串 → changed=true 且整个 update 节从文件消失（D5/F11）', () => {
     const p = tmpPath('upd_u5.yaml');
     rm(p);
-    appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'A' } });
+    appConfigSave(p, {
+      llama_dir: '/x',
+      vram_total_gb: 24,
+      proxy: { host: '127.0.0.1', port: 10808 },
+      language: 'zh',
+      update: { last_llama_type: 'A' },
+    });
     const r = saveLlamaUpdateConfig(p, { last_llama_type: '' });
     expect(r.changed).toBe(true);
     expect(bytes(p)).not.toContain('update');
     expect(appConfigLoad(p).update).toBeUndefined();
+    // V2 说的是「任何分支」：清除分支同样不得丢其它节（cfg.update = undefined 只删这一节）
+    const cfg = appConfigLoad(p);
+    expect(cfg.llama_dir).toBe('/x');
+    expect(cfg.vram_total_gb).toBe(24);
+    expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    expect(cfg.language).toBe('zh');
     rm(p);
   });
 
@@ -772,6 +800,21 @@ describe('saveLlamaUpdateConfig', () => {
     writeText(p, 'llama_dir: /x\nupdate: {}\n');
     const r = saveLlamaUpdateConfig(p, { last_llama_type: 'A' });
     expect(r.changed).toBe(true);
+    expect(appConfigLoad(p).update).toEqual({ last_llama_type: 'A' });
+    rm(p);
+  });
+
+  it('update 节是标量（手工编辑的坏 yaml）→ 覆盖为对象，不写出字符键', () => {
+    // 坏数据 update: foo：把字符串展开成 {0:'f',1:'o',2:'o'} 会落盘成 "0": f 这类垃圾键。
+    // LlamaUpdateConfig 只有 last_llama_type 一个字段（F4），展开保留不了任何真实字段。
+    const p = tmpPath('upd_scalar.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: /x\nupdate: foo\n');
+    const r = saveLlamaUpdateConfig(p, { last_llama_type: 'A' });
+    expect(r.changed).toBe(true);
+    const s = bytes(p);
+    expect(s).not.toMatch(/^\s*["']?0["']?:/m); // 行首的字符键（yaml 把字符串展开成 "0": f）
+    expect(s).not.toContain('foo');
     expect(appConfigLoad(p).update).toEqual({ last_llama_type: 'A' });
     rm(p);
   });
