@@ -1,4 +1,4 @@
-# 发布打包：dist-release\win-unpacked → lms-launcher-v<version>-win64.zip
+﻿# 发布打包：dist-release\win-unpacked → lms-launcher-v<version>-win64.zip
 # 用法：pwsh -File scripts\package-zip.ps1 [-Version 0.2.0]（缺省读 package.json 的 version）
 param([string]$Version = ((Get-Content (Join-Path $PSScriptRoot '..\package.json') -Raw | ConvertFrom-Json).version))
 

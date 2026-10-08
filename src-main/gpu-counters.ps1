@@ -1,4 +1,4 @@
-# gpu-counters.ps1 —— GPU 卡片数据脚本（spec 2026-09-09-gpu-card-design §2/§3）
+﻿# gpu-counters.ps1 —— GPU 卡片数据脚本（spec 2026-09-09-gpu-card-design §2/§3）
 #   -Mode static  ：一次性 DXGI 枚举（卡名 + 专用/共享上限 + LUID）+ WMI Win32_VideoController
 #                   排序（与任务管理器 GPU 编号一致）；专用上限优先 NVML（与任务管理器
 #                   VidMm budget 同源，比 DXGI 高 ~450MB 驱动保留），无 nvml.dll / 无匹配卡时
