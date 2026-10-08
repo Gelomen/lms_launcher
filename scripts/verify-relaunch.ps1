@@ -13,6 +13,11 @@
 #                  旧口径「无新增 conhost 进程」是错的：隐藏启动（wscript + sh.Run style 0）之后仍存在
 #                  不可见的 conhost/cmd 进程，而用户要的是「看不到窗口」。conhost 进程差值已降为 C3b
 #                  [INFO] 信息项，不计入 PASS/FAIL。
+#                  零采样判定（2026-10-08 终审）：watch end 的 samples=0（或该行根本没有 samples= 字段）→ [INFO] 并计入
+#                  skip，不打 PASS。-Seconds 0 或负数时 while 条件当场为假，文件是新鲜的、hits=0，但一次窗口都没看过；
+#                  陈旧性判定防不住它，而 C3 是 G1 唯一的自动化门槛。PASS 文案打印 samples 与采样起止时间。
+#                  C3 分支顺序（互斥、每条恰好计数一次，故 SUMMARY 的 pass+fail+skip 恒为 5）：
+#                  缺 watch start → 有 HIT → 缺 watch end → 陈旧 → 零采样 → PASS。
 #                  陈旧性判定（锚点：安装目录内 lms_launcher.exe 的 LastWriteTime = 构建产物落地时间，
 #                  不是本次更新完成时刻：Copy-Item 保留源文件的 LastWriteTime，打包链
 #                  scripts/package-zip.ps1:19/:22（Copy-Item + Compress-Archive）→
@@ -55,6 +60,14 @@ function Get-ConhostIds {
   $con = Get-Process -Name 'conhost' -ErrorAction SilentlyContinue
   if ($null -eq $con) { return @() }
   return @($con | ForEach-Object { $_.Id })
+}
+
+# 从 watch start / watch end 行取时间戳：行形态是「watch start <yyyy-MM-dd> <HH:mm:ss> …」，时间戳是第 3、4 个
+# 空白分隔字段（索引 2、3）。C3 的判定文案必须说清它评的是哪一段采样窗口。
+function Get-WatchStamp([string]$line) {
+  $t = @($line -split '\s+')
+  if ($t.Count -ge 4) { return ($t[2] + ' ' + $t[3]) }
+  return ''
 }
 
 # 可见控制台窗口检测（2026-10-08，C3 重定义的配套）。
@@ -217,9 +230,26 @@ if (-not (Test-Path $WatchPath)) {
   $skip++
 } else {
   $wl = @(Get-Content -LiteralPath $WatchPath -Encoding UTF8)
-  $started = @($wl | Where-Object { $_ -match '^watch start ' }).Count -gt 0
-  $ended = @($wl | Where-Object { $_ -match '^watch end ' }).Count -gt 0
+  $startLines = @($wl | Where-Object { $_ -match '^watch start ' })
+  $started = $startLines.Count -gt 0
+  $endLines = @($wl | Where-Object { $_ -match '^watch end ' })
+  $ended = $endLines.Count -gt 0
   $hitLines = @($wl | Where-Object { $_ -match '^HIT ' })
+  # 采样量与采样窗口（2026-10-08 终审 F2）：-Seconds / -IntervalMs 没有任何校验，-Seconds 0 或负数时
+  # while 条件当场为假 → 一次都不采样，文件里只有 watch start 与 watch end 两行（samples=0、hits=0）。
+  # 这样的文件比安装目录里的 exe 新，陈旧性判定防不住，旧代码据此打 PASS —— 「零采样」被当成
+  # 「验证过且没问题」，而 C3 是 G1 唯一的自动化门槛。这里解析 samples：<=0（含 watch end 行没有 samples=
+  # 字段的情况，记 -1）一律 [INFO] 跳过、不打 PASS。PASS 文案带上 samples 与采样起止时间，读者能核对
+  # 判定评的是哪一段窗口。
+  $samples = -1
+  if ($endLines.Count -gt 0) {
+    $lastEnd = $endLines[$endLines.Count - 1]
+    if ($lastEnd -match 'samples=(\d+)') { $samples = [int]$Matches[1] }
+  }
+  $watchStart = ''
+  $watchEnd = ''
+  if ($startLines.Count -gt 0) { $watchStart = Get-WatchStamp $startLines[$startLines.Count - 1] }
+  if ($endLines.Count -gt 0) { $watchEnd = Get-WatchStamp $endLines[$endLines.Count - 1] }
   # 陈旧性判定（假绿防护）：-Watch 只在启动时覆盖结果文件，更新脚本既不生成也不清理它，因此上一轮遗留的
   # hits=0 文件会让「忘跑 -Watch」这一轮被当成「已验证且通过」。判定条件：安装目录内的 lms_launcher.exe
   # 存在，且采样文件比它更早 —— 即这份采样在当次构建落地之前就结束了，没有覆盖到更新。
@@ -232,6 +262,8 @@ if (-not (Test-Path $WatchPath)) {
   # 因此这条判定是保守下界、不是精确时刻：早于它 → 必然没覆盖本次更新；不早于它 → 只是没被下界排除。
   # 前提：exe 不存在时不做这条判定（没有「构建产物落地」的时间基准），退回按内容形态判定。
   # 位置：放在 HIT 判定之后，不改变既有顺序（HIT 优先于「未跑完」），只把本来要打 PASS 的情况降级为 [INFO]。
+  # 完整分支顺序（互斥、每条恰好计数一次，SUMMARY 的 pass+fail+skip 恒为 5）：
+  # 缺 watch start → 有 HIT → 缺 watch end → 陈旧 → 零采样（2026-10-08 新增）→ PASS。
   $stale = $false
   $watchStamp = ''
   $exeStamp = ''
@@ -268,8 +300,15 @@ if (-not (Test-Path $WatchPath)) {
   } elseif ($stale) {
     Write-Host ('[INFO] C3 no visible console window: the watch log predates the installed build (sampling ended before this build landed), treated as unverified (' + $WatchPath + ' written ' + $watchStamp + ' is earlier than ' + $targetExe + ' written ' + $exeStamp + '); run -Watch before the update, skipping (not a failure)')
     $skip++
+  } elseif ($samples -le 0) {
+    # 零采样：采样器跑过、文件也新鲜，但一次窗口都没看过 —— 「没有 HIT」在这里没有任何证据力。
+    # $samples 为 -1 表示 watch end 行连 samples= 字段都没有（手写/被截断的文件），同样按未验证处理。
+    $samplesText = 'samples=' + $samples
+    if ($samples -lt 0) { $samplesText = 'no samples= field on the watch end line' }
+    Write-Host ('[INFO] C3 no visible console window: the watch took zero samples (' + $samplesText + ', window ' + $watchStart + ' .. ' + $watchEnd + '), so nothing was observed; run -Watch with a real -Seconds before the update, skipping (not a failure)')
+    $skip++
   } else {
-    Write-Host ('[PASS] C3 no visible console window: the watch log has no HIT lines (' + $wl.Count + ' lines, no newly visible console window)')
+    Write-Host ('[PASS] C3 no visible console window: the watch log has no HIT lines (' + $wl.Count + ' lines, samples=' + $samples + ', window ' + $watchStart + ' .. ' + $watchEnd + ', no newly visible console window)')
     $pass++
   }
 }
