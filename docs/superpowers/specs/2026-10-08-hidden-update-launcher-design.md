@@ -18,7 +18,7 @@
 | F10 | VBScript 引号陷阱：`"""` 是「未结束的字符串常量」（WSH 弹窗 `800A0409`）——而 WSH 错误弹窗本身就是一个可见窗口。必须用 `Chr(34)`（或 4 个引号） | 本轮实测弹窗（用户截图） |
 | F11 | Node 的 `'utf16le'` **不写 BOM**。实测（2026-10-08 复现，`.temp/hide-console/probe-task3-results.md`）：WSH 只接受 UTF-16LE——无 BOM 的 UTF-16LE 也能解码，UTF-8（有/无 BOM）与 UTF-16BE+BOM 全部失败（后者报「VBScript 编译器错误: 无效字符」）。仍显式写 `'\uFEFF' + content`：BOM 是被测试钉住的、各方都认的形态 | 本轮实测 |
 | F12 | 现状 `.cmd` 以 `'ascii'` 写：安装目录含非 ASCII 字符时启动器直接失败（`cmd` 退出码非 0、marker 未写）——既存缺陷，本次一并修 | 本轮实测（`.temp/hide-console/中文目录/a.cmd`） |
-| F13 | `.cmd` 用 UTF-8（无 BOM）+ 第二行 `chcp 65001 >nul` 可正确处理中文路径；不加 `chcp` 则失败（2026-10-08 二次复现：`chcp 936` 与完全去掉 `chcp` 行均失败——PowerShell 报 `-File` 的 .ps1 不存在；`chcp 65001` 是必要条件。探针 `.temp/probe-t3.cjs`） | 本轮实测（`b.cmd` 成功 / `c.cmd` 失败） |
+| F13 | `.cmd` 用 UTF-8（无 BOM）+ 第二行 `chcp 65001 >nul` 可正确处理中文路径；不加 `chcp` 则失败（2026-10-08 二次复现：`chcp 936` 与完全去掉 `chcp` 行均失败——PowerShell 报 `-File` 的 .ps1 不存在；`chcp 65001` 是必要条件。探针 `.temp/probe-t3.cjs`） | 本轮实测（`b.cmd` 成功 / `c.cmd` 失败）；二次复现见 `.temp/hide-console/probe-task3-results.md` A2/A3，可重跑脚本 `.temp/probe-t3.cjs` |
 | F14 | `/TR "\"<wscript>\" \"<vbs>\""`（内层引号全部反斜杠转义）经 `execSync`（cmd.exe）注册成功，任务 XML 中 Command/Arguments 切分正确，实跑通过 | 本轮实测 |
 | F15 | 更新日志 `<installDir>\lms_launcher_update.log` 在下次启动由 `replayUpdateLog()` 原样回显到应用日志区 | `src-main/main.ts:643-660` |
 | F16 | 主进程与 `scripts/*.ps1` 的字符串字面量不得含汉字（词典除外）；生成的 `.vbs`/`.cmd` 内容来自 main.ts 的字面量 → 必须英文 | `src-main/i18n/no-hardcoded.test.ts` |
