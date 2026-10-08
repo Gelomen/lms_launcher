@@ -18,8 +18,8 @@
 #                  scripts/package-zip.ps1:19/:22（Copy-Item + Compress-Archive）→
 #                  scripts/lms-launcher-update.ps1:116 的 ZipFile::ExtractToDirectory → :163 的 Copy-Item -Force
 #                  把它原样带进安装目录（实测整链保留，zip 只有 2 秒粒度），所以它 ≤ 更新时刻、可能早任意久；
-#                  现场证据：同目录里 lms_launcher.exe 22:03:06 与 lms-launcher-update.ps1 22:01:30 相差 96 秒，
-#                  一次 Copy-Item 写不出两个时刻。不拿更新日志作锚点：更新成功后应用会在重启后读取并删除它
+#                  现场证据：同目录里 lms_launcher.exe 22:03:06 与 lms-launcher-update.ps1 22:01:30 相差 96 秒——
+#                  若 mtime 是复制时刻，同一次复制产出的文件应共享同一时刻，实测并非如此，故它不是复制时刻。不拿更新日志作锚点：更新成功后应用会在重启后读取并删除它
 #                  （src-main/main.ts:669 的 unlinkSync，由 :1001 的 replayUpdateLog 调用），正常时序里不存在。
 #                  所以这条判定是保守下界、不是精确时刻：采样文件的 LastWriteTime 早于该 exe 的 LastWriteTime
 #                  → 这份采样必然在当次构建落地之前就结束了、没覆盖到本次更新 → [INFO] 并计入 skip，不打 PASS；
@@ -32,15 +32,16 @@
 #                  ③ 安装的是比采样文件更早打包的构建时判定不触发（例：3 天前跑的采样 + 今天安装一个 7 天前
 #                     打包的包 → 采样 mtime 晚于 exe mtime），此时仍可能假绿；
 #                  ④ 更新中止（校验失败、目标文件被占用等）时 exe 未被覆盖，锚点还是上一轮那次的构建时间，
-#                     判定失效。
+#                     判定失效；⑤ 不经更新脚本而手动复制/还原 lms_launcher.exe 会把 exe 的 mtime 刷成「现在」，
+#                     于是任何更早的采样都被判陈旧（安全侧的假 skip）。
 #                  -Watch 的已知局限：基线只排除采样器启动时已存在的窗口句柄，因此采样期间用户自己新开
 #                  的终端窗口会被记为 HIT；HIT 行的 pid 是窗口属主（Windows Terminal）的 pid，
 #                  不是被启动进程的 pid。
 #   C4 任务不残留   计划任务 LMSLauncherUpdate 不存在（更新脚本启动即自删）
 #   C5 日志无 ERROR  lms_launcher_update.log 最后一段（自最后一个 `=== update run ===` 标记行起）无 [ERROR] 行
 # 退出码：全部 PASS exit 0；任一 FAIL exit 1；[INFO] 跳过不算失败。
-# 编码：本文件自带 BOM（UTF-8 BOM + LF，PowerShell 5.1 按 ANSI 解码中文注释所需）；仓库其他 .ps1 均无 BOM
-#       （实测 scripts/lms-launcher-update.ps1、scripts/package-zip.ps1、src-main/gpu-counters.ps1 都没有）。
+# 编码：本文件自带 BOM（UTF-8 BOM + LF，PowerShell 5.1 按 ANSI 解码中文注释所需）；实测仓库 6 个被跟踪的
+#       .ps1 中只有本文件带 BOM（其余如 scripts/lms-launcher-update.ps1、scripts/package-zip.ps1、src-main/gpu-counters.ps1 都没有）。
 #       编辑工具可能吞掉 BOM，改完必须复核前 3 字节 = EF BB BF 且 CR 计数 = 0。
 param(
   [string]$InstallDir = 'D:\AI\LMS-Launcher',
@@ -234,10 +235,12 @@ if (-not (Test-Path $WatchPath)) {
   $stale = $false
   $watchStamp = ''
   $exeStamp = ''
-  # 元数据访问防护（对齐 C1 取 $proc.Path、C4 取 schtasks 的 try/catch 口径）：Test-Path 与 Get-Item 之间
-  # 存在竞态——采样文件此刻被清理 → 以空时间戳打陈旧 [INFO]（安全侧但文案畸形）；exe 被更新覆盖中 → 取不到
-  # 时间戳就不判陈旧而打 PASS（不安全侧）。整块（两个 Get-Item 与比较）进 try 并 -ErrorAction Stop，
-  # 异常时保持 $stale = $false：判定语义与顺序都不变，只是不输出畸形时间戳。
+  # 元数据访问防护（对齐 C1 取 $proc.Path 的 try/catch；与 C4 不同，这里的 catch 不输出提示也不计数，
+  # 代价是运行时无法区分「判定被元数据异常跳过」与「判定为不陈旧」——两者在 SUMMARY 里都是同一个 PASS）：
+  # Test-Path 与 Get-Item 之间存在竞态——采样文件此刻被清理，或 exe 正被更新覆盖，两个 Get-Item 都会抛错。
+  # 整块（两个 Get-Item 与比较）进 try 并 -ErrorAction Stop，异常时保持 $stale = $false → 落到下面的 PASS
+  # 分支（不安全侧）。加防护前「采样文件被清理」那一侧是 $null -lt <DateTime> = True → 判陈旧、以空时间戳
+  # 打 [INFO]（安全侧但文案畸形）；加防护后这一侧也变成 PASS。
   try {
     if (Test-Path -LiteralPath $targetExe) {
       $watchItem = Get-Item -LiteralPath $WatchPath -ErrorAction Stop
