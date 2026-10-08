@@ -16,6 +16,11 @@ export function writeText(p: string, s: string): void {
   writeFileSync(p, s);
 }
 
+/** 读文件原文（字节级断言用：证明「没有落盘」或「某个键已从文件消失」，而不是读回一个相等的值）。 */
+export function readText(p: string): string {
+  return readFileSync(p, 'utf8');
+}
+
 export function mkDir(p: string): void {
   mkdirSync(p, { recursive: true });
 }

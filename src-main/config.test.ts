@@ -1,7 +1,7 @@
 import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig, saveVramTotal } from './config';
-import { tmpPath, rm, writeText, jp, repoParams, repoParamsText } from './test-utils';
+import { tmpPath, rm, writeText, readText, jp, repoParams, repoParamsText } from './test-utils';
 
 describe('config.ts', () => {
 
@@ -345,7 +345,7 @@ describe('proxy 节（2026-09-18 分组格式）', () => {
     const p = tmpPath('app_proxy_literal.yaml');
     rm(p);
     appConfigSave(p, { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } });
-    const s = require('node:fs').readFileSync(p, 'utf8');
+    const s = bytes(p);
     expect(s).toContain('proxy:\n  host: 127.0.0.1\n  port: 10808');
     expect(s).not.toContain('proxy_host');
     rm(p);
@@ -355,7 +355,7 @@ describe('proxy 节（2026-09-18 分组格式）', () => {
     const p = tmpPath('app_update_literal.yaml');
     rm(p);
     appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'Windows x64 (CUDA 13)' } });
-    const s = require('node:fs').readFileSync(p, 'utf8');
+    const s = bytes(p);
     expect(s).toContain('update:\n  last_llama_type:');
     expect(s).not.toContain('llama_update');
     expect(s).not.toContain('last_version_type');
@@ -366,6 +366,8 @@ describe('proxy 节（2026-09-18 分组格式）', () => {
 // mtime 哨兵（spec V1）：钉到 1970 后任何一次落盘都会把 mtimeMs 推回 now → 「未变化不写盘」才有牙
 function pinMtime(p: string): void { require('node:fs').utimesSync(p, new Date(0), new Date(0)); }
 function mtime(p: string): number { return require('node:fs').statSync(p).mtimeMs; }
+// 字节级断言的唯一归属（原先在两个 describe 里各有一份）
+function bytes(p: string): string { return readText(p); }
 
 describe('saveProxy', () => {
   it('host+port 合法 → trim 后写回', () => {
@@ -408,10 +410,10 @@ describe('saveProxy', () => {
     rm(p);
     appConfigSave(p, { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } });
     pinMtime(p);
-    const before = require('node:fs').readFileSync(p, 'utf8');
+    const before = bytes(p);
     expect(() => saveProxy(p, '127.0.0.1', '')).toThrow('端口不能为空');
     expect(mtime(p)).toBe(0);
-    expect(require('node:fs').readFileSync(p, 'utf8')).toBe(before);
+    expect(bytes(p)).toBe(before);
     rm(p);
   });
 
@@ -424,12 +426,12 @@ describe('saveProxy', () => {
     rm(p);
     appConfigSave(p, { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } });
     pinMtime(p);
-    const before = require('node:fs').readFileSync(p, 'utf8');
+    const before = bytes(p);
     for (const bad of ['99999', '0']) {
       expect(() => saveProxy(p, '127.0.0.1', bad)).toThrow('端口须为 1–65535');
       // 逐次核对：越界端口每一次都必须停在落盘之前（mtime 哨兵 + 字节逐字 + 读回原代理）
       expect(mtime(p), bad).toBe(0);
-      expect(require('node:fs').readFileSync(p, 'utf8'), bad).toBe(before);
+      expect(bytes(p), bad).toBe(before);
       expect(appConfigLoad(p).proxy, bad).toEqual({ host: '127.0.0.1', port: 10808 });
     }
     rm(p);
@@ -483,7 +485,7 @@ describe('saveProxy', () => {
     expect(r.changed).toBe(false);
     expect(r.cfg.proxy).toEqual({ host: 'h' }); // 原样返回，未被归一化抹平
     expect(mtime(p)).toBe(0);
-    expect(require('node:fs').readFileSync(p, 'utf8')).toBe('llama_dir: /x\nproxy:\n  host: h\n');
+    expect(bytes(p)).toBe('llama_dir: /x\nproxy:\n  host: h\n');
     rm(p);
   });
 
@@ -498,7 +500,7 @@ describe('saveProxy', () => {
     expect(r.changed).toBe(false);
     expect(r.cfg.proxy).toEqual({ host: 'h', port: 0 }); // 原样返回，未被归一化抹平（spec H8）
     expect(mtime(p)).toBe(0);
-    expect(require('node:fs').readFileSync(p, 'utf8')).toBe(raw);
+    expect(bytes(p)).toBe(raw);
     rm(p);
   });
 
@@ -514,7 +516,7 @@ describe('saveProxy', () => {
     // 读取侧不做类型归一：cfg.proxy 原样带字符串 port，只有比较内部才归一
     expect((r.cfg as { proxy?: unknown }).proxy).toEqual({ host: 'h', port: '10808' });
     expect(mtime(p)).toBe(0);
-    expect(require('node:fs').readFileSync(p, 'utf8')).toBe(raw);
+    expect(bytes(p)).toBe(raw);
     rm(p);
   });
 
@@ -580,7 +582,7 @@ describe('saveProxy', () => {
     saveProxy(p, '127.0.0.1', '10808');
     const r = saveProxy(p, '', '');
     expect(r.changed).toBe(true);
-    expect(require('node:fs').readFileSync(p, 'utf8')).not.toContain('proxy');
+    expect(bytes(p)).not.toContain('proxy');
     rm(p);
   });
 });
@@ -693,7 +695,6 @@ describe('en prefix retention', () => {
 });
 
 describe('saveLlamaUpdateConfig', () => {
-  const bytes = (p: string): string => require('node:fs').readFileSync(p, 'utf8');
 
   it('U1 文件无 update 节 + 有值 → changed=true 且写入该节', () => {
     const p = tmpPath('upd_u1.yaml');
@@ -865,7 +866,6 @@ describe('saveLlamaUpdateConfig', () => {
 });
 
 describe('saveVramTotal', () => {
-  const bytes = (p: string): string => require('node:fs').readFileSync(p, 'utf8');
 
   it('W1 文件无该键 + 24 → changed=true 且写入', () => {
     const p = tmpPath('vram_w1.yaml');
