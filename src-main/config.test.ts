@@ -1,6 +1,6 @@
 import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir, saveLanguage } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig } from './config';
 import { tmpPath, rm, writeText, jp, repoParams, repoParamsText } from './test-utils';
 
 describe('config.ts', () => {
@@ -689,5 +689,103 @@ describe('en prefix retention', () => {
     applyLang('en');
     expect(() => configsLoad('D:/nope/llama_launch_configs.yaml')).toThrow(/^MISSING/);
     applyLang('zh');
+  });
+});
+
+describe('saveLlamaUpdateConfig', () => {
+  const bytes = (p: string): string => require('node:fs').readFileSync(p, 'utf8');
+
+  it('U1 文件无 update 节 + 有值 → changed=true 且写入该节', () => {
+    const p = tmpPath('upd_u1.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x' });
+    pinMtime(p);
+    const r = saveLlamaUpdateConfig(p, { last_llama_type: 'Windows x64 (CUDA 13)' });
+    expect(r.changed).toBe(true);
+    expect(appConfigLoad(p).update).toEqual({ last_llama_type: 'Windows x64 (CUDA 13)' });
+    expect(mtime(p)).not.toBe(0);
+    rm(p);
+  });
+
+  it('U2 同值 → changed=false，文件与 mtime 都不动', () => {
+    const p = tmpPath('upd_u2.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'A' } });
+    pinMtime(p);
+    const before = bytes(p);
+    const r = saveLlamaUpdateConfig(p, { last_llama_type: 'A' });
+    expect(r.changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    expect(bytes(p)).toBe(before);
+    rm(p);
+  });
+
+  it('U3 不同值 → changed=true 且覆盖为新值', () => {
+    const p = tmpPath('upd_u3.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'A' } });
+    const r = saveLlamaUpdateConfig(p, { last_llama_type: 'B' });
+    expect(r.changed).toBe(true);
+    expect(r.cfg.update).toEqual({ last_llama_type: 'B' });
+    expect(appConfigLoad(p).update).toEqual({ last_llama_type: 'B' });
+    rm(p);
+  });
+
+  it('U4 opts 不含该键 → changed=false 且不出现 update: {}（D4/F2）', () => {
+    const p = tmpPath('upd_u4.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x' });
+    pinMtime(p);
+    const r = saveLlamaUpdateConfig(p, {});
+    expect(r.changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    expect(bytes(p)).not.toContain('update');
+    rm(p);
+  });
+
+  it('U5 有值 + 空串 → changed=true 且整个 update 节从文件消失（D5/F11）', () => {
+    const p = tmpPath('upd_u5.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'A' } });
+    const r = saveLlamaUpdateConfig(p, { last_llama_type: '' });
+    expect(r.changed).toBe(true);
+    expect(bytes(p)).not.toContain('update');
+    expect(appConfigLoad(p).update).toBeUndefined();
+    rm(p);
+  });
+
+  it('U6 文件已是 update: {} + 空串或无键 → changed=false 且垃圾节原样保留', () => {
+    const p = tmpPath('upd_u6.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: /x\nupdate: {}\n');
+    pinMtime(p);
+    expect(saveLlamaUpdateConfig(p, { last_llama_type: '' }).changed).toBe(false);
+    expect(saveLlamaUpdateConfig(p, {}).changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    expect(bytes(p)).toBe('llama_dir: /x\nupdate: {}\n');
+    rm(p);
+  });
+
+  it('U7 文件已是 update: {} + 有值 → changed=true 且写入该节', () => {
+    const p = tmpPath('upd_u7.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: /x\nupdate: {}\n');
+    const r = saveLlamaUpdateConfig(p, { last_llama_type: 'A' });
+    expect(r.changed).toBe(true);
+    expect(appConfigLoad(p).update).toEqual({ last_llama_type: 'A' });
+    rm(p);
+  });
+
+  it('变化分支不丢其它节（V2）', () => {
+    const p = tmpPath('upd_keep.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', vram_total_gb: 24, proxy: { host: '127.0.0.1', port: 10808 }, language: 'zh' });
+    expect(saveLlamaUpdateConfig(p, { last_llama_type: 'B' }).changed).toBe(true);
+    const cfg = appConfigLoad(p);
+    expect(cfg.llama_dir).toBe('/x');
+    expect(cfg.vram_total_gb).toBe(24);
+    expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    expect(cfg.language).toBe('zh');
+    rm(p);
   });
 });

@@ -252,3 +252,20 @@ export function saveLanguage(p: string, lang: Lang): ConfigSaveResult {
   appConfigSave(p, cfg);
   return { cfg, changed: true };
 }
+
+/**
+ * 保存 llama.cpp 更新配置（2026-10-09 llama-update-config-vram spec D1–D5）：与 yaml 里的
+ * update.last_llama_type 比较，相同 → 完全不写（D2/D3）。opts 不含该键 → 什么都不做，
+ * 绝不凭空造 update: {}（D4，修 main.ts 旧代码 F2）。空串 = 未配置：要让整节消失必须把
+ * cfg.update 置为 undefined——stringify({update:{}}) 会输出 update: {}，节不会自行消失（F11）。
+ */
+export function saveLlamaUpdateConfig(p: string, opts: { last_llama_type?: string }): ConfigSaveResult {
+  const cfg = appConfigLoad(p);
+  const current = typeof cfg.update?.last_llama_type === 'string' && cfg.update.last_llama_type !== '' ? cfg.update.last_llama_type : undefined;
+  const target = typeof opts.last_llama_type === 'string' && opts.last_llama_type !== '' ? opts.last_llama_type : undefined;
+  if (current === target) return { cfg, changed: false };
+  if (target === undefined) cfg.update = undefined;
+  else cfg.update = { ...(cfg.update ?? {}), last_llama_type: target };
+  appConfigSave(p, cfg);
+  return { cfg, changed: true };
+}

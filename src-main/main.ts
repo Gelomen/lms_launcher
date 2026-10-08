@@ -5,7 +5,7 @@ import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK, ERR_UPDATE_FILES_MISSING, ERR_UPDATE_TASK_START } from './i18n/err-keys';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir, saveLanguage } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig } from './config';
 import { migrateLegacyConfigs } from './config-migrate';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
@@ -956,13 +956,9 @@ ipcMain.handle('set_llama_update_config', async (_e, opts: { last_llama_type?: s
 > => {
   try {
     const [cp] = yamlPaths();
-    const cfg = appConfigLoad(cp);
-
-    if (!cfg.update) cfg.update = {};
-    if (opts.last_llama_type !== undefined) cfg.update.last_llama_type = opts.last_llama_type;
-
-    appConfigSave(cp, cfg);
-    emitLog('[lms_launcher] ' + t('log.llama.cfg.saved'), 'sys');
+    const { changed } = saveLlamaUpdateConfig(cp, opts);
+    // 未变化不写盘也不记日志（spec D3/D8）；返回值契约不变（D7），渲染端无需改动
+    if (changed) emitLog('[lms_launcher] ' + t('log.llama.cfg.saved'), 'sys');
     return { success: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
