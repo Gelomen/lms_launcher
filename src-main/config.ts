@@ -38,7 +38,9 @@ function normalizeEntry(entry: { desc?: string; name?: string; values: Record<st
 // 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）；2026-09-18：默认 update 值移除——首次保存不再写入用户从未选择的版本类型
 // 2026-10-08 settings-save-change-only：默认值改为每次新建，不再共享单例。调用方（saveProxy/saveLlamaDir/set_language）拿到 cfg 后会就地改字段再落盘，
 // 共享对象会被写脏：文件缺失/为空时 appConfigLoad 读到的是「上一次保存留下的值」，而 saveProxy 的判定基线正是这个读取结果（spec H2）→ 会把真实变化误判为未变化
-function emptyAppConfig(): AppConfig { return { llama_dir: '' }; }
+// 与 appConfigLoad 成功路径返回**同一键形状**（缺省的可选键显式为 undefined）：
+// 调用方无论走哪条路径，读到的对象形状一致。yaml 的 stringify 会省略 undefined，落盘不受影响。
+function emptyAppConfig(): AppConfig { return { llama_dir: '', vram_total_gb: undefined, proxy: undefined, update: undefined, language: undefined }; }
 
 function parseYaml(path: string, s: string, name: string): unknown {
   let parsed: unknown;

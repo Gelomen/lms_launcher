@@ -248,7 +248,8 @@ ipcMain.handle('set_language', (_e, lang: Lang): void => {
   applyLang(lang);
   // 变更才落盘（2026-10-08 settings-save-change-only）：与 yaml 里的 language 相同 → 不写文件。
   // applyLang 与重建托盘照常：幂等，且能纠正被外部改过的 yaml（spec H10）
-  saveLanguage(yamlPaths()[0], lang);
+  const [cfgPath] = yamlPaths();
+  saveLanguage(cfgPath, lang);
   if (tray) {
     tray.setToolTip(trayTooltipText(trayTooltipName, t('tray.tooltip.empty')));
     tray.setContextMenu(buildTrayMenu());
@@ -270,7 +271,8 @@ ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
 ipcMain.handle('save_llama_dir', (_e, dir: string): void => {
   // 增量保存（2026-09-14 修复）：旧实现 appConfigSave(p, {llama_dir}) 全量重写 yaml，
   // 会清空 proxy/vram_total_gb/update 等无关字段
-  saveLlamaDir(yamlPaths()[0], dir);
+  const [cfgPath] = yamlPaths();
+  saveLlamaDir(cfgPath, dir);
 });
 ipcMain.handle('validate_dir', (_e, dir: string): boolean => {
   return existsSync(join(dir, 'llama-server.exe'));
