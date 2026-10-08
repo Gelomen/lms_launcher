@@ -1,14 +1,20 @@
 ﻿# verify-relaunch.ps1 —— 更新后一键回归断言脚本（2026-09-21 DETACHED_PROCESS 启动修复的验收配套）。
 # 用法：
 #   更新前留基线：powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 -Snapshot [-InstallDir <dir>]
+#   更新前采样窗口：powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 -Watch [-Seconds <n>] [-IntervalMs <n>] [-InstallDir <dir>]
+#                  （-Watch 是纯采集器：无论命中多少都 exit 0，判定由更新后默认模式的 C3 读它的结果文件）
 #   更新后验证：  powershell -NoProfile -ExecutionPolicy Bypass -File verify-relaunch.ps1 [-InstallDir D:\AI\LMS-Launcher]
 # 5 项检查（只读诊断：不创建/删除任何计划任务，不启动/杀掉任何进程）：
 #   C1 新版存活     安装目录内的 lms_launcher.exe 进程存在（按路径过滤，多实例下不会拿错）
 #   C2 独立存活     其父进程（更新脚本的 powershell）已退出——不再挂在脚本进程树上
 #                  （Win32_Process.ParentProcessId 记录创建者 PID，DETACHED 形态下创建者随即退出）
-#   C3 conhost 无新增 当前 conhost 集合 ⊆ 快照集合（需先跑 -Snapshot）
-#                  只断言「无新增」，不要求「快照里的全退了」——常驻终端的 conhost 更新后仍存活，
-#                  基线快照含用户自己的终端 conhost，要求「全退」在这类机器上必误报
+#   C3 无新增可见控制台窗口（需更新前跑 -Watch）：读 console-watch.txt，出现 HIT 行即 FAIL
+#                  旧口径「无新增 conhost 进程」是错的：隐藏启动（wscript + sh.Run style 0）之后仍存在
+#                  不可见的 conhost/cmd 进程，而用户要的是「看不到窗口」。conhost 进程差值已降为 C3b
+#                  [INFO] 信息项，不计入 PASS/FAIL。
+#                  -Watch 的已知局限：基线只排除采样器启动时已存在的窗口句柄，因此采样期间用户自己新开
+#                  的终端窗口会被记为 HIT；HIT 行的 pid 是窗口属主（Windows Terminal）的 pid，
+#                  不是被启动进程的 pid。
 #   C4 任务不残留   计划任务 LMSLauncherUpdate 不存在（更新脚本启动即自删）
 #   C5 日志无 ERROR  lms_launcher_update.log 最后一段（自最后一个 `=== update run ===` 标记行起）无 [ERROR] 行
 # 退出码：全部 PASS exit 0；任一 FAIL exit 1；[INFO] 跳过不算失败。
@@ -72,6 +78,12 @@ public class LmsConsoleWindowProbe {
   }
 }
 '@
+    # Add-Type 失败在默认 $ErrorActionPreference=Continue 下只是语句级错误：循环照常跑完并打 hits 0，
+    # 「探针根本没工作」与「更新期间没有新窗口」输出完全一样（假绿），所以这里显式断言类型可解析。
+    if ($null -eq ('LmsConsoleWindowProbe' -as [type])) {
+      Write-Host '[FAIL] window probe type unavailable (Add-Type failed; ConstrainedLanguage?)'
+      exit 1
+    }
     $script:ProbeReady = $true
   }
   return [LmsConsoleWindowProbe]::VisibleWindows()
@@ -171,34 +183,44 @@ if ($null -eq $main) {
   }
 }
 
-# C3 conhost 无新增：当前 conhost Id 集合 ⊆ 快照 Id 集合。
-# 只断言「无新增」，不要求「快照里的 conhost 全部已退出」——常驻终端/控制台的 conhost
-# 在更新前后都存活，而基线快照包含用户自己终端的 conhost，若要求「全退」在这类机器上必然误报，
-# 与计划步骤 3 的「无新增 conhost 占用」语义不符。
-if (-not (Test-Path $SnapPath)) {
-  Write-Host ('[INFO] C3 no new conhost: no baseline snapshot (' + $SnapPath + '); run -Snapshot before the update, skipping (not a failure)')
+# C3 更新期间无新增可见控制台窗口（2026-10-08 重定义）。
+# 旧口径「无新增 conhost 进程」是错的：隐藏启动（wscript + sh.Run style 0）之后仍会存在不可见的
+# cmd/conhost/OpenConsole 进程（.temp/hide-console/probe3.ps1 实测），而用户要的是「看不到窗口」。
+# 窗口是瞬态的 → 由更新前启动的 -Watch 采样器记录，这里只读它的结果。
+if (-not (Test-Path $WatchPath)) {
+  Write-Host ('[INFO] C3 no visible console window: no watch log (' + $WatchPath + '); run -Watch before the update, skipping (not a failure)')
   $skip++
+} else {
+  $wl = @(Get-Content -LiteralPath $WatchPath -Encoding UTF8)
+  $started = @($wl | Where-Object { $_ -match '^watch start ' }).Count -gt 0
+  $ended = @($wl | Where-Object { $_ -match '^watch end ' }).Count -gt 0
+  $hitLines = @($wl | Where-Object { $_ -match '^HIT ' })
+  if (-not $started) {
+    Write-Host ('[INFO] C3 no visible console window: watch log has no "watch start" header (' + $WatchPath + '); skipping (not a failure)')
+    $skip++
+  } elseif ($hitLines.Count -gt 0) {
+    Write-Host ('[FAIL] C3 no visible console window: the watch recorded ' + $hitLines.Count + ' newly visible console window(s) during the update:')
+    foreach ($h in $hitLines) { Write-Host ('    ' + $h.Trim()) }
+    $fail++
+  } elseif (-not $ended) {
+    Write-Host ('[INFO] C3 no visible console window: watch did not reach its end marker (stopped early?); skipping (not a failure)')
+    $skip++
+  } else {
+    Write-Host ('[PASS] C3 no visible console window: the watch log has no HIT lines (' + $wl.Count + ' lines, no newly visible console window)')
+    $pass++
+  }
+}
+
+# C3b（仅信息，不计入 PASS/FAIL）conhost 进程差值：保留旧实现作为诊断线索。
+# 隐藏启动仍会创建不可见的 conhost/cmd，因此它只能说明「有没有多进程」，不能说明「有没有窗口」。
+if (-not (Test-Path $SnapPath)) {
+  Write-Host ('[INFO] C3b conhost process delta (informational): no baseline snapshot (' + $SnapPath + ')')
 } else {
   $snapLines = @(Get-Content -LiteralPath $SnapPath -Encoding UTF8 | Where-Object { $_ -match '^\s*\d+\s+\d+\s*$' })
   $snapIds = @($snapLines | ForEach-Object { [int]($_ -split '\s+')[0] })
   $current = @(Get-ConhostIds)
   $newOnes = @($current | Where-Object { $snapIds -notcontains $_ })
-  if ($newOnes.Count -eq 0) {
-    Write-Host ('[PASS] C3 no new conhost: all ' + $current.Count + ' current conhost processes are in the baseline snapshot (' + $snapIds.Count + ' in baseline); none outside it')
-    $pass++
-  } else {
-    $detail = @($newOnes | ForEach-Object {
-      $pname = 'unknown'
-      $p = Get-CimInstance -ClassName Win32_Process -Filter ('ProcessId=' + $_) -ErrorAction SilentlyContinue
-      if ($null -ne $p -and $null -ne $p.ParentProcessId -and $p.ParentProcessId -gt 0) {
-        $pp = Get-Process -Id $p.ParentProcessId -ErrorAction SilentlyContinue
-        if ($null -ne $pp) { $pname = $pp.ProcessName }
-      }
-      ('PID ' + $_ + ' (parent: ' + $pname + ')')
-    })
-    Write-Host ('[FAIL] C3 no new conhost: ' + $newOnes.Count + ' conhost processes outside the baseline snapshot: ' + ($detail -join ', '))
-    $fail++
-  }
+  Write-Host ('[INFO] C3b conhost process delta (informational, not a failure): ' + $newOnes.Count + ' new conhost process(es) outside the baseline of ' + $snapIds.Count + '; hidden launch still creates invisible conhost/cmd')
 }
 
 # C4 任务不残留：LMSLauncherUpdate 不存在（更新脚本启动即自删）
