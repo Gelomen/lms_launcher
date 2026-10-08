@@ -776,6 +776,20 @@ describe('saveLlamaUpdateConfig', () => {
     }
   });
 
+  it('U4d opts 本身是 null/undefined → changed=false 且不抛（旧代码在此解引用会 TypeError → 记 saveFail）', () => {
+    for (const opts of [null, undefined]) {
+      const p = tmpPath('upd_u4d.yaml');
+      rm(p);
+      appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'A' } });
+      pinMtime(p);
+      const before = bytes(p);
+      expect(saveLlamaUpdateConfig(p, opts as unknown as { last_llama_type?: string }).changed).toBe(false);
+      expect(mtime(p)).toBe(0);
+      expect(bytes(p)).toBe(before);
+      rm(p);
+    }
+  });
+
   it('U5 有值 + 空串 → changed=true 且整个 update 节从文件消失（D5/F11）', () => {
     const p = tmpPath('upd_u5.yaml');
     rm(p);

@@ -187,6 +187,10 @@ export function validateParamKey(key: string): boolean {
  * 保存 llama.cpp 安装目录（2026-09-14 修复）。
  * load→改→save 增量保存：旧 save_llama_dir 用全新 {llama_dir} 对象 appConfigSave
  * 全量重写 yaml，把 proxy/vram_total_gb/update 全部清空。
+ *
+ * 刻意**不做**「变更才落盘」判定（2026-10-08 spec H5、2026-10-09 spec §2 非目标）：安装目录卡片
+ * 没有日志，本函数由「选完目录且 validate_dir 通过」自动触发（DirModule.vue），重复写同一目录
+ * 无用户可见噪声。别顺手把它改成 ConfigSaveResult 形状。
  */
 export function saveLlamaDir(p: string, dir: string): AppConfig {
   const cfg = appConfigLoad(p);
@@ -267,7 +271,7 @@ export function saveLanguage(p: string, lang: Lang): ConfigSaveResult {
 export function saveLlamaUpdateConfig(p: string, opts: { last_llama_type?: string }): ConfigSaveResult {
   const cfg = appConfigLoad(p);
   // 缺键或非字符串（IPC 参数是未类型化 JSON，null/数字都进得来）= 不触碰该节（D4）；空串是字符串，仍走下面的清除（D5）
-  if (typeof opts.last_llama_type !== 'string') return { cfg, changed: false };
+  if (!opts || typeof opts.last_llama_type !== 'string') return { cfg, changed: false };
   const current = typeof cfg.update?.last_llama_type === 'string' && cfg.update.last_llama_type !== '' ? cfg.update.last_llama_type : undefined;
   const target = typeof opts.last_llama_type === 'string' && opts.last_llama_type !== '' ? opts.last_llama_type : undefined;
   if (current === target) return { cfg, changed: false };
