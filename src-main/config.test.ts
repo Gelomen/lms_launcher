@@ -1,6 +1,6 @@
 import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir, saveLanguage } from './config';
 import { tmpPath, rm, writeText, jp, repoParams, repoParamsText } from './test-utils';
 
 describe('config.ts', () => {
@@ -505,6 +505,41 @@ describe('saveProxy', () => {
     const r = saveProxy(p, '', '');
     expect(r.changed).toBe(true);
     expect(require('node:fs').readFileSync(p, 'utf8')).not.toContain('proxy');
+    rm(p);
+  });
+});
+
+
+describe('saveLanguage', () => {
+  it('L1 文件缺 language 键 → changed=true 且写入（spec H6）', () => {
+    const p = tmpPath('lang_add.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x' });
+    const r = saveLanguage(p, 'zh');
+    expect(r.changed).toBe(true);
+    expect(appConfigLoad(p).language).toBe('zh');
+    rm(p);
+  });
+
+  it('L2 同值 → changed=false 且不写盘（mtime 哨兵）', () => {
+    const p = tmpPath('lang_noop.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', language: 'zh' });
+    pinMtime(p);
+    const r = saveLanguage(p, 'zh');
+    expect(r.changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    rm(p);
+  });
+
+  it('L3 不同值 → changed=true 且写入，且不丢 llama_dir', () => {
+    const p = tmpPath('lang_change.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', language: 'zh' });
+    const r = saveLanguage(p, 'en');
+    expect(r.changed).toBe(true);
+    expect(appConfigLoad(p).language).toBe('en');
+    expect(appConfigLoad(p).llama_dir).toBe('/x');
     rm(p);
   });
 });

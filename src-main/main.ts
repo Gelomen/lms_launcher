@@ -5,7 +5,7 @@ import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK, ERR_UPDATE_FILES_MISSING, ERR_UPDATE_TASK_START } from './i18n/err-keys';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir, saveLanguage } from './config';
 import { migrateLegacyConfigs } from './config-migrate';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
@@ -246,9 +246,9 @@ ipcMain.handle('get_language', (): Lang => getLang());
 ipcMain.handle('set_language', (_e, lang: Lang): void => {
   if (lang !== 'zh' && lang !== 'en') return; // IPC 边界防御（任务 3 控制器裁定 B-b）：渲染端 devtools 可传任意值
   applyLang(lang);
-  const [p] = yamlPaths();
-  const cfg = appConfigLoad(p);
-  appConfigSave(p, { ...cfg, language: lang });
+  // 变更才落盘（2026-10-08 settings-save-change-only）：与 yaml 里的 language 相同 → 不写文件。
+  // applyLang 与重建托盘照常：幂等，且能纠正被外部改过的 yaml（spec H10）
+  saveLanguage(yamlPaths()[0], lang);
   if (tray) {
     tray.setToolTip(trayTooltipText(trayTooltipName, t('tray.tooltip.empty')));
     tray.setContextMenu(buildTrayMenu());

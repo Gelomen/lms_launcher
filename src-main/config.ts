@@ -1,4 +1,4 @@
-import { t } from './i18n';
+import { t, type Lang } from './i18n';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 
@@ -236,6 +236,19 @@ export function saveProxy(p: string, host: string, port: string): ConfigSaveResu
   }
   if (sameProxy(cfg.proxy, target)) return { cfg, changed: false }; // 未变：不落盘，mtime 不动
   cfg.proxy = target; // undefined → yaml stringify 省略该键，整节消失（spec F8）
+  appConfigSave(p, cfg);
+  return { cfg, changed: true };
+}
+
+/**
+ * 保存语言（2026-10-08 settings-save-change-only）：与 **yaml 里的 language** 比较，不用 getLang()——
+ * 运行期语言可能来自系统 locale（main.ts initI18n），文件缺键时用户选值仍算变化（spec H2/H6、L1）。
+ * 相同 → 不写文件、changed=false；调用方（set_language）仍照常 applyLang + 重建托盘（spec H10）。
+ */
+export function saveLanguage(p: string, lang: Lang): ConfigSaveResult {
+  const cfg = appConfigLoad(p);
+  if (cfg.language === lang) return { cfg, changed: false };
+  cfg.language = lang;
   appConfigSave(p, cfg);
   return { cfg, changed: true };
 }
