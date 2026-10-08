@@ -256,8 +256,9 @@ export function saveLanguage(p: string, lang: Lang): ConfigSaveResult {
 /**
  * 保存 llama.cpp 更新配置（2026-10-09 llama-update-config-vram spec D1–D5）：与 yaml 里的
  * update.last_llama_type 比较，相同 → 完全不写（D2/D3）。
- * - opts 不含该键 = **不触碰**（D4，修 main.ts 旧代码 F2）：既不写也不删，文件里已有的
- *   update 节原样保留——缺键不是「清除」，绝不凭空造 update: {}，也绝不把既有节删掉。
+ * - opts 不含该键、或该键不是字符串（null/数字等）= **不触碰**（D4，修 main.ts 旧代码 F2）：
+ *   既不写也不删，文件里已有的 update 节原样保留——「没有有效值」不是「清除」，绝不凭空造
+ *   update: {}，也绝不把既有节删掉。只有空串（字符串）表示清除。
  * - 空串 = 清除（D5）：要让整节消失必须把 cfg.update 置为 undefined——
  *   stringify({update:{}}) 会输出 update: {}，节不会自行消失（F11）。
  * 写入时整节覆盖为 { last_llama_type }：LlamaUpdateConfig 只有这一个字段（F4），
@@ -265,7 +266,8 @@ export function saveLanguage(p: string, lang: Lang): ConfigSaveResult {
  */
 export function saveLlamaUpdateConfig(p: string, opts: { last_llama_type?: string }): ConfigSaveResult {
   const cfg = appConfigLoad(p);
-  if (opts.last_llama_type === undefined) return { cfg, changed: false }; // 缺键 = 不触碰该节（D4）
+  // 缺键或非字符串（IPC 参数是未类型化 JSON，null/数字都进得来）= 不触碰该节（D4）；空串是字符串，仍走下面的清除（D5）
+  if (typeof opts.last_llama_type !== 'string') return { cfg, changed: false };
   const current = typeof cfg.update?.last_llama_type === 'string' && cfg.update.last_llama_type !== '' ? cfg.update.last_llama_type : undefined;
   const target = typeof opts.last_llama_type === 'string' && opts.last_llama_type !== '' ? opts.last_llama_type : undefined;
   if (current === target) return { cfg, changed: false };

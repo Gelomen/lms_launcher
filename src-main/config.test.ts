@@ -759,6 +759,23 @@ describe('saveLlamaUpdateConfig', () => {
     rm(p);
   });
 
+  it('U4c 非字符串入参（null/数字/布尔/对象）→ changed=false，该节原样保留（与缺键同口径）', () => {
+    // IPC 参数是未类型化的 JSON：null/数字都进得来。它们与缺键一样是「没有有效值」，
+    // 不是「清除」——只有空串（字符串）才清除（D5）。
+    for (const v of [null, 42, true, { x: 1 }] as unknown[]) {
+      const p = tmpPath('upd_u4c.yaml');
+      rm(p);
+      appConfigSave(p, { llama_dir: '/x', update: { last_llama_type: 'A' } });
+      pinMtime(p);
+      const before = bytes(p);
+      expect(saveLlamaUpdateConfig(p, { last_llama_type: v as unknown as string }).changed).toBe(false);
+      expect(mtime(p)).toBe(0);
+      expect(bytes(p)).toBe(before);
+      expect(appConfigLoad(p).update).toEqual({ last_llama_type: 'A' });
+      rm(p);
+    }
+  });
+
   it('U5 有值 + 空串 → changed=true 且整个 update 节从文件消失（D5/F11）', () => {
     const p = tmpPath('upd_u5.yaml');
     rm(p);
