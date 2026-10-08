@@ -2,7 +2,8 @@
 // 更新启动器（bootstrap）生成。计划任务 /TR 有 261 字符上限（main.ts:569 的 2026-09-05 复盘），
 // ps1/zip/installDir 三个绝对参数必须经安装目录里的一个短启动器文件中转；本模块生成它并给出 /TR 值。
 // 2026-10-08：默认生成 .vbs —— wscript + sh.Run(cmd, 0, True) 实测全程 0 个可见窗口；
-// 原先的 .cmd 实测新增 2 个可见顶层窗口（默认控制台宿主是 Windows Terminal）。
+// 原先的 .cmd 实测新增 1 个可见顶层窗口（hwnd 口径；旧探针按 class+title+pid 去重会记成 2 条；
+// 默认控制台宿主是 Windows Terminal）。
 // wscript.exe 缺失（Win11 已把 WSH 列为可选组件）→ 回退 .cmd：会出现可见窗口，但更新照常完成。
 // 规格：docs/superpowers/specs/2026-10-08-hidden-update-launcher-design.md
 import { writeFileSync } from 'node:fs';
