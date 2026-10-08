@@ -3,7 +3,7 @@ import { trayTooltipText } from './tray-tooltip';
 import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 // 2026-10-05 i18n 响应性修复：可译错误经 IPC 传 key（渲染端渲染时翻译，切语言即时重译；见 src/i18n.ts errTextOf）
 import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK, ERR_UPDATE_FILES_MISSING, ERR_UPDATE_TASK_START } from './i18n/err-keys';
-import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir } from './config';
 import { migrateLegacyConfigs } from './config-migrate';
@@ -23,6 +23,9 @@ const UPDATE_TASK_NAME = 'LMSLauncherUpdate';
 // svchost 拉起新版应用，使其落在自己的 Job 里、与更新任务的生命周期解耦（否则关掉更新终端
 // 会连带杀掉新版应用 —— 见 ps1 第 6 步注释）。脚本刻意不删它，故由应用启动时清理。
 const START_TASK_NAME = 'LMSLauncherStart';
+// 更新启动器宿主（2026-10-08）：存在 → .vbs 隐藏启动；缺失 → .cmd 回退（可见窗口）。
+// WSH 在 Win11 是可选组件，不能假定必然存在。
+const WSCRIPT_PATH = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe');
 import { compareVersions, parseLatestRelease, RELEASE_API_URL, type LatestReleaseInfo } from './update-check';
 import { parseLlamaVersion, type LlamaVersion } from './llama-update-version';
 import { fetchLlamaReleaseInfo, compareLlamaVersions } from './llama-update-check';
@@ -31,6 +34,7 @@ import type { LlamaUpdateConfig } from './config';
 import { makeUpdateFetch, buildProxyUri } from './update-http';
 import { evaluateDownloadIntegrity, sha256FileAsync, digestMatches } from './update-verify';
 import { downloadToFile } from './update-download';
+import { writeUpdateBootstrap } from './update-bootstrap';
 
 // ---------- 单实例锁：禁止多开 ----------
 // requestSingleInstanceLock() 基于系统级命名句柄：第二个进程拿不到锁时返回 false，立即退出；
@@ -582,27 +586,35 @@ ipcMain.handle('run_update', async (): Promise<{ ok: true } | ({ ok: false } & I
   emitLog('[lms_launcher] ' + t('log.launcher.upd.started'), 'sys');
   const updateLogPath = join(installDir, 'lms_launcher_update.log');
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  // 短启动器：ASCII + CRLF，每次更新重建（ps1/zip 路径不变，内容幂等）。
-  const bootstrapCmd = join(installDir, 'lms_launcher_update.cmd');
   const pad = (n: number): string => String(n).padStart(2, '0');
   const st = new Date(Date.now() + 2 * 60 * 1000);
   const futureTime = pad(st.getHours()) + ':' + pad(st.getMinutes());
   let taskScheduled = false;
   try {
-    writeFileSync(bootstrapCmd, '@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + ps1 + '" "' + zipPath + '" "' + installDir + '"\r\n', 'ascii');
-    // Node 侧先写一行，之后无论脚本是否被拉起都能从日志判断任务是否创建
+    // 启动器：/TR 只引用它（261 上限，见上方复盘注释）。2026-10-08 起默认是 .vbs ——
+    // 任务直接跑 .cmd 会弹控制台窗口（本机实测新增 2 个可见顶层窗口，默认控制台宿主为 Windows
+    // Terminal）；wscript + sh.Run(..., 0, True) 实测全程 0 可见窗口。wscript.exe 缺失时回退
+    // .cmd：会出现可见窗口，但更新照常完成。规格 docs/superpowers/specs/2026-10-08-hidden-update-launcher-design.md
+    const bootstrap = writeUpdateBootstrap(
+      { installDir, wscriptPath: WSCRIPT_PATH, ps1Path: ps1, zipPath, updateLogPath },
+      existsSync(WSCRIPT_PATH),
+    );
     try {
-      appendFileSync(updateLogPath, stamp + ' [INFO] [node] ' + t('log.launcher.upd.wroteBootstrap', { cmd: bootstrapCmd, ps1, zip: zipPath }) + '\r\n', 'utf8');
+      if (bootstrap.degraded) {
+        appendFileSync(updateLogPath, stamp + ' [INFO] [node] ' + t('log.launcher.upd.wscriptFallback', { path: bootstrap.filePath }) + '\r\n', 'utf8');
+      }
+      // Node 侧先写一行，之后无论脚本是否被拉起都能从日志判断任务是否创建
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] ' + t('log.launcher.upd.wroteBootstrap', { launcher: bootstrap.filePath, ps1, zip: zipPath }) + '\r\n', 'utf8');
     } catch { /* 日志失败不阻断更新 */ }
     // /F 覆盖：同名任务若残留（上次 create 后 /Run 前崩溃）直接重建。
     // /SC ONCE 只设下次触发的计划时间；随后立即 /Run 手动触发，计划时间仅作
     // 崩溃兜底（应用没起来时任务仍会在计划点执行）。
     // stdio 管道化：create 被拒时把 schtasks 的 ERROR 原文带进异常（此前 ignore 吞掉了真实原因）。
-    execSync('schtasks /Create /F /SC ONCE /ST ' + futureTime + ' /TN "' + UPDATE_TASK_NAME + '" /TR "' + bootstrapCmd + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execSync('schtasks /Create /F /SC ONCE /ST ' + futureTime + ' /TN "' + UPDATE_TASK_NAME + '" /TR "' + bootstrap.trValue + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     taskScheduled = true;
     execSync('schtasks /Run /TN "' + UPDATE_TASK_NAME + '"', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     try {
-      appendFileSync(updateLogPath, stamp + ' [INFO] [node] ' + t('log.launcher.upd.taskCreated', { name: UPDATE_TASK_NAME, st: futureTime, tr: bootstrapCmd }) + '\r\n', 'utf8');
+      appendFileSync(updateLogPath, stamp + ' [INFO] [node] ' + t('log.launcher.upd.taskCreated', { name: UPDATE_TASK_NAME, st: futureTime, tr: bootstrap.trValue }) + '\r\n', 'utf8');
     } catch { /* 忽略 */ }
   } catch (e) {
     const errText = (e instanceof Error ? e.message : String(e))
