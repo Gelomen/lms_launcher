@@ -35,7 +35,10 @@ function normalizeEntry(entry: { desc?: string; name?: string; values: Record<st
   return entry.desc !== undefined ? { name: entry.desc, values: entry.values } : { values: entry.values };
 }
 
-const EMPTY_APP_CONFIG: AppConfig = { llama_dir: '' }; // 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）；2026-09-18：默认 update 值移除——首次保存不再写入用户从未选择的版本类型
+// 2026-09-17：include_pre_release 移除（stable 无 Windows 包，恒查 pre-release/nightly）；2026-09-18：默认 update 值移除——首次保存不再写入用户从未选择的版本类型
+// 2026-10-08 settings-save-change-only：默认值改为每次新建，不再共享单例。调用方（saveProxy/saveLlamaDir/set_language）拿到 cfg 后会就地改字段再落盘，
+// 共享对象会被写脏：文件缺失/为空时 appConfigLoad 读到的是「上一次保存留下的值」，而 saveProxy 的判定基线正是这个读取结果（spec H2）→ 会把真实变化误判为未变化
+function emptyAppConfig(): AppConfig { return { llama_dir: '' }; }
 
 function parseYaml(path: string, s: string, name: string): unknown {
   let parsed: unknown;
@@ -55,7 +58,7 @@ function parseYaml(path: string, s: string, name: string): unknown {
 export function appConfigLoad(path: string): AppConfig {
   try {
     const s = readFileSync(path, 'utf8');
-    if (s.trim().length === 0) return EMPTY_APP_CONFIG;
+    if (s.trim().length === 0) return emptyAppConfig();
     const parsed = parseYaml(path, s, 'lms_launcher.yaml') as Partial<AppConfig> | null;
     return {
       llama_dir: parsed?.llama_dir ?? '',
@@ -65,7 +68,7 @@ export function appConfigLoad(path: string): AppConfig {
       language: parsed?.language,
     };
   } catch {
-    return EMPTY_APP_CONFIG;
+    return emptyAppConfig();
   }
 }
 export function appConfigSave(path: string, cfg: AppConfig): void {
@@ -192,20 +195,47 @@ export function saveLlamaDir(p: string, dir: string): AppConfig {
   return cfg;
 }
 
-/** 保存代理设置（端口走字符串，由主进程校验防注入）；两参均空 = 清除代理 */
-export function saveProxy(p: string, host: string, port: string): AppConfig {
+/** 保存结果：changed = 本次是否真的修改了 yaml；false 表示未落盘，调用方据此不记日志（2026-10-08 settings-save-change-only）。 */
+export interface ConfigSaveResult { cfg: AppConfig; changed: boolean; }
+
+/**
+ * 代理归一化：host/port 任一缺失或非法 → undefined（= 直连）。
+ * 文件侧与输入侧共用同一函数——yaml 缺 proxy 节、proxy: {}、输入框留空三者语义相同（spec H8）。
+ */
+function normalizeProxy(p: ProxyConfig | undefined): ProxyConfig | undefined {
+  const host = typeof p?.host === 'string' ? p.host.trim() : '';
+  const port = typeof p?.port === 'number' ? p.port : NaN;
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535) return undefined;
+  return { host, port };
+}
+
+/** 两侧归一后是否为同一代理状态（undefined 只与 undefined 相同）。 */
+function sameProxy(a: ProxyConfig | undefined, b: ProxyConfig | undefined): boolean {
+  const x = normalizeProxy(a);
+  const y = normalizeProxy(b);
+  if (x === undefined || y === undefined) return x === y;
+  return x.host === y.host && x.port === y.port;
+}
+
+/**
+ * 保存代理设置（端口走字符串，由主进程校验防注入）；两参均空 = 清除代理。
+ * 变更才落盘（2026-10-08 settings-save-change-only）：判定基线是 **yaml 当前内容**（不是内存态，spec H2），
+ * 与文件现值归一后相同 → 不写文件、changed=false（调用方据此不记日志）。校验先于判定，throw 契约不变。
+ */
+export function saveProxy(p: string, host: string, port: string): ConfigSaveResult {
   const cfg = appConfigLoad(p);
   const h = (host ?? '').trim();
   const ps = (port ?? '').trim();
-  if (!h && !ps) {
-    cfg.proxy = undefined; // 2026-09-18：清除 = 整节消失
-    appConfigSave(p, cfg);
-    return cfg;
+  const clearing = !h && !ps;
+  if (!clearing && (!h || !ps)) throw new Error(t('err.config.proxyPortEmpty'));
+  let target: ProxyConfig | undefined;
+  if (!clearing) {
+    const n = Number(ps);
+    if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(t('settings.proxy.err.port'));
+    target = { host: h, port: n };
   }
-  if (!h || !ps) throw new Error(t('err.config.proxyPortEmpty'));
-  const n = Number(ps);
-  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(t('settings.proxy.err.port'));
-  cfg.proxy = { host: h, port: n };
+  if (sameProxy(cfg.proxy, target)) return { cfg, changed: false }; // 未变：不落盘，mtime 不动
+  cfg.proxy = target; // undefined → yaml stringify 省略该键，整节消失（spec F8）
   appConfigSave(p, cfg);
-  return cfg;
+  return { cfg, changed: true };
 }

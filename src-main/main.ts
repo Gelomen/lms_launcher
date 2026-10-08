@@ -257,11 +257,14 @@ ipcMain.handle('set_language', (_e, lang: Lang): void => {
 // save_proxy：持久化更新代理（host/port 均为空 = 清空代理，行为回落到直连）；saveProxy 的 throw 原样传给渲染端 reject
 ipcMain.handle('save_proxy', async (_e, host: string, port: string) => {
   const [p] = yamlPaths();
-  const cfg = saveProxy(p, host, port);
-  const on = cfg.proxy?.host && cfg.proxy?.port
-    ? t('log.launcher.settings.proxySaved', { url: `http://${cfg.proxy.host}:${cfg.proxy.port}` })
-    : t('log.launcher.settings.proxyCleared');
-  emitLog('[lms_launcher] ' + on, 'sys');
+  const { cfg, changed } = saveProxy(p, host, port);
+  // 变更才记日志（2026-10-08 settings-save-change-only）：与 yaml 归一后同值 → 日志区一行都不加
+  if (changed) {
+    const on = cfg.proxy?.host && cfg.proxy?.port
+      ? t('log.launcher.settings.proxySaved', { url: `http://${cfg.proxy.host}:${cfg.proxy.port}` })
+      : t('log.launcher.settings.proxyCleared');
+    emitLog('[lms_launcher] ' + on, 'sys');
+  }
   return 'ok';
 });
 ipcMain.handle('save_llama_dir', (_e, dir: string): void => {

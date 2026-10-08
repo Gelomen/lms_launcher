@@ -339,11 +339,15 @@ describe('proxy 节（2026-09-18 分组格式）', () => {
   });
 });
 
+// mtime 哨兵（spec V1）：钉到 1970 后任何一次落盘都会把 mtimeMs 推回 now → 「未变化不写盘」才有牙
+function pinMtime(p: string): void { require('node:fs').utimesSync(p, new Date(0), new Date(0)); }
+function mtime(p: string): number { return require('node:fs').statSync(p).mtimeMs; }
+
 describe('saveProxy', () => {
   it('host+port 合法 → trim 后写回', () => {
     const p = tmpPath('saveproxy_ok.yaml');
     rm(p);
-    const cfg = saveProxy(p, '127.0.0.1 ', ' 10808 ');
+    const { cfg } = saveProxy(p, '127.0.0.1 ', ' 10808 ');
     expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
     rm(p);
   });
@@ -351,7 +355,7 @@ describe('saveProxy', () => {
     const p = tmpPath('saveproxy_clear.yaml');
     rm(p);
     appConfigSave(p, { llama_dir: '/x', proxy: { host: 'h', port: 1 } });
-    const cfg = saveProxy(p, '  ', '');
+    const { cfg } = saveProxy(p, '  ', '');
     expect(cfg.proxy).toBeUndefined();
     rm(p);
   });
@@ -367,6 +371,83 @@ describe('saveProxy', () => {
     expect(() => saveProxy(p, 'h', '0')).toThrow('端口须为 1–65535');
     expect(() => saveProxy(p, 'h', '99999')).toThrow('端口须为 1–65535');
     expect(() => saveProxy(p, 'h', 'abc')).toThrow('端口须为 1–65535');
+    rm(p);
+  });
+
+  it('P4 同值再保存 → changed=false 且不写盘（mtime 哨兵）', () => {
+    const p = tmpPath('saveproxy_noop.yaml');
+    rm(p);
+    saveProxy(p, '127.0.0.1', '10808');
+    pinMtime(p);
+    const r = saveProxy(p, '127.0.0.1', '10808');
+    expect(r.changed).toBe(false);
+    expect(r.cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    expect(mtime(p)).toBe(0);
+    rm(p);
+  });
+
+  it('P1 文件无 proxy 节 + 输入均空 → changed=false 且不写盘', () => {
+    const p = tmpPath('saveproxy_noop_clear.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x' });
+    pinMtime(p);
+    const r = saveProxy(p, '  ', '');
+    expect(r.changed).toBe(false);
+    expect(r.cfg.proxy).toBeUndefined();
+    expect(mtime(p)).toBe(0);
+    rm(p);
+  });
+
+  it('P2 proxy: {} 与无节等价 → 输入均空 changed=false', () => {
+    const p = tmpPath('saveproxy_emptyshell.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: /x\nproxy: {}\n');
+    pinMtime(p);
+    const r = saveProxy(p, '', '');
+    expect(r.changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    rm(p);
+  });
+
+  it('P5 端口写成 010808 → 归一后同值，changed=false 且文件仍是 10808', () => {
+    const p = tmpPath('saveproxy_leadingzero.yaml');
+    rm(p);
+    saveProxy(p, '127.0.0.1', '10808');
+    pinMtime(p);
+    const r = saveProxy(p, ' 127.0.0.1 ', '010808');
+    expect(r.changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    expect(appConfigLoad(p).proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    rm(p);
+  });
+
+  it('P3 缺节 → 有值 = 变化：changed=true 且写入', () => {
+    const p = tmpPath('saveproxy_add.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x' });
+    const r = saveProxy(p, '127.0.0.1', '10808');
+    expect(r.changed).toBe(true);
+    expect(appConfigLoad(p).proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    rm(p);
+  });
+
+  it('P6 改端口 = 变化：changed=true 且覆盖为新值', () => {
+    const p = tmpPath('saveproxy_change.yaml');
+    rm(p);
+    saveProxy(p, '127.0.0.1', '10808');
+    const r = saveProxy(p, '127.0.0.1', '7890');
+    expect(r.changed).toBe(true);
+    expect(appConfigLoad(p).proxy).toEqual({ host: '127.0.0.1', port: 7890 });
+    rm(p);
+  });
+
+  it('P7 有值 → 空 = 变化：changed=true 且 proxy 节从文件消失', () => {
+    const p = tmpPath('saveproxy_clear_real.yaml');
+    rm(p);
+    saveProxy(p, '127.0.0.1', '10808');
+    const r = saveProxy(p, '', '');
+    expect(r.changed).toBe(true);
+    expect(require('node:fs').readFileSync(p, 'utf8')).not.toContain('proxy');
     rm(p);
   });
 });
