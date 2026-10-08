@@ -180,7 +180,7 @@ onMounted(async () => {
     const r = await invoke<UpdateCheckResult>('check_update');
     if (r.available) {
       updateState.value = { phase: 'available', version: r.version, pct: 0 };
-      appendSys(t('log.app.update.found', { version: r.version }));
+      appendSys(t('log.app.update.available', { version: r.version }));
     }
   } catch { /* 检查失败不阻塞启动 */ }
   // 下载进度事件 → 状态机 downloading + pct
@@ -200,9 +200,9 @@ onMounted(async () => {
 // llama.cpp 更新完成事件
 function onLlamaComplete(success: boolean, error?: string): void {
   if (success) {
-    appendSys(t('log.app.update.downloadComplete'));
+    appendSys(t('log.app.llama.done'));
   } else {
-    appendSys(t('log.app.update.downloadFailed', { reason: error ?? t('update.err.unknown') }));
+    appendSys(t('log.app.llama.fail', { err: error ?? t('update.err.unknown') }));
   }
 }
 onUnmounted(() => { for (const u of unsubs) u(); });
@@ -224,7 +224,7 @@ async function runCheck(): Promise<void> {
   }
   if (r.available) {
     lastFailure.value = 'check'; // 非失败动作不清空也无妨，保持显式
-    appendSys(t('log.app.update.found', { version: r.version }));
+    appendSys(t('log.app.update.available', { version: r.version }));
     updateState.value = { phase: 'available', version: r.version, pct: 0 };
     return;
   }
@@ -246,7 +246,7 @@ async function runCheck(): Promise<void> {
 
 async function runDownload(): Promise<void> {
   updateState.value = { ...updateState.value, phase: 'downloading', pct: 0, ...NO_ERR };
-  appendSys(t('log.app.update.downloading'));
+  appendSys(t('log.app.update.dlStart'));
   let r: DownloadUpdateResult;
   try {
     r = await invoke<DownloadUpdateResult>('download_update');
@@ -256,7 +256,7 @@ async function runDownload(): Promise<void> {
     return;
   }
   if (r.ok) {
-    appendSys(t('log.app.update.complete'));
+    appendSys(t('log.app.update.dlDone'));
     updateState.value = { ...updateState.value, phase: 'ready', ...NO_ERR };
     return;
   }
@@ -269,7 +269,7 @@ async function runDownload(): Promise<void> {
   lastFailure.value = 'download';
   // 日志按事件发生时的语言落定（历史日志不随语言变）：用同一份三通道字段解析出可读原因
   const errFields = errFromIpc(r, 'update.err.unknown');
-  appendSys(t('log.app.update.downloadFailed', { reason: errTextOf(errFields, 'update.err.unknown') }));
+  appendSys(t('log.app.update.dlFail', { reason: errTextOf(errFields, 'update.err.unknown') }));
   updateState.value = { ...updateState.value, phase: 'error', ...errFields };
 }
 
@@ -304,11 +304,11 @@ function onExitConfirmed(): void {
       // 成功路径：主进程 app.exit(0) 直接终止进程，不会走到这里；r.ok === false 才是失败
       if (r.ok) return;
       const fields = errFromIpc(r, 'update.err.unknown');
-      appendSys(t('log.app.update.startFailed', { err: errTextOf(fields, 'update.err.unknown') }));
+      appendSys(t('log.app.update.runFail', { err: errTextOf(fields, 'update.err.unknown') }));
       updateState.value = { ...updateState.value, phase: 'ready', ...fields };
     })
     .catch((e) => {
-      appendSys(t('log.app.update.startFailed', { err: errMsg(e) }));
+      appendSys(t('log.app.update.runFail', { err: errMsg(e) }));
       updateState.value = { ...updateState.value, phase: 'ready', errorRaw: errMsg(e) };
     })
     .finally(closeDialog);

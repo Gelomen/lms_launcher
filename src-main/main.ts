@@ -583,7 +583,7 @@ ipcMain.handle('run_update', async (): Promise<{ ok: true } | ({ ok: false } & I
   if (!existsSync(ps1) || !existsSync(zipPath)) {
     return { ok: false, errorKey: ERR_UPDATE_FILES_MISSING };
   }
-  emitLog('[lms_launcher] ' + t('log.launcher.upd.started'), 'sys');
+  emitLog('[lms_launcher] ' + t('log.launcher.upd.scriptStarted'), 'sys');
   const updateLogPath = join(installDir, 'lms_launcher_update.log');
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const pad = (n: number): string => String(n).padStart(2, '0');
@@ -706,7 +706,7 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
     const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
     const output = (result.stdout || result.stderr || '').trim();
     localVersion = parseLlamaVersion(output);
-    emitLog(`[lms_launcher] ` + t('log.llama.ver.local', { version: output || t('log.llama.ver.unknown') }), 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.local', { version: output || t('common.unknown') }), 'sys');
   } catch (err) {
     emitLog(`[lms_launcher] ` + t('log.llama.ver.localFail', { err: err instanceof Error ? err.message : String(err) }), 'sys');
   }
@@ -720,7 +720,7 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
 
   // 比较版本
   const status = compareLlamaVersions(localVersion, remoteInfo.tag);
-  emitLog(`[lms_launcher] ` + t('log.llama.ver.check', { status, local: localVersion ? (localVersion.version || `b${localVersion.build}`) : t('log.llama.ver.unknown'), remote: remoteInfo.tag }), 'sys');
+  emitLog(`[lms_launcher] ` + t('log.llama.ver.check', { status, local: localVersion ? (localVersion.version || `b${localVersion.build}`) : t('common.unknown'), remote: remoteInfo.tag }), 'sys');
 
   return {
     success: true,
@@ -747,7 +747,7 @@ ipcMain.handle('get_llama_local_version', (_e): { success: true; localVersion?: 
     const result = spawnSync(exePath, ['--version'], { timeout: 10000, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
     const output = (result.stdout || result.stderr || '').trim();
     localVersion = parseLlamaVersion(output);
-    emitLog(`[lms_launcher] ` + t('log.llama.ver.local', { version: output || t('log.llama.ver.unknown') }), 'sys');
+    emitLog(`[lms_launcher] ` + t('log.llama.ver.local', { version: output || t('common.unknown') }), 'sys');
   } catch (err) {
     emitLog(`[lms_launcher] ` + t('log.llama.ver.localFail', { err: err instanceof Error ? err.message : String(err) }), 'sys');
   }
