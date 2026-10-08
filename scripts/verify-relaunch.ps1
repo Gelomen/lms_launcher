@@ -8,10 +8,16 @@
 #   C1 新版存活     安装目录内的 lms_launcher.exe 进程存在（按路径过滤，多实例下不会拿错）
 #   C2 独立存活     其父进程（更新脚本的 powershell）已退出——不再挂在脚本进程树上
 #                  （Win32_Process.ParentProcessId 记录创建者 PID，DETACHED 形态下创建者随即退出）
-#   C3 无新增可见控制台窗口（需更新前跑 -Watch）：读 console-watch.txt，出现 HIT 行即 FAIL
+#   C3 无新增可见控制台窗口（需更新前跑 -Watch）：读 console-watch.txt，有 `watch start` 头且出现 HIT 行即 FAIL
 #                  旧口径「无新增 conhost 进程」是错的：隐藏启动（wscript + sh.Run style 0）之后仍存在
 #                  不可见的 conhost/cmd 进程，而用户要的是「看不到窗口」。conhost 进程差值已降为 C3b
 #                  [INFO] 信息项，不计入 PASS/FAIL。
+#                  陈旧性判定（前提：安装目录内的更新日志 lms_launcher_update.log 存在——与 src-main/main.ts
+#                  的 updateLogPath 同名同位置）：若 console-watch.txt 的 LastWriteTime 早于该日志的
+#                  LastWriteTime，说明这份采样属于上一轮更新，视为未验证 → [INFO] 并计入 skip，不打 PASS。
+#                  缺这条判定就是假绿：-Watch 只在启动时覆盖该文件，更新脚本既不生成也不清理它，
+#                  忘跑 -Watch 时会拿几天前的 hits=0 打 PASS。更新日志不存在时不做这条判定
+#                  （没有「本次更新」的时间基准），退回按内容形态判定。
 #                  -Watch 的已知局限：基线只排除采样器启动时已存在的窗口句柄，因此采样期间用户自己新开
 #                  的终端窗口会被记为 HIT；HIT 行的 pid 是窗口属主（Windows Terminal）的 pid，
 #                  不是被启动进程的 pid。
@@ -111,7 +117,8 @@ $WatchPath = Join-Path $InstallDir 'console-watch.txt'
 
 # ---------- -Watch 模式：更新前启动，记录更新期间新增的可见控制台窗口 ----------
 # 窗口是瞬态的（cmd 启动→退出只有几秒），更新结束后再枚举必然抓不到，所以必须在更新前开始采样。
-# 基线 = 采样器启动时已存在的窗口句柄：用户自己的终端窗口因此不会被记为命中。
+# 基线 = 采样器启动时已存在的窗口句柄：用户自己的终端窗口因此不会被记为命中（只对启动时已存在的窗口成立；
+# 采样期间用户自己新开的终端同样会被记为 HIT，见头部 C3 的「已知局限」）。
 # 已知局限：窗口销毁后句柄可能被复用；采样间隔内复用概率极低，视为可接受。
 if ($Watch) {
   if (-not (Test-Path $InstallDir)) {
@@ -195,6 +202,22 @@ if (-not (Test-Path $WatchPath)) {
   $started = @($wl | Where-Object { $_ -match '^watch start ' }).Count -gt 0
   $ended = @($wl | Where-Object { $_ -match '^watch end ' }).Count -gt 0
   $hitLines = @($wl | Where-Object { $_ -match '^HIT ' })
+  # 陈旧性判定（假绿防护）：-Watch 只在启动时覆盖结果文件，更新脚本既不生成也不清理它，因此上一轮遗留的
+  # hits=0 文件会让「忘跑 -Watch」这一轮被当成「已验证且通过」。判定条件：更新日志存在，且采样文件比它更早。
+  # 更新日志路径与产品代码一致（src-main/main.ts 的 updateLogPath = join(installDir, 'lms_launcher_update.log')）。
+  # 前提：更新日志不存在时不做这条判定（没有「本次更新」的时间基准），退回按内容形态判定。
+  # 位置：放在 HIT 判定之后，不改变既有顺序（HIT 优先于「未跑完」），只把本来要打 PASS 的情况降级为 [INFO]。
+  $updateLogPath = Join-Path $InstallDir 'lms_launcher_update.log'
+  $stale = $false
+  $watchStamp = ''
+  $logStamp = ''
+  if (Test-Path -LiteralPath $updateLogPath) {
+    $watchItem = Get-Item -LiteralPath $WatchPath
+    $logItem = Get-Item -LiteralPath $updateLogPath
+    $watchStamp = $watchItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+    $logStamp = $logItem.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+    if ($watchItem.LastWriteTime -lt $logItem.LastWriteTime) { $stale = $true }
+  }
   if (-not $started) {
     Write-Host ('[INFO] C3 no visible console window: watch log has no "watch start" header (' + $WatchPath + '); skipping (not a failure)')
     $skip++
@@ -204,6 +227,9 @@ if (-not (Test-Path $WatchPath)) {
     $fail++
   } elseif (-not $ended) {
     Write-Host ('[INFO] C3 no visible console window: watch did not reach its end marker (stopped early?); skipping (not a failure)')
+    $skip++
+  } elseif ($stale) {
+    Write-Host ('[INFO] C3 no visible console window: the watch log is older than this update run, treated as unverified (' + $WatchPath + ' written ' + $watchStamp + ' is earlier than ' + $updateLogPath + ' written ' + $logStamp + '); run -Watch before the update, skipping (not a failure)')
     $skip++
   } else {
     Write-Host ('[PASS] C3 no visible console window: the watch log has no HIT lines (' + $wl.Count + ' lines, no newly visible console window)')
