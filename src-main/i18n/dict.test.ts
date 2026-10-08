@@ -75,4 +75,13 @@ describe('i18n dict', () => {
     expect(dict.zh['log.llama.dll.cleaned']).toBe('llama.cpp · 清理旧 CUDA DLL：{list}');
     expect(dict.en['log.llama.dll.cleaned']).toBe('llama.cpp · stale CUDA DLLs removed: {list}');
   });
+
+  // 2026-10-08 更新启动器改 .vbs（wscript 隐藏启动）：wroteBootstrap 的值可能是 .vbs 也可能是 .cmd，
+  // 参数名 cmd → launcher；新增 wscriptFallback 记录 wscript.exe 缺失时的降级。值逐字锁定，zh/en 成对。
+  it('更新启动器词条：launcher 参数与 wscript 回退 zh/en 齐备', () => {
+    expect(dict.zh['log.launcher.upd.wroteBootstrap']).toBe('已写入更新启动器 · launcher={launcher} · ps1={ps1} · zip={zip}');
+    expect(dict.en['log.launcher.upd.wroteBootstrap']).toBe('Update bootstrapper written · launcher={launcher} · ps1={ps1} · zip={zip}');
+    expect(dict.zh['log.launcher.upd.wscriptFallback']).toBe('LMS 启动器 · 更新 · 未找到 wscript.exe，已回退可见窗口启动器 · cmd={path}');
+    expect(dict.en['log.launcher.upd.wscriptFallback']).toBe('LMS Launcher · Update · wscript.exe not found, fell back to the visible-window bootstrapper · cmd={path}');
+  });
 });
