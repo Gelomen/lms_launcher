@@ -402,6 +402,19 @@ describe('saveProxy', () => {
     rm(p);
   });
 
+  it('P8 文件已有合法代理 + 只填一半 → throw 且既有文件的 mtime 与字节均未动', () => {
+    // 挡住「先写后校验」的实现：throw 之前不得把半成品（proxy 节被抹掉）写进已存在的文件
+    const p = tmpPath('saveproxy_half_input_noop.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } });
+    pinMtime(p);
+    const before = require('node:fs').readFileSync(p, 'utf8');
+    expect(() => saveProxy(p, '127.0.0.1', '')).toThrow('端口不能为空');
+    expect(mtime(p)).toBe(0);
+    expect(require('node:fs').readFileSync(p, 'utf8')).toBe(before);
+    rm(p);
+  });
+
   it('P4 同值再保存 → changed=false 且不写盘（mtime 哨兵）', () => {
     const p = tmpPath('saveproxy_noop.yaml');
     rm(p);
@@ -451,6 +464,49 @@ describe('saveProxy', () => {
     expect(r.cfg.proxy).toEqual({ host: 'h' }); // 原样返回，未被归一化抹平
     expect(mtime(p)).toBe(0);
     expect(require('node:fs').readFileSync(p, 'utf8')).toBe('llama_dir: /x\nproxy:\n  host: h\n');
+    rm(p);
+  });
+
+  it('P2 port 为 0 的畸形节 + 输入均空 → changed=false 且不写盘', () => {
+    // H8：port 越界（0）与 proxy: {}、只有 host、无节四者语义相同（都归一直连）→ 输入均空不算变化
+    const p = tmpPath('saveproxy_port0_shell.yaml');
+    rm(p);
+    const raw = 'llama_dir: /x\nproxy:\n  host: h\n  port: 0\n';
+    writeText(p, raw);
+    pinMtime(p);
+    const r = saveProxy(p, '', '');
+    expect(r.changed).toBe(false);
+    expect(r.cfg.proxy).toEqual({ host: 'h', port: 0 }); // 原样返回，未被归一化抹平（spec H8）
+    expect(mtime(p)).toBe(0);
+    expect(require('node:fs').readFileSync(p, 'utf8')).toBe(raw);
+    rm(p);
+  });
+
+  it('P2 port 写成字符串 "10808" 的畸形节 + 输入均空 → changed=false 且不写盘', () => {
+    // normalizeProxy 的 typeof p?.port === 'number' 一支：yaml 里 port 带引号 → 不是 number → 与无节同义
+    const p = tmpPath('saveproxy_portstring_shell.yaml');
+    rm(p);
+    const raw = 'llama_dir: /x\nproxy:\n  host: h\n  port: "10808"\n';
+    writeText(p, raw);
+    pinMtime(p);
+    const r = saveProxy(p, '', '');
+    expect(r.changed).toBe(false);
+    // 读取侧不做类型归一：cfg.proxy 原样带字符串 port，只有比较内部才归一
+    expect((r.cfg as { proxy?: unknown }).proxy).toEqual({ host: 'h', port: '10808' });
+    expect(mtime(p)).toBe(0);
+    expect(require('node:fs').readFileSync(p, 'utf8')).toBe(raw);
+    rm(p);
+  });
+
+  it('H6 镜像：文件只有 host 的畸形节 + 本次输入完整 → changed=true 且落盘为完整代理', () => {
+    // 畸形节归一直连，与「完整代理」不同 → 必须判变化，并把畸形节整节覆盖为新代理
+    const p = tmpPath('saveproxy_malformed_to_full.yaml');
+    rm(p);
+    writeText(p, 'llama_dir: /x\nproxy:\n  host: h\n');
+    const r = saveProxy(p, 'proxy.example.com', '8080');
+    expect(r.changed).toBe(true);
+    expect(r.cfg.proxy).toEqual({ host: 'proxy.example.com', port: 8080 });
+    expect(appConfigLoad(p).proxy).toEqual({ host: 'proxy.example.com', port: 8080 });
     rm(p);
   });
 
@@ -509,7 +565,6 @@ describe('saveProxy', () => {
   });
 });
 
-
 describe('saveLanguage', () => {
   it('L1 文件缺 language 键 → changed=true 且写入（spec H6）', () => {
     const p = tmpPath('lang_add.yaml');
@@ -532,14 +587,25 @@ describe('saveLanguage', () => {
     rm(p);
   });
 
-  it('L3 不同值 → changed=true 且写入，且不丢 llama_dir', () => {
+  it('L3 不同值 → changed=true 且写入，其余节（llama_dir/vram/proxy/update）全部原样保留', () => {
+    // 增量保存的完整契约：saveLanguage 只能改 language 一个键，多节夹具逐项核对
     const p = tmpPath('lang_change.yaml');
     rm(p);
-    appConfigSave(p, { llama_dir: '/x', language: 'zh' });
+    appConfigSave(p, {
+      llama_dir: '/x',
+      language: 'zh',
+      vram_total_gb: 24,
+      proxy: { host: '127.0.0.1', port: 10808 },
+      update: { last_llama_type: 'Windows x64 (CUDA 12)' },
+    });
     const r = saveLanguage(p, 'en');
     expect(r.changed).toBe(true);
-    expect(appConfigLoad(p).language).toBe('en');
-    expect(appConfigLoad(p).llama_dir).toBe('/x');
+    const cfg = appConfigLoad(p);
+    expect(cfg.language).toBe('en');
+    expect(cfg.llama_dir).toBe('/x');
+    expect(cfg.vram_total_gb).toBe(24);
+    expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    expect(cfg.update).toEqual({ last_llama_type: 'Windows x64 (CUDA 12)' });
     rm(p);
   });
 });
