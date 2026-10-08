@@ -15,13 +15,66 @@
 # 编码：UTF-8 with BOM + LF（与仓库其他 ps1 一致，PS 5.1 兼容）。
 param(
   [string]$InstallDir = 'D:\AI\LMS-Launcher',
-  [switch]$Snapshot
+  [switch]$Snapshot,
+  [switch]$Watch,
+  [int]$Seconds = 240,
+  [int]$IntervalMs = 150
 )
 
 function Get-ConhostIds {
   $con = Get-Process -Name 'conhost' -ErrorAction SilentlyContinue
   if ($null -eq $con) { return @() }
   return @($con | ForEach-Object { $_.Id })
+}
+
+# 可见控制台窗口检测（2026-10-08，C3 重定义的配套）。
+# 本机默认控制台宿主是 Windows Terminal：窗口类名 CASCADIA_HOSTING_WINDOW_CLASS，不是
+# ConsoleWindowClass；conhost 的 MainWindowHandle 恒为 0，不能当可见性信号。
+# 判定 = EnumWindows + 类名白名单 + IsWindowVisible + 排除有属主的窗口（GetWindow GW_OWNER）。
+$script:ProbeReady = $false
+function Get-VisibleConsoleWindows {
+  if (-not $script:ProbeReady) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public class LmsConsoleWindowProbe {
+  public class WinInfo { public long Hwnd; public string Class; public string Title; public long Pid; }
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll")] static extern int GetClassName(IntPtr h, StringBuilder s, int max);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
+  [DllImport("user32.dll")] static extern int GetWindowText(IntPtr h, StringBuilder s, int max);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  public static List<WinInfo> VisibleWindows() {
+    var outp = new List<WinInfo>();
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h)) return true;
+      if (GetWindow(h, 4) != IntPtr.Zero) return true; // GW_OWNER
+      var sb = new StringBuilder(256);
+      GetClassName(h, sb, 256);
+      string cls = sb.ToString();
+      if (cls != "ConsoleWindowClass" && cls != "CASCADIA_HOSTING_WINDOW_CLASS") return true;
+      int len = GetWindowTextLength(h);
+      string title = "";
+      if (len > 0) { var tb = new StringBuilder(len + 2); GetWindowText(h, tb, tb.Capacity); title = tb.ToString(); }
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      WinInfo w = new WinInfo();
+      w.Hwnd = h.ToInt64(); w.Class = cls; w.Pid = pid;
+      w.Title = title.Replace('\r', ' ').Replace('\n', ' ');
+      outp.Add(w);
+      return true;
+    }, IntPtr.Zero);
+    return outp;
+  }
+}
+'@
+    $script:ProbeReady = $true
+  }
+  return [LmsConsoleWindowProbe]::VisibleWindows()
 }
 
 $SnapPath = Join-Path $InstallDir 'conhost-snapshot.txt'
@@ -39,6 +92,39 @@ if ($Snapshot) {
   }
   Set-Content -LiteralPath $SnapPath -Value $lines -Encoding UTF8
   Write-Host ('[OK] conhost snapshot saved: ' + $SnapPath + ' (' + $lines.Count + ' lines)')
+  exit 0
+}
+
+$WatchPath = Join-Path $InstallDir 'console-watch.txt'
+
+# ---------- -Watch 模式：更新前启动，记录更新期间新增的可见控制台窗口 ----------
+# 窗口是瞬态的（cmd 启动→退出只有几秒），更新结束后再枚举必然抓不到，所以必须在更新前开始采样。
+# 基线 = 采样器启动时已存在的窗口句柄：用户自己的终端窗口因此不会被记为命中。
+# 已知局限：窗口销毁后句柄可能被复用；采样间隔内复用概率极低，视为可接受。
+if ($Watch) {
+  if (-not (Test-Path $InstallDir)) {
+    Write-Host ('[FAIL] Install directory not found: ' + $InstallDir)
+    exit 1
+  }
+  $seen = @{}
+  foreach ($w in Get-VisibleConsoleWindows) { $seen[[int64]$w.Hwnd] = $true }
+  $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+  Set-Content -LiteralPath $WatchPath -Value ('watch start ' + $ts + ' seconds=' + $Seconds + ' intervalMs=' + $IntervalMs + ' baseline=' + $seen.Count) -Encoding UTF8
+  $end = (Get-Date).AddSeconds($Seconds)
+  $samples = 0; $hits = 0
+  while ((Get-Date) -lt $end) {
+    $samples++
+    foreach ($w in Get-VisibleConsoleWindows) {
+      if (-not $seen.ContainsKey([int64]$w.Hwnd)) {
+        $seen[[int64]$w.Hwnd] = $true
+        $hits++
+        Add-Content -LiteralPath $WatchPath -Value ('HIT ' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + ' hwnd=' + $w.Hwnd + ' class=' + $w.Class + ' pid=' + $w.Pid + ' title=' + $w.Title) -Encoding UTF8
+      }
+    }
+    Start-Sleep -Milliseconds $IntervalMs
+  }
+  Add-Content -LiteralPath $WatchPath -Value ('watch end ' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + ' samples=' + $samples + ' hits=' + $hits) -Encoding UTF8
+  Write-Host ('[OK] console window watch finished: ' + $WatchPath + ' (samples ' + $samples + ', hits ' + $hits + ')')
   exit 0
 }
 
@@ -76,10 +162,10 @@ if ($null -eq $main) {
     $ppid = [int]$proc.ParentProcessId
     $parent = Get-Process -Id $ppid -ErrorAction SilentlyContinue
     if ($null -eq $parent) {
-      Write-Host ('[PASS] C2 independent: parent PID ' + $ppid + ' no longer exists; not attached to the update script\'s process tree')
+      Write-Host ('[PASS] C2 independent: parent PID ' + $ppid + ' no longer exists; not attached to the update script''s process tree')
       $pass++
     } else {
-      Write-Host ('[FAIL] C2 independent: parent PID ' + $ppid + ' (' + $parent.ProcessName + ') still exists; in the DETACHED form the update script\'s powershell should have exited')
+      Write-Host ('[FAIL] C2 independent: parent PID ' + $ppid + ' (' + $parent.ProcessName + ') still exists; in the DETACHED form the update script''s powershell should have exited')
       $fail++
     }
   }
