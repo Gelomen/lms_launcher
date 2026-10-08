@@ -415,6 +415,26 @@ describe('saveProxy', () => {
     rm(p);
   });
 
+  it('P8 文件已有合法代理 + 端口越界（99999 / 0）→ throw 且既有文件的 mtime 与字节均未动', () => {
+    // 补 P8「不写」半边的**端口范围**分支：上面「port 非法」用例跑在**不存在的文件**上
+    // （只断言 existsSync === false），带 mtime + 字节逐字哨兵的版本只走「只填一半」
+    // （err.config.proxyPortEmpty）。于是「先 appConfigSave 落盘、后校验端口范围」的实现
+    // 在两者上都照样绿——本用例挡住它：越界端口必须在落盘前 throw，既有文件分毫不动。
+    const p = tmpPath('saveproxy_badport_noop.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 } });
+    pinMtime(p);
+    const before = require('node:fs').readFileSync(p, 'utf8');
+    for (const bad of ['99999', '0']) {
+      expect(() => saveProxy(p, '127.0.0.1', bad)).toThrow('端口须为 1–65535');
+      // 逐次核对：越界端口每一次都必须停在落盘之前（mtime 哨兵 + 字节逐字 + 读回原代理）
+      expect(mtime(p), bad).toBe(0);
+      expect(require('node:fs').readFileSync(p, 'utf8'), bad).toBe(before);
+      expect(appConfigLoad(p).proxy, bad).toEqual({ host: '127.0.0.1', port: 10808 });
+    }
+    rm(p);
+  });
+
   it('P4 同值再保存 → changed=false 且不写盘（mtime 哨兵）', () => {
     const p = tmpPath('saveproxy_noop.yaml');
     rm(p);

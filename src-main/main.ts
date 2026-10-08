@@ -693,10 +693,10 @@ ipcMain.handle('check_llama_update', async (_e): Promise<
     return { success: false, error: 'unconfigured' };
   }
 
-  // 构建代理 URL
-  const proxy = cfg.proxy?.host && cfg.proxy?.port
-    ? `http://${cfg.proxy.host}:${cfg.proxy.port}`
-    : undefined;
+  // 构建代理 URL：复用 buildProxyUri（update-http.ts），与 saveProxy 的 normalizeProxy 判定同构——
+  // host trim 后非空 + port 为 1–65535 的整数，否则视为直连。内联弱谓词会把 yaml 里的畸形节
+  // （如 port 写成字符串）当代理用，而弹窗保存已按归一化判「无代理」→ 用户清除代理后更新仍走旧代理（I-1）
+  const proxy = buildProxyUri(cfg) ?? undefined;
 
   // 2026-09-17：恒查 pre-release（nightly）——llama.cpp 的 stable release 只有
   // nightly-tag.txt 资产、无 Windows 二进制（2026-09-14 修复；2026-09-17 定稿移除
@@ -767,9 +767,7 @@ ipcMain.handle('get_llama_release_options', async (_e): Promise<
 > => {
   const [cp] = yamlPaths();
   const cfg = appConfigLoad(cp);
-  const proxy = cfg.proxy?.host && cfg.proxy?.port
-    ? `http://${cfg.proxy.host}:${cfg.proxy.port}`
-    : undefined;
+  const proxy = buildProxyUri(cfg) ?? undefined; // 与 saveProxy 的归一化判定一致（I-1）
   const remoteInfo = await fetchLlamaReleaseInfo(proxy);
   if (!remoteInfo) {
     emitLog(`[lms_launcher] ` + t('log.llama.ver.listFail', {}), 'sys');
@@ -800,9 +798,7 @@ ipcMain.handle('download_llama_update', async (_e, opts: { download_url: string;
     return { success: false, error: 'unconfigured' };
   }
 
-  const proxy = cfg.proxy?.host && cfg.proxy?.port
-    ? `http://${cfg.proxy.host}:${cfg.proxy.port}`
-    : undefined;
+  const proxy = buildProxyUri(cfg) ?? undefined; // 与 saveProxy 的归一化判定一致（I-1）
 
   emitLog(`[lms_launcher] ` + t('log.llama.dl.start', { url: opts.download_url }), 'sys');
   // 2026-09-18：所选变体含 CUDA 时，CUDA DLLs 下载地址同样落日志（便于排查 DLLs 缺失/下载失败）
