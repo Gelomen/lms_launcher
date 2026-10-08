@@ -115,4 +115,6 @@ export function writeUpdateBootstrap(i: BootstrapInput, hasWscript: boolean): Bo
 3. 在应用里点「重启以更新」。**全程不应看到任何 cmd / Terminal 窗口。**
 4. 新版起来后运行：
    `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify-relaunch.ps1`
-   → 期望 C1/C2/C3/C4/C5 全 PASS（C3 读第 2 步留下的 `console-watch.txt`）。
+   → 期望 **C1/C2/C3/C4 全 PASS、C5 为 `[INFO] … does not exist; skipping`**，即 `SUMMARY: passed 4/5 (FAIL 0, skipped 1)`、exit 0。
+   → C5 在正常时序里必然 skip：新版启动时会回显并删除更新日志（`src-main/main.ts:670` 的 `unlinkSync`），脚本无日志可读。要让 C5 也 PASS，必须在应用回显并删除该日志之前抢跑本脚本。
+   → C3 读第 2 步留下的 `console-watch.txt`；若 C3 打 `[INFO]`（没跑采样器，或采样早于本次构建），一律视为**未验证**，不算通过。
