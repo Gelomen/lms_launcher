@@ -153,7 +153,8 @@ describe('saveLlamaUpdateConfig', () => {
  */
 export function saveLlamaUpdateConfig(p: string, opts: { last_llama_type?: string }): ConfigSaveResult {
   const cfg = appConfigLoad(p);
-  if (opts.last_llama_type === undefined) return { cfg, changed: false }; // 缺键 = 不触碰该节（D4）
+  // 缺键或非字符串（IPC 参数是未类型化 JSON，null/数字都进得来）= 不触碰该节（D4）；空串是字符串，仍走下面的清除（D5）
+  if (!opts || typeof opts.last_llama_type !== 'string') return { cfg, changed: false };
   const current = typeof cfg.update?.last_llama_type === 'string' && cfg.update.last_llama_type !== '' ? cfg.update.last_llama_type : undefined;
   const target = typeof opts.last_llama_type === 'string' && opts.last_llama_type !== '' ? opts.last_llama_type : undefined;
   if (current === target) return { cfg, changed: false };
@@ -390,6 +391,7 @@ git commit --author="Gelomen <gelomenchen@gmail.com>" -m "docs(plans): 更新配
 - **计划代码有缺陷**：上面任务 1 步骤 3 的初版把「`opts` 缺键」与「空串」都归一成 `target = undefined`，于是「文件已有 `update.last_llama_type: 'A'` + `opts = {}`」被判为变化并把整个 `update` 节删除落盘——违反规格 §4.1 U4（「文件当前 = 任意 → 未变化、不写」）与 D4（「什么都不做」）。审查发现后已修：在归一之前先挡缺键（`if (opts.last_llama_type === undefined) return { cfg, changed: false };`），并补 U4b 用例（基线含有效值 + `opts = {}` → `changed=false`、mtime 不变、字节不变）。上面的代码块已同步为修正后的版本。
 - **顺带修掉**：`cfg.update = { ...(cfg.update ?? {}), last_llama_type: target }` 在手工编辑的坏 yaml `update: foo`（标量）下会把字符串展开成字符键落盘（`"0": f` 等）。改为整节覆盖 `{ last_llama_type: target }`——`LlamaUpdateConfig` 只有一个字段（F4），展开保留不了任何真实字段。补了一条标量节用例。
 - **V2 补齐**：U5 删除分支也逐项断言 `llama_dir` / `vram_total_gb` / `proxy` / `language` 保留（真值表末行说的是「任何分支」）。
+- **复审后再修（74f7d0f）**：早返回只挡 `=== undefined`，于是 `{ last_llama_type: null }` 会删掉既有节而 `{}` 不碰——防御边界不自洽。已把类型判断并入早返回（`!opts || typeof opts.last_llama_type !== 'string'`，`opts` 为 `null` 也不再抛 TypeError），并补 U4c 用例（旧守卫下 RED `expected true to be false`）。规格 D4 与真值表 U4 已同步为「不是字符串 = 不触碰」，上面的代码块同步到最终版本。
 - 已知可简化处（未改，属打磨）：早返回之后 `target` 表达式里的 `typeof opts.last_llama_type === 'string'` 半边不可能为假。
 
 ## 自检（写完后照规格复核）

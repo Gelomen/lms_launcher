@@ -46,7 +46,7 @@
 | D1 | 判定位置 | `config.ts` 新增 `saveLlamaUpdateConfig` / `saveVramTotal`，返回 `ConfigSaveResult`；`main.ts` 只按 `changed` 门控日志 | 沿用前规格 H9 + F9：判定与写盘同层才可测 |
 | D2 | 判定基线 | yaml 现值（`appConfigLoad` 后比较），不用内存态 | 沿用前规格 H2 |
 | D3 | 未变化时 | 完全不写：不进入 `appConfigSave`，文件与 mtime 都不动 | 沿用前规格 H3 |
-| D4 | `opts` 无值 | `opts.last_llama_type === undefined` → 什么都不做，`changed: false`，**不造 `update: {}`** | 修 F2。安全性由 F4 保证：唯一消费方用 `cfg.update ?? {}` |
+| D4 | `opts` 无有效值 | `opts.last_llama_type` **不是字符串**（缺键、`undefined`、`null`、数字、布尔、对象——IPC 参数是未类型化的 JSON）→ 什么都不做，`changed: false`，**不造 `update: {}`、也不删既有节** | 修 F2。安全性由 F4 保证：唯一消费方用 `cfg.update ?? {}`。「没有有效值」不等于「清除」：只有空串（字符串）才清除（D5）。实现期由审查补上非字符串这一半（见计划「实现期修订」） |
 | D5 | 空串 | `last_llama_type: ''` 视为「未配置」。目标状态 = **整个 `update` 节不存在**：文件里有有效值 → 变化，落盘时把 `cfg.update` 置为 `undefined`（不是把节内字段置 `undefined`，见 F11）；文件里已是 `update: {}` 或没有该节 → 未变化、不写（垃圾节不主动清理，同前规格 H8） | 与「空输入 = 缺键」的既有口径一致；渲染端不会发空串，属边界防御 |
 | D6 | 显存取值 | `gb > 0` → 目标为该数值；`gb <= 0` 或非有限（`NaN`/`Infinity`）→ 目标「无该键」 | 保持 F6 既有语义（≤0 视为未配置），只加变更判定 |
 | D7 | 返回值契约 | 两个 IPC 的返回类型与语义不变：未变化仍是 `{ success: true }`；`save_vram_total` 仍是 `void` | 渲染端无需改动（F3 的两处调用点不动） |
@@ -63,7 +63,7 @@
 | U1 | 无 `update` 节 | `last_llama_type: 'Windows x64 (CUDA 13)'` | **变化** | 写入该节 | `llama.cpp · 更新配置已保存` |
 | U2 | `update.last_llama_type: 'A'` | `'A'` | 未变化 | 不写（mtime 不变） | 无 |
 | U3 | `'A'` | `'B'` | **变化** | 覆盖为 `'B'` | 有 |
-| U4 | 任意 | `opts` 不含该键 | 未变化 | 不写，**不出现 `update: {}`** | 无 |
+| U4 | 任意 | `opts` 不含该键，或该键不是字符串（`null` / 数字 / 布尔 / 对象） | 未变化 | 不写，**不出现 `update: {}`，既有节原样保留** | 无 |
 | U5 | `'A'` | `''` | **变化** | **整个 `update` 节消失**（实现须置 `cfg.update = undefined`，见 D5/F11） | 有 |
 | U6 | 文件已是 `update: {}`（旧缺陷留下的垃圾节） | `''` 或不含该键 | 未变化 | 不写，垃圾节保持原样 | 无 |
 | U7 | 文件已是 `update: {}` | `'A'` | **变化** | 写入 `update: {last_llama_type: 'A'}` | 有 |
@@ -103,7 +103,7 @@ export function saveVramTotal(p: string, gb: number): ConfigSaveResult;
 
 ## 6. 验收
 
-- V1（单测）真值表 U1–U7、W1–W4 全部有对应用例；U5 必须断言落盘后的文件里**不含** `update` 这一行（字节级），而不是只断言读回 `undefined`；U4 必须断言文件里**不出现** `update: {}`；「未变化」的分支必须用 mtime 哨兵（`pinMtime` 后 `mtime(p) === 0`）与文件字节逐字比对证明**没有落盘**，而不是只断言读回的值相同。
+- V1（单测）真值表 U1–U7（U4 含「缺键」与「非字符串」两半，分别由 U4b、U4c 覆盖）、W1–W4 全部有对应用例；U5 必须断言落盘后的文件里**不含** `update` 这一行（字节级），而不是只断言读回 `undefined`；U4 必须断言文件里**不出现** `update: {}`；「未变化」的分支必须用 mtime 哨兵（`pinMtime` 后 `mtime(p) === 0`）与文件字节逐字比对证明**没有落盘**，而不是只断言读回的值相同。
 - V2（单测）任何变化分支落盘后重读，`llama_dir` / `proxy` / `language` / 其它节逐项保留。
 - V3（类型）`npx tsc -p tsconfig.main.json` 无输出。
 - V4（边界）`git diff --name-only` 只含 `src-main/config.ts`、`src-main/config.test.ts`、`src-main/main.ts`；`dict.ts`、`UpdateModal.vue`、`VramDialog.vue`、`llama-update-client.ts` 零改动。
