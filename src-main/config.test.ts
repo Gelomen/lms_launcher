@@ -1,6 +1,6 @@
 import { applyLang } from './i18n';
 import { describe, it, expect } from 'vitest';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, validateConfigId, validateParamKey, suggestConfigId, existingConfigIds, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig, saveVramTotal } from './config';
 import { tmpPath, rm, writeText, jp, repoParams, repoParamsText } from './test-utils';
 
 describe('config.ts', () => {
@@ -846,6 +846,70 @@ describe('saveLlamaUpdateConfig', () => {
     expect(cfg.vram_total_gb).toBe(24);
     expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
     expect(cfg.language).toBe('zh');
+    rm(p);
+  });
+});
+
+describe('saveVramTotal', () => {
+  const bytes = (p: string): string => require('node:fs').readFileSync(p, 'utf8');
+
+  it('W1 文件无该键 + 24 → changed=true 且写入', () => {
+    const p = tmpPath('vram_w1.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x' });
+    pinMtime(p);
+    expect(saveVramTotal(p, 24).changed).toBe(true);
+    expect(appConfigLoad(p).vram_total_gb).toBe(24);
+    expect(mtime(p)).not.toBe(0);
+    rm(p);
+  });
+
+  it('W2 同值 → changed=false，文件与 mtime 都不动', () => {
+    const p = tmpPath('vram_w2.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', vram_total_gb: 24 });
+    pinMtime(p);
+    const before = bytes(p);
+    expect(saveVramTotal(p, 24).changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    expect(bytes(p)).toBe(before);
+    rm(p);
+  });
+
+  it('W3 已有值 + 0/NaN/Infinity → changed=true 且该键从文件消失（D6）', () => {
+    for (const gb of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const p = tmpPath('vram_w3.yaml');
+      rm(p);
+      appConfigSave(p, { llama_dir: '/x', vram_total_gb: 24 });
+      expect(saveVramTotal(p, gb).changed).toBe(true);
+      expect(bytes(p)).not.toContain('vram_total_gb');
+      expect(appConfigLoad(p).vram_total_gb).toBeUndefined();
+      rm(p);
+    }
+  });
+
+  it('W4 文件无该键 + 0 → changed=false 且不写', () => {
+    const p = tmpPath('vram_w4.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x' });
+    pinMtime(p);
+    const before = bytes(p);
+    expect(saveVramTotal(p, 0).changed).toBe(false);
+    expect(mtime(p)).toBe(0);
+    expect(bytes(p)).toBe(before);
+    rm(p);
+  });
+
+  it('变化分支不丢其它节（V2）', () => {
+    const p = tmpPath('vram_keep.yaml');
+    rm(p);
+    appConfigSave(p, { llama_dir: '/x', proxy: { host: '127.0.0.1', port: 10808 }, language: 'en', update: { last_llama_type: 'A' } });
+    expect(saveVramTotal(p, 16).changed).toBe(true);
+    const cfg = appConfigLoad(p);
+    expect(cfg.llama_dir).toBe('/x');
+    expect(cfg.proxy).toEqual({ host: '127.0.0.1', port: 10808 });
+    expect(cfg.language).toBe('en');
+    expect(cfg.update).toEqual({ last_llama_type: 'A' });
     rm(p);
   });
 });

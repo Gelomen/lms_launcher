@@ -276,3 +276,18 @@ export function saveLlamaUpdateConfig(p: string, opts: { last_llama_type?: strin
   appConfigSave(p, cfg);
   return { cfg, changed: true };
 }
+
+/**
+ * 保存显存总量（2026-10-09 spec D6）：gb > 0 → 该值；否则视为未配置（键从文件消失，与 F7 同构）。
+ * 与 yaml 现值相同 → 完全不写（D2/D3）。该路径没有日志，本函数只为「不产生无意义的改写」而存在。
+ */
+export function saveVramTotal(p: string, gb: number): ConfigSaveResult {
+  const cfg = appConfigLoad(p);
+  const ok = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;
+  const target = ok(gb) ? gb : undefined;
+  const current = ok(cfg.vram_total_gb) ? cfg.vram_total_gb : undefined;
+  if (current === target) return { cfg, changed: false };
+  cfg.vram_total_gb = target;
+  appConfigSave(p, cfg);
+  return { cfg, changed: true };
+}

@@ -5,7 +5,7 @@ import { applyLang, getLang, t, resolveSystemLang, type Lang } from './i18n';
 import { ERR_LLAMA_BUSY, ERR_LLAMA_TARGET_BUSY, ERR_UPDATE_VERIFY_FALLBACK, ERR_UPDATE_NO_TASK, ERR_UPDATE_FILES_MISSING, ERR_UPDATE_TASK_START } from './i18n/err-keys';
 import { existsSync, statSync, openSync, readSync, closeSync, readFileSync, appendFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig } from './config';
+import { appConfigLoad, appConfigSave, paramsLoad, configsLoad, saveConfigEntry, deleteConfigEntry, suggestConfigId, existingConfigIds, configsBackfillDefaults, saveProxy, saveLlamaDir, saveLanguage, saveLlamaUpdateConfig, saveVramTotal } from './config';
 import { migrateLegacyConfigs } from './config-migrate';
 import type { AppConfig, ParamsFile, ConfigsMap } from './config';
 import { prepareLaunch, summarize, commandLine } from './build';
@@ -450,8 +450,7 @@ ipcMain.handle('vram_estimate', async (_e, args: {
 // save_vram_total：持久化显卡显存总量（lms_launcher.yaml 的 vram_total_gb 字段）；gb ≤ 0 → 视为未配置（不写入）
 ipcMain.handle('save_vram_total', (_e, gb: number): void => {
   const [p] = yamlPaths();
-  const cfg = appConfigLoad(p);
-  appConfigSave(p, { ...cfg, vram_total_gb: gb > 0 ? gb : undefined });
+  saveVramTotal(p, gb);
 });
 // frameless winbar 窗口控制（渲染端自绘三键 → 主进程执行）
 ipcMain.handle('win_minimize', () => { mainWin()?.minimize(); });
