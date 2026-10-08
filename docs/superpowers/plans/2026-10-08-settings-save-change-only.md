@@ -385,6 +385,12 @@ git commit --author="Gelomen <gelomenchen@gmail.com>" -m "docs(specs): 设置弹
 - **裁定**：改根因，不用测试夹具绕开——删掉单例，改为每次新建的 `emptyAppConfig()` 工厂，两处 fallback 都用它（已并入规格 F14/H11/V6）。`saveProxy` 与其余测试代码保持本计划逐字未改。
 - **追加要求**：为 `appConfigLoad` 的契约本身补守护用例（两条 fallback 路径，写脏后再读仍须干净），并补齐真值表缺项：P2「只有 host」的畸形节、P8 的「不写文件」半边、只改 host 不改 port、P2 断言 `changed:false` 时返回的是文件原样 `{}`。
 
+## 最终整分支审查后的跟进（2026-10-09）
+
+- **I-1（已修）**：`main.ts:697/770/803` 三处内联 `cfg.proxy?.host && cfg.proxy?.port ? … : undefined` 是弱谓词（不 trim、不校验类型与范围），而 `update-http.ts:5` 的 `buildProxyUri` 与 `normalizeProxy` 规则同构且已有测试、`main.ts:34` 早已 import。后果是本次改动放大的：文件里 `port` 写成字符串时，用户清空代理 → 两侧都归一为「无代理」→ `changed=false` → 不写盘，而更新下载仍在用这个代理——「清除代理」成了静默无操作。修法：三处换成 `buildProxyUri(cfg) ?? undefined`（已并入规格 H8 前提与 V7）。
+- **I-2（不在本次范围，已记入规格非目标）**：`set_llama_update_config`（`main.ts:958-976`）与 `set_vram_total`（`:451-454`）仍是无条件写盘 + 无条件记日志，与本次修掉的是同一症状；后续复用 `ConfigSaveResult` 模式。
+- 其余 Minor（`yamlPaths()[0]` 写法、`saveLanguage` 不校验 `lang`、`appConfigLoad` 两条路径返回形状不同、`saveLlamaDir` 注释）未处理，属打磨。
+
 ## 自检（写完后照规格复核）
 
 - **规格覆盖度**：P1→任务 1 步骤 2 用例 2；P2→用例 3；P3→用例 5；P4→用例 1；P5→用例 4；P6→用例 6；P7→用例 7；P8→既有 throw 用例（任务 1 步骤 5 保持不动）。L1/L2/L3→任务 2 步骤 1；L4→`main.ts` 既有 IPC 守卫（任务 2 步骤 5 保留）。G1→任务 1 步骤 7；G2→mtime 哨兵用例；G3→任务 2；G4→判定全部在 `config.ts`。H10→任务 2 步骤 5 保留 `applyLang`/重建托盘。
