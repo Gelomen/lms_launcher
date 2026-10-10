@@ -13,6 +13,8 @@
 
 ## 清单
 
+> 「前置」列只描述依赖关系，**不是并行批次建议**——执行一律串行，见 K6。
+
 | 任务 | 标题 | check 表 | 前置 | 钉住的审查重点 |
 |---|---|---|---|---|
 | 1 | 公共命名工具 `nextCopyName` | [task-01-next-copy-name.md](task-01-next-copy-name.md) | — | — |
@@ -39,6 +41,7 @@
 | K3 | 包管理器 = **npm**：只提交 `package-lock.json`；`pnpm-lock.yaml` 已被 npm 落下但不影响打包（`build.bat:38` 跑 `npm install`），要同步就另开一次 chore | `node_modules\\.package-lock.json` 与 `package-lock.json` 为最近一次安装；`.modules.yaml` 停在更早 | 任务 5 A2 / B1 / H1 / H3 |
 | K4 | 终端标签的 i18n key 必须以**字面量 `t()` 调用**出现在源码里，否则 `key-coverage` 扫不到；纯字符串映射不算 | `key-coverage.test.ts:39-45` 的 `KEY_CALL` 只匹配 `t(` / `hasKey(` 后的字面量 | 任务 8 A3 / E1 / F5 |
 | K5 | **H 段由主代理在验收通过后执行**：子代理只写代码与测试、填 J 段，不 `git add`、不 commit；验收不通过就把工作区改动打回，因此不存在需要 revert 的提交 | 用户确认 + `AGENTS.md` 工作流第 4 步「提交」 | 全部 14 张表的 H 段 |
+| K6 | **执行一律串行**：一次只跑一个子代理，按任务编号 1→14 顺序（编号即合法拓扑序）；上一任务验收并提交后才派下一个。**不得并行派单** | 本机为本地大模型、资源有限；DSH 子代理并行上限已设为 1 | 本索引「前置」列 + 全部任务表 A 段（前置只描述依赖，不是并行批次） |
 
 ## G 组 · 全局约束（每个任务都适用）
 
