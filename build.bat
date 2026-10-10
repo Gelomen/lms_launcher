@@ -48,6 +48,25 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem ---- tool cache: keep it inside the project (2026-10-10) ----
+rem app-builder.exe and 7za.exe are UNSIGNED. On this machine an unsigned process may not
+rem create files or directories in the user profile: electron-builder's default cache
+rem %LOCALAPPDATA%\electron-builder fails with "mkdir ... Access is denied", while the same
+rem write inside this project succeeds - and signed cmd/pwsh write in AppData fine, so it is
+rem NOT an NTFS ACL problem (Smart App Control evaluation mode: registry
+rem HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy VerifiedAndReputablePolicyState=2).
+rem Pinning the cache here makes packaging independent of the user profile being writable.
+set "ELECTRON_BUILDER_CACHE=%~dp0.cache\electron-builder"
+rem winCodeSign-2.6.0.7z holds two macOS symlinks (darwin/.../libcrypto.dylib, libssl.dylib).
+rem Without SeCreateSymbolicLinkPrivilege (Developer Mode off + non-admin) 7za cannot extract
+rem them, so app-builder fails and re-downloads 5.6 MB four times. This prepares the tool
+rem cache once and excludes darwin/ - Windows packaging only uses rcedit-*.exe and signtool.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\prepare-win-codesign.ps1"
+if errorlevel 1 (
+  echo [build] FAILED: could not prepare the winCodeSign tool cache.
+  exit /b 1
+)
+
 echo [build] Building win-unpacked only (no portable archive)...
 rem Note: npm/npx are .cmd files, so they MUST be prefixed with call here, or control
 rem would not return to this script after the build.
@@ -69,11 +88,13 @@ goto pack_done
 echo.
 echo [build] Packaging failed. Retrying once (a transient file lock is the common cause)...
 call npx electron-builder --config electron-builder.yml --win dir
+rem NOTE: never put a ")" inside these echo lines - cmd closes the block at the first
+rem unescaped ")" and the rest of the block dies with ": was unexpected at this time."
 if errorlevel 1 (
   echo.
   echo [build] FAILED: electron-builder packaging failed twice.
-  echo         "Fatal error: Unable to commit changes" (rcedit): a transient file lock
-  echo         (usually Defender scanning). Wait a few seconds and re-run .\build.bat;
+  echo         "Fatal error: Unable to commit changes" from rcedit is a transient file lock
+  echo         - usually Defender scanning. Wait a few seconds and re-run .\build.bat;
   echo         to eliminate it, from an admin PowerShell: Add-MpPreference -ExclusionPath "%~dp0"
   exit /b 1
 )
