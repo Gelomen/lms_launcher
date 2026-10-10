@@ -381,7 +381,7 @@ function close(): void { emit('close'); }
             <template v-for="row in rows" :key="row.key">
               <label class="label flag-label" :data-tooltip="row.tip"
                    @mouseenter="(e: MouseEvent) => onFlagEnter(e, row.tip)" @mouseleave="onFlagLeave">{{ row.flag }}</label>
-              <!-- boolean / options → #13 共享 Dropdown 组件；text → input（params_file 行右侧加「选择文件」按钮） -->
+              <!-- options → #13 共享 Dropdown 组件；boolean → 切换开关（2026-10，样式见 .bool-switch）；text → input（params_file 行右侧加「选择文件」按钮） -->
               <div class="row-cell" v-if="row.type === 'text'">
                 <input
                   class="input"
@@ -392,10 +392,17 @@ function close(): void { emit('close'); }
                 <button v-if="fileKeys.includes(row.key)" class="btn btn-secondary file-btn tip-up" :data-tooltip="t('tplModal.btn.pickFile')" :aria-label="t('tplModal.btn.pickFile')"
                   @click="pickFile(row.key)"><FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 14px;" /></button>
               </div>
-              <div v-else-if="row.type === 'boolean'" class="dropdown">
-                <Dropdown :value="formValues[row.key]"
-                          :options="[{ value: 'false', label: 'false' }, { value: 'true', label: 'true' }]"
-                          @update:value="(v: string) => { formValues[row.key] = v; }" />
+              <!-- boolean 行（2026-10）：false/true 下拉 → 切换开关。形态参考开关图：
+                   关 = 浅灰轨道 + 白旋钮居左；开 = 主题紫轨道（--primary）+ 白旋钮居右。只换 UI——
+                   formValues[key] 仍写字符串 'true'/'false'，fill() 默认 false、保存时 false 不写入 yaml（#9D）逻辑不变。 -->
+              <div v-else-if="row.type === 'boolean'" class="switch-cell">
+                <button type="button" role="switch" class="bool-switch"
+                        :class="{ 'bool-switch--on': formValues[row.key] === 'true' }"
+                        :aria-checked="formValues[row.key] === 'true' ? 'true' : 'false'"
+                        :aria-label="row.flag"
+                        @click="formValues[row.key] = formValues[row.key] === 'true' ? 'false' : 'true'">
+                  <span class="bool-switch__knob"></span>
+                </button>
               </div>
               <div v-else class="dropdown">
                 <!-- options 选项 >8 字截断为前 8 字+…（truncOpt），hover tooltip=完整值；value 仍为原始串 -->
@@ -553,6 +560,32 @@ function close(): void { emit('close'); }
     flex-shrink: 0; height: var(--h-control); display: inline-flex; align-items: center; justify-content: center;
     padding: 0 14px; font-size: var(--fs-label);
   }
+/* boolean 行切换开关（2026-10：false/true 下拉 → 开关，仅展示层，值仍是 'true'/'false'）
+   形态参考用户提供的开关图（关 = 浅灰轨道 + 白旋钮居左，开 = 满色轨道 + 白旋钮居右，旋钮带柔和投影）；
+   配色改主题紫（用户 2026-10 指定，不用参考图的绿）：开 = --primary，hover 加深一档 --primary-hover，
+   与 [保存]/[启动]/VRAM 同一主操作色语言。比例同图（轨道 44×24 ≈ 1.7:1），旋钮 20px、内缩 2px。 */
+.switch-cell { display: flex; align-items: center; }
+.bool-switch {
+  --sw-w: 44px; --sw-h: 24px; --sw-knob: 20px; --sw-inset: 2px;
+  position: relative; flex: none;
+  width: var(--sw-w); height: var(--sw-h);
+  padding: 0; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--switch-off); cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.bool-switch__knob {
+  position: absolute; top: 50%; left: var(--sw-inset);
+  width: var(--sw-knob); height: var(--sw-knob);
+  transform: translateY(-50%);
+  border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  transition: left .15s ease;
+}
+.bool-switch--on { background: var(--primary); border-color: var(--primary); }
+.bool-switch--on:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+/* 100% = 按钮内边距盒宽（不含 1px 边框）→ 与关闭态左右内缩对称 */
+.bool-switch--on .bool-switch__knob { left: calc(100% - var(--sw-knob) - var(--sw-inset)); }
+.bool-switch:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
 /* 按钮栏固定底部：删除（编辑模式）+ 保存 */
 /* 底部栏高 = 顶部栏（.modal-head height:32px + 分隔线）：显式 32px（box-sizing:border-box），
    不再靠内容撑起——新建模式栏内唯一按钮 .modal-save 是绝对定位，无流内内容时旧值塌成细缝 */

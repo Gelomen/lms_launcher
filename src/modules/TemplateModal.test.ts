@@ -1169,3 +1169,103 @@ describe('TemplateModal fa dropdown', () => {
     w.unmount();
   });
 });
+
+// ---- boolean 行切换开关（2026-10 用户规格：UI 从「false/true 下拉」改为「切换开关」，逻辑不变）----
+// 契约：行控件 = button[role=switch]（不再是 Dropdown）；值仍是字符串 'true'/'false'——
+// 新建默认关（aria-checked=false，无 --on），点击切换；保存契约不变：开 → 写入 'true'，关 → 不写入 yaml（#9D）。
+describe('TemplateModal boolean switch', () => {
+  const BOOL_FLAGS = ['--jinja', '--reasoning-preserve', '--no-reasoning-preserve', '--metrics'];
+  function rowControl(flagText: string): Element {
+    const label = [...document.querySelectorAll('.flag-grid label.flag-label')].find((l) => (l.textContent ?? '').trim() === flagText)!;
+    return label.nextElementSibling!;
+  }
+  function boolSwitch(flagText: string): HTMLButtonElement {
+    return rowControl(flagText).querySelector('button[role="switch"]') as HTMLButtonElement;
+  }
+  function descInput(): HTMLInputElement {
+    const label = [...document.querySelectorAll('.modal-box label.label')].find((l) => (l.textContent ?? '').includes('名字'))!;
+    return label.nextElementSibling as HTMLInputElement;
+  }
+  function saveMock(): void {
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]) => { calls.push({ cmd, args }); if (cmd === 'suggest_config_id') return Promise.resolve(SUGGEST_ID); return Promise.resolve(null); },
+      onLogLine: () => () => {}, onProcessExit: () => () => {}, onTrayExitRequest: () => () => {},
+    };
+  }
+  // 填齐必填（-m + 名字）后点保存
+  async function fillRequiredAndSave(): Promise<void> {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set;
+    const mIn = [...document.querySelectorAll('.flag-grid .row-cell input')][0] as HTMLInputElement;
+    setter.call(mIn, 'D:/models/qwen.gguf'); mIn.dispatchEvent(new Event('input', { bubbles: true }));
+    setter.call(descInput(), '日常'); descInput().dispatchEvent(new Event('input', { bubbles: true }));
+    await flush();
+    (document.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+  }
+
+  it('boolean_rows_render_switch_not_dropdown', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    for (const flag of BOOL_FLAGS) {
+      const cell = rowControl(flag);
+      const b = boolSwitch(flag);
+      expect(b, flag).not.toBeNull();
+      expect(b.tagName.toLowerCase()).toBe('button');
+      expect(b.type).toBe('button');                          // 不提交表单，纯切换
+      expect(cell.querySelector('.select-trigger')).toBeNull(); // 旧 Dropdown 已移除
+      expect(cell.querySelector('input')).toBeNull();          // 也不是文本输入框
+    }
+    w.unmount();
+  });
+
+  it('switch_off_by_default_with_aria_false', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    for (const flag of BOOL_FLAGS) {
+      const b = boolSwitch(flag);
+      expect(b.classList.contains('bool-switch--on'), flag).toBe(false);
+      expect(b.getAttribute('aria-checked')).toBe('false');
+      expect(b.getAttribute('aria-label')).toBe(flag);        // 无障碍名 = 该行 flag
+    }
+    w.unmount();
+  });
+
+  it('click_toggles_on_then_back_off', async () => {
+    calls = []; mockLms();
+    const w = mountModal(); await flush();
+    const b = boolSwitch('--jinja');
+    b.click(); await flush();
+    expect(b.classList.contains('bool-switch--on')).toBe(true);
+    expect(b.getAttribute('aria-checked')).toBe('true');
+    b.click(); await flush();
+    expect(b.classList.contains('bool-switch--on')).toBe(false);
+    expect(b.getAttribute('aria-checked')).toBe('false');
+    w.unmount();
+  });
+
+  it('stored_true_renders_switch_on', async () => {
+    calls = []; mockLms();
+    const w = mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: 'tplx', name: 'x', values: { m: 'x.gguf', jinja: 'true', metrics: 'false' }, paramsMeta },
+    });
+    await flush();
+    expect(boolSwitch('--jinja').classList.contains('bool-switch--on')).toBe(true);
+    expect(boolSwitch('--jinja').getAttribute('aria-checked')).toBe('true');
+    expect(boolSwitch('--metrics').classList.contains('bool-switch--on')).toBe(false);
+    w.unmount();
+  });
+
+  it('save_contract_unchanged_on_writes_true_off_omitted', async () => {
+    calls = []; saveMock();
+    const w = mountModal(); await flush();
+    boolSwitch('--metrics').click(); await flush();  // 开 → metrics = 'true'
+    await fillRequiredAndSave();
+    const saved = calls.find((c) => c.cmd === 'save_config');
+    expect(saved).toBeDefined();
+    const values = (saved!.args as unknown[])[2] as Record<string, string>;
+    expect(values['metrics']).toBe('true');   // 与旧下拉选 true 完全同值
+    expect('jinja' in values).toBe(false);    // 关（false）→ 不写入 yaml（#9D 契约不变）
+    w.unmount();
+  });
+});

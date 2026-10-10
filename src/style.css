@@ -13,6 +13,7 @@
   --ok: #16A34A;            /* 校验通过绿 */
   --disabled-bg: #E5E7EB;   /* 禁用灰化 */
   --focus-ring: rgba(59, 130, 246, 0.25); /* focus 柔和蓝 ring */
+  --switch-off: #F9F9F9;        /* 切换开关「关」轨道底色（描边复用 --border）；「开」直接用 --primary（主题紫） */
 
   /* 日志着色 —— Solarized Light（§4.4） */
   --log-text: #3B4252;      /* 普通输出深灰 */
