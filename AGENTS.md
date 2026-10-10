@@ -6,9 +6,15 @@
 
 - 当前项目使用 `using-superpowers` skill 驱动
 - `docs/` 目录存放项目文档，superpowers 生成的 `spec` 和 `plan` 文档放在这里
-- `.superpowers/` 目录存放 superpowers 实现时的 SDD / TDD 文档
+- `.superpowers/` 目录存放 superpowers 实现时的 SDD / TDD 文档（SDD 一律指 Specification-Driven Development，见下文「术语」）
 - `docs/superpowers/checks/` 存放 plan 的逐任务 check 表（路径与命名见下文「check 表」一节）
 - `.temp/` 目录存放功能的验证/实现过程的临时 文档，代码 和 脚本 文件
+
+## 术语（本项目的固定含义）
+
+- **SDD = Specification-Driven Development**：spec 是唯一真相源。实现、验收、偏离处理都以 spec 为准；spec 落后于代码就算缺陷，代码领先 spec 不算进步
+- **子代理驱动**：指 superpowers 的 `subagent-driven-development` skill（plan 的一个任务派一个子代理）。**不要**把它缩写成 “SDD”；需要提及就写全名
+- **TDD**：先写失败测试，再写实现
 
 ## 工作流：任何代码改动都走这条链
 
@@ -24,7 +30,14 @@
    - `docs/superpowers/plans/YYYY-MM-DD-<feature-slug>.md`
 3. **停下**：文档 commit 后等我说「开始实现」，不要自己往下走。
    - 停下的这段时间里，按下文「check 表」一节给这份 plan 生成逐任务核对表（我要求时必做，没要求时你可以主动提议）；生成 check 表**不算**进入实现。
-4. 实现用 `subagent-driven-development`（SDD 子代理），TDD 先写失败测试
+4. 实现走 **SDD（Specification-Driven Development）**，执行载体是 `subagent-driven-development`（子代理驱动）：
+   - **派单粒度**：plan 的一个任务 = 一个子代理；主代理只做编排、验收、提交，不亲自写实现代码
+   - **派单输入**：spec 的相关章节 + plan 的任务段 + 该任务的 check 表，三份一起交给子代理（不让它自己找上下文）
+   - **任务内部**：TDD——先写失败测试 → 实现 → 定向与回归测试 → 把命令与真实输出填进该任务 check 表的 J 段。**子代理不 `git add`、不 commit**，改动留在工作区等验收
+   - **验收**：主代理逐行核对 check 表（含 J 段的真实命令输出），不接受子代理自述「完成」
+   - **提交**：**验收通过后**才由主代理按该表 H 段暂存并提交；不通过就把工作区改动打回（丢弃或重派），因此不存在需要 revert 的提交
+   - **偏离 spec**：先改 spec / plan / check 表（同一 commit）再改代码；不得只在代码里体现
+   - **顺序**：按 check 表 A 段的前置关系推进，上一任务未通过验收不得派下一个
 
 **偏离了怎么办**：如果你已经先改了代码才想起这条链，立刻停下报告「代码已改、文档缺失」，
 并问我选「补文档」还是「回退重做」；不要默认继续，也不要事后补文档当作没发生
@@ -33,7 +46,7 @@
 
 ## check 表：plan 的逐任务核对表
 
-**为什么**：plan 里的 `- [ ]` 只记「做没做」，不记「怎么验、验到哪算过」。check 表把每个任务的接口契约、验证命令、预期输出、回归门、提交门拆成可勾选的行，实现者（含 SDD 子代理）照表执行。
+**为什么**：plan 里的 `- [ ]` 只记「做没做」，不记「怎么验、验到哪算过」。check 表把每个任务的接口契约、验证命令、预期输出、回归门、提交门拆成可勾选的行，实现者（含被派去执行单个任务的子代理）照表执行。
 
 **何时生成**：plan commit 之后、我说「开始实现」之前（见上文工作流第 3 步）。生成后仍然不进入实现。
 
@@ -63,7 +76,7 @@ docs/superpowers/checks/YYYY-MM-DD-<feature-slug>/
 | E 必须钉住的行为断言 | 每条标出处（规格 §x / plan 步骤 x） |
 | F 本任务相关的硬约束 | 只列 G 组里与本任务相关的子集 |
 | G 回归门 | 定向测试 + 相邻回归文件 + 类型检查 + i18n 硬门 |
-| H 提交门 | 暂存范围与逐字 commit message |
+| H 提交门 | 暂存范围与逐字 commit message（**由主代理在验收通过后执行**；子代理不提交） |
 | I 完成判据 | 勾选清单 |
 | J 执行记录 | 留白表：命令 + 真实输出摘要（实现时填） |
 

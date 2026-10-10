@@ -9,7 +9,7 @@
 | # | 检查项 | 怎么验 | 预期 | ✓ |
 |---|---|---|---|---|
 | A1 | 工作区干净、全量绿 | `git status --porcelain` / `npm test` | 无输出 / 全绿 | ☐ |
-| A2 | **验收对象 = win-unpacked（已定，不是待决项）** | 读 `build.bat:70-110` + `git log --oneline -- build.bat` | `npx electron-builder --config electron-builder.yml --win dir` 只出 `dist-release\win-unpacked\`，并删除旧 `*-portable.exe`——这是**既定行为**（commit `ef23ac6 build: 打包只产出 win-unpacked，不再生成 portable exe`）。**不生成 portable exe，也不改 `build.bat`**；计划与规格里「portable exe」是过时措辞，按 F3 更正 | ☐ |
+| A2 | **验收对象 = win-unpacked（已定，不是待决项）** | 读 `build.bat:70-110` + `git log --oneline -- build.bat` | `npx electron-builder --config electron-builder.yml --win dir` 只出 `dist-release\win-unpacked`，并删除旧 `*-portable.exe`——这是**既定行为**（commit `ef23ac6 build: 打包只产出 win-unpacked，不再生成 portable exe`）。**不生成 portable exe，也不改 `build.bat`**；计划与规格里「portable exe」是过时措辞，按 F3 更正 | ☐ |
 | A3 | 现有打包配置 | 读 `electron-builder.yml` 全文 | 当前**没有** `asarUnpack`；`asar: true` | ☐ |
 
 ## B. 改动范围
@@ -31,8 +31,8 @@
 
 | # | 步骤 | 命令 | 预期 | ✓ |
 |---|---|---|---|---|
-| D1 | 打包 | `build.bat` | 成功退出；产物 = `dist-release\win-unpacked\lms_launcher.exe`；`dist-release\` 下**没有** `*-portable.exe`（属预期，见 A2） | ☐ |
-| D2 | 解包检查 | 列 `dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64\` | `conpty.node` / `conpty\conpty.dll` / `conpty\OpenConsole.exe` **三个都在**。基线核对：改动前 `resources\` 只有 `app.asar` + `icon.ico`，**没有** `app.asar.unpacked` → 加 `asarUnpack` 后它必须出现，出现即证明解包生效 | ☐ |
+| D1 | 打包 | `build.bat` | 成功退出；产物 = `dist-release\win-unpacked\lms_launcher.exe`；`dist-release` 下**没有** `*-portable.exe`（属预期，见 A2） | ☐ |
+| D2 | 解包检查 | 列 `dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64` | `conpty.node` / `conpty\conpty.dll` / `conpty\OpenConsole.exe` **三个都在**。基线核对：改动前 `resources` 只有 `app.asar` + `icon.ico`，**没有** `app.asar.unpacked` → 加 `asarUnpack` 后它必须出现，出现即证明解包生效 | ☐ |
 
 ## E. 硬门验收（逐条记录命令与输出；第 1 条 dev 与打包产物**各做一次**）
 
