@@ -376,6 +376,9 @@ ipcMain.handle('open_external', async (_e, url: string): Promise<void> => {
 ipcMain.handle('exit_app', async (): Promise<void> => {
   stopGpuStats();
   await ps.stopGraceful(3);
+  // 规格 §7.5 / 索引 K17：app.exit 不触发 will-quit（:53-54），conpty/cmd 是独立进程、父进程退出不会带走它们
+  // → 必须在 app.exit 之前停掉全部快捷启动终端，否则就是孤儿 PTY（审查重点 R3）。超时与 llama-server 同口径 3s。
+  await ql.stopAll(3);
   app.exit(0);
 });
 // vram_estimate：显存占用预测（规格 2026-08-29-vram-estimate-design §3/§4）。
@@ -640,6 +643,8 @@ ipcMain.handle('run_update', async (): Promise<{ ok: true } | ({ ok: false } & I
     return { ok: false, errorKey: ERR_UPDATE_TASK_START, errorParams: { err: errText } };
   }
   await ps.stopGraceful(3);
+  // 同上（索引 K17）：run_update 也是显式 app.exit(0)，漏掉就是孤儿 PTY（R3）。放在 ps.stopGraceful 之后与 exit_app 同构。
+  await ql.stopAll(3);
   await new Promise((resolve) => setTimeout(resolve, 3000)); // 等任务拉起脚本落地（/Run 后 ps1 需数秒才写到首行日志），避免 app.exit 抢先
   app.exit(0);
   return { ok: true }; // app.exit 立即终止进程，此行为类型收敛（渲染端不会收到）

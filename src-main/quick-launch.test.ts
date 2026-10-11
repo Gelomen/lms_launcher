@@ -29,6 +29,12 @@ class FakeShell {
   stopArgs: number[] = [];
   running = true;
   exited = false;
+  /** 任务 7 E4：置位后本实例的 stopGraceful 抛错，用来验证「单点失败不中断其余实例」 */
+  stopThrows = false;
+  /** 任务 7 F4：置位后 stopGraceful 挂起，直到测试 releaseStop() —— 用来钉「逐个 await」而不是 Promise.all */
+  stopHeld = false;
+  stopHeldStarted = false;
+  private releaseStop: (() => void) | null = null;
   private dataCbs: Array<(d: string) => void> = [];
   private exitCbs: Array<(code: number) => void> = [];
   write(d: string): void {
@@ -41,6 +47,11 @@ class FakeShell {
   isRunning(): boolean { return this.running; }
   async stopGraceful(timeoutSecs: number): Promise<void> {
     this.stopArgs.push(timeoutSecs);
+    if (this.stopThrows) throw new Error('stop boom');
+    if (this.stopHeld) {
+      this.stopHeldStarted = true;
+      await new Promise<void>((resolve) => { this.releaseStop = resolve; });
+    }
     // 真进程不会同步就死：让出一个微任务，使「停止中」状态在 stop() 返回前可观察（E6）
     await Promise.resolve();
     this.running = false;
@@ -48,6 +59,8 @@ class FakeShell {
   }
   /** 测试侧触发 shell 输出 */
   emit(d: string): void { this.dataCbs.forEach((cb) => cb(d)); }
+  /** 测试侧放行被挂起的 stopGraceful（任务 7 F4） */
+  releaseStopNow(): void { const r = this.releaseStop; this.releaseStop = null; r?.(); }
   /** 测试侧模拟进程自己退出（用户在终端里敲 exit） */
   exit(code: number): void {
     this.running = false;
@@ -294,6 +307,61 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
     expect(m.states()).toEqual({});
     expect(m.shells[0].stopArgs).toEqual([7]);
     expect(ctx.exeHandles[0].stopArgs).toEqual([7]);
+  });
+
+  // ── 任务 7（check 表 E1 / E4 / F4）：exit_app 与 run_update 退出前调 stopAll(3) 的前提 ──
+  // E1（C1 / 计划 步骤 1）：退出路径上没有任何「有没有终端在跑」的前置判断，
+  // 所以「空表 / 未运行的 configId」必须是正常路径：不抛错、不排计时器、立即返回。
+  it('stopAll 对空表与未运行的配置都不抛错（幂等）', async () => {
+    vi.useFakeTimers();
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    // 空表：立即返回，且没有留下任何计时器（否则退出前要多等一段）
+    await m.stopAll(3);
+    expect(vi.getTimerCount()).toBe(0);
+    // 未运行/不存在的 configId：同样不抛错（ql_stop 的幂等口径，§8）
+    await m.stop('nope');
+    expect(vi.getTimerCount()).toBe(0);
+    // 停完再停一次：第二次就是空表；不重复发 onExit
+    await m.start('c1', SHELL_ENTRY);
+    await m.stopAll(3);
+    await m.stopAll(3);
+    expect(m.states()).toEqual({});
+    expect(vi.getTimerCount()).toBe(0); // 自动命令的 5s 兜底计时器必须被清掉
+    expect(ctx.exits.length).toBe(1);
+  });
+
+  // E4（R3）：一个实例停不掉不得中断其余实例 —— 退出路径串行停 N 个终端，
+  // 单个 stopGraceful 抛错必须被吞掉、继续停下一个，并且失败的那个也要收尾（不卡在 stopping）。
+  it('stopAll：单个实例 stopGraceful 抛错不影响其余实例', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    await m.start('c2', SHELL_ENTRY);
+    m.shells[0].stopThrows = true; // 第一个终端停不掉
+    await m.stopAll(3);
+    // 第二个仍被停，且收到透传的超时（K11(1)）
+    expect(m.shells[1].stopArgs).toEqual([3]);
+    // 失败的那个也要收尾：states() 清空、两个都上报退出
+    expect(m.states()).toEqual({});
+    expect(ctx.exits.map((e) => e.configId).sort()).toEqual(['c1', 'c2']);
+  });
+
+  // F4（计划 步骤 3 逐字「逐个 await」）：不得改成 Promise.all —— 前一个没返回前不得开始停下一个。
+  it('stopAll 逐个 await：前一个未返回前不得开始停下一个', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    await m.start('c2', SHELL_ENTRY);
+    m.shells[0].stopHeld = true; // 第一个终端卡在 stopGraceful 里
+    const stopping = m.stopAll(3);
+    await vi.waitFor(() => expect(m.shells[0].stopHeldStarted).toBe(true));
+    // 第一个还没返回 → 第二个一次都没被调用
+    expect(m.shells[1].stopArgs).toEqual([]);
+    m.shells[0].releaseStopNow();
+    await stopping;
+    expect(m.shells[1].stopArgs).toEqual([3]);
+    expect(m.states()).toEqual({});
   });
 
   // E10
