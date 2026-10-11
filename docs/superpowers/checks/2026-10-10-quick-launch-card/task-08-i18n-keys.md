@@ -63,7 +63,8 @@
 | E2 | 步骤 2：验证失败 | `npx vitest run src-main/i18n src/i18n.test.ts` | FAIL（缺键） | ☐ |
 | E3 | 步骤 3：中英双语补齐 | — | C/D 全部有值 | ☐ |
 | E4 | 步骤 4：验证通过 | `npx vitest run src-main/i18n src/i18n.test.ts` | 全 PASS | ☐ |
-| E5 | 补一条**枚举断言**（照仓库既有做法 `src-main/i18n/err-keys.ts` + `dict.test.ts:63-68`）：对 `TerminalId` 的四个值逐个断言 zh/en 词典都有 `ql.term.<id>` 且不是键名本身 | `npx vitest run src/i18n.test.ts` | 全 PASS。`key-coverage` 的 `walk()` 排除 `.test.ts`，所以**测试里用动态 key 是安全的**——它正是补上「调用点扫不到」缺口的地方 | ☐ |
+| E5 | 补一条**枚举断言**（照仓库既有做法 `src-main/i18n/err-keys.ts` + `dict.test.ts:63-68`）：对 `TerminalId` 的四个值逐个断言 zh/en 词典都有 `ql.term.<id>` 且不是键名本身 | `npx vitest run src/i18n.test.ts` | 全 PASS。`key-coverage` 的 `walk()` 排除 `.test.ts`，所以**测试里用动态 key 是安全的**——它正是补上「调用点扫不到」缺口 | ☐ |
+| E6 | **钉住三处「常量映射传 key」的取值**（任务 6 审查次要 #4，索引 K15）：断言 `src-main/quick-launch-config.ts` 的 `QL_ERR`、`src-main/quick-launch.ts` 的 `QL_ERR`、`src-main/main.ts` 的 `QL_IPC_ERR` + `QL_IPC_LABEL` 里每个 key 在 zh 与 en 词典里都存在且不是键名本身 | `npx vitest run src-main/i18n/dict.test.ts` | 全 PASS。理由：`key-coverage.test.ts:39-41` 只匹配字面量 `t('…')`、`walk()` 又排除 `.test.ts`，这些 key 永久游离在漂移门外——写错一个字母只有真机才会暴露 | ☐ |
 
 ## F. 本任务相关的硬约束
 
@@ -94,6 +95,7 @@
 
 - [ ] C1-C10（C9 已作废，只确认渲染端不加该键）、D1-D12 全部有中英两份
 - [ ] E2 先红、E4 后绿
+- [ ] E6 的常量映射 key 枚举断言落地（K15）
 - [ ] G1-G3 通过
 - [ ] H1-H2 完成
 
