@@ -120,13 +120,18 @@ function searchOptions(): { decorations: Record<string, string> } {
   };
 }
 
+// 查找状态复位：清掉高亮装饰 + 计数归零（空查询与「清空终端」共用同一条路径）
+function resetSearchState(): void {
+  searchAddon?.clearDecorations();
+  searchCount.value = { cur: 0, total: 0 };
+}
+
 // dir = 0：输入变化时的增量查找；±1：上/下一个
 function runSearch(dir: -1 | 0 | 1): void {
   if (!searchAddon) return;
   const q = query.value.trim();
   if (!q) {
-    searchAddon.clearDecorations();
-    searchCount.value = { cur: 0, total: 0 };
+    resetSearchState();
     return;
   }
   const opts = searchOptions();
@@ -137,8 +142,14 @@ function runSearch(dir: -1 | 0 | 1): void {
 watch(query, () => runSearch(0));
 function onQueryClear(): void { query.value = ''; }
 
-// 清空终端（规格 §9.1）：只清本实例的 buffer 与滚动区，不动上层状态
-function onClearTerminal(): void { term?.clear(); }
+// 清空终端（规格 §9.1）：只清本实例的 buffer 与滚动区，不动上层状态。
+// buffer 清空 = 既有匹配一并消失，所以查找计数与高亮也要复位，否则计数停在「1 / 3」、
+// 上/下一个指向已经不存在的匹配。
+function onClearTerminal(): void {
+  if (!term) return;
+  term.clear();
+  resetSearchState();
+}
 
 // 链接（规格 §9.1）：复用既有 open_external（主进程已白名单校验，reject 静默）
 function openLink(uri: string): void { void invoke('open_external', uri).catch(() => {}); }
@@ -178,14 +189,16 @@ onBeforeUnmount(() => {
 
 // 供上层在「自动激活 / 再次启动」时显式 fit + 聚焦（规格 §9.2 的启动流程、任务 13 的 E5）；
 // 常规切页签不需要它——v-show 恢复显示必然触发 ResizeObserver。
-// fit 默认强制上报：页签还在、PTY 被重建时，去重会挡住那次必要的 ql_resize。
+// fit 默认「不」强制上报（F8 去重）：任务 13 每次激活都会调 fit()，默认强制就等于每次切页签
+// 都发一次多余的 ql_resize。只有「同一页签再次启动」那次例外——主进程把 PTY 重建为 80×24
+// （索引 K11(2)），尺寸没变却必须重报，所以那种调用必须显式 fit(true)。
 defineExpose({
-  fit: (force = true): void => fitAndReport(force),
+  fit: (force = false): void => fitAndReport(force),
   focus: (): void => term?.focus(),
 });
 </script>
 <template>
-  <div class="log-pane" :data-tab-id="id" :data-tab-label="label">
+  <div class="log-pane" :data-tab-id="id" :data-tab-label="label" :data-tab-full-label="fullLabel">
     <div style="display: flex; justify-content: flex-start; align-items: center;">
       <!-- [清空终端]：icon-only + aria-label，盒型复用既有 .icon-btn（同 LogTabView 的清空日志） -->
       <button type="button" class="icon-btn icon-btn--noborder btn-term-clear"

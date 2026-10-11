@@ -253,13 +253,19 @@ describe('TerminalTabView 输入与尺寸（E3/E4）', () => {
     w.unmount();
   });
 
-  it('exposed_fit_re_reports_size_for_a_restarted_terminal', () => {
-    // 同一页签上再次启动：主进程按 80×24 兜底新建 PTY（索引 K11(2)），
-    // 上层「自动激活 + fit」时必须能强制再报一次，否则新 PTY 永远按 80×24 排版。
+  it('exposed_fit_does_not_re_report_by_default_but_fit_true_does', () => {
+    // F8 / 索引 K23(3)：默认不强制上报 —— 任务 13 每次激活都会调 fit()，
+    // 默认强制就等于每次切页签都发一次多余的 ql_resize（正是去重要消除的那次）。
+    // 「同一页签再次启动」时主进程把 PTY 重建为 80×24（索引 K11(2)），尺寸没变却必须重报
+    // → 调用方必须显式 fit(true)（任务 13 的 E5 会这么做）。
     const { onResize, w } = mountTab();
+    const vm = w.vm as unknown as { fit: (force?: boolean) => void };
     expect(onResize).toHaveBeenCalledTimes(1);
-    (w.vm as unknown as { fit: (force?: boolean) => void }).fit();
+    vm.fit();                            // 默认：fit 照跑，尺寸未变 → 不再发一次上报
     expect(h.state.fitCalls).toBe(2);
+    expect(onResize).toHaveBeenCalledTimes(1);
+    vm.fit(true);                        // 显式强制：重启后的 PTY 必须拿到真实尺寸
+    expect(h.state.fitCalls).toBe(3);
     expect(onResize).toHaveBeenCalledTimes(2);
     expect(onResize).toHaveBeenLastCalledWith('ql:demo', 118, 41);
     w.unmount();
@@ -271,6 +277,19 @@ describe('TerminalTabView 输入与尺寸（E3/E4）', () => {
     fireResize();
     expect(h.state.fitCalls).toBe(3);          // 每次都 fit（尺寸可能变），但…
     expect(onResize).toHaveBeenCalledTimes(1); // …尺寸未变就不再发一次上报
+    w.unmount();
+  });
+
+  it('changed_size_is_reported_again', () => {
+    // F2 / 索引 K23(3) 的正半边：容器真的变了 → fit 给出新尺寸 → 必须再发一次 ql_resize。
+    // 上面那条只钉住负半边（同尺寸不重发）；没有这条，去重写成「每实例只报一次」也照样全绿。
+    const { onResize, w } = mountTab();
+    expect(onResize).toHaveBeenCalledTimes(1);
+    h.state.proposed = { cols: 90, rows: 30 };   // 假 FitAddon 这次给出不同的尺寸
+    fireResize();
+    expect(h.state.fitCalls).toBe(2);            // 照常 fit
+    expect(onResize).toHaveBeenCalledTimes(2);   // 且新尺寸再上报一次
+    expect(onResize).toHaveBeenLastCalledWith('ql:demo', 90, 30);
     w.unmount();
   });
 });
@@ -336,6 +355,32 @@ describe('TerminalTabView 工具条与关闭（E6/E8/E10）', () => {
     w.unmount();
   });
 
+  it('clear_terminal_resets_search_count_and_decorations', async () => {
+    // 顺手修 C：term.clear() 把 buffer（连同匹配）清掉了，
+    // 计数与高亮必须一起复位，否则显示停在「1 / 3」、上/下一个指向不存在的匹配。
+    const { w } = mountTab();
+    await w.find('.log-search-input').setValue('warn');
+    expect(w.find('.log-search-count').text()).toBe('1 / 3');
+    expect(w.find('.btn-search-prev').attributes('disabled')).toBeUndefined();
+    await w.find('.btn-term-clear').trigger('click');
+    expect(h.state.terms[0].cleared).toBe(1);
+    expect(h.state.clearDecorations).toBe(1);   // 高亮随 buffer 一起清掉
+    expect(w.find('.log-search-count').text()).toBe('0 / 0');
+    expect(w.find('.btn-search-prev').attributes('disabled')).toBeDefined();
+    w.unmount();
+  });
+
+  it('root_exposes_short_and_full_tab_labels_in_separate_attributes', () => {
+    // 顺手修 D：data-tab-label 装的是短 label，全名另有 data-tab-full-label，
+    // 任务 10 做 tooltip 时取后者，不会取到截断名。props（C1）未动。
+    const { w } = mountTab();
+    const root = w.find('.log-pane');
+    expect(root.attributes('data-tab-id')).toBe('ql:demo');
+    expect(root.attributes('data-tab-label')).toBe('Demo');
+    expect(root.attributes('data-tab-full-label')).toBe('Demo · PowerShell 7 (pwsh)');
+    w.unmount();
+  });
+
   it('search_box_drives_addon_and_count_uses_dict_placeholders', async () => {
     const { w } = mountTab();
     const input = w.find('.log-search-input');
@@ -362,6 +407,19 @@ describe('TerminalTabView 工具条与关闭（E6/E8/E10）', () => {
     expect((input.element as HTMLInputElement).value).toBe('');
     expect(h.state.clearDecorations).toBe(1);
     expect(w.find('.log-search-count').text()).toBe('0 / 0');
+    w.unmount();
+  });
+
+  it('result_index_sentinel_minus_one_displays_zero_based_index', async () => {
+    // 顺手修 E：addon-search 的文档（node_modules/@xterm/addon-search/typings/addon-search.d.ts:142）
+    // 说匹配数超过阈值时 resultIndex 是 -1。实现把它钳到 0，
+    // 这条钉住「哨兵值不会变成负数计数或 NaN」——假 addon 平时从不发 -1，所以单独喂一次。
+    const { w } = mountTab();
+    const cb = h.state.resultsCb as (r: { resultIndex: number; resultCount: number }) => void;
+    expect(typeof cb).toBe('function');
+    cb({ resultIndex: -1, resultCount: 1200 });
+    await w.vm.$nextTick();
+    expect(w.find('.log-search-count').text()).toBe('0 / 1200');
     w.unmount();
   });
 
