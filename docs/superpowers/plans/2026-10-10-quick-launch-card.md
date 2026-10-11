@@ -298,7 +298,9 @@ it('ipc 模块导出终端相关封装', async () => {
 
 **渲染端键：** `ql.title` / `ql.btn.new` / `ql.btn.copy` / `ql.btn.edit` / `ql.btn.start` / `ql.btn.stop` / `ql.btn.closeTab` / `ql.tab.closeBlocked` / `ql.empty.none` / `ql.invalid` / `ql.term.pwsh|powershell|cmd|wsl` / `ql.terminal.clear` / `ql.terminal.searchPlaceholder` / `ql.terminal.searchPrev|Next|Clear` / `ql.terminal.count` / `ql.modal.newTitle|editTitle|name|type|type.shell|type.exe|terminal|terminal.loading|cmd|exe|btn.pick|btn.save|btn.delete|delete.title|delete.message` / `ql.err.nameRequired|nameTaken|running` / `ql.dialog.filterExe` / `ql.log.exit|fail`
 
-**主进程键：** `err.ql.nameRequired|nameDup|typeInvalid|terminalMissing|cmdRequired|exeRequired|notFound|alreadyRunning|terminalGone|ptySpawn`
+**主进程键：** `err.ql.nameRequired|nameDup|nameTooLong|typeInvalid|terminalMissing|cmdRequired|exeRequired|notFound|alreadyRunning|terminalGone|ptySpawn`
+
+> `nameTooLong`（§5.3-1 的「≤64」分支）是任务 3 实现时补登记的：原清单漏了这条 spec 已要求的校验所需的键。YAML 与 id 格式两类错误**不新增键**，复用词典已有的 `err.config.yamlLoadFail` / `err.config.yamlEmpty` / `err.config.idFormat`（见 check 索引 K9）。
 
 - [ ] **步骤 1：编写失败的测试** —— 依赖既有 `key-coverage.test.ts` / `no-hardcoded.test.ts`；另在 `src/i18n.test.ts` 追加一条 `t('ql.title')` 不等于键名本身
 - [ ] **步骤 2：运行测试验证失败** —— `npx vitest run src-main/i18n src/i18n.test.ts` → FAIL（缺键）

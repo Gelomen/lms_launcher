@@ -48,6 +48,10 @@
 | D8 | `err.ql.alreadyRunning` | `STATE:`（重复启动） | ☐ |
 | D9 | `err.ql.terminalGone` | 启动前终端已不可用 | ☐ |
 | D10 | `err.ql.ptySpawn` | PTY spawn 失败 | ☐ |
+| D11 | `err.ql.nameTooLong` | §5.3-1 的「≤64」分支（任务 3 补登记，见索引 K9） | ☐ |
+
+> **占位符必须与调用点逐字一致**（`key-coverage.test.ts:44` 的 `CALL_WITH_PARAMS` 在调用点改回字面量 `t()` 后会做双向比对）。任务 3 已落地的调用点（`src-main/quick-launch-config.ts` 的 `QL_ERR`）使用的占位符：`nameTooLong` → `{max}`；`nameDup` → `{name}`；`typeInvalid` → `{type}`；`terminalMissing` → `{terminal}`；`notFound` → `{id}`；`nameRequired` / `cmdRequired` / `exeRequired` → 无占位符。
+> **不新增、直接复用词典已有键**（索引 K9）：YAML 解析失败 → `err.config.yamlLoadFail`（`{name}` `{msg}`）；顶层非对象 → `err.config.yamlEmpty`（`{name}`）；显式 id 非法 → `err.config.idFormat`（无占位符）。这三类**不要**再建 `err.ql.*` 同义键。
 
 ## E. 步骤门
 
