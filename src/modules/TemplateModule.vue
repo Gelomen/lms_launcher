@@ -7,6 +7,7 @@ import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg, isMissing, isValidation } from '../ipc';
 import { t } from '../i18n';
 import { truncateByWidth, visualWidth } from '../util/truncate';
+import { nextCopyName } from '../util/copy-name';
 import TemplateModal from './TemplateModal.vue';
 import VramDialog from './VramDialog.vue';
 
@@ -64,18 +65,6 @@ async function reload(): Promise<void> {
     const msg = errMsg(e);
     paramsMissing.value = isMissing(msg); // 参数表随包分发：MISSING 不再沿用空表（2026-10-06）
     if (!isMissing(msg) && !isValidation(msg)) error.value = msg; // 映射表本身坏了才报错
-  }
-}
-
-// 复制命名（2026-08-30 spec-template-copy-button，方案 A：递增编号 + 占用检测）：
-// 候选 base - copy / base - copy 2 / …，取第一个不在现有 name 集合中的；
-// base 本身是复制品（- copy / - copy N 结尾）→ 剥后缀还原原始 base，防止滚成 "X - copy - copy"
-const COPY_SUFFIX = / - copy( \d+)?$/;
-function nextCopyName(base: string, taken: Set<string>): string {
-  const root = base.replace(COPY_SUFFIX, '');
-  for (let i = 1; ; i++) {
-    const cand = i === 1 ? `${root} - copy` : `${root} - copy ${i}`;
-    if (!taken.has(cand)) return cand;
   }
 }
 
