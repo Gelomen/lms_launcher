@@ -51,8 +51,8 @@
 | E5 | **R1**：5s 内无输出 → 超时兜底写入 | 假 PtyProcess + 假计时器 | 规格 §7.3 | ☐ |
 | E6 | 重复启动同一配置 → 抛 `/^STATE:/` |  | 规格 §7.3 | ☐ |
 | E7 | 终端不可用 → 抛 `/^VALIDATION:/` 且 `states()` **不残留**该 id |  | 规格 §7.5 / §12.4 | ☐ |
-| E8 | `stop()` 后发出 `onExit` 且 `states()` 变空 |  | 规格 §7.5 | ☐ |
-| E9 | `stopAll` 停掉全部并清空 `states` |  | 规格 §7.5 | ☐ |
+| E8 | `stop()` 后发出 `onExit` 且 `states()` 变空；**并断 `stopArgs === [3]`**（钉住 `stop()` 走 `STOP_TIMEOUT_SECS` 的 §7.5 默认口径；修复轮 2 补，主代理探针：常量改 9 → 此断言红） |  | 规格 §7.5 | ☐ |
+| E9 | `stopAll` 停掉全部并清空 `states`；**并断收到的是调用方给的超时**（`stopAll(7)` → `stopArgs === [7]`，与硬编码常量可区分；修复轮 1 补，索引 K11(1)） |  | 规格 §7.5 / C5(a) | ☐ |
 | E10 | shell 类型 `start` 返回 `{ tabId: 'ql:<configId>' }`；exe 类型返回 `{ tabId: null }` 且经 `onSysLine` 反馈 |  | 规格 §7.5 / §8 | ☐ |
 | E11 | `stopGraceful` 口径：终止 → 3s → `taskkill /T /F`（杀进程树） |  | 规格 §7.5 | ☐ |
 
@@ -79,9 +79,9 @@
 
 | # | 检查项 | 命令 / 值 | ✓ |
 |---|---|---|---|
-| H1 | 暂存范围 | `git add package.json package-lock.json src-main/quick-launch.ts src-main/quick-launch.test.ts` | ☐ |
+| H1 | 暂存范围 | `git add package.json package-lock.json src-main/quick-launch.ts src-main/quick-launch.test.ts` → 已执行（主代理，两轮修复 + 定向复审通过后） | ☑ |
 | H3 | `pnpm-lock.yaml` 处置（**不在本任务里顺手做**） | 它已被 npm 落下（漂移），但**不影响打包**——`build.bat:38` 只跑 `npm install`。要保持一致就另跑 `pnpm install --lockfile-only`，单独一次 `chore(deps): 同步 pnpm-lock.yaml`；或另开一次改动删掉两份 lockfile 中的一份。两种都不混进本特性的提交 | ☐ |
-| H2 | 提交信息逐字 | `feat(main): ConPTY 终端进程管理（QuickLaunchManager + PtyProcess）` | ☐ |
+| H2 | 提交信息逐字 | `feat(main): ConPTY 终端进程管理（QuickLaunchManager + PtyProcess）` → `90c9320`（4 files, +902）；口径与文档另做 `321707b`（docs，与代码分开） | ☑ |
 
 ## I. 完成判据
 
@@ -89,7 +89,7 @@
 - [ ] E1-E11 全部有测试；E4/E5 明确覆盖 R1
 - [ ] D3 先红、D5 后绿
 - [ ] G1-G3 通过
-- [ ] H1-H2 完成
+- [x] H1-H2 完成（`90c9320`）
 
 ## J. 执行记录（实现时填写）
 
@@ -118,3 +118,21 @@
 | 四次变异后还原校验 | `Get-FileHash src-main/quick-launch.ts`；`(Get-Content …).Count` | 每次还原后哈希恒为 `47838E7DC905C9D67B4013AAD9E68E0D9DAE5CF6F1FCB4CE78A4999DCE1B5DE5`（373 行） | 实现文件未被变异残留污染 |
 | 额外 · i18n 硬门 | `npx vitest run src-main/i18n` | `Test Files 4 passed (4)` / `Tests 18 passed (18)`（含 `key-coverage` / `no-hardcoded`） | 新文件未引入缺键或汉字字面量（K8：`err.ql.*` 走常量映射，不写字面量） |
 | 额外 · 全量回归 | `npx vitest run` | `Test Files 43 passed (43)` / `Tests 714 passed (714)`（exit 0，8.52s） | 全仓库无回归 |
+
+| 修复轮 1 · 先红（只改 E9） | 把 E9 改为 `await m.stopAll(7)` / 断 `stopArgs === [7]` → `npx vitest run src-main/quick-launch.test.ts` | `× … stopAll 停掉全部并清空 states，并透传 timeoutSecs → expected [ 3 ] to deeply equal [ 7 ]` / `Test Files 1 failed (1)` / `Tests 1 failed \| 16 passed (17)`（exit 1） | 「收到 3、期望 7」= 参数被 `STOP_TIMEOUT_SECS` 覆盖，C5(a) / K11(1) 违约被钉出 |
+| 修复轮 1 · 实现 | 编辑 `src-main/quick-launch.ts`：新增 `private async stopInternal(configId, timeoutSecs = STOP_TIMEOUT_SECS)`（现 :331-346），`stop()` 走默认（:310-313），`stopAll` 透传（:320-329，调用点 :323）；C1-C5 一字未改、`createShellProcess` 接缝原样 | — | 审查 Important #1 按口径落地；次要项未顺手修 |
+| 修复轮 1 · D5/G1 后绿 | `npx vitest run src-main/quick-launch.test.ts src-main/process.test.ts` | `✓ src-main/quick-launch.test.ts (17 tests) 263ms` / `✓ src-main/process.test.ts (5 tests) 6305ms` / `Test Files 2 passed (2)` / `Tests 22 passed (22)`（exit 0） | 定向 + 相邻回归仍全绿，用例数仍 17 |
+| 修复轮 1 · G2 | `npx tsc -p tsconfig.main.json --noEmit` | 无输出，`EXIT=0` | 类型门无错 |
+| 修复轮 1 · 反向自检 E（证明 E9 有牙） | 把 :323 临时改回 `await this.stop(configId);`（丢掉参数）→ `npx vitest run src-main/quick-launch.test.ts` → 还原 | `× … 并透传 timeoutSecs → expected [ 3 ] to deeply equal [ 7 ]` / `Tests 1 failed \| 16 passed (17)`（exit 1）；还原后 `Tests 22 passed (22)` | 原 `stopAll(3)`/断 `[3]` 的结构性盲区已消除：透传与硬编码现在可区分 |
+| 修复轮 1 · 还原校验 | 还原后比对 `src-main/quick-launch.ts` 的 SHA-256；复跑定向 + G2 + `npx vitest run src-main/i18n` | 哈希恒为 `3AD853E6378CB9B5ADA7D0A7AC2CE50F03C0619B73B9767EF3ABCF045ECF6D74`（383 行，脚本比对 `RESTORED hash matches fixed: true`）；`Tests 22 passed (22)`；`tsc` 无输出 `EXIT=0`；i18n `Test Files 4 passed (4)` / `Tests 18 passed (18)` | 无变异残留；i18n 硬门复跑通过。修复后 `quick-launch.test.ts` = 379 行 / `5C6C3E32C9BD9F73B25B5DF0B0AEAE1E787B6AA0F1618527E9DAF0897EC8D720` |
+| 修复轮 1 · G3 范围复核 | `git diff --name-only`；`git ls-files --others --exclude-standard`；`git diff --stat -- src-main/process.ts src-main/process.test.ts`；`git diff --stat -- package.json` | 前者 = `package-lock.json`、`package.json`（任务 5 原有改动，本轮未再动）；后者 = 两个新建源文件；process 两文件无输出；`package.json \| 5 +++++` | 本轮只动 `quick-launch.ts` / `quick-launch.test.ts`；`process.ts`/`process.test.ts` 一行未改；未 `git add`、未 commit |
+| 修复轮 1 · 遗留登记（不改代码） | 见报告 §10.5 | E9 改用 7 后，`stopArgs` 只出现在 E9 → `stopInternal` 的默认 3s 无用例钉住；补法是在 E8 加 `expect(m.shells[0].stopArgs).toEqual([3])`，属新增断言、超出本轮「只改这一处」的授权 | **已闭环（修复轮 2）**：主代理实测把 :35 的 `STOP_TIMEOUT_SECS` 改 9 → E8 红 `expected [ 9 ] to deeply equal [ 3 ]`，还原后 22 passed；新断言在 test:268 |
+| 修复轮 2 · 起点核对 | `git rev-parse --short HEAD`；`Get-FileHash src-main/quick-launch.ts` | HEAD = `321707b`；改前哈希 = `3AD853E6378CB9B5ADA7D0A7AC2CE50F03C0619B73B9767EF3ABCF045ECF6D74`（383 行） | 起点 = 修复轮 1 的交付，无额外改动 |
+| 修复轮 2 · 补断言（E8） | 编辑 `src-main/quick-launch.test.ts`：在 E8 的 `expect(m.states()).toEqual({})` 之后加 `expect(m.shells[0].stopArgs).toEqual([3]);`（现 :268，含 2 行注释） | — | 只加这一条断言；E8 其它断言一字未改；未新增用例/文件；用例数仍 17 |
+| 修复轮 2 · 先红（变异探针） | `src-main/quick-launch.ts:35` 的 `STOP_TIMEOUT_SECS` 临时 `3` → `9` → `npx vitest run src-main/quick-launch.test.ts` → 还原 | `MUTATED LINE: const STOP_TIMEOUT_SECS = 9;` / `× 状态机（规格 §7.3 / §7.5 / §12.4） > stop() 后发出 onExit 且 states() 变空 → expected [ 9 ] to deeply equal [ 3 ]` / `❯ src-main/quick-launch.test.ts:268:34` / `Test Files 1 failed (1)` / `Tests 1 failed \| 16 passed (17)`（exit 1） | §7.5 的默认 3s 口径现被钉住；且只有新断言红，其余 16 条不受影响 |
+| 修复轮 2 · 还原校验 | 回写原文后 `Get-FileHash src-main/quick-launch.ts` | `RESTORED hash matches fixed: True` / `3AD853E6378CB9B5ADA7D0A7AC2CE50F03C0619B73B9767EF3ABCF045ECF6D74` | 实现未被变异残留污染 |
+| 修复轮 2 · D5/G1 后绿 | `npx vitest run src-main/quick-launch.test.ts src-main/process.test.ts` | `✓ src-main/quick-launch.test.ts (17 tests) 269ms` / `✓ src-main/process.test.ts (5 tests) 6319ms` / `Test Files 2 passed (2)` / `Tests 22 passed (22)`（exit 0） | 定向 + 相邻回归全绿 |
+| 修复轮 2 · G2 | `npx tsc -p tsconfig.main.json --noEmit` | 无输出，`TSC_EXIT=0` | 类型门无错 |
+| 修复轮 2 · G3 范围复核 | `git status --porcelain`；`git diff --stat -- src-main/process.ts src-main/process.test.ts` | 前者 = `M package.json`、`M package-lock.json`（任务 5 原有）、`M docs/superpowers/checks/…/task-05-pty-manager.md`（只追加本 J 段）、`?? src-main/quick-launch.ts`、`?? src-main/quick-launch.test.ts`；后者无输出 | 本轮唯一代码改动 = 测试文件的一条断言；`process.ts`/`process.test.ts` 一行未改；未 `git add`、未 commit |
+| 修复轮 2 · 交付物哈希 | `Get-FileHash` 两个源文件；行数口径 = 换行数 + 1 | `quick-launch.ts` = 383 行 / `3AD853E6378CB9B5ADA7D0A7AC2CE50F03C0619B73B9767EF3ABCF045ECF6D74`（与改前逐字符相同）；`quick-launch.test.ts` = 382 行 / `0B461D3B040B9C663A588444841A94AD385E74D10B31F4CD1EBFE2BD06FB62F2` | 实现未动；测试 +3 行（1 断言 + 2 注释）。报告 §1/§5/§7/§10 里过时的行数与哈希已更新为这些现值 |
+| 验收（主代理复跑 + 独立变异探针） | `npx vitest run src-main/quick-launch.test.ts src-main/process.test.ts`；`npx vitest run src-main/i18n src/i18n.test.ts`；`npx tsc -p tsconfig.main.json --noEmit`；`git diff --stat HEAD -- src-main/process.ts src-main/process.test.ts`；`Get-FileHash` 两个源文件；**主代理自己**跑 A/B 两次变异 | `Tests 22 passed (22)` exit 0；i18n `22 passed` exit 0；`TSC_EXIT=0`；process.ts / process.test.ts 的 diff 为空（G4）；哈希 = `3AD853E6…ECF6D74` / `0B461D3B…FB62F2`。A) `:323` 丢掉 `timeoutSecs` → E9 红 `expected [ 3 ] to deeply equal [ 7 ]`；B) `:35` 常量改 9 → E8 红 `expected [ 9 ] to deeply equal [ 3 ]`；两次还原后全绿、实现哈希不变 | 定向复审：四条发现全部 ADDRESSED、无新 Critical/Important 破坏 → 验收通过 |
