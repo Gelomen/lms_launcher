@@ -19,30 +19,15 @@ const TERMINAL_IDS: readonly TerminalId[] = ['pwsh', 'powershell', 'cmd', 'wsl']
 const NAME_MAX = 64;
 const FILE_LABEL = 'quick_launch.yaml';
 
-// 已定口径 K8（check F3）：err.ql.* 词典键要到任务 8 才落地。key-coverage.test.ts:39-41 的 KEY_CALL
-// 只认「t('字面量')」，写死字面量就报「词典缺键」；这里用常量映射传 key（正则不匹配 → 该守护跳过），
-// 任务 8 落地词典后再把调用点改回字面量 t()。错误前缀只有 YAML: / VALIDATION:（check F2 / 索引 G7）。
-// key 名与计划 :301 / 任务 8 表 D1–D11 逐字一致（索引 K9 / check C6），占位符名见任务 8 表 D 段注：
+// 错误前缀只有 YAML: / VALIDATION:（check F2 / 索引 G7）。
+// err.ql.* 已由任务 8 写进词典（src-main/i18n/dict.ts），所以这里一律改回「字面量 key 的 t() 调用」：
+// 索引 K8 的收尾（K20(2)）——key-coverage.test.ts:39-41 的 KEY_CALL 只认字面量，:44 还会把调用点传的
+// 参数名与词典取值里的 {占位符} **双向**比对，比原来的常量映射更强。
+// key 名与计划 :301 / 任务 8 表 D1–D11 逐字一致（索引 K9 / check C6），占位符名与 dict.ts 逐字一致：
 // nameTooLong→{max}、nameDup→{name}、typeInvalid→{type}、terminalMissing→{terminal}、notFound→{id}，
 // nameRequired / cmdRequired / exeRequired 无占位符。
 // YAML 与 id 格式**不建 err.ql.* 同义键**（索引 K9）：复用词典既有的 err.config.yamlLoadFail /
-// err.config.yamlEmpty / err.config.idFormat（dict.ts:220-226 / :500-506）。词典里已有这三个键，
-// 所以它们写成字面量 t()——key-coverage 的占位符双向比对（:44 / :131-151）正好守护 {name}/{msg} 拼写。
-const QL_ERR = {
-  nameRequired: 'err.ql.nameRequired',
-  nameTooLong: 'err.ql.nameTooLong',
-  nameDup: 'err.ql.nameDup',
-  typeInvalid: 'err.ql.typeInvalid',
-  terminalMissing: 'err.ql.terminalMissing',
-  cmdRequired: 'err.ql.cmdRequired',
-  exeRequired: 'err.ql.exeRequired',
-  notFound: 'err.ql.notFound',
-} as const;
-
-// 参数是「词典 key 本身」（QL_ERR 的取值），不是 QL_ERR 的属性名：变量传 key → key-coverage 跳过
-function invalidError(key: string, params?: Record<string, string | number>): Error {
-  return new Error('VALIDATION: ' + t(key, params));
-}
+// err.config.yamlEmpty / err.config.idFormat（dict.ts 的 err.config.*）——同样是字面量 t()。
 
 function isTerminalId(value: unknown): value is TerminalId {
   return typeof value === 'string' && (TERMINAL_IDS as readonly string[]).includes(value);
@@ -99,22 +84,22 @@ function normalizeEntry(raw: unknown): QuickLaunchEntry | null {
 function validateEntry(entry: QuickLaunchEntry, available: readonly TerminalId[]): QuickLaunchEntry {
   const e = (entry ?? {}) as Partial<QuickLaunchEntry>;
   const name = typeof e.name === 'string' ? e.name.trim() : '';
-  if (name.length === 0) throw invalidError(QL_ERR.nameRequired);
-  if (name.length > NAME_MAX) throw invalidError(QL_ERR.nameTooLong, { max: NAME_MAX });
+  if (name.length === 0) throw new Error('VALIDATION: ' + t('err.ql.nameRequired'));
+  if (name.length > NAME_MAX) throw new Error('VALIDATION: ' + t('err.ql.nameTooLong', { max: NAME_MAX }));
   if (e.type === 'shell') {
     if (!isTerminalId(e.shell) || !available.includes(e.shell)) {
-      throw invalidError(QL_ERR.terminalMissing, { terminal: String(e.shell ?? '') });
+      throw new Error('VALIDATION: ' + t('err.ql.terminalMissing', { terminal: String(e.shell ?? '') }));
     }
     const cmd = typeof e.cmd === 'string' ? e.cmd.trim() : '';
-    if (cmd.length === 0) throw invalidError(QL_ERR.cmdRequired);
+    if (cmd.length === 0) throw new Error('VALIDATION: ' + t('err.ql.cmdRequired'));
     return { name, type: 'shell', shell: e.shell, cmd };
   }
   if (e.type === 'exe') {
     const exe = typeof e.exe === 'string' ? e.exe.trim() : '';
-    if (exe.length === 0) throw invalidError(QL_ERR.exeRequired);
+    if (exe.length === 0) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
     return { name, type: 'exe', exe };
   }
-  throw invalidError(QL_ERR.typeInvalid, { type: String(e.type ?? '') });
+  throw new Error('VALIDATION: ' + t('err.ql.typeInvalid', { type: String(e.type ?? '') }));
 }
 
 /** 加载（规格 §5.2）：缺失/空 → 空表；YAML 坏或顶层非对象 → YAML:；单条非法 → 跳过该条、id 收进 invalid。 */
@@ -147,7 +132,7 @@ export function qlSave(path: string, id: string | null, entry: QuickLaunchEntry,
       && typeof (raw as Record<string, unknown>)['name'] === 'string'
       ? ((raw as Record<string, unknown>)['name'] as string).trim()
       : '';
-    if (otherName === clean.name) throw invalidError(QL_ERR.nameDup, { name: clean.name });
+    if (otherName === clean.name) throw new Error('VALIDATION: ' + t('err.ql.nameDup', { name: clean.name }));
   }
   const finalId = id === null ? suggestConfigId(Object.keys(map), 'ql') : id;
   map[finalId] = clean;
@@ -158,7 +143,7 @@ export function qlSave(path: string, id: string | null, entry: QuickLaunchEntry,
 /** 删除（规格 §8）：id 不存在 → VALIDATION:（文件不存在同样是「不存在」，不是 MISSING）。 */
 export function qlDelete(path: string, id: string): void {
   const map = readRawMap(path);
-  if (!Object.prototype.hasOwnProperty.call(map, id)) throw invalidError(QL_ERR.notFound, { id });
+  if (!Object.prototype.hasOwnProperty.call(map, id)) throw new Error('VALIDATION: ' + t('err.ql.notFound', { id }));
   delete map[id];
   writeFileSync(path, dump(map));
 }

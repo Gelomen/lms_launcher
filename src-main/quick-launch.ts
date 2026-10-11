@@ -9,20 +9,13 @@ import * as pty from '@lydell/node-pty';
 import { t } from './i18n';
 import type { QuickLaunchEntry, TerminalId } from './quick-launch-config';
 
-// 已定口径 K8（同 src-main/quick-launch-config.ts:22-40）：err.ql.* 词典键在任务 8 才落地，
-// 这里用常量映射传 key（key-coverage.test.ts:39-41 的 KEY_CALL 只认字面量 → 跳过），
-// 任务 8 落地词典后再改回字面量 t()。key 名与任务 8 表 D8/D9/D10/D6/D7/D3 逐字一致；
-// 占位符：terminalGone→{terminal}、ptySpawn→{exe}{err}、notFound→{id}、typeInvalid→{type}、
-// alreadyRunning / exeRequired 无占位符（与任务 3 已落地的同名键占位符一致）。
 // 错误前缀只有 VALIDATION: / STATE: / PROC:（索引 G7）。
-const QL_ERR = {
-  notFound: 'err.ql.notFound',
-  terminalGone: 'err.ql.terminalGone',
-  alreadyRunning: 'err.ql.alreadyRunning',
-  ptySpawn: 'err.ql.ptySpawn',
-  exeRequired: 'err.ql.exeRequired',
-  typeInvalid: 'err.ql.typeInvalid',
-} as const;
+// err.ql.* 已由任务 8 写进词典（src-main/i18n/dict.ts），所以这里一律改回「字面量 key 的 t() 调用」：
+// 索引 K8 的收尾（K20(2)）——key-coverage.test.ts:39-41 的 KEY_CALL 只认字面量，:44 还会把调用点传的
+// 参数名与词典取值里的 {占位符} 双向比对。key 名与任务 8 表 D8/D9/D10/D6/D3 逐字一致；
+// 占位符与 dict.ts 逐字一致：terminalGone→{terminal}、ptySpawn→{exe}{err}、typeInvalid→{type}，
+// alreadyRunning / exeRequired 无占位符。
+// 复用词典既有键（索引 K9）：err.proc.noChild / log.launcher.start.cmd / log.app.exit，不建同义键。
 
 // 规格 §7.3：TERM 名固定 xterm-256color；start() 不带尺寸（任务 6 的 ql_resize 会立刻校正），
 // 故用 80x24 兜底，保证首帧之前 PTY 尺寸不会是 0。
@@ -149,7 +142,7 @@ export class PtyProcess {
 /** 终端 id → 可执行文件与参数（C3）。返回副本，调用方改数组不会污染映射表。 */
 export function shellExe(shell: TerminalId): { exe: string; args: string[] } {
   const found = SHELL_EXE[shell];
-  if (!found) throw new Error('VALIDATION: ' + t(QL_ERR.terminalGone, { terminal: String(shell ?? '') }));
+  if (!found) throw new Error('VALIDATION: ' + t('err.ql.terminalGone', { terminal: String(shell ?? '') }));
   return { exe: found.exe, args: [...found.args] };
 }
 
@@ -230,13 +223,13 @@ export class QuickLaunchManager {
 
   /** 启动（规格 §7.5）：shell → { tabId: 'ql:<configId>' }；exe → { tabId: null }。失败不残留状态。 */
   async start(configId: string, entry: QuickLaunchEntry): Promise<{ tabId: string | null }> {
-    if (this.instances.has(configId)) throw new Error('STATE: ' + t(QL_ERR.alreadyRunning));
+    if (this.instances.has(configId)) throw new Error('STATE: ' + t('err.ql.alreadyRunning'));
     const e = (entry ?? {}) as Partial<QuickLaunchEntry>;
 
     if (e.type === 'shell') {
       const shell = e.shell;
       if (!shell || !this.isTerminalAvailable(shell)) {
-        throw new Error('VALIDATION: ' + t(QL_ERR.terminalGone, { terminal: String(shell ?? '') }));
+        throw new Error('VALIDATION: ' + t('err.ql.terminalGone', { terminal: String(shell ?? '') }));
       }
       const tabId = QL_TAB_PREFIX + configId;
       let proc: ShellProcess;
@@ -245,7 +238,7 @@ export class QuickLaunchManager {
         proc = this.createShellProcess(shell, DEFAULT_COLS, DEFAULT_ROWS, this.deps.homedir());
       } catch (err) {
         // §12.4：spawn 失败不残留状态——还没进 Map，直接上抛
-        throw new Error('PROC: ' + t(QL_ERR.ptySpawn, { exe: shellExe(shell).exe, err: messageOf(err) }));
+        throw new Error('PROC: ' + t('err.ql.ptySpawn', { exe: shellExe(shell).exe, err: messageOf(err) }));
       }
       const inst: Instance = {
         kind: 'shell', proc, tabId, stopping: false, exited: false, exitCode: null, auto: null,
@@ -271,7 +264,7 @@ export class QuickLaunchManager {
 
     if (e.type === 'exe') {
       const exe = typeof e.exe === 'string' ? e.exe.trim() : '';
-      if (!exe) throw new Error('VALIDATION: ' + t(QL_ERR.exeRequired));
+      if (!exe) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
       // 规格 §7.3：可执行程序不用 PTY。不 catch：ProcessState.launch 的 STATE:/PROC: 原样上抛。
       const proc = this.deps.spawnExe(exe);
       const inst: Instance = {
@@ -290,7 +283,7 @@ export class QuickLaunchManager {
       return { tabId: null };
     }
 
-    throw new Error('VALIDATION: ' + t(QL_ERR.typeInvalid, { type: String(e.type ?? '') }));
+    throw new Error('VALIDATION: ' + t('err.ql.typeInvalid', { type: String(e.type ?? '') }));
   }
 
   /** 键盘输入（§8 ql_write） */

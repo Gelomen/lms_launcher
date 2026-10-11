@@ -986,19 +986,12 @@ ipcMain.handle('get_llama_update_config', (): { success: true; config: LlamaUpda
 });
 
 // ---------- 快捷启动（规格 2026-10-10 §5–§8）----------
-// 已定口径 K8（同 quick-launch-config.ts:31-40 / quick-launch.ts:18-25）：err.ql.* 词典键在任务 8 才落地，
-// key-coverage.test.ts:39-41 的 KEY_CALL 只认「t('字面量')」→ 这里用常量映射传 key，不写字面量。
 // 错误前缀只用索引 G7 的五种；本段自己产生的只有 VALIDATION:（配置不存在），其余前缀由被调层自带。
-const QL_IPC_ERR = {
-  notFound: 'err.ql.notFound', // 占位符 {id}（任务 8 表 D7 + 占位符注）
-} as const;
-// 对话框过滤器名（规格 §8「.exe 过滤」）。主进程词典里没有这个键：任务 8 表 C9 的 ql.dialog.filterExe
-// 落在渲染端词典（src/i18n.ts），B2 只往主进程词典加 err.ql.*。这里按主进程命名空间取
-// app.dialog.filterExe（与 :349/:351 的 app.dialog.filterModel / filterJinja 同组），同样走常量映射
-// → key-coverage 扫不到、词典落地前对话框里显示原始 key。已作为疑虑写进任务 6 报告。
-const QL_IPC_LABEL = {
-  filterExe: 'app.dialog.filterExe',
-} as const;
+// err.ql.notFound / app.dialog.filterExe 已由任务 8 写进词典（src-main/i18n/dict.ts），所以这里写成字面量
+// t()：索引 K8 的收尾（K20(2)）——key-coverage.test.ts:39-41 的 KEY_CALL 只认字面量，:44 还会把调用点
+// 传的参数名与词典取值里的 {占位符} 双向比对（notFound→{id}，任务 8 表 D7）。
+// 对话框过滤器名取主进程词典的 app.dialog.filterExe（规格 §8「.exe 过滤」；与 :349/:351 的
+// app.dialog.filterModel / filterJinja 同组，索引 K14——ql_pick_exe 无参数、对话框在主进程渲染）。
 
 // 快捷启动 yaml（规格 §5.1）：与三份模板 yaml 同目录，但**不进 yamlPaths() 的三元组**——
 // 该函数在多处按位置解构（const [p] / const [, , p]），加第四项会让所有解构错位。
@@ -1116,7 +1109,7 @@ ipcMain.handle('ql_terminals', async (): Promise<TerminalInfo[]> => await detect
 ipcMain.handle('ql_start', async (_e, id: string): Promise<{ tabId: string | null }> => {
   const items = qlLoad(qlYamlPath()).items;
   if (!Object.prototype.hasOwnProperty.call(items, id)) {
-    throw new Error('VALIDATION: ' + t(QL_IPC_ERR.notFound, { id }));
+    throw new Error('VALIDATION: ' + t('err.ql.notFound', { id }));
   }
   const entry = items[id];
   // 索引 K15(2) / 审查重要 #1：available 只在 quick-launch.ts:238 的 shell 分支被读
@@ -1149,7 +1142,7 @@ ipcMain.handle('ql_pick_exe', async (): Promise<string | null> => {
   if (!win) return null;
   const res = await dialog.showOpenDialog(win, {
     properties: ['openFile'],
-    filters: [{ name: t(QL_IPC_LABEL.filterExe), extensions: ['exe'] }],
+    filters: [{ name: t('app.dialog.filterExe'), extensions: ['exe'] }],
   });
   return res.canceled ? null : res.filePaths[0];
 });

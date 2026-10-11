@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { t } from './i18n'; // 任务 8 E7（索引 K16(2)）：词典已落地，断言必须按译文写
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
 type Listener = (event: unknown, payload: unknown) => void;
@@ -369,9 +370,11 @@ describe('修复轮 1 · Minor #2：ql_start 的「配置存在」不走原型�
         msg = e instanceof Error ? e.message : String(e);
       }
       expect(msg).toMatch(/^VALIDATION:/);
-      // 词典未落地（K8）→ t() 原样返回 key（dict.ts:577），所以消息里就是 key 名本身
-      expect(msg).toContain('err.ql.notFound');
-      expect(msg).not.toContain('err.ql.typeInvalid');
+      // 任务 8 E7（索引 K16(2)）：err.ql.* 已进词典，消息里是译文而不是 key 名。
+      // 期望值仍由 t() 现算（本文件默认 zh），所以「notFound 而不是 typeInvalid」这条判据不变；
+      // key-coverage.test.ts:24 的 walk() 排除 .test.ts，测试里写字面量 key 不触「调用点 ↔ 词典」门。
+      expect(msg).toContain(t('err.ql.notFound', { id: key }));
+      expect(msg).not.toContain(t('err.ql.typeInvalid', { type: key }));
     });
   }
 });
