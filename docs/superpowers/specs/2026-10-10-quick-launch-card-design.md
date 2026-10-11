@@ -266,7 +266,9 @@ pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo
 
 ## 10 i18n
 
-- 渲染端 `ql.*`（含终端标签 `ql.term.pwsh|powershell|cmd|wsl`、终端工具条、剪贴板提示）；
+- 渲染端 `ql.*`（含终端标签 `ql.term.pwsh|powershell|cmd|wsl`、终端工具条）；
+  - **更正（索引 K22(1)）**：原清单里的「剪贴板提示」在本文档 §8/§9 里没有对应行为——§9 只规定 `Ctrl+Shift+C` 复制（有选中时）、`Ctrl+Shift+V` 粘贴、右键粘贴与两个 `clipboard_*` 通道，没有任何「提示」界面。属早期版本残留，**不建键**；若将来要做提示，先补 §9 的交互再补键。
+  - 界面措辞（含终端标签的中文写法）不在本规格钉死的范围内：check 表 C3 只钉 en 四条逐字，zh 措辞由实现者按既有词典风格判断，真机验收（§13）复核。
 - 主进程 `err.ql.*`；
 - `no-hardcoded.test.ts` / `key-coverage.test.ts` 是硬门，中英两份都要补齐。
 

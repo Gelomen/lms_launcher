@@ -89,8 +89,8 @@
 
 | # | 检查项 | 命令 / 值 | ✓ |
 |---|---|---|---|
-| H1 | 暂存范围 | `git add src/i18n.ts src/i18n.test.ts src-main/i18n/dict.ts` | ☐ |
-| H2 | 提交信息逐字 | `feat(i18n): 快捷启动与交互终端中英词条` | ☐ |
+| H1 | 暂存范围 | `git add src-main/i18n/dict.ts src/i18n.test.ts src-main/ipc-ql.test.ts src-main/main.ts src-main/quick-launch-config.ts src-main/quick-launch.ts`（**更正**：原写 `src/i18n.ts` 是错的——单词典事实见 K20(1)；并含 B3 的三处调用点与 E7 的测试文件） | ☐ |
+| H2 | 提交信息逐字 | `feat(i18n): 快捷启动与交互终端中英词条`  → `e919b25`（6 files, +212/-65）；口径与文档更正另做 docs 提交（与代码分开） | ☑ |
 
 ## I. 完成判据
 
@@ -98,8 +98,8 @@
 - [ ] E2 先红、E4 后绿
 - [ ] E6：三处常量映射调用点已改回字面量、映射已删、grep 命中 0（K8 收尾 / K20）
 - [ ] E7 修掉 `ipc-ql.test.ts` 断未翻译 key 文本的三条用例（K16(2)）
-- [ ] G1-G3 通过
-- [ ] H1-H2 完成
+- [x] G1-G3 通过（G3 按更正后的范围核对：六文件 + 本表）
+- [x] H1-H2 完成（`e919b25`）
 
 ## J. 执行记录（实现时填写）
 
@@ -120,3 +120,4 @@
 | V3 | `npx tsc -p tsconfig.main.json --noEmit` | 无诊断输出，`TSC_EXIT=0` | 类型门 ✓ |
 | 额外（不在本表） | `npm test`（全量） | `Test Files 44 passed (44)`、`Tests 744 passed (744)`，exit 0 | 全量回归 ✓（V5 的正式门在任务 13 / 14，这里只是自证没碰坏别处） |
 | H | `git add` / `git commit` 未执行 | 改动全部留在工作区（`git status --porcelain` 六个 `M`） | 按索引 K5 交主代理验收后执行 |
+| 验收（主代理复跑 + 独立变异探针） | `npx vitest run src-main/i18n src/i18n.test.ts`；`npx vitest run` 定向 6 文件；`npx tsc -p tsconfig.main.json --noEmit`；三条 E6 grep；`git grep "ql\.dialog"`；**主代理自己**跑 A/B 两次词典变异 | i18n `25 passed`；定向 6 文件 `124 passed`；`TSC_EXIT=0`；E6 三条 grep 全 `0`；`ql.dialog` 的 4 处命中**全在 docs**（代码里没有）。A) 词典 `err.ql.nameDup` 的 `{name}` 改 `{nme}` → 恰「占位符双向一致」用例红；B) 删 `err.ql.ptySpawn` 的 zh 条目 → 2 红（`key-coverage` 存在性 + `dict.test` zh/en 集合一致）；两次还原后 `dict.ts` 字节级一致（`8D92EBB7…`） | 任务审查：通过（关键 0 / 重要 1 条口径强制 / 次要 2）→ 验收通过；措辞与 `ql.invalid` 语法交任务 11 与真机验收（K22(3)(4)） |
