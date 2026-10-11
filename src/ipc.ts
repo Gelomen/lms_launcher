@@ -26,6 +26,9 @@ declare global {
       onGpuStats: (cb: (e: { gpus: GpuStats[] }) => void) => () => void;
       onStartupLlamaCheck: (cb: (e: { status: string; dir: string }) => void) => () => void;
       onStartupLlamaCheck: (cb: (e: { status: string; dir: string }) => void) => () => void;
+      // 快捷启动（规格 2026-10-10 §8 的事件）：ql-data = 终端页签的 PTY 输出；ql-exit = 进程退出
+      onQlData: (cb: (e: { tabId: string; data: string }) => void) => () => void;
+      onQlExit: (cb: (e: { configId: string; code: number }) => void) => () => void;
     };
   }
 }
@@ -105,4 +108,15 @@ export function onGpuStats(cb: (e: { gpus: GpuStats[] }) => void): () => void {
 // status 取值 = src-main/llama-check.ts 的 LlamaInstallStatus：unset / dir_missing / exe_missing / ok
 export function onStartupLlamaCheck(cb: (e: { status: string; dir: string }) => void): () => void {
   return window.lms.onStartupLlamaCheck(cb);
+}
+
+// 快捷启动（规格 2026-10-10-quick-launch-card-design §8 的两个事件）：
+// ql-data = 终端页签的 PTY 输出（tabId = 'ql:<configId>'）；ql-exit = 进程退出（页签保留、按钮回落）。
+// 返回 preload 的 removeListener 清理函数（照 onLogLine 的用法），订阅方卸载时调用它。
+export function onQlData(cb: (e: { tabId: string; data: string }) => void): () => void {
+  return window.lms.onQlData(cb);
+}
+
+export function onQlExit(cb: (e: { configId: string; code: number }) => void): () => void {
+  return window.lms.onQlExit(cb);
 }

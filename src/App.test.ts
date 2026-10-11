@@ -28,6 +28,10 @@ const gpuStatsHandlers: Array<(e: { gpus: unknown[] }) => void> = [];
 const startupLlamaCheckHandlers: Array<(e: { status: string; dir: string }) => void> = [];
 // llama.cpp 更新进度事件桥（Task 8）：UpdateModal 内通过 ipc.onLlamaUpdateProgress 订阅
 const llamaUpdateProgressHandlers: Array<(e: { percent: number; stage: string }) => void> = [];
+// 快捷启动（任务 6）：ql-data / ql-exit 事件桥。任务 6 只接线不驱动（渲染端订阅在任务 13），
+// 这里按既有「捕获再驱动」的写法登记，供任务 9-13 的用例使用。
+const qlDataHandlers: Array<(e: { tabId: string; data: string }) => void> = [];
+const qlExitHandlers: Array<(e: { configId: string; code: number }) => void> = [];
 vi.mock('./ipc', () => ({
   invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
@@ -44,6 +48,9 @@ vi.mock('./ipc', () => ({
   onGpuStats: (fn: (e: { gpus: unknown[] }) => void) => { gpuStatsHandlers.push(fn); return () => {} },
   // 启动检测事件桥（2026-11）：DirModule onMounted 无条件订阅；App 级测试不驱动该事件（no-op 注册）
   onStartupLlamaCheck: (fn: (e: { status: string; dir: string }) => void) => { startupLlamaCheckHandlers.push(fn); return () => {}; },
+  // 快捷启动事件桥（任务 6）：真实实现在 src/ipc.ts + preload.ts，本文件只登记捕获（任务 13 驱动）
+  onQlData: (fn: (e: { tabId: string; data: string }) => void) => { qlDataHandlers.push(fn); return () => {}; },
+  onQlExit: (fn: (e: { configId: string; code: number }) => void) => { qlExitHandlers.push(fn); return () => {}; },
 }));
 
 const { t: i18nText } = await import('./i18n');
@@ -1075,5 +1082,19 @@ describe('i18n / App 外壳（Slice 1）', () => {
     await flush();
     expect(document.querySelector('.update-modal .update-row__error')?.textContent?.trim()).toBe('Update server unreachable.');
     w.unmount();
+  });
+});
+
+// ===== 任务 6：快捷启动 IPC 接线（计划 :266-274）=====
+// 前两条断言逐字照计划 :269-273。本文件顶部的 vi.mock('./ipc') 会接管 './ipc'，
+// 只断 mock 里的键就成了自证，所以再加一条走 vi.importActual 的**真实模块**断言（E1）。
+describe('快捷启动 IPC 封装（任务 6）', () => {
+  it('ipc 模块导出终端相关封装', async () => {
+    const mod = await import('./ipc');
+    expect(typeof mod.onQlData).toBe('function');
+    expect(typeof mod.onQlExit).toBe('function');
+    const real = await vi.importActual<typeof import('./ipc')>('./ipc');
+    expect(typeof real.onQlData).toBe('function');
+    expect(typeof real.onQlExit).toBe('function');
   });
 });

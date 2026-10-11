@@ -57,4 +57,16 @@ contextBridge.exposeInMainWorld('lms', {
     ipcRenderer.on('gpu-stats', listener);
     return () => ipcRenderer.removeListener('gpu-stats', listener);
   },
+  // 快捷启动（规格 2026-10-10 §8）：终端页签的 PTY 输出与进程退出。照 :5-9 的 onLogLine 模式，
+  // 返回 removeListener 清理函数 → 重复订阅/退订不叠加（check E3）
+  onQlData: (cb: (e: { tabId: string; data: string }) => void) => {
+    const listener = (_e: unknown, payload: { tabId: string; data: string }) => cb(payload);
+    ipcRenderer.on('ql-data', listener);
+    return () => ipcRenderer.removeListener('ql-data', listener);
+  },
+  onQlExit: (cb: (e: { configId: string; code: number }) => void) => {
+    const listener = (_e: unknown, payload: { configId: string; code: number }) => cb(payload);
+    ipcRenderer.on('ql-exit', listener);
+    return () => ipcRenderer.removeListener('ql-exit', listener);
+  },
 });
