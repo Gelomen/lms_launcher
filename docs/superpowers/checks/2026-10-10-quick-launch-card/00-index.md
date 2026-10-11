@@ -95,3 +95,27 @@
 | V3 | `npx tsc -p tsconfig.main.json --noEmit` | 任何 `src-main/` 改动后 | 无错 |
 | V4 | `npx vitest run src-main/i18n src/i18n.test.ts` | 任何新增文案/错误消息后 | 全 PASS |
 | V5 | `npm test`（全量） | 任务 13 步骤 4、任务 14 之前 | 全绿 |
+
+## M 组 · 已登记 Minor 的**触发点路由**（任务 9 后新增）
+
+> 为什么加这一组：账本 `.superpowers/sdd/2026-10-10-quick-launch-card/progress.md` 被 `.gitignore:4` 的 `.*/` 忽略，45 条 `minor (deferred)` 不进版本库、也不进 check 表；若全堆到最终整分支审查，其中会被后续任务**触到或放大**的那几条会在那之前悄悄变成真缺陷。
+> 规则：**只列会被任务 10-14 触到或放大的**（16 条）。其余 29 条（纯函数覆盖缺口、死代码、形状断言、文档瑕疵等）留在账本，交最终整分支审查一次性甄别——它们不会被任务 10-14 触到。派任务 10-14 时把对应行**原样贴进简报**。
+
+| # | Minor（含落点） | 会在哪个任务触到 | 处置要求 |
+|---|---|---|---|
+| M1 | 终端检测的返回顺序固定为 powershell/cmd/pwsh/wsl（`quick-launch-terminals.ts:107`） | 任务 12 | 若要 pwsh 优先，**在渲染端排序**，不改主进程（任务 4 已定口径，K15） |
+| M2 | `dict.ts:492` 的 en `ql.invalid` = `{n} invalid entries skipped`，n=1 时语法不成立 | 任务 11（首个调用点） | 改成 `invalid entries skipped: {n}`（对齐既有计数键风格；现在无调用点零成本） |
+| M3 | 终端挂载点用内联 `overflow: hidden; min-height: 0` 压掉 `.log-view` 的重复滚动条 | 任务 10（B3 正在改 `style.css`） | 若要收进 CSS：**只搬 `overflow: hidden`**，`min-height: 0` 是冗余项（`overflow` 非 visible 的 flex item 自动最小尺寸本就是 0） |
+| M4 | `TerminalTabView` 的 `label`/`fullLabel` 落点：`data-tab-label` 装**短名**，另有 `data-tab-full-label` 装全名 | 任务 10 | 页签文案与全名 tooltip 在 `LogPanel`/`log-tabs` 侧渲染 → 简报必须指定取值来源，**不要从 `data-*` 反取**（那是给调试/测试的钩子） |
+| M5 | 组件内副作用导入 `@xterm/xterm/css/xterm.css`（落在叶子组件上） | 任务 10 / 13 | 确认页签条接入后样式仍被加载；最终审查决定是否收进入口 |
+| M6 | `TerminalTabView.test.ts:278` 把「每次 `ResizeObserver` 都 `fit`」钉成契约（`fitCalls === 3`） | 任务 10 / 13（若加防抖） | 真实浏览器拖动窗口时每帧回调；加防抖/节流前先改这条断言的目标与措辞 |
+| M7 | `states()` 从「在 Map 里且不在 `stopping`」推导 running，**从不调 `proc.isRunning()`** | 任务 13 | 进程已死而 exit 事件未到时，任务 13 会重建空壳页签 → 接线以 `ql_exit` 事件为准，不信 `states()` 的 running |
+| M8 | `write`/`resize` 在 `stopping` 期间仍放行（向已 `kill()` 的 PTY 写入在 node-pty 上可能抛） | 任务 13 | 不得对 exe 配置调 `ql_write`/`ql_resize`；停止中也不要发 |
+| M9 | `App.test.ts:33-34` 的两个捕获数组目前无人读 | 任务 13 | 接线时必须读它们，否则那两条断言是空跑 |
+| M10 | `ipc-ql.test.ts:170-173` 的 `KNOWN_STARTED_IDS` 是手维护清单 | 任务 13 / 14（新增起进程用例时） | 新增用例会静默不清理（留孤儿进程）→ 改为在 `invoke` 里记录 `ql_start` 的 id |
+| M11 | 探测计数只数模块级 `detectTerminals` 一个入口 | 任务 12 / 13（改调用入口时） | 换入口会让 K14/K15 的计数断言**静默归零而仍绿** |
+| M12 | `stopAll` 先快照 keys 再逐个 await、末尾无条件 `instances.clear()` 的竞态（**已被任务 7 放大**：退出前多最长 N×4s 的 await） | 任务 14（真机退出门） | 真机若出现孤儿 PTY，先改这里：`while (instances.size)` 逐个停，或去掉末尾 `clear()`（`finalize` 已逐个摘除） |
+| M13 | 退出耗时：`FORCE_EXIT_WAIT_MS=1000` + 串行 `stopAll` → 最坏 N×4s；`run_update` 那份还计入更新脚本的 60s 等待预算 | 任务 14 | 真机测退出耗时；确实超预算再改并发或去掉等待（会动任务 5 已审的停止语义） |
+| M14 | 真机用例依赖本机必有 `cmd`；`@lydell/node-pty` 的 `^1.2.0-beta.15` 可解析到 stable 1.x（lock 已钉死） | 任务 14（打包门） | 按 lock 核对打包产物与真机行为 |
+| M15 | zh 界面措辞无测试钉（只钉 en 四条终端标签 + `ql.title` 非键名） | 任务 14（真机验收） | 按界面复核卡片/弹窗/工具条文案 |
+| M16 | 测试文件不在类型门（`tsconfig.main.json:15` 排除 `src-main/**/*.test.ts`） | 任务 10-14（新增测试时） | 要长期守住就另定门；目前靠 ad-hoc 严格 `tsc` 补验 |
