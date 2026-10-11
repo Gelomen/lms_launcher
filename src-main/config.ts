@@ -114,10 +114,10 @@ export function existingConfigIds(path: string): string[] {
 
 // suggest：自动生成唯一配置 id——保存后写入 yaml key，故必须符合 validateConfigId（小写字母开头、[a-z0-9]、≤32）且与现有条目不重名。
 // 碰撞概率低（时间戳+随机尾巴），但渲染端可能连续两次秒级保存同一时间戳 → 循环重试直至唯一
-export function suggestConfigId(existing: string[]): string {
+export function suggestConfigId(existing: string[], prefix = 'tpl'): string {
   const rand = (): string => Math.floor(Math.random() * 10000).toString(16).padStart(4, '0');
   for (let i = 0; i < 100; i++) {
-    const candidate = 'tpl' + Date.now().toString(36) + rand();
+    const candidate = prefix + Date.now().toString(36) + rand();
     if (validateConfigId(candidate) && !existing.includes(candidate)) return candidate;
   }
   throw new Error('VALIDATION: ' + t('err.config.idGen'));

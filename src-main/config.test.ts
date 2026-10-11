@@ -145,6 +145,15 @@ describe('config.ts', () => {
     expect(new Set(batch).size).toBe(50);
   });
 
+  it('suggestConfigId 支持自定义前缀且仍满足 id 契约', () => {
+    const id = suggestConfigId([], 'ql');
+    expect(id.startsWith('ql')).toBe(true);
+    expect(validateConfigId(id)).toBe(true);
+  });
+  it('suggestConfigId 默认前缀仍是 tpl', () => {
+    expect(suggestConfigId([]).startsWith('tpl')).toBe(true);
+  });
+
   it('config_id_rules', () => {
     expect(validateConfigId('abc')).toBe(true);
     expect(validateConfigId('a1b2')).toBe(true);
