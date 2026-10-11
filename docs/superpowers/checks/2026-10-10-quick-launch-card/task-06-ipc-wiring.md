@@ -19,6 +19,7 @@
 | B2 | `src-main/preload.ts` | 修改 | **两个事件订阅**（`onQlData` / `onQlExit`，照 `:5-9` 的 `onLogLine` 模式）。**更正（主代理取证）**：本文件没有「按通道白名单」——`:4` 是通用 `invoke(cmd, ...args)` 透传，12 个通道**不需要**在这里逐个登记（原表述有误，见索引 K12） | ☐ |
 | B3 | `src/ipc.ts` | 修改 | 封装与类型 | ☐ |
 | B4 | `src/App.test.ts` | 追加用例 | 既有用例不改 | ☐ |
+| B5 | `src-main/ipc-ql.test.ts` | 新建（D6a 形状门专用） | 只测主进程处理器形状；**不得**把 D6a 塞进 `src/App.test.ts`（那份 mock 的是 `./ipc`，不是 `electron`）。索引 K12(2) 授权本文件 | ☐ |
 
 ## C. 通道契约（严格照规格 §8，名称/参数/返回逐字）
 
@@ -74,7 +75,7 @@
 |---|---|---|---|
 | G1 | `npx vitest run src/App.test.ts src/main 相关既有测试` | 全 PASS | ☐ |
 | G2 | `npx tsc -p tsconfig.main.json --noEmit` | 无错 | ☐ |
-| G3 | `git diff --name-only` | 只含 B1-B4 | ☐ |
+| G3 | `git diff --name-only` + `git status --porcelain` | 只含 B1-B5（B5 是未跟踪新文件） | ☐ |
 
 ## H. 提交门
 
