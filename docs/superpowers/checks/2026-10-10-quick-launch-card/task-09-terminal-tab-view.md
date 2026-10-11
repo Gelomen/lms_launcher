@@ -78,13 +78,13 @@
 
 | # | 检查项 | 命令 / 值 | ✓ |
 |---|---|---|---|
-| H1 | 暂存范围 | `git add src/modules/TerminalTabView.vue src/modules/TerminalTabView.test.ts` | ☐ |
-| H2 | 提交信息逐字 | `feat(module): xterm 交互终端页签（输入/尺寸/查找/复制粘贴）` | ☐ |
+| H1 | 暂存范围 | `git add src/modules/TerminalTabView.vue src/modules/TerminalTabView.test.ts` → 已执行（主代理，复审通过后） | ☑ |
+| H2 | 提交信息逐字 | `feat(module): xterm 交互终端页签（输入/尺寸/查找/复制粘贴）` → `151046e`（2 files, +626；两份均为新建）；口径与文档更正另做 docs 提交（`41e04a2` / `49df85c`） | ☑ |
 
 ## I. 完成判据
 
-- [ ] E1-E10 全部有测试（E3/E4/E5 是 R2/R5 的钉桩，缺一条即未完成；E9 首帧上报尺寸是 K11(2) 的下游硬门）
-- [ ] F1-F6 口径一致
+- [x] E1-E10 全部有测试（E3/E4/E5 是 R2/R5 的钉桩，缺一条即未完成；E9 首帧上报尺寸是 K11(2) 的下游硬门）—— 复审逐条给出用例行号，全部为真实断言
+- [x] F1-F9 口径一致（**编号更正**：本表已有 F8/F9，原写 F1-F6 是漏改）
 - [ ] G1-G4 通过
 - [ ] H1-H2 完成
 
@@ -106,3 +106,11 @@
 | G3 | `npx vitest run src-main/i18n src/i18n.test.ts` | exit 0；5 个文件全绿：`index.test.ts` 3、`no-hardcoded.test.ts` 2、`key-coverage.test.ts` 2、`dict.test.ts` 11、`src/i18n.test.ts` 7 → `Tests 25 passed (25)` | 新组件的字面量 key 全部命中词典、占位符名与词典一致、无新增硬编码文案 ✓ |
 | G4 | `git diff --name-only`；`git status --porcelain` | 已跟踪改动只有 `docs/superpowers/checks/…/task-09-terminal-tab-view.md`（主代理的 E10 更正 + 本次填写的 J 段）；未跟踪新增只有 `src/modules/TerminalTabView.vue` 与 `src/modules/TerminalTabView.test.ts` | 代码改动 = B1-B2，无越界 ✓ |
 | 额外取证 | `npm test`（全量，非本任务门，V5 在任务 13 才要求） | `Test Files 45 passed (45)`；`Tests 762 passed (762)`（含本任务 18 条） | 无跨文件回归 |
+| **定向修复 · 改动** | 位置：`TerminalTabView.vue:150-151`（新增一行注释指向 `src/style.css:29`，并把 `fontFamily` 由 `'var(--font-mono)'` 改为字面量栈 `"'Cascadia Code', Consolas, monospace"`）+ `TerminalTabView.test.ts:202-203` 同步期望值 | 断言未削弱：仍是 `toEqual` 逐字比对传给 `Terminal()` 的 options 对象（`FakeTerminal` 构造即 `state.termOptions.push(options)`，见 `.test.ts:45`）。props / emits / `defineExpose` / 尺寸去重 / `fit(force)` / 键盘返回值一律未动 | 改动 = F1 一处 + 该断言期望值，无越界 ✓ |
+| **定向修复 · 同值取证** | node 脚本：读 `src/style.css:29` 取 `--font-mono` 的值，与 `.vue` 里 `fontFamily:` 的字符串字面量（解掉外层引号后）逐字符比对 | `css value : "'Cascadia Code', Consolas, monospace"`；`js literal : "'Cascadia Code', Consolas, monospace"`；`identical : true` | 两处逐字同值 ✓（F1 / K23(1)）；注释里无 `t('字面量key')` 形态（K21(1)），G3 的 `key-coverage` 仍绿 |
+| **定向修复 · G1** | `npx vitest run src/modules/TerminalTabView.test.ts` | exit 0；`✓ src/modules/TerminalTabView.test.ts (18 tests) 89ms`；`Test Files 1 passed (1)`；`Tests 18 passed (18)` | ✓ |
+| **定向修复 · G2** | `npx vitest run src/modules/LogTabView.test.ts src/modules/LogPanel.test.ts` | exit 0；`✓ LogTabView.test.ts (21 tests) 89ms`、`✓ LogPanel.test.ts (11 tests) 135ms`；`Test Files 2 passed (2)`；`Tests 32 passed (32)` | 静态页签与上层面板不受影响 ✓ |
+| **定向修复 · G3** | `npx vitest run src-main/i18n src/i18n.test.ts` | exit 0；5 个文件全绿：`index.test.ts` 3、`no-hardcoded.test.ts` 2、`key-coverage.test.ts` 2、`dict.test.ts` 11、`src/i18n.test.ts` 7 → `Tests 25 passed (25)` | 新注释未引入硬编码文案 / 假 key ✓ |
+| **定向修复 · 变异自检** | 把 `fontFamily` 改回 `'var(--font-mono)'`（注释保留）→ `npx vitest run src/modules/TerminalTabView.test.ts` → 逐字节还原 | exit 1；`❯ … (18 tests \| 1 failed)`；红的是 `TerminalTabView 生命周期与数据接线（E1/E2/E9、F1） > terminal_is_created_with_spec_options_and_three_addons`（`expected { Object (scrollback, fontSize, ...) } to deeply equal …`）；`Tests 1 failed \| 17 passed (18)`。还原后 sha256 前 12 位前后同为 `a61640e3c573`（10682 字节，`byte-identical: true`） | 取值断言确实咬住字面量栈，不是空跑 ✓ |
+| **定向修复 · 范围** | `git rev-parse --short HEAD`；`git status --porcelain`；`git diff --name-only` | `49df85c`；`git status --porcelain` 只有两行未跟踪：`src/modules/TerminalTabView.vue`（225 行）与 `src/modules/TerminalTabView.test.ts`（403 行）；`git diff --name-only` 只有本 check 表（`.superpowers/` 被 `.gitignore:4` 的 `.*/` 忽略，故报告的 §8 不出现在 status 里） | 代码改动仍 = B1-B2；未 `git add`、未 commit（K5）✓ |
+| 验收（主代理复跑 + 独立变异 + 任务审查） | `npx vitest run src/modules/TerminalTabView.test.ts`；`npx vitest run src/modules/LogTabView.test.ts src/modules/LogPanel.test.ts src/App.test.ts`；`npx vitest run src-main/i18n src/i18n.test.ts`；`npx tsc -p tsconfig.main.json --noEmit`；自己读两行核对字体值；自己的变异（`fontFamily` 改回 `var()`） | G1 `18 passed`；G2（含 `App.test.ts`）`80 passed`；G3 `25 passed`；`TSC_EXIT=0`；字体值与 `style.css:29` 逐字符一致；变异 → 恰 1 红（`terminal_is_created_with_spec_options_and_three_addons`），还原后 SHA 前后同为 `a61640e3c573`。J 段自述的 225/403 行实际为 **224/402**（把结尾换行计入了） | 任务审查：**通过**（关键 0 / 重要 2 / 次要 8）。两条重要**不在本轮修**（用户要求任务 9 后停止派单），已登记为「**派任务 13 前必修**」：① 缺一条「尺寸真的变化 → 第二次 `onResize(90,30)`」的用例（假 FitAddon 恒为 118×41，去重只钉住负半边）；② `defineExpose` 的 `fit` 默认 `force = true`，任务 13 每次激活都会强制发一次 `ql_resize` → 应改默认 `false`，由任务 13 在重启处显式 `fit(true)` |
