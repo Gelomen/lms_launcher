@@ -62,15 +62,15 @@
 
 | # | 检查项 | 命令 / 值 | ✓ |
 |---|---|---|---|
-| H1 | 暂存范围 | `git add src/util/copy-name.ts src/util/copy-name.test.ts src/modules/TemplateModule.vue` | ☐ |
-| H2 | 提交信息逐字 | `refactor(util): 抽出 nextCopyName 供模板卡与快捷启动卡共用` | ☐ |
+| H1 | 暂存范围 | `git add src/util/copy-name.ts src/util/copy-name.test.ts src/modules/TemplateModule.vue` → 已执行（主代理，验收通过后） | ☑ |
+| H2 | 提交信息逐字 | `refactor(util): 抽出 nextCopyName 供模板卡与快捷启动卡共用` → `1e313bb`；口径同步另做 `662880b`（docs，按 K5/AGENTS.md 与代码分开） | ☑ |
 
 ## I. 完成判据
 
 - [x] D1-D4 全部按序发生（先见红再见绿）
 - [x] E1-E4 全部有测试或 diff 证据
 - [x] G1-G2 通过
-- [ ] H1-H2 完成，HEAD 即本任务提交
+- [x] H1-H2 完成，HEAD 即本任务提交（`1e313bb`）
 
 ## J. 执行记录（实现时填写）
 
@@ -86,4 +86,5 @@
 | E4 | `git show HEAD:src/modules/TemplateModule.vue`（73-80 行）与 `src/util/copy-name.ts`（5-12 行）逐行比对 | 8 行中 7 行逐字相同，唯一差异是签名行多出 `export `；`/ - copy( \d+)?$/` 与 `` `${root} - copy ${i}` `` 完全一致；旧注释 3 行原样保留在新文件头（另加 1 行来源说明） | 搬移非重写 |
 | G1 | `npx vitest run src/modules/TemplateModule.test.ts` | exit 0；`Tests 20 passed (20)`，含 `copy_click_dups_config_after_source_with_copy_name_and_new_id` / `copying_a_copy_strips_suffix_and_increments_number` / `copy_skips_taken_numbers_and_reuses_free_slot` | 既有兜底测试全绿 |
 | G2 | `git diff --name-only`；`git status --porcelain`；`git diff --stat` | 仅 `src/modules/TemplateModule.vue`（M）+ `src/util/copy-name.ts`、`src/util/copy-name.test.ts`（??）；`git diff --stat` = `1 file changed, 1 insertion(+), 12 deletions(-)` | 改动范围 = B1-B3 |
+| H1/H2 | `git add`（三个代码文件）+ `git commit`；`git log --oneline -3`；`git status --porcelain` | `1e313bb refactor(util): 抽出 nextCopyName 供模板卡与快捷启动卡共用`（3 files, +28/−12）；其前一笔 `662880b docs: …K7…`；工作区干净 | 提交门完成，HEAD 即本任务提交 |
 | 额外（非本表要求，提前跑 V5） | `npx vitest run`（全量） | exit 0；`Test Files 40 passed (40)` / `Tests 667 passed (667)` / `Duration 8.39s` | 无跨文件回归 |
