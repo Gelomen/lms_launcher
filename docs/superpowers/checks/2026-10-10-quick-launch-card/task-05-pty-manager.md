@@ -118,7 +118,6 @@
 | 四次变异后还原校验 | `Get-FileHash src-main/quick-launch.ts`；`(Get-Content …).Count` | 每次还原后哈希恒为 `47838E7DC905C9D67B4013AAD9E68E0D9DAE5CF6F1FCB4CE78A4999DCE1B5DE5`（373 行） | 实现文件未被变异残留污染 |
 | 额外 · i18n 硬门 | `npx vitest run src-main/i18n` | `Test Files 4 passed (4)` / `Tests 18 passed (18)`（含 `key-coverage` / `no-hardcoded`） | 新文件未引入缺键或汉字字面量（K8：`err.ql.*` 走常量映射，不写字面量） |
 | 额外 · 全量回归 | `npx vitest run` | `Test Files 43 passed (43)` / `Tests 714 passed (714)`（exit 0，8.52s） | 全仓库无回归 |
-
 | 修复轮 1 · 先红（只改 E9） | 把 E9 改为 `await m.stopAll(7)` / 断 `stopArgs === [7]` → `npx vitest run src-main/quick-launch.test.ts` | `× … stopAll 停掉全部并清空 states，并透传 timeoutSecs → expected [ 3 ] to deeply equal [ 7 ]` / `Test Files 1 failed (1)` / `Tests 1 failed \| 16 passed (17)`（exit 1） | 「收到 3、期望 7」= 参数被 `STOP_TIMEOUT_SECS` 覆盖，C5(a) / K11(1) 违约被钉出 |
 | 修复轮 1 · 实现 | 编辑 `src-main/quick-launch.ts`：新增 `private async stopInternal(configId, timeoutSecs = STOP_TIMEOUT_SECS)`（现 :331-346），`stop()` 走默认（:310-313），`stopAll` 透传（:320-329，调用点 :323）；C1-C5 一字未改、`createShellProcess` 接缝原样 | — | 审查 Important #1 按口径落地；次要项未顺手修 |
 | 修复轮 1 · D5/G1 后绿 | `npx vitest run src-main/quick-launch.test.ts src-main/process.test.ts` | `✓ src-main/quick-launch.test.ts (17 tests) 263ms` / `✓ src-main/process.test.ts (5 tests) 6305ms` / `Test Files 2 passed (2)` / `Tests 22 passed (22)`（exit 0） | 定向 + 相邻回归仍全绿，用例数仍 17 |
