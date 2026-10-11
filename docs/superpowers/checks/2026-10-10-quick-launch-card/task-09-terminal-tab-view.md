@@ -47,6 +47,7 @@
 | E6 | `closeDisabled === true` 时 `[x]` 禁用（tooltip「请先停止」） | 计划 审查重点 3 | ☐ |
 | E7 | `Ctrl+Shift+V` / 右键 = 粘贴，走 `clipboard_read`（`file://` 下 `navigator.clipboard` 不可靠） | 规格 §8 / §9.3 | ☐ |
 | E8 | 工具条：清空（`term.clear()`）+ 查找输入框 + 上/下 + 计数 | 规格 §9.3 | ☐ |
+| E9 | **首帧必须把尺寸上报**：`fit()` 成功后调用 `onResize(id, cols, rows)`（→ `ql_resize`）。主进程 `start()` 不带尺寸、按 **80×24 兜底**建 PTY（索引 K11(2)），不上报则终端一直按 80×24 排版 | 索引 K11(2) / 规格 §7.3 | ☐ |
 | E9 | 链接点击 → `invoke('open_external', uri)` | 规格 §9.1 | ☐ |
 
 ## F. 实现口径（不得随意改）

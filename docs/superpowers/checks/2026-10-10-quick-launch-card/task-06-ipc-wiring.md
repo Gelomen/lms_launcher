@@ -16,7 +16,7 @@
 | # | 文件 | 动作 | 边界 | ✓ |
 |---|---|---|---|---|
 | B1 | `src-main/main.ts` | 修改 | 注册 12 通道 + 2 事件；`ql` 单例 | ☐ |
-| B2 | `src-main/preload.ts` | 修改 | 白名单 + 两个事件订阅 | ☐ |
+| B2 | `src-main/preload.ts` | 修改 | **两个事件订阅**（`onQlData` / `onQlExit`，照 `:5-9` 的 `onLogLine` 模式）。**更正（主代理取证）**：本文件没有「按通道白名单」——`:4` 是通用 `invoke(cmd, ...args)` 透传，12 个通道**不需要**在这里逐个登记（原表述有误，见索引 K12） | ☐ |
 | B3 | `src/ipc.ts` | 修改 | 封装与类型 | ☐ |
 | B4 | `src/App.test.ts` | 追加用例 | 既有用例不改 | ☐ |
 
@@ -46,14 +46,15 @@
 | D3 | 步骤 3：实现 | — | `onData` → `ql-data`；`onExit` → `ql-exit`；`onSysLine` → 既有 `emitLog(line, 'sys')`；`clipboard_*` 用 Electron `clipboard` | ☐ |
 | D4 | 步骤 4-1：单测 | `npx vitest run src/App.test.ts` | PASS | ☐ |
 | D5 | 步骤 4-2：类型 | `npx tsc -p tsconfig.main.json --noEmit` | 无错 | ☐ |
-| D6 | 步骤 4-3：真机形状 | `npm run dev` → DevTools 依次调 `ql_list` / `ql_terminals` / `ql_save` / `ql_start` | 返回形状与 C 表一致；输出记入 J | ☐ |
+| D6a | 步骤 4-3a：**自动化形状门**（本任务内必须过） | 用 `vi.mock('electron')` 捕获 `ipcMain.handle` 注册的处理器，直接调用 `ql_list` / `ql_terminals` / `ql_save` / `ql_start` / `ql_states` 等，断返回形状与 C 表逐字一致 | PASS，输出记入 J | ☐ |
+| D6b | 步骤 4-3b：真机冒烟 | `npm run dev`（后台任务）→ 等 ~15s → 采 stdout/stderr → 结束进程 | 主进程无异常/无未注册通道报错；**DevTools 里逐条手测 `ql_list`/`ql_terminals`/`ql_save`/`ql_start` 推到任务 14 真机验收**（索引 K12：子代理无法驱动 DevTools） | ☐ |
 
 ## E. 必须钉住的行为断言
 
 | # | 断言 | 出处 | ✓ |
 |---|---|---|---|
 | E1 | `src/ipc.ts` 导出 `onQlData` / `onQlExit` 两个订阅封装 | 计划 步骤 1 | ☐ |
-| E2 | 12 个通道全部在 `preload.ts` 白名单里（漏一个 → 渲染端 invoke 报 no handler） | 规格 §8 | ☐ |
+| E2 | 12 个通道全部在 `src-main/main.ts` 里 `ipcMain.handle(...)` 注册（漏一个 → 渲染端 invoke 报 no handler）；`src/ipc.ts` 的 `declare global` 的 `window.lms` 类型补 `onQlData` / `onQlExit`。取证：`preload.ts:4` 是通用 `invoke` 透传，**没有**通道白名单（索引 K12） | 规格 §8 | ☐ |
 | E3 | 事件订阅用 removeListener 清理，重复订阅不叠加 | 照 `onLogLine` 模式 | ☐ |
 | E4 | `onSysLine` 不新建通道，复用既有日志通道（exe 类型的无页签反馈） | 计划 步骤 3 | ☐ |
 | E5 | `ql_pick_exe` 取消对话框 → 返回 `null`，不抛错 | 规格 §8 | ☐ |
@@ -85,7 +86,7 @@
 ## I. 完成判据
 
 - [ ] C1-C12 全部落地且与规格 §8 一致
-- [ ] D4-D6 三项都过（真机形状验证不可跳）
+- [ ] D4-D6a 都过（形状门用 D6a 的自动化测试钉；DevTools 手测在任务 14，索引 K12）
 - [ ] G1-G3 通过
 - [ ] H1-H2 完成
 
@@ -94,7 +95,7 @@
 | 步骤 | 命令 / 调用 | 实际返回（摘要） | 结论 |
 |---|---|---|---|
 | D2 |  |  |  |
-| D6 | `ql_list` |  |  |
-| D6 | `ql_terminals` |  |  |
-| D6 | `ql_save` |  |  |
-| D6 | `ql_start` |  |  |
+| D6a | `ql_list`（经捕获的处理器直调） |  |  |
+| D6b | `ql_terminals`（真机，任务 14 补） |  |  |
+| D6b | `ql_save`（真机，任务 14 补） |  |  |
+| D6b | `ql_start`（真机，任务 14 补） |  |  |
