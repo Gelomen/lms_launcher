@@ -8,8 +8,8 @@
 
 | # | 检查项 | 怎么验 | 预期 | ✓ |
 |---|---|---|---|---|
-| A1 | 工作区干净 | `git status --porcelain` | 无输出 | ☐ |
-| A2 | 插入点确认（**两处**，索引 K17） | 读 `src-main/main.ts:376-380`（`exit_app`）与 `:642-644`（`run_update`） | 两处都必须在既有 `await ps.stopGraceful(3)` **之后**、`app.exit(0)` **之前**插入 `await ql.stopAll(3)`。`app.exit` 不触发 `will-quit`（`main.ts:53-54`），conpty/cmd 是独立进程不会被父进程带走 → 漏一处就是孤儿 PTY（R3） | ☐ |
+| A1 | 工作区干净 | `git status --porcelain` | 无输出 | ☑ |
+| A2 | 插入点确认（**两处**，索引 K17） | 读 `src-main/main.ts:376-380`（`exit_app`）与 `:642-644`（`run_update`） | 两处都必须在既有 `await ps.stopGraceful(3)` **之后**、`app.exit(0)` **之前**插入 `await ql.stopAll(3)`。`app.exit` 不触发 `will-quit`（`main.ts:53-54`），conpty/cmd 是独立进程不会被父进程带走 → 漏一处就是孤儿 PTY（R3） | ☑ |
 
 ## B. 改动范围
 
@@ -17,51 +17,51 @@
 |---|---|---|---|---|
 | B1 | `src-main/main.ts` | 修改 `exit_app`（`:376-380`）**与** `run_update`（`:642-644`） | 各只加一行 await（**主代理验收口径**：1 行代码 + 说明注释即符合本行，注释不改变行为且引用属实）；不动 `stopGpuStats()` / `ps.stopGraceful(3)` / `setTimeout(3000)` / `app.exit(0)` 本身 → 实测两处各 1 行代码 + 1-2 行注释，四个既有语句全是未变上下文行 | ☑ |
 | B2 | `src-main/quick-launch.ts` | **无需改动**（已核实） | 逐个 await（:321-327）、空表早退（:334）、吞单点异常（:336-340）、透传秒数（:323）已由任务 5 落地 → 本任务一行未改：`git diff --stat HEAD -- src-main/quick-launch.ts` 为空，主代理另核 SHA 前缀 `3AD853E6378CB9B5` 与任务 5 提交时一致 | ☑ |
-| B3 | `src-main/quick-launch.test.ts` | 追加 3 条用例：幂等（空表 / 未运行 configId）、单点异常隔离、**串行**（钉 F4） | 第 3 条超出计划 步骤 1 的字面「追加幂等用例」，但 F4 是本任务唯一没有测试保护的硬约束 → 主代理批准并登记 K18 | ☐ |
+| B3 | `src-main/quick-launch.test.ts` | 追加 3 条用例：幂等（空表 / 未运行 configId）、单点异常隔离、**串行**（钉 F4） | 第 3 条超出计划 步骤 1 的字面「追加幂等用例」，但 F4 是本任务唯一没有测试保护的硬约束 → 主代理批准并登记 K18 | ☑ |
 
 ## C. 契约
 
 | # | 契约 | 出处 | ✓ |
 |---|---|---|---|
-| C1 | `async stopAll(timeoutSecs: number): Promise<void>` 对**未运行**的配置不抛错（幂等） | 计划 步骤 1 | ☐ |
-| C2 | `exit_app` 顺序：`stopGpuStats()` → `await ps.stopGraceful(3)` → `await ql.stopAll(3)` → `app.exit(0)` | 规格 §7.5 | ☐ |
-| C3 | `run_update` 顺序：… → `await ps.stopGraceful(3)` → `await ql.stopAll(3)` → `await setTimeout(3000)` → `app.exit(0)`（`stopAll` 在 `app.exit` 之前即可，放在 `ps.stopGraceful` 之后与 C2 同构） | 规格 §7.5（K17 扩展） | ☐ |
+| C1 | `async stopAll(timeoutSecs: number): Promise<void>` 对**未运行**的配置不抛错（幂等） | 计划 步骤 1 | ☑ |
+| C2 | `exit_app` 顺序：`stopGpuStats()` → `await ps.stopGraceful(3)` → `await ql.stopAll(3)` → `app.exit(0)` | 规格 §7.5 | ☑ |
+| C3 | `run_update` 顺序：… → `await ps.stopGraceful(3)` → `await ql.stopAll(3)` → `await setTimeout(3000)` → `app.exit(0)`（`stopAll` 在 `app.exit` 之前即可，放在 `ps.stopGraceful` 之后与 C2 同构） | 规格 §7.5（K17 扩展） | ☑ |
 
 ## D. TDD 步骤门
 
 | # | 步骤 | 命令 | 预期 | ✓ |
 |---|---|---|---|---|
-| D1 | 步骤 1：补一条断言（`stopAll` 对未运行配置不抛错） | — | 用例落盘 | ☐ |
-| D2 | 步骤 2：验证失败 —— **口径已更正（索引 K18）**：本任务的新行为在 `main.ts`（由 E5 的 diff 走查把关），而 `stopAll` 的语义已由任务 5 落地，所以这三条是**特征化用例**，首跑即绿属预期（不为此去改 `quick-launch.ts` 凑红、也不伪造红）。红由**变异自检**提供：去掉 `quick-launch.ts:334` 的 `if (!inst) return` → 幂等用例必须红；去掉 `:336-340` 的吞异常 → 隔离用例必须红；改成 `Promise.all` → 串行用例必须红；逐条还原后该文件 diff 必须为空 | `npx vitest run src-main/quick-launch.test.ts` | 首跑 `Tests 20 passed`（特征化）；三次变异各红 2/1/1 条；还原后 diff 为空 | ☐ |
-| D3 | 步骤 3：实现 | — | `stopAll` 逐个 await、空表早退；`exit_app` 插入 await | ☐ |
-| D4 | 步骤 4：验证通过 | `npx vitest run src-main/quick-launch.test.ts` | 全 PASS | ☐ |
+| D1 | 步骤 1：补一条断言（`stopAll` 对未运行配置不抛错） | — | 用例落盘 | ☑ |
+| D2 | 步骤 2：验证失败 —— **口径已更正（索引 K18）**：本任务的新行为在 `main.ts`（由 E5 的 diff 走查把关），而 `stopAll` 的语义已由任务 5 落地，所以这三条是**特征化用例**，首跑即绿属预期（不为此去改 `quick-launch.ts` 凑红、也不伪造红）。红由**变异自检**提供：去掉 `quick-launch.ts:334` 的 `if (!inst) return` → 幂等用例必须红；去掉 `:336-340` 的吞异常 → 隔离用例必须红；改成 `Promise.all` → 串行用例必须红；逐条还原后该文件 diff 必须为空 | `npx vitest run src-main/quick-launch.test.ts` | 首跑 `Tests 20 passed`（特征化）；三次变异各红 2/1/1 条；还原后 diff 为空 | ☑ |
+| D3 | 步骤 3：实现 | — | `stopAll` 逐个 await、空表早退；`exit_app` 插入 await | ☑ |
+| D4 | 步骤 4：验证通过 | `npx vitest run src-main/quick-launch.test.ts` | 全 PASS | ☑ |
 
 ## E. 必须钉住的行为断言
 
 | # | 断言 | 出处 | ✓ |
 |---|---|---|---|
-| E1 | 空表调用 `stopAll` → 立即返回、不抛错 | 计划 步骤 1 | ☐ |
-| E2 | `stopAll` 对每个运行实例都调用 `stopGraceful(timeoutSecs)`（杀进程树，非只杀直接子进程） | 规格 §7.5 | ☐ |
-| E3 | `stopAll` 后 `states()` 为空 | 规格 §7.5 | ☐ |
-| E4 | 某个实例停止失败不得中断其余实例（逐个 await 且吞掉单点异常） | R3 | ☐ |
-| E5 | `run_update` 路径也停了终端：`git diff` 里 `:642` 之后确有 `await ql.stopAll(3)`，且在 `app.exit(0)` 之前。**不要求为 `run_update` 造测试**（它要 mock 计划任务 / 安装目录文件存在性，属既有未覆盖区），以 diff + 行号走查为证据 | K17 / R3 | ☐ |
+| E1 | 空表调用 `stopAll` → 立即返回、不抛错 | 计划 步骤 1 | ☑ |
+| E2 | `stopAll` 对每个运行实例都调用 `stopGraceful(timeoutSecs)`（杀进程树，非只杀直接子进程） | 规格 §7.5 | ☑ |
+| E3 | `stopAll` 后 `states()` 为空 | 规格 §7.5 | ☑ |
+| E4 | 某个实例停止失败不得中断其余实例（逐个 await 且吞掉单点异常） | R3 | ☑ |
+| E5 | `run_update` 路径也停了终端：`git diff` 里 `:642` 之后确有 `await ql.stopAll(3)`，且在 `app.exit(0)` 之前。**不要求为 `run_update` 造测试**（它要 mock 计划任务 / 安装目录文件存在性，属既有未覆盖区），以 diff + 行号走查为证据 | K17 / R3 | ☑ |
 
 ## F. 本任务相关的硬约束
 
 | # | 约束 | 违反的后果 | ✓ |
 |---|---|---|---|
-| F1 | 不得把 `ql.stopAll` 放在 `app.exit(0)` 之后 | 进程来不及被杀 → 孤儿 PTY | ☐ |
-| F2 | 不改 `ps.stopGraceful(3)` 与 `stopGpuStats()`（G4） | llama-server / GPU 采样链路受影响 | ☐ |
-| F3 | 不新增「退出确认」之类交互 | 违反 G10 | ☐ |
-| F4 | `stopAll` 保持**串行**（计划 步骤 3 逐字「逐个 await」），不得改成 `Promise.all`。已知代价：退出耗时上界 = N ×（`timeoutSecs` + `FORCE_EXIT_WAIT_MS`=1s）≈ 每个实例 4s；`exit_app` 与 `run_update` 都串行付这个代价。**`run_update` 的这份耗时计入更新流程的 60s 预算**（`scripts/lms-launcher-update.ps1:67` 等待超时后 `:104` 直接中止更新）；把 `stopAll` 与 `setTimeout(3000)` 调换顺序对总时长无影响，故现顺序（C3 逐字）不是缺陷 | 并行化会改任务 5 已审的停止语义；真机若不可接受再回来改口径 | ☐ |
+| F1 | 不得把 `ql.stopAll` 放在 `app.exit(0)` 之后 | 进程来不及被杀 → 孤儿 PTY | ☑ |
+| F2 | 不改 `ps.stopGraceful(3)` 与 `stopGpuStats()`（G4） | llama-server / GPU 采样链路受影响 | ☑ |
+| F3 | 不新增「退出确认」之类交互 | 违反 G10 | ☑ |
+| F4 | `stopAll` 保持**串行**（计划 步骤 3 逐字「逐个 await」），不得改成 `Promise.all`。已知代价：退出耗时上界 = N ×（`timeoutSecs` + `FORCE_EXIT_WAIT_MS`=1s）≈ 每个实例 4s；`exit_app` 与 `run_update` 都串行付这个代价。**`run_update` 的这份耗时计入更新流程的 60s 预算**（`scripts/lms-launcher-update.ps1:67` 等待超时后 `:104` 直接中止更新）；把 `stopAll` 与 `setTimeout(3000)` 调换顺序对总时长无影响，故现顺序（C3 逐字）不是缺陷 | 并行化会改任务 5 已审的停止语义；真机若不可接受再回来改口径 | ☑ |
 
 ## G. 回归门
 
 | # | 命令 | 预期 | ✓ |
 |---|---|---|---|
-| G1 | `npx vitest run src-main/quick-launch.test.ts src-main/process.test.ts` | 全 PASS | ☐ |
-| G2 | `npx tsc -p tsconfig.main.json --noEmit` | 无错 | ☐ |
-| G3 | 真机：`npm run dev` 开一个终端 → 退出应用 → `tasklist \| findstr -i "cmd pwsh conpty OpenConsole"` | 无残留进程。**本环境不可运行**（`ELECTRON_RUN_AS_NODE=1` → `requestSingleInstanceLock` 崩；去掉后 `0x80000003`，规格 §13.2）→ **保持未勾，推到任务 14**。真 node-pty 探针（`.temp/task07-probe.cjs`：3 个真 cmd → `stopAll(3)` 318ms、`onExit 0xC000013A`、`states()={}`、进程表残留 0）算作对**机制**的取证，**不算 G3 通过**（索引 K19） | ☐（任务 14） |
+| G1 | `npx vitest run src-main/quick-launch.test.ts src-main/process.test.ts` | 全 PASS | ☑ |
+| G2 | `npx tsc -p tsconfig.main.json --noEmit` | 无错 | ☑ |
+| G3 | 真机：`npm run dev` 开一个终端 → 退出应用 → `tasklist \| findstr -i "cmd pwsh conpty OpenConsole"` | 无残留进程。**本环境不可运行**（`ELECTRON_RUN_AS_NODE=1` → `requestSingleInstanceLock` 崩；去掉后 `0x80000003`，规格 §13.2）→ **保持未勾，推到任务 14**。真 node-pty 探针（`.temp/task07-probe.cjs`：3 个真 cmd → `stopAll(3)` 318ms、`onExit 0xC000013A`、`states()={}`、进程表残留 0）算作对**机制**的取证，**不算 G3 通过**（索引 K19） | ☐（推到任务 14 真机门；索引 K19 已登记本任务无自动化保护） |
 
 ## H. 提交门
 
@@ -72,9 +72,9 @@
 
 ## I. 完成判据
 
-- [ ] D1-D4 先红后绿
-- [ ] E1-E4 有测试或真机证据；E5 有 diff + 行号走查
-- [ ] G1-G2 通过（G3 输出记入 J）；**G3 未勾 → 推到任务 14**（K19）
+- [x] D1-D4 按 **K18 更正后的口径**完成：D2 未出现红（如实记录、未伪造），红源是特征化测试 + 变异探针
+- [x] E1-E4 有测试；E5 有 diff + 行号走查（`main.ts:381` / `:647` 两处 `await ql.stopAll(3)`，均在 `app.exit(0)` 之前）
+- [x] G1-G2 通过（G3 的真实输出已记入 J）；**G3 仍未勾 → 推到任务 14 真机门**（K19：本任务的退出接线无自动化保护）
 - [x] H1-H2 完成（`9680c3a`）
 
 ## J. 执行记录（实现时填写）
