@@ -282,13 +282,13 @@ it('ipc 模块导出终端相关封装', async () => {
 
 ### 任务 7：`exit_app` 停止全部终端
 
-**文件：** 修改 `src-main/main.ts:371-375`
+**文件：** 修改 `src-main/main.ts:376-380`（`exit_app`）**与** `src-main/main.ts:642-644`（`run_update` 的 `app.exit(0)` 前）——两条都是显式 `app.exit`，都会留下孤儿 PTY（索引 K17 / 规格 §7.5 已同步）
 
 - [ ] **步骤 1：编写失败的测试** —— 复用任务 5 的 `stopAll` 测试（已覆盖语义）；本任务补一条断言：`stopAll` 对**未运行**的配置不抛错（幂等）
 - [ ] **步骤 2：运行测试验证失败** —— `npx vitest run src-main/quick-launch.test.ts` → 新用例 FAIL
-- [ ] **步骤 3：实现** —— `stopAll` 内逐个 await 且对空表直接返回；`exit_app` 在 `await ps.stopGraceful(3)` **之后**插入 `await ql.stopAll(3)`
+- [ ] **步骤 3：实现** —— `stopAll` 内逐个 await 且对空表直接返回；`exit_app` 在 `await ps.stopGraceful(3)` **之后**插入 `await ql.stopAll(3)`；`run_update` 在 `app.exit(0)` 之前插入同一行（索引 K17）
 - [ ] **步骤 4：运行测试验证通过** —— PASS
-- [ ] **步骤 5：Commit** —— `git add src-main/main.ts src-main/quick-launch.ts src-main/quick-launch.test.ts && git commit -m "feat(main): exit_app 一并终止所有快捷启动终端"`
+- [ ] **步骤 5：Commit** —— `git add src-main/main.ts src-main/quick-launch.ts src-main/quick-launch.test.ts && git commit -m "feat(main): exit_app 一并终止所有快捷启动终端"`（提交信息逐字不变；`run_update` 的同一行属同一意图，见索引 K17）
 
 ---
 

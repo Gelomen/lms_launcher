@@ -9,13 +9,13 @@
 | # | 检查项 | 怎么验 | 预期 | ✓ |
 |---|---|---|---|---|
 | A1 | 工作区干净 | `git status --porcelain` | 无输出 | ☐ |
-| A2 | 插入点确认 | 读 `src-main/main.ts:371-375` | `await ql.stopAll(3)` 必须在 `await ps.stopGraceful(3)` **之后**、`app.exit(0)` **之前** | ☐ |
+| A2 | 插入点确认（**两处**，索引 K17） | 读 `src-main/main.ts:376-380`（`exit_app`）与 `:642-644`（`run_update`） | 两处都必须在既有 `await ps.stopGraceful(3)` **之后**、`app.exit(0)` **之前**插入 `await ql.stopAll(3)`。`app.exit` 不触发 `will-quit`（`main.ts:53-54`），conpty/cmd 是独立进程不会被父进程带走 → 漏一处就是孤儿 PTY（R3） | ☐ |
 
 ## B. 改动范围
 
 | # | 文件 | 动作 | 边界 | ✓ |
 |---|---|---|---|---|
-| B1 | `src-main/main.ts` | 修改 `exit_app` | 只加一行 await | ☐ |
+| B1 | `src-main/main.ts` | 修改 `exit_app`（`:376-380`）**与** `run_update`（`:642-644`） | 各只加一行 await；不动 `stopGpuStats()` / `ps.stopGraceful(3)` / `setTimeout(3000)` / `app.exit(0)` 本身 | ☐ |
 | B2 | `src-main/quick-launch.ts` | 修改 `stopAll` | 逐个 await；空表直接返回 | ☐ |
 | B3 | `src-main/quick-launch.test.ts` | 追加幂等用例 |  | ☐ |
 
@@ -25,6 +25,7 @@
 |---|---|---|---|
 | C1 | `async stopAll(timeoutSecs: number): Promise<void>` 对**未运行**的配置不抛错（幂等） | 计划 步骤 1 | ☐ |
 | C2 | `exit_app` 顺序：`stopGpuStats()` → `await ps.stopGraceful(3)` → `await ql.stopAll(3)` → `app.exit(0)` | 规格 §7.5 | ☐ |
+| C3 | `run_update` 顺序：… → `await ps.stopGraceful(3)` → `await ql.stopAll(3)` → `await setTimeout(3000)` → `app.exit(0)`（`stopAll` 在 `app.exit` 之前即可，放在 `ps.stopGraceful` 之后与 C2 同构） | 规格 §7.5（K17 扩展） | ☐ |
 
 ## D. TDD 步骤门
 
@@ -43,6 +44,7 @@
 | E2 | `stopAll` 对每个运行实例都调用 `stopGraceful(timeoutSecs)`（杀进程树，非只杀直接子进程） | 规格 §7.5 | ☐ |
 | E3 | `stopAll` 后 `states()` 为空 | 规格 §7.5 | ☐ |
 | E4 | 某个实例停止失败不得中断其余实例（逐个 await 且吞掉单点异常） | R3 | ☐ |
+| E5 | `run_update` 路径也停了终端：`git diff` 里 `:642` 之后确有 `await ql.stopAll(3)`，且在 `app.exit(0)` 之前。**不要求为 `run_update` 造测试**（它要 mock 计划任务 / 安装目录文件存在性，属既有未覆盖区），以 diff + 行号走查为证据 | K17 / R3 | ☐ |
 
 ## F. 本任务相关的硬约束
 
@@ -51,6 +53,7 @@
 | F1 | 不得把 `ql.stopAll` 放在 `app.exit(0)` 之后 | 进程来不及被杀 → 孤儿 PTY | ☐ |
 | F2 | 不改 `ps.stopGraceful(3)` 与 `stopGpuStats()`（G4） | llama-server / GPU 采样链路受影响 | ☐ |
 | F3 | 不新增「退出确认」之类交互 | 违反 G10 | ☐ |
+| F4 | `stopAll` 保持**串行**（计划 步骤 3 逐字「逐个 await」），不得改成 `Promise.all`。已知代价：退出耗时上界 = N ×（`timeoutSecs` + `FORCE_EXIT_WAIT_MS`=1s）≈ 每个实例 4s；`exit_app` 与 `run_update` 都串行付这个代价 | 并行化会改任务 5 已审的停止语义；真机若不可接受再回来改口径 | ☐ |
 
 ## G. 回归门
 
@@ -70,7 +73,7 @@
 ## I. 完成判据
 
 - [ ] D1-D4 先红后绿
-- [ ] E1-E4 有测试或真机证据
+- [ ] E1-E4 有测试或真机证据；E5 有 diff + 行号走查
 - [ ] G1-G3 通过（G3 输出记入 J）
 - [ ] H1-H2 完成
 

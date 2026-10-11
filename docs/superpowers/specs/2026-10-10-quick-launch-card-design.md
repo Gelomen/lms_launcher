@@ -188,7 +188,7 @@ pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo
 | 进程退出 | `ql-exit { configId, code }`；行按钮回落 `[启动]`；**页签保留**（用户决策） |
 | `[停止]` | **直接杀终端进程树**（沿用 llama-server 口径：终止 → 3s → `taskkill /T /F`）；**不关页签**（用户决策）——想只中断当前命令，用户在终端里按 Ctrl+C |
 | 页签 `[x]` | 该配置 `running \\|\\| stopping` 时禁用（tooltip「请先停止」）；否则关闭页签（连同 xterm 与历史） |
-| 应用退出 | `exit_app` 在既有 `await ps.stopGraceful(3)` 之后加 `await ql.stopAll(3)`，再 `app.exit(0)` |
+| 应用退出 | **所有显式 `app.exit(0)` 路径**都要在退出前停终端：`exit_app` 在既有 `await ps.stopGraceful(3)` 之后加 `await ql.stopAll(3)`，再 `app.exit(0)`；`run_update`（`main.ts:587-645`，同样 `await ps.stopGraceful(3)` → `app.exit(0)`）同样在 `app.exit(0)` 之前加 `await ql.stopAll(3)`。理由：`app.exit` 不触发 `will-quit`（`main.ts:53-54` 已记录），conpty/cmd 是**独立进程**、父进程退出不会带走它们 → 任一条退出路径漏掉就是孤儿 PTY（审查重点 R3）。`window-all-closed → app.quit()`（`main.ts:1191-1192`）是优雅路径、且窗口关闭在本应用一律被实现为「隐藏到托盘」（`:233` / `:468`），本期不在 `will-quit` 里加异步停止（见索引 K17） |
 
 ### 7.6 窗口重载
 
