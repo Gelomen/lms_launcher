@@ -57,7 +57,7 @@
 
 ### 任务 1：公共命名工具 `nextCopyName`
 
-**文件：** 创建 `src/util/copy-name.ts`；测试 `src/util/copy-name.test.ts`；修改 `src/modules/TemplateModule.vue`（第 73-80 行改为引用）
+**文件：** 创建 `src/util/copy-name.ts`；测试 `src/util/copy-name.test.ts`；修改 `src/modules/TemplateModule.vue`（第 70-80 行——含 70-72 三行「方案 A」注释——整体改为引用；注释随其描述的代码一起搬走，见 check 索引 K7）
 
 **接口：** `export function nextCopyName(base: string, taken: Set<string>): string`
 
