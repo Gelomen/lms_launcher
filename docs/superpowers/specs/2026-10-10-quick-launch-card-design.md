@@ -150,7 +150,7 @@ prebuilds/win32-x64/conpty/OpenConsole.exe       ← ConPTY 宿主
 ### 7.3 PTY 启动
 
 ```ts
-pty.spawn(exe, [], {
+pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo']，cmd/wsl = []
   name: 'xterm-256color',
   cols, rows,                       // 来自渲染端 fit 结果
   cwd: os.homedir(),                // 用户决策：用户主目录
@@ -161,6 +161,7 @@ pty.spawn(exe, [], {
 - `exe` 直接是终端本体：`pwsh.exe -NoLogo` / `powershell.exe -NoLogo` / `cmd.exe` / `wsl.exe`。**没有 v1 的 `-Command` 包装**。
 - **不传 `encoding`**：Windows 实现里 `encoding` 选项不受支持（`windowsTerminal.js` 会 warn），而底层 socket 是 `setEncoding('utf8')`，即 **net.Socket 的 StringDecoder，天然保证多字节字符跨 chunk 完整**。因此统一按 UTF-8 字符串处理。
 - 可执行程序类型：**不用 PTY**，走 `spawn(exe, [], { windowsHide: true, stdio: 'ignore' })`（无页签、输出丢弃）。
+  - **实现口径（索引 K13）**：生产侧复用 `src-main/process.ts` 的 `ProcessState`（**每个配置一个新实例**，不复用 `main.ts:59` 的 `ps` 单例——它只持有一个 child 与 `runningConfigId`）。`process.ts` 本期不可改，故按效果满足本条：其 `:32-36` 未显式写 `windowsHide`，Node ≥12 的默认值即 `true`（该文件 `:22` 注释亦写明「隐藏窗口」）；其 `stdio` 为 `["ignore","pipe","pipe"]`，因此适配器**必须** `takePipes()`（`:62`）后把 stdout/stderr 两路 `.resume()` 丢弃，否则管道写满会阻塞子进程——「输出丢弃」的意图不变。
 - 一配置一实例：运行中/停止中的配置再点启动 → 抛 `STATE:`。
 - 自动执行命令（用户决策）：PTY 起好后，**等第一批输出到达**（说明 shell 已就绪）再把 `cmd + '\r'` 写入；若 5s 内无任何输出，则超时兜底直接写入。
 
