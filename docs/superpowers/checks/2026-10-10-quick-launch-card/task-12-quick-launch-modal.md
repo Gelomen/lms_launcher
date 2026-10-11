@@ -71,6 +71,7 @@
 |---|---|---|---|
 | H1 | 暂存范围 | `git add src/modules/QuickLaunchModal.vue src/modules/QuickLaunchModal.test.ts` | ☐ |
 | H2 | 提交信息逐字 | `feat(module): 新建/编辑启动弹窗（类型二选一 + 终端探测 + 删除确认）` | ☐ |
+| H3 | **验收勾完整性（索引 K25）**：本表 A-I 不得有裸 `☐` 或 `- [ ]`；确实未满足的项写成 `☐（原因 + 去处）`。带附加列的段（如 zh / en）每一列都要落勾 | `node .superpowers/sdd/2026-10-10-quick-launch-card/tick-census.mjs` → 本表行必须显示 `裸☐=0` 且 `I段 -[ ]=0`（H2 已勾时普查整体退出码 0） | ☐ |
 
 ## I. 完成判据
 
