@@ -247,7 +247,7 @@ pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo
 ### 9.3 `TerminalTabView.vue`（新建）
 
 - props：`{ id: string; configId: string; label: string; closable: boolean; closeDisabled: boolean; register: (id: string, sink: (d: string) => void) => void; unregister: (id: string) => void; onInput: (id: string, data: string) => void; onResize: (id: string, cols: number, rows: number) => void }`（以实施时 App 的实际接口为准，保持单向数据流）。
-- 挂载时：新建 `Terminal({ scrollback: 5000, fontFamily: var(--font-mono), fontSize: 13 })` + `FitAddon` + `SearchAddon` + `WebLinksAddon(open_external)`，`open(el)`，注册数据 sink，`ResizeObserver` + `fit()` → `onResize`。
+- 挂载时：新建 `Terminal({ scrollback: 5000, fontFamily: 'Cascadia Code', Consolas, monospace（与 style.css:29 的 --font-mono 同值）, fontSize: 13 })`（**更正，索引 K23(1)**：原写 `fontFamily: var(--font-mono)` 在测量路径上不解析——xterm 5.5.0 的 `CharSizeService.ts:29-33` 优先选 `TextMetricsMeasureStrategy`，`:122` 把值拼成 canvas 的 `ctx.font = "13px var(--font-mono)"`，canvas 不解析 CSS 变量 → 无效值被忽略、格子按 canvas 默认字体量，而 DomRenderer 渲染时 CSS 变量会解析 → 网格与字形不一致。字面量栈必须与 `--font-mono` 逐字同值，两处改动要同步） + `FitAddon` + `SearchAddon` + `WebLinksAddon(open_external)`，`open(el)`，注册数据 sink，`ResizeObserver` + `fit()` → `onResize`。
 - `term.onData` → `onInput`（含 Ctrl+C 的 `\x03`）。
 - 键盘：`attachCustomKeyEventHandler` —— `Ctrl+Shift+C` 复制（有选中时）、`Ctrl+Shift+V` 粘贴、`Ctrl+C` **一律交给终端**（中断）；右键 = 粘贴。
 - 工具条：清空 + 查找（输入框 + 上/下 + 计数）。

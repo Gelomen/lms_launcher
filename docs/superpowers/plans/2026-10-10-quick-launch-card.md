@@ -351,7 +351,7 @@ it('运行中 closeDisabled=true 时 [x] 禁用（审查重点 3）', async () =
 ```
 
 - [ ] **步骤 2：运行测试验证失败** —— `npx vitest run src/modules/TerminalTabView.test.ts` → FAIL
-- [ ] **步骤 3：实现** —— `Terminal({ scrollback: 5000, fontSize: 13, fontFamily: 'var(--font-mono)' })` + `FitAddon` + `SearchAddon` + `WebLinksAddon((e, uri) => invoke('open_external', uri))`；`ResizeObserver`；工具条（清空 + 查找输入框 + 上/下 + 计数）；键盘处理按规格 §9.3；外壳复用 `.log-pane` / `.log-view` 的尺寸链
+- [ ] **步骤 3：实现** —— `Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace" })`（**更正**：原写 `'var(--font-mono)'` 在 xterm 的 canvas 测量路径上不解析，索引 K23(1)；字面量栈与 `style.css:29` 的 `--font-mono` 同值） + `FitAddon` + `SearchAddon` + `WebLinksAddon((e, uri) => invoke('open_external', uri))`；`ResizeObserver`；工具条（清空 + 查找输入框 + 上/下 + 计数）；键盘处理按规格 §9.3；外壳复用 `.log-pane` / `.log-view` 的尺寸链
 - [ ] **步骤 4：运行测试验证通过** —— 全 PASS
 - [ ] **步骤 5：Commit** —— `git add src/modules/TerminalTabView.vue src/modules/TerminalTabView.test.ts && git commit -m "feat(module): xterm 交互终端页签（输入/尺寸/查找/复制粘贴）"`
 
