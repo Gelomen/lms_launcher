@@ -296,9 +296,11 @@ it('ipc 模块导出终端相关封装', async () => {
 
 **文件：** 修改 `src/i18n.ts`、`src-main/i18n/dict.ts`
 
-**渲染端键：** `ql.title` / `ql.btn.new` / `ql.btn.copy` / `ql.btn.edit` / `ql.btn.start` / `ql.btn.stop` / `ql.btn.closeTab` / `ql.tab.closeBlocked` / `ql.empty.none` / `ql.invalid` / `ql.term.pwsh|powershell|cmd|wsl` / `ql.terminal.clear` / `ql.terminal.searchPlaceholder` / `ql.terminal.searchPrev|Next|Clear` / `ql.terminal.count` / `ql.modal.newTitle|editTitle|name|type|type.shell|type.exe|terminal|terminal.loading|cmd|exe|btn.pick|btn.save|btn.delete|delete.title|delete.message` / `ql.err.nameRequired|nameTaken|running` / `ql.dialog.filterExe` / `ql.log.exit|fail`
+**渲染端键：** `ql.title` / `ql.btn.new` / `ql.btn.copy` / `ql.btn.edit` / `ql.btn.start` / `ql.btn.stop` / `ql.btn.closeTab` / `ql.tab.closeBlocked` / `ql.empty.none` / `ql.invalid` / `ql.term.pwsh|powershell|cmd|wsl` / `ql.terminal.clear` / `ql.terminal.searchPlaceholder` / `ql.terminal.searchPrev|Next|Clear` / `ql.terminal.count` / `ql.modal.newTitle|editTitle|name|type|type.shell|type.exe|terminal|terminal.loading|cmd|exe|btn.pick|btn.save|btn.delete|delete.title|delete.message` / `ql.err.nameRequired|nameTaken|running` / `ql.log.exit|fail`（**更正**：原清单里的 `ql.dialog.filterExe` 已移到主进程键，见下，索引 K14）
 
-**主进程键：** `err.ql.nameRequired|nameDup|nameTooLong|typeInvalid|terminalMissing|cmdRequired|exeRequired|notFound|alreadyRunning|terminalGone|ptySpawn`
+**主进程键：** `err.ql.nameRequired|nameDup|nameTooLong|typeInvalid|terminalMissing|cmdRequired|exeRequired|notFound|alreadyRunning|terminalGone|ptySpawn` + `app.dialog.filterExe`（`ql_pick_exe` 的 `.exe` 过滤器名，与既有 `app.dialog.filterModel` / `app.dialog.filterJinja` 同组）
+
+> `ql_pick_exe` 无参数、对话框由**主进程**渲染（`main.ts:1110-1119`），过滤器名只能取主进程词典 → 原清单把它放在渲染端（`ql.dialog.filterExe`）是错的，已更正为 `app.dialog.filterExe`（索引 K14）。
 
 > `nameTooLong`（§5.3-1 的「≤64」分支）是任务 3 实现时补登记的：原清单漏了这条 spec 已要求的校验所需的键。YAML 与 id 格式两类错误**不新增键**，复用词典已有的 `err.config.yamlLoadFail` / `err.config.yamlEmpty` / `err.config.idFormat`（见 check 索引 K9）。
 

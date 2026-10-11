@@ -16,7 +16,7 @@
 | # | 文件 | 动作 | 边界 | ✓ |
 |---|---|---|---|---|
 | B1 | `src/i18n.ts` | 修改 | 只加 `ql.*` | ☐ |
-| B2 | `src-main/i18n/dict.ts` | 修改 | 只加 `err.ql.*` | ☐ |
+| B2 | `src-main/i18n/dict.ts` | 修改 | 加 `err.ql.*`（D1-D11）**与** `app.dialog.filterExe`（D12，索引 K14） | ☐ |
 | B3 | `src/i18n.test.ts` | 追加 1 条 |  | ☐ |
 
 ## C. 渲染端键（zh + en 都要有，逐条核对）
@@ -31,7 +31,7 @@
 | C6 | `ql.modal.terminal` / `ql.modal.terminal.loading` / `ql.modal.cmd` / `ql.modal.exe` | ☐ | ☐ | ☐ |
 | C7 | `ql.modal.btn.pick` / `ql.modal.btn.save` / `ql.modal.btn.delete` / `ql.modal.delete.title` / `ql.modal.delete.message` | ☐ | ☐ | ☐ |
 | C8 | `ql.err.nameRequired` / `ql.err.nameTaken` / `ql.err.running` | ☐ | ☐ | ☐ |
-| C9 | `ql.dialog.filterExe` | ☐ | ☐ | ☐ |
+| C9 | ~~`ql.dialog.filterExe`~~ **已作废**：对话框由主进程渲染（`ql_pick_exe` 无参数），键改为主进程词典的 `app.dialog.filterExe`（见 D12，索引 K14） | — | — | ☐（确认渲染端**不**加此键） |
 | C10 | `ql.log.exit` / `ql.log.fail` | ☐ | ☐ | ☐ |
 
 ## D. 主进程键（`err.ql.*`，zh + en 都要有）
@@ -49,6 +49,7 @@
 | D9 | `err.ql.terminalGone` | 启动前终端已不可用 | ☐ |
 | D10 | `err.ql.ptySpawn` | PTY spawn 失败 | ☐ |
 | D11 | `err.ql.nameTooLong` | §5.3-1 的「≤64」分支（任务 3 补登记，见索引 K9） | ☐ |
+| D12 | `app.dialog.filterExe` | `ql_pick_exe` 的 `.exe` 过滤器名（`main.ts:1116` 已在用，走常量映射）。zh/en 都要有，照既有 `app.dialog.filterModel`（dict.ts:281/:561）/ `app.dialog.filterJinja`（:282/:562）的措辞风格 | ☐ |
 
 > **占位符必须与调用点逐字一致**（`key-coverage.test.ts:44` 的 `CALL_WITH_PARAMS` 在调用点改回字面量 `t()` 后会做双向比对）。任务 3 已落地的调用点（`src-main/quick-launch-config.ts` 的 `QL_ERR`）使用的占位符：`nameTooLong` → `{max}`；`nameDup` → `{name}`；`typeInvalid` → `{type}`；`terminalMissing` → `{terminal}`；`notFound` → `{id}`；`nameRequired` / `cmdRequired` / `exeRequired` → 无占位符。
 > **任务 5 已落地的调用点**（`src-main/quick-launch.ts` 的 `QL_ERR`，索引 K11）：`terminalGone` → `{terminal}`；`ptySpawn` → `{exe}` `{err}`；`typeInvalid` → `{type}`；`notFound` → `{id}`；`alreadyRunning` / `exeRequired` → **无占位符**。另外该文件复用词典既有键 `err.proc.noChild`（无占位符）、`log.launcher.start.cmd`（`{cmd}`）、`log.app.exit`（`{code}`）——**不要**为它们新建 `err.ql.*` / `log.ql.*` 同义键。
@@ -91,7 +92,7 @@
 
 ## I. 完成判据
 
-- [ ] C1-C10、D1-D10 全部有中英两份
+- [ ] C1-C10（C9 已作废，只确认渲染端不加该键）、D1-D12 全部有中英两份
 - [ ] E2 先红、E4 后绿
 - [ ] G1-G3 通过
 - [ ] H1-H2 完成
