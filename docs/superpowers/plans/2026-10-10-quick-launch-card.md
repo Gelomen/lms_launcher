@@ -294,7 +294,7 @@ it('ipc 模块导出终端相关封装', async () => {
 
 ### 任务 8：i18n 词条（中英）
 
-**文件：** 修改 `src/i18n.ts`、`src-main/i18n/dict.ts`
+**文件：** 修改 `src-main/i18n/dict.ts`（**唯一词典真源**：`src/i18n.ts:3` 直接 import 它，渲染端没有第二份词典——原清单写「修改 `src/i18n.ts`」是错的，索引 K20）+ 按 K8 把三处「常量映射传 key」的调用点改回字面量 `t()`：`src-main/quick-launch-config.ts`（9 处 `invalidError(QL_ERR.*)`）、`src-main/quick-launch.ts`（6 处）、`src-main/main.ts`（2 处）
 
 **渲染端键：** `ql.title` / `ql.btn.new` / `ql.btn.copy` / `ql.btn.edit` / `ql.btn.start` / `ql.btn.stop` / `ql.btn.closeTab` / `ql.tab.closeBlocked` / `ql.empty.none` / `ql.invalid` / `ql.term.pwsh|powershell|cmd|wsl` / `ql.terminal.clear` / `ql.terminal.searchPlaceholder` / `ql.terminal.searchPrev|Next|Clear` / `ql.terminal.count` / `ql.modal.newTitle|editTitle|name|type|type.shell|type.exe|terminal|terminal.loading|cmd|exe|btn.pick|btn.save|btn.delete|delete.title|delete.message` / `ql.err.nameRequired|nameTaken|running` / `ql.log.exit|fail`（**更正**：原清单里的 `ql.dialog.filterExe` 已移到主进程键，见下，索引 K14）
 

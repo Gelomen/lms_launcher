@@ -15,9 +15,9 @@
 
 | # | 文件 | 动作 | 边界 | ✓ |
 |---|---|---|---|---|
-| B1 | `src/i18n.ts` | 修改 | 只加 `ql.*` | ☐ |
-| B2 | `src-main/i18n/dict.ts` | 修改 | 加 `err.ql.*`（D1-D11）**与** `app.dialog.filterExe`（D12，索引 K14） | ☐ |
-| B3 | `src/i18n.test.ts` | 追加 1 条 |  | ☐ |
+| B1 | `src-main/i18n/dict.ts` | 修改 | **唯一词典真源**：`ql.*`（C 段）+ `err.ql.*`（D1-D11）+ `app.dialog.filterExe`（D12）都加在这里，zh 与 en 两份。渲染端没有第二份词典——`src/i18n.ts:3` 直接 `import { dict } from ../src-main/i18n/dict`，`:30-36` 的 `t()` 读的就是它（索引 K20，原清单「修改 `src/i18n.ts`」作废） | ☐ |
+| B2 | `src/i18n.test.ts` | 追加用例 | E1/E5 的渲染端断言 | ☐ |
+| B3 | `src-main/quick-launch-config.ts`（9 处 `invalidError(QL_ERR.*)`）、`src-main/quick-launch.ts`（6 处 `t(QL_ERR.*)`）、`src-main/main.ts`（2 处 `t(QL_IPC_ERR.*)` / `t(QL_IPC_LABEL.*)`） | 修改调用点 | **按 K8 收尾**：词典落地后把这些调用点改成**字面量** `t('err.ql.xxx', {...})`，让它们进入 `key-coverage.test.ts:39-41` 的 `KEY_CALL` 范围（含占位符双向比对），并删掉不再被引用的 `QL_ERR` / `QL_IPC_ERR` / `QL_IPC_LABEL` 映射。除此之外不改这三个文件的任何行为 | ☐ |
 
 ## C. 渲染端键（zh + en 都要有，逐条核对）
 
@@ -64,7 +64,7 @@
 | E3 | 步骤 3：中英双语补齐 | — | C/D 全部有值 | ☐ |
 | E4 | 步骤 4：验证通过 | `npx vitest run src-main/i18n src/i18n.test.ts` | 全 PASS | ☐ |
 | E5 | 补一条**枚举断言**（照仓库既有做法 `src-main/i18n/err-keys.ts` + `dict.test.ts:63-68`）：对 `TerminalId` 的四个值逐个断言 zh/en 词典都有 `ql.term.<id>` 且不是键名本身 | `npx vitest run src/i18n.test.ts` | 全 PASS。`key-coverage` 的 `walk()` 排除 `.test.ts`，所以**测试里用动态 key 是安全的**——它正是补上「调用点扫不到」缺口 | ☐ |
-| E6 | **钉住三处「常量映射传 key」的取值**（任务 6 审查次要 #4，索引 K15）：断言 `src-main/quick-launch-config.ts` 的 `QL_ERR`、`src-main/quick-launch.ts` 的 `QL_ERR`、`src-main/main.ts` 的 `QL_IPC_ERR` + `QL_IPC_LABEL` 里每个 key 在 zh 与 en 词典里都存在且不是键名本身 | `npx vitest run src-main/i18n/dict.test.ts` | 全 PASS。理由：`key-coverage.test.ts:39-41` 只匹配字面量 `t('…')`、`walk()` 又排除 `.test.ts`，这些 key 永久游离在漂移门外——写错一个字母只有真机才会暴露 | ☐ |
+| E6 | **确认「常量映射传 key」已清零**（K8 收尾 / 索引 K20；原「钉住映射取值」的写法作废——调用点改回字面量后，`key-coverage` 本身就覆盖存在性与占位符一致性，比枚举断言更强）：`grep -n "t\\(QL_ERR\\." src-main` 与 `grep -n "t\\(QL_IPC" src-main` 的命中数必须为 **0**；`QL_ERR` / `QL_IPC_ERR` / `QL_IPC_LABEL` 若已无引用必须删除（不留死代码）。把 grep 命令与真实计数贴进 J 段 | `npx vitest run src-main/i18n` | 全 PASS（字面量调用点全部命中词典） | ☐ |
 | E7 | **修掉任务 6 留下的「断未翻译 key 文本」用例**（索引 K16(2)）：`src-main/ipc-ql.test.ts:373-374` 三条断言现在依赖「缺键返回 key 本身」，词典落地后必红。改法：测试里 `import { t } from './i18n'`，断 `t('err.ql.notFound', { id: key })` 拼上 `VALIDATION: ` 前缀（`key-coverage.test.ts:24` 的 `walk()` 排除 `.test.ts`，测试里写字面量 key 不触门） | `npx vitest run src-main/ipc-ql.test.ts` | 全 PASS（词典落地前后都绿） | ☐ |
 
 ## F. 本任务相关的硬约束
@@ -96,7 +96,7 @@
 
 - [ ] C1-C10（C9 已作废，只确认渲染端不加该键）、D1-D12 全部有中英两份
 - [ ] E2 先红、E4 后绿
-- [ ] E6 的常量映射 key 枚举断言落地（K15）
+- [ ] E6：三处常量映射调用点已改回字面量、映射已删、grep 命中 0（K8 收尾 / K20）
 - [ ] E7 修掉 `ipc-ql.test.ts` 断未翻译 key 文本的三条用例（K16(2)）
 - [ ] G1-G3 通过
 - [ ] H1-H2 完成
