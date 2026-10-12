@@ -489,7 +489,7 @@ export const dict = {
     //   ql.log.exit->{name}, ql.log.fail->{name}{msg}.
     'ql.title': 'Quick Launch',
     'ql.empty.none': 'No quick launch entries',
-    'ql.invalid': '{n} invalid entries skipped',
+    'ql.invalid': 'invalid entries skipped: {n}',
     'ql.tab.closeBlocked': 'Terminal is running. Stop it before closing.',
     'ql.btn.new': 'New entry',
     'ql.btn.copy': 'Copy',
