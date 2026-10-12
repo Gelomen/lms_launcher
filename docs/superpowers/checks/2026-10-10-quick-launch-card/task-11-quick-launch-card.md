@@ -60,6 +60,7 @@
 | F4 | 卡片标题「快捷启动」+ 新建图标按钮（`faFileCirclePlus` / `.icon-btn--sm`） | 规格 §4 | ☐ |
 | F5 | 全部文案走 `t()` | G6 | ☐ |
 | F6 | 不做拖动排序 / 命令历史 / 工作目录字段 | G10 | ☐ |
+| F7 | **弹窗归卡片持有（索引 K29）**：本任务只留本地状态 `modalOpen`/`editingId`（新建/编辑按钮写它），**不 import** `QuickLaunchModal`（任务 12 才存在，挂载接线在任务 12 的 B3/E9）。卡片 emits 仍是 `start/stop/changed`，**不加 `new`/`edit` 事件**（规格 §9.4 的 emits 清单） | 索引 K29 / 规格 §9.4 | ☐ |
 
 ## G. 回归门
 
