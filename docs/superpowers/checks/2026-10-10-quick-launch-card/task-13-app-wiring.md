@@ -28,7 +28,7 @@
 | C2 | `terminalSinks: Map<string, (d: string) => void>`；`TerminalTabView` 挂载注册、卸载注销 | 规格 §9.2 | ☐ |
 | C3 | `onQlData` 按 `tabId` 派发；**未知 tabId 忽略**（防竞态） | 规格 §9.2 | ☐ |
 | C4 | `logBuckets` 只容纳 `launcher` / `llama-server`（v1「动态桶」作废） | 规格 §9.2 | ☐ |
-| C5 | 卡片顺序：`stack → QuickLaunch（第 3 列）→ GPU（第 4 列）` | 规格 §4 / §9.2 | ☐ |
+| C5 | **卡片根节点类名 = `section.module.module-quick`（任务 11 已落地，索引 K30）**；四列布局按规格 §9.1 排卡片顺序：`stack → QuickLaunch（第 3 列）→ GPU（第 4 列）` | 规格 §4 / §9.2 | ☐ |
 | C6 | **激活状态归 App（索引 K27(1)）**：`App` 持 `activeTabId`，以 `v-model:active` 传给 `LogPanel`；启动/新建终端页签后置为 `qlTabId(configId)`（规格 §9.2「自动激活」的机制）；`LogPanel` 点击页签冒泡 `update:active` 回写。**必须真回写**：受控下 `LogPanel` 不越权改激活态，摘掉当前激活页签时它只冒泡 `update:active(第一个 id)`（任务 10 表 E10 受控段只断到「冒泡」）——`App` 不接就留空白面板 | 规格 §9.2 / 索引 K27(1) / 任务 10 表 E10 | ☐ |
 
 ## D. TDD 步骤门
