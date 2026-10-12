@@ -218,6 +218,15 @@ Ruling: K25 —— 验收通过后必须把该任务表 A-I 每行的 ☐ 改成
 【防复发机制】(1) 普查脚本 .superpowers/sdd/2026-10-10-quick-launch-card/tick-census.mjs：逐表统计 ☑ / 裸 ☐ / 显式未勾 / I 段 - [ ]，规则是「H2 已勾（= 已提交）的表不得有裸 ☐ 或 - [ ]」，退出码非 0 即拦下；实测当前 1-9 全过、10-14 未提交所以不拦。(2) 任务 10-14 五张表各加一行 H3 勾完整性门，把普查写进提交门本身——不靠我记得。(3) 验收顺序固定为：跑门 → 跑普查落勾 → 才 git add/commit（勾在提交之前，不在之后补）。(4) K25 已登记规则本身。commit：普查脚本 + H3 行。
 
 本次我自己踩的坑（已纠正，记录以免重犯）：第一版补勾脚本把整行按 | 重排，导致（a）原文里的字面 § 被误转成 \|（任务 7 G3 的「规格 §13.2」），（b）J 段同 id 行（任务 7 G3 / 任务 9 A1）的证据单元格被覆盖。已 git checkout 回退重做：只替换最后一个 | 之间的内容，其余字节原样保留；改完逐表跑列数自检 + 抽样核对 § 与 J 段未被污染。教训：改 check 表只能定点改目标单元格，不能整行重建。
+【恢复 · 2026-10-12】用户说「继续任务」。起点核对：分支 feat/quick-launch、HEAD 5ca9cb1、工作区干净；基线复跑 TerminalTabView 22 / LogTabView+LogPanel+App 80 / i18n 25 / tsc exit 0 —— 全绿，起点干净。
+
+Task 10: 派单前先做取证并定口径 K26（docs 先行，commits b7bffbe / 1ae9e07 / 5ca9cb1）：
+Task 10: Ruling: K26(1) —— LogPanel 的 tabs 改为**可选** + 缺省由 LOG_TABS 生成两个 text 页签。依据：计划原写 tabs: LogTabItem[]（必填）与任务 10 表 B4「既有用例不改」互斥；实测 App.vue:373 只传 :buckets、LogPanel.test.ts 有 7 处 mount 只传 buckets（:20/:63/:81/:103/:127/:159/:168），而 App.vue 属任务 13。必填的后果：任务 10 一落地应用就失去日志面板，且 7 条既有用例被迫改夹具。代价：任务 13 之前存在「缺省路径」这条临时兼容层，任务 13 必须显式传 tabs（已写进 K26）。
+Task 10: Ruling: K26(2) —— 截断职责在构造方（任务 13 用 truncateByWidth(fullLabel, 16) 生成 label），LogPanel 只渲染 label 并在 label !== fullLabel 时挂 title=fullLabel，不得二次截断。依据：LaunchBar.vue:93 的 grace=2 tooltip 既有口径 + 两处预算会互相抵消。新增任务 10 表 E7 行钉这个行为。
+Task 10: Ruling: K26(3) —— 页签文案不从 TerminalTabView 的 data-tab-* 反取（M4 落地）。
+Task 10: Ruling: K26(4) —— 两种页签一律 v-show 保活，terminal 页签不得 v-if。依据：TerminalTabView.vue:169-178 卸载即 unregister + observer.disconnect + term.dispose()，v-if 等于「切页签杀终端」。新增任务 10 表 E8（断切换过程 dispose/unregister 未被调用）与 F7 行。
+Task 10: M3 决定：TerminalTabView 的内联 overflow: hidden 本任务**不收进 style.css**（不改该文件；写进共享 .log-view 会影响文本日志页）。M5：xterm.css 仍由叶子组件导入，本任务只确认仍被加载。M6：不加防抖、不动 fitCalls===3。
+Task 10: 已派单（brief 5694 字符：四文件范围、C1-C4 按 K26 更正、6+1 条用例、E1-E8/F1-F7 逐条、三条门 + 额外 App.test.ts 48 passed 作为 K26(1) 兼容性证据、三处变异（v-if→E8 红 / 去 closeDisabled→E3 红 / 无条件 title→E7 红）、明确不做与「范围外文件先停下报告」）。
 索引新增 M 组（commit 5afbb71）：把 45 条 minor (deferred) 里**会被任务 10-14 触到或放大**的 16 条路由到对应任务（M1-M16，含落点与处置要求），其余 29 条留在本账本交最终整分支审查。派任务 10-14 时把对应 M 行原样贴进简报。
 流程事故（我的提交范围）：.gitignore 的 !.superpowers/ 与 !.superpowers/** 是**用户本人**改的（我先前误记成实现者所为，已更正）。结果我的 docs 提交 a7be5fb 把 .gitignore + 43 个 .superpowers/ 文件一起带进去了（9105 行）。已 git reset --soft + restore --staged 拆成两半：5afbb71 只含 00-index.md；.gitignore 与 .superpowers/ 回到未跟踪/未暂存，等用户决定是否入仓。教训：提交前必须看 git show --stat 的实际文件数，不能只看自己 add 的路径。
 
