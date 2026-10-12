@@ -207,9 +207,9 @@ Task 9: Ruling: K24(1) —— fit 默认不强制重报；「同一页签再次�
 Task 9: Ruling: K24(2) —— 接受一处测试强度边界：resultIndex<0 钳位删掉后 22 全绿（文档哨兵就是 -1，-1+1=0），用例只能钉「不产出负数/NaN」；不为此喂 -2（API 永不产生的输入 = 虚构契约）。钳位作为防御保留，边界如实登记。
 Task 9: complete (commits 151046e + 03b031e 代码 / 41e04a2 + 49df85c + 0ff8763 + c898f4b 文档；fix rounds 2/5；TerminalTabView.test.ts 22 用例)
 
-【停线点 · 当前（2026-10-12 16:4x）】任务 10 已验收并提交（代码 e351a9b）。工作区在 docs 提交后应干净，HEAD 见 git log。
-恢复时第一件事：派任务 11（QuickLaunch.vue 卡片）。简报必须带：(1) M2 —— 顺手修 dict.ts:492 的 en `ql.invalid` 语法（invalid entries skipped: {n}）；(2) 卡片 props/emits 以规格 §9.4 为准（`states` / `start/stop/changed`），列表行「复制/编辑/启动/停止」与长名 tooltip 沿用 truncateByWidth 预算 30；(3) 任务 10 已落地的页签接口（`LogTabItem` / `qlTabId` / `QL_TAB_PREFIX`）——卡片**不直接**碰页签，只发 start/stop，页签由任务 13 的 App 接线建；(4) 检测顺序 powershell/cmd/pwsh/wsl 在渲染端排序（M1）。
-仍有效的跨任务待办：任务 13 按 K27(1) 用 v-model:active 驱动「自动激活」并**必须把 update:active 写回**（任务 13 表 C6 已钉）；按 K24(1) 重启路径显式 `fit(true)`；任务 14 真机门（含页签横向滚动外观 = 硬门 8、两处 [x] 的 UI 复核 M15、M17 嵌套 button 的键盘可达性、任务 6 D6b 与任务 7 G3 的退出实测）。
+【停线点 · 当前（2026-10-12 17:2x）】任务 11 已验收并提交（代码 381690a，表 35 勾、普查退出码 0）。docs 提交后工作区应干净。
+恢复时第一件事：派任务 12（QuickLaunchModal.vue 弹窗）。简报必须带：(1) 弹窗由**卡片持有**（K29）——本任务除新建弹窗外，还要在 QuickLaunch.vue 内挂载接线（任务 12 表 B3）并新增 E9 集成断言（新建/编辑打开回填、saved/deleted 刷新并冒泡 changed、close 只关窗）；(2) M1 —— 终端下拉顺序 powershell/cmd/pwsh/wsl 来自主进程（quick-launch-terminals.ts:107），**要 pwsh 优先就在渲染端排序**，不改主进程（K15）；(3) 复用 TemplateModal.vue 的遮罩/头部/footer 类名与 Dropdown、ConfirmDialog；(4) 删除走 ql_delete、exe 走 ql_pick_exe；(5) 卡片根类名 module-quick 已定（K30），不得改名。
+仍有效的跨任务待办：任务 13 按 K27(1) 用 v-model:active 驱动「自动激活」并**必须把 update:active 写回**（任务 13 表 C6 已钉）；按 K24(1) 重启路径显式 `fit(true)`；读 App.test.ts:33-34 的捕获数组（M9）；任务 14 真机门（页签横向滚动外观 = 硬门 8、两处 [x] 的 UI 复核 M15、M17 嵌套 button 键盘可达性、任务 6 D6b 与任务 7 G3 的退出实测）。
 【验收勾缺失 · 我的流程缺陷】用户指出「从任务 5 起就没有勾选」。实测确认：任务 1-4 的 A-I 全勾；任务 5-9 只有 H/I 部分勾，A-G 行 173 行 + I 段清单 16 项全是 ☐ —— 我从任务 5 起改成「把验收证据追加到 J 段」，就没有回落勾。证据一直在 J 段，但 AGENTS.md 明说「表里的勾是我验收用的」，J 段不能替代勾。
 已逐行补齐（commit 4de6e3b）：任务 5 勾 41、任务 6 勾 40、任务 7 勾 28、任务 8 勾 56（含 C 段 zh/en 两个附加列各 9/8 处）、任务 9 勾 40；三处**故意保持未勾并写明去处**：任务 5 H3（pnpm-lock.yaml 处置，本任务不做）、任务 6 D6b 与任务 7 G3（真机门，K12/K19）。
 Ruling: K25 —— 验收通过后必须把该任务表 A-I 每行的 ☐ 改成 ☑；未满足的行写成 ☐（原因 + 去处）；带附加列的表每一列都要落勾；J 段是证据不是勾。
@@ -257,6 +257,9 @@ Task 11: Ruling: K30 —— (1) stopping 占位符 = 半角三点 ...（不是 U
 Task 11: Ruling: 测试强度边界（K24(2)/K27(4) 先例，实现者提的 3 条我全部接受、不扩范围）：ql_list 的 catch → .error-text 无用例（计划的 6 条里没有）；F7 的 modalOpen/editingId 只写不读、无断言（任务 12 的 E9 才钉）；nameOf 的 id 回退是沿用模板卡的防御冗余。
 Task 11: minor (deferred): 复制后 emit changed 但不重拉 ql_list（K28(1) 的必然取舍：重拉即回到文件序、E5 当场失效）→ 重新加载后复制项在末尾，与模板卡既有行为一致；最终整分支审查时若用户觉得别扭再议。
 Task 11: fix round 1/5 已派（只改 stopping 占位符 U+2026 → 半角三点；提醒了别误伤 truncateByWidth 的 U+2026；变异：改回 U+2026 → E4 红）。
+Task 11: fix round 1 验收（我的复跑）：QuickLaunch.vue SHA 672cf3a76fe2 与实现者一致；U+2026 只剩 :103（截断说明注释）与 test :73/74/76/77/93（E2/E3 截断断言）——未误伤；G1 10 passed / npm test 46 files 782 passed / tsc exit 0；我的变异（半角→U+2026）= 1 红 E4，还原 SHA 一致。实现者多改了两处纯注释（test:99/:123 同一口径），接受。
+Task 11: 用例名逐条核对（7 条与简报一致）：empty_list_renders_empty_state_text / row_name_is_truncated_to_budget_30_and_long_name_carries_full_tooltip / emoji_long_name_is_not_split_at_surrogate_pair / start_stop_button_three_states_by_states_prop / copy_uses_nextCopyName_and_inserts_locally_right_after_source / invalid_ids_render_count_hint / row_action_buttons_order_is_copy_edit_start_stop。E5 同时断 saves[0].id===null、名字来自 nextCopyName（重名递增 copy 2）、本地序 [a, 新行, b]、冒泡 changed。
+Task 11: complete (commits 381690a 代码 / af5b53f + 6c426ce + b331618 + a4dd3ca + 96d2d7d + 92cb87b + 本次 docs 文档；fix rounds 1/5；QuickLaunch.test.ts 7 用例；表内 35 勾、裸☐=0、普查退出码 0)
 索引新增 M 组（commit 5afbb71）：把 45 条 minor (deferred) 里**会被任务 10-14 触到或放大**的 16 条路由到对应任务（M1-M16，含落点与处置要求），其余 29 条留在本账本交最终整分支审查。派任务 10-14 时把对应 M 行原样贴进简报。
 流程事故（我的提交范围）：.gitignore 的 !.superpowers/ 与 !.superpowers/** 是**用户本人**改的（我先前误记成实现者所为，已更正）。结果我的 docs 提交 a7be5fb 把 .gitignore + 43 个 .superpowers/ 文件一起带进去了（9105 行）。已 git reset --soft + restore --staged 拆成两半：5afbb71 只含 00-index.md；.gitignore 与 .superpowers/ 回到未跟踪/未暂存，等用户决定是否入仓。教训：提交前必须看 git show --stat 的实际文件数，不能只看自己 add 的路径。
 
