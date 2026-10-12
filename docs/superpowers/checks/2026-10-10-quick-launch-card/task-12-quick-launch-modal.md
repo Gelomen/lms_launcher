@@ -24,7 +24,7 @@
 |---|---|---|
 | C1 | props：`{ open: boolean; id: string \| null; entry: QuickLaunchEntry \| null }`。**`id` 必须可为 `null`**（索引 K31(1)）：本表 E8 要求「新建态 `id` 传 `null`」，卡片侧 `editingId` 就是 `string \| null`（`QuickLaunch.vue:42`）——计划 :422 原写 `id: string` 与 E8 自相矛盾，已更正（出处：本表 E8 / `QuickLaunch.vue:42` / 索引 K31(1)） | ☐ |
 | C2 | emits：`{ saved: []; deleted: [id: string]; close: [] }` | ☐ |
-| C3 | invoke：`ql_terminals`（`open` 变 true 时拉取，`main.ts:1104` → `TerminalInfo[] {id, path}`，`quick-launch-terminals.ts:17-20`）、`ql_save`（`main.ts:1095`，返回 `string`：空串 = 成功）、`ql_delete`（`main.ts:1100`，不存在 → 抛 `VALIDATION:`）、`ql_pick_exe`（`main.ts:1139` → `string \| null`，取消 = `null`不改表单）。**保存按钮必须单飞**（索引 K14(2)：`ql_save(id=null)` 重复点击会生成两条新配置；`saving` 标志 + `:disabled`，与 `TemplateModal.vue:442` 同构）（出处：规格 \|8 / 索引 K14(2)） | ☐ |
+| C3 | invoke：`ql_terminals`（`open` 变 true 时拉取，`main.ts:1104` → `TerminalInfo[] {id, path}`，`quick-launch-terminals.ts:17-20`）、`ql_save`（`main.ts:1095-1098` + `quick-launch-config.ts:123-141`：**成功 = resolve 最终 id；失败 = reject，消息带 `VALIDATION:`/`YAML:` 前缀**。没有「空串 = 成功」这条路径，`STATE:` 也不在保存路径上——本行原描述有误，索引 K32(1) 已更正）、`ql_delete`（`main.ts:1100`，不存在 → 抛 `VALIDATION:`）、`ql_pick_exe`（`main.ts:1139` → `string \| null`，取消 = `null`不改表单）。**保存按钮必须单飞**（索引 K14(2)：`ql_save(id=null)` 重复点击会生成两条新配置；`saving` 标志 + `:disabled`，与 `TemplateModal.vue:442` 同构）（出处：规格 §8 / 索引 K14(2) / K32(1)） | ☐ |
 
 ## D. TDD 步骤门
 
@@ -43,7 +43,7 @@
 | E2 | 切到「可执行程序」→ 隐藏终端与命令，显示 exe 路径 + 选择按钮 | 计划 步骤 1 | ☐ |
 | E3 | 终端下拉来自 `ql_terminals`；**加载中禁用**并用 `placeholder = t('ql.modal.terminal.loading')`（`Dropdown.vue:22-24` 支持 `disabled`/`placeholder`）。**顺序不重排**：按主进程返回序 powershell/cmd/pwsh/wsl（`quick-launch-terminals.ts:107-113`），预选第一项可用；标签取 `ql.term.*`（`dict.ts:158-161`/`:500-503`）。**M1 关闭**（索引 K31(3)：规格与计划都没要求 pwsh 优先，要改先改规格 §6.1） | 规格 §9.4 / §6.1 / 索引 K31(3) | ☐ |
 | E4 | 名字为空 → 保存被拦下并显示错误文案（`ql.err.nameRequired`） | 规格 §5.3-1 | ☐ |
-| E5 | 主进程返回 `VALIDATION:` 重名 → 错误区显示**主进程返回的文案**（`errMsg(e)`，即 `err.ql.nameDup` = 「名字「X」已存在」，`dict.ts:310`/`:652`）且**不关窗、不冒泡 `saved`**。**不在渲染端把 `VALIDATION:` 映射成 `ql.err.nameTaken`**（索引 K31(2)：主进程文案带名字、与 `TemplateModal` 错误区口径一致；`ql.err.nameTaken` 因此未被引用，登记为冗余键不删——无 unused-key 门，删它要同步任务 8 表 C8） | 规格 §5.3-2 / 索引 K31(2) | ☐ |
+| E5 | 主进程 reject 且消息带 `VALIDATION:`（重名）→ 错误区显示**主进程返回的文案**（`errMsg(e)`，即 `err.ql.nameDup` = 「名字「X」已存在」，`dict.ts:310`/`:652`）且**不关窗、不冒泡 `saved`**。**不在渲染端把 `VALIDATION:` 映射成 `ql.err.nameTaken`**（索引 K31(2)：主进程文案带名字、与 `TemplateModal` 错误区口径一致；`ql.err.nameTaken` 因此未被引用，登记为冗余键不删——无 unused-key 门，删它要同步任务 8 表 C8） | 规格 §5.3-2 / 索引 K31(2) | ☐ |
 | E6 | 仅编辑态显示删除按钮；删除需 `ConfirmDialog` 二次确认 | 规格 §9.4 | ☐ |
 | E7 | 保存成功 → emit `saved` 并关窗，父组件负责刷新列表 | 计划 emits | ☐ |
 | E8 | 新建态 `id` 传 `null`（由主进程生成 `ql` 前缀 id） | 规格 §5.4 | ☐ |
@@ -86,5 +86,21 @@
 
 | 步骤 | 命令 | 实际输出（摘要） | 结论 |
 |---|---|---|---|
-| D2 |  |  |  |
-| D4 |  |  |  |
+| A1 | `git status --porcelain -uall` · `git rev-parse --short HEAD` | 简报写 HEAD = 8b79057，实测 **84fe0b9**（其后只有一笔 docs：84fe0b9 记 K31 三条口径与任务 11 完成，代码状态与简报一致）；工作区只有未跟踪的 task-12-brief.md（简报本身） | 起点干净（唯一未跟踪项就是简报） |
+| D1 | 新建 src/modules/QuickLaunchModal.test.ts | 436 行 / 9 条用例（invoke 全 mock；第 9 条挂卡片，见 B3） | 用例落盘 |
+| D2 | `npx vitest run src/modules/QuickLaunchModal.test.ts` | `Error: Failed to resolve import "./QuickLaunchModal.vue" … File: …/QuickLaunchModal.test.ts:9:29` · `Test Files 1 failed (1)` · `Tests no tests` · exit 1 | 先红（组件不存在；与任务 9 / 任务 11 的 D2 同形，行为性的红由下面六次变异提供） |
+| D3 | 新建 src/modules/QuickLaunchModal.vue（350 行）+ 改 src/modules/QuickLaunch.vue（挂载接线，改后 181 行，`git diff --numstat` = 16 插入 / 2 删除，那 2 行是任务 11 留下的「弹窗待落地」注释） | 外壳类名照抄 TemplateModal（modal-overlay / box / head / body / actions / modal-save / btn-delete），类型与终端走 Dropdown、删除走 ConfirmDialog；`:110` 的 open 监视 = fill() + loadTerminals() | 实现完成 |
+| D4 | `npx vitest run src/modules/QuickLaunchModal.test.ts` | `✓ src/modules/QuickLaunchModal.test.ts (9 tests) 99ms` · `Test Files 1 passed (1)` · `Tests 9 passed (9)` · exit 0 | 后绿 |
+| G1 | `npx vitest run src/modules/QuickLaunchModal.test.ts src/modules/QuickLaunch.test.ts src/modules/TemplateModal.test.ts` | `✓ QuickLaunch.test.ts (7 tests)` · `✓ QuickLaunchModal.test.ts (9 tests)` · `✓ TemplateModal.test.ts (62 tests)` · `Test Files 3 passed (3)` · `Tests 78 passed (78)` · exit 0 | 通过；卡片 7 条一字不改仍绿（git diff 不含 QuickLaunch.test.ts） |
+| G2 | `npx vitest run src-main/i18n src/i18n.test.ts`（含本表 G2 的 `src-main/i18n`，另加渲染端 i18n 门） | index 3 · no-hardcoded 2 · key-coverage 2 · dict 11 · i18n 7 → `Test Files 5 passed (5)` · `Tests 25 passed (25)` · exit 0 | 通过；未新增键（`git diff --name-only -- src-main/i18n/dict.ts` 输出为空） |
+| G3 | `git diff --name-only` · `git status --porcelain -uall` · `git diff --numstat` · `git diff --name-only -- src-main/i18n/dict.ts src/style.css src/App.vue` | 跑 G3 时（填 J 段之前）跟踪文件只有 `src/modules/QuickLaunch.vue`（B3，numstat 16/2）；未跟踪新增 = `src/modules/QuickLaunchModal.vue` / `.test.ts`（B1/B2）+ 本报告 + 起点就在的 brief；最后一条命令输出为空。填完本表 J 段后 `git diff --name-only` 另含本表（18/2 = 执行记录，前例见任务 11 表 J 段 G3 行） | 代码改动 = B1-B3，无越界；未碰 App.vue / style.css / src-main / LogPanel·TerminalTabView；`QuickLaunch.test.ts` 一字未改（`git diff -- src/modules/QuickLaunch.test.ts` 输出为空） |
+| 额外-1 | `npm test` | `Test Files 47 passed (47)` · `Tests 791 passed (791)` · exit 0 | 基线 46 files / 782 tests 之上 +1 文件 / +9 用例，无减少 |
+| 额外-2 | `npx tsc -p tsconfig.main.json --noEmit` | `tsc exit=0` | 通过 |
+| 变异 ① | 删 `QuickLaunchModal.vue:124` 的 `if (saving.value) return;`（保存单飞守卫，索引 K14(2)） | `× save_success_emits_saved_and_closes` · `Tests 1 failed \| 8 passed (9)` | E7 有牙（恰 1 红：连点两次发了两次 ql_save） |
+| 变异 ② | 删终端 Dropdown 的 `:disabled="terminalsLoading"` 与 `:placeholder=…`（:192-193） | `× terminal_options_come_from_ql_terminals_and_are_disabled_while_loading` · `Tests 1 failed \| 8 passed (9)` | E3 有牙（恰 1 红） |
+| 变异 ③ | `onDelete()` 改为直接 `void doDelete()`（:145，不开 ConfirmDialog） | `× delete_button_only_in_edit_mode_and_requires_confirm_dialog` · `× card_mounts_modal_and_refreshes_on_saved_deleted` · `Tests 2 failed \| 7 passed (9)` | E6 有牙（E6 + E9 两条红：卡片用例也走删除确认路径） |
+| 变异 ④ | 卡片不接 saved：`QuickLaunch.vue:179` 的 `@saved="onModalSaved"` → `@saved="() => { modalOpen = false; }"`（不重拉列表） | `× card_mounts_modal_and_refreshes_on_saved_deleted` · `AssertionError: expected 1 to be greater than 1` · `Tests 1 failed \| 15 passed (16)`（卡片 7 条仍绿） | E9 有牙（恰 1 红） |
+| 变异 ⑤（加做） | `loadTerminals` 把探测结果按 id 字典序重排（:99 `terminals.value = found`，索引 K31(3) 的反面） | `× terminal_options_come_from_ql_terminals_and_are_disabled_while_loading` · `Tests 1 failed \| 8 passed (9)` | 「不重排」有牙（恰 1 红） |
+| 变异 ⑥（加做） | `invoke('ql_save', props.id ?? '', entry)`（:134，索引 K31(1) 的反面） | `× new_entry_passes_id_null_to_ql_save` · `Tests 1 failed \| 8 passed (9)` | 新建传 null 有牙（恰 1 红） |
+| 变异还原 | 六次还原后 `Get-FileHash -Algorithm SHA256` | `QuickLaunchModal.vue` 每次均为 `372CF7FCD79867FFC8DD5072C1C65C270AE0072F22675C0F3456BEA007F52B55`；`QuickLaunch.vue` 均为 `0A34C322A00B7AD17C4F9FB4A30CE50FC6C151732A276172C56DAA56FAFB4056`；还原后复跑 G1 = 78 passed、`npm test` = 47 files / 791 passed | 两份实现文件字节级一致 |
+| 报告 | .superpowers/sdd/2026-10-10-quick-launch-card/task-12-report.md | 先红/后绿计数、E→用例映射、六次变异计数、疑虑清单 | 已写 |
