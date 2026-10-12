@@ -242,6 +242,13 @@ Task 10: fix round 1 验收（我的复跑）：G1 63 passed / App 48 passed / i
 Task 10: Ruling: K27(1) 补充 —— 非受控（不传 active）点击**不**冒泡 update:active：没有监听者、冒泡是噪声，且「不传时行为一字不变」是兼容性保证；该行为无消费者，按 K24(2) 不为它造断言（要改只需把 emit 提到 if (controlled.value) 之前，现有用例不红）。边界登记：兜底只观察 items，受控下 active 指向不在 tabs 里的 id 且 tabs 不变时不自动纠正（规格未要求；任务 13 的 App 自己保证一致）。已写进索引 K27 与任务 10 表 E10、任务 13 表 C6。
 Task 10: minor (deferred): (a) 受控下摘掉激活页签 → App 回应前短暂空白（K27(1) 明写的取舍，任务 13 必须回写 update:active 才不留白）；(b) E5 只能断 CSS 规则文本 + 页签数 + scrollIntoView 参数，真机横向滚动外观 → 任务 14 硬门 8；(c) 两处 [x] 是否保留其一 → 任务 14 UI 复核（M15）；(d) M17 嵌套 button。
 Task 10: complete (commits e351a9b 代码 / b7bffbe + 1ae9e07 + 5ca9cb1 + a193bca + 本次 docs 文档；fix rounds 1/5；LogPanel.test.ts 20 用例 = 既有 11 + 新增 9；表内 39 勾、裸☐=0、普查退出码 0)
+【任务 11 起点 · 2026-10-12】HEAD 96d2d7d、工作区干净；全量基线我实测 npm test = 45 files / 775 tests passed（exit 0）。
+Task 11: 派单前取证定两条口径（docs 先行：af5b53f / 6c426ce / b331618 / a4dd3ca / 96d2d7d）：
+Task 11: Ruling: K28(1) —— 「复制插到源行正后方」= 卡片本地重排（照 TemplateModule.vue:86-93 既有手法），落盘仍是追加（qlSave 的 map[finalId]=clean，quick-launch-config.ts:137-139），不加 insert-after 的 IPC 参数。依据：§8 无重排通道；规格 §5.4 只讲 id 与复制命名、不讲位置（任务 11 表 E5 原引用 §5.4 是我写错，已更正）。代价：重新加载后复制项按文件序在末尾——与模板卡既有行为一致。
+Task 11: Ruling: K29 —— 弹窗归卡片持有（QuickLaunch 本地 modalOpen/editingId），不加 new/edit emits。依据：规格 §9.4 明确列出卡片 emits 只有 start/stop/changed，而弹窗 props 是 {open,id,entry} 必须有人持有；既有同构 = TemplateModule.vue:11 直接 import 弹窗。落点：任务 11 只留本地状态不 import；任务 12 表加 B3（挂载接线）+ E9（新建/编辑打开回填、saved/deleted 刷新并冒泡 changed）；任务 13 不碰弹窗。
+Task 11: M2 落点扩进任务 11：B3 一行改 en dict.ts:492 ql.invalid → invalid entries skipped: {n}（H1 暂存范围同步加 dict.ts）。
+Task 11: 我自己写表的两处笔误已当场修并如实提交（6c426ce：B3 行多写一格；a4dd3ca：新行误编号 E7 且插在 E2 后，应为 E9 排在 E8 后）。教训：往已有表里加行前必须先读该段现有编号，不能只看计划。
+Task 11: 已派单（brief 4958 字符：三文件范围、C1-C4 逐字、6+1 条用例、E1-E7/F1-F7、三条门 + npm test 只增不减 + tsc、三处变异（本地重排→E5 红 / 去 stopping 分支→E4 红 / 删 invalid 提示→E6 红）、明确不做与「范围外文件先停下报告」）。
 索引新增 M 组（commit 5afbb71）：把 45 条 minor (deferred) 里**会被任务 10-14 触到或放大**的 16 条路由到对应任务（M1-M16，含落点与处置要求），其余 29 条留在本账本交最终整分支审查。派任务 10-14 时把对应 M 行原样贴进简报。
 流程事故（我的提交范围）：.gitignore 的 !.superpowers/ 与 !.superpowers/** 是**用户本人**改的（我先前误记成实现者所为，已更正）。结果我的 docs 提交 a7be5fb 把 .gitignore + 43 个 .superpowers/ 文件一起带进去了（9105 行）。已 git reset --soft + restore --staged 拆成两半：5afbb71 只含 00-index.md；.gitignore 与 .superpowers/ 回到未跟踪/未暂存，等用户决定是否入仓。教训：提交前必须看 git show --stat 的实际文件数，不能只看自己 add 的路径。
 
