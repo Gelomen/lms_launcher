@@ -227,6 +227,17 @@ Task 10: Ruling: K26(3) —— 页签文案不从 TerminalTabView 的 data-tab-*
 Task 10: Ruling: K26(4) —— 两种页签一律 v-show 保活，terminal 页签不得 v-if。依据：TerminalTabView.vue:169-178 卸载即 unregister + observer.disconnect + term.dispose()，v-if 等于「切页签杀终端」。新增任务 10 表 E8（断切换过程 dispose/unregister 未被调用）与 F7 行。
 Task 10: M3 决定：TerminalTabView 的内联 overflow: hidden 本任务**不收进 style.css**（不改该文件；写进共享 .log-view 会影响文本日志页）。M5：xterm.css 仍由叶子组件导入，本任务只确认仍被加载。M6：不加防抖、不动 fitCalls===3。
 Task 10: 已派单（brief 5694 字符：四文件范围、C1-C4 按 K26 更正、6+1 条用例、E1-E8/F1-F7 逐条、三条门 + 额外 App.test.ts 48 passed 作为 K26(1) 兼容性证据、三处变异（v-if→E8 红 / 去 closeDisabled→E3 红 / 无条件 title→E7 红）、明确不做与「范围外文件先停下报告」）。
+Task 10: 实现回来（18 用例 / 7 条新增）。我的验收取证：
+  - git diff --numstat 测试文件 = 231 insertions / **0 deletions** → 既有 11 条用例与 7 处 mount 夹具一字未改（B4/E6 的硬证据，不是自述）
+  - 我的门复跑：G1 61 passed / i18n 25 passed / App.test.ts 48 passed / tsc exit 0 —— 与实现者报的计数逐条一致
+  - 我的四处变异探针：① v-show→v-if = 3 红（E8+E2+E4）② 去 :disabled = 1 红（E3）③ title 无条件 = 1 红（E7）④ 删 .tab-bar nowrap/overflow-x = 1 红（E5）——与实现者报的逐条一致；还原后 SHA 与基线一致（LogPanel.vue 2a74f18bc1e5 / style.css 32eb9e9c1773）
+  - 用例质量抽查：E8 断 unregister 未调 + terms[0].disposed=false，卸载后才各调一次；E7 两个方向都断（构造方截断→挂 title；未截断→LogPanel 不截断也不挂）；E5 断 CSS 规则文本 + scrollIntoView 参数（happy-dom 不加载外部 CSS，真机外观推到任务 14 硬门 8）
+Task 10: Ruling: K27(1) —— 激活状态归 App：LogPanel 加可选 active + emit update:active（v-model:active），不传时自持；激活项被摘掉时非受控回落第一个、受控冒泡 update:active。依据：规格 §9.2:243 要求「自动激活」，但 active 原写死在 LogPanel 内部（旧 :10），任务 13 的 B 段不含 LogPanel.vue → 不加接口任务 13 做不到。代价：多一条受控/非受控双路径，靠 E9 的第二段（不传时行为不变）+ App.test.ts 48 passed 兜住。落在：规格 §9.2、计划接口块、任务 10 表 C4/E9/E10、任务 13 表 C6。
+Task 10: Ruling: K27(2) —— 两处 [x]（页签条 + 终端工具条）保留，冒泡同一 close(id)；规格 §9.3 工具条行原文漏列 [x]，已更正补列。依据：§9.3 props 行含 closable/closeDisabled、任务 9 表 E6、TerminalTabView.test.ts:426-448 三条已提交用例。代价：UI 冗余 → 是否去掉其一交任务 14 UI 复核（M15），实现任务里不动。
+Task 10: Ruling: K27(3) —— B3 边界判定为「在边界内」：改 .log-tab（flex:none/inline-flex/white-space）、新增 .log-tab .btn-close-tab 16×16、把 .tab-bar 加进既有滚动条美化三组选择器。依据：F1 要求页签不被压扁；.icon-btn 默认 32×32 会顶破 26px 页签；overflow-x:auto 必然引入横向滚动条，复用既有美化是同一处口径。
+Task 10: Ruling: K27(4) —— 测试强度边界（K24(2) 先例）：去掉 onCloseClick 的 closeDisabled 守卫 0 红，该行为由 disabled 属性保证；不为此造虚构契约。已写进任务 10 表 E3 行。
+Task 10: minor (deferred): M17 —— 页签 <button> 内嵌 [x] <button>（HTML 内容模型不允许；Vue 走 DOM API 渲染/点击正常）。已登记索引 M 组 → 任务 14 真机 + 键盘可达性复核。
+Task 10: fix round 1/5 已派（受控激活 active/update:active + E9/E10；范围只 LogPanel.vue + LogPanel.test.ts；两处变异：去 emit → E9 红、去兜底 watch → E10 红）。
 索引新增 M 组（commit 5afbb71）：把 45 条 minor (deferred) 里**会被任务 10-14 触到或放大**的 16 条路由到对应任务（M1-M16，含落点与处置要求），其余 29 条留在本账本交最终整分支审查。派任务 10-14 时把对应 M 行原样贴进简报。
 流程事故（我的提交范围）：.gitignore 的 !.superpowers/ 与 !.superpowers/** 是**用户本人**改的（我先前误记成实现者所为，已更正）。结果我的 docs 提交 a7be5fb 把 .gitignore + 43 个 .superpowers/ 文件一起带进去了（9105 行）。已 git reset --soft + restore --staged 拆成两半：5afbb71 只含 00-index.md；.gitignore 与 .superpowers/ 回到未跟踪/未暂存，等用户决定是否入仓。教训：提交前必须看 git show --stat 的实际文件数，不能只看自己 add 的路径。
 
