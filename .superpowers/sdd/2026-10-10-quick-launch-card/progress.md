@@ -209,6 +209,13 @@ Task 9: complete (commits 151046e + 03b031e 代码 / 41e04a2 + 49df85c + 0ff8763
 
 【停线点 · 当前（2026-10-12 17:2x）】任务 11 已验收并提交（代码 381690a，表 35 勾、普查退出码 0）。docs 提交后工作区应干净。
 恢复时第一件事：派任务 12（QuickLaunchModal.vue 弹窗）。简报必须带：(1) 弹窗由**卡片持有**（K29）——本任务除新建弹窗外，还要在 QuickLaunch.vue 内挂载接线（任务 12 表 B3）并新增 E9 集成断言（新建/编辑打开回填、saved/deleted 刷新并冒泡 changed、close 只关窗）；(2) M1 —— 终端下拉顺序 powershell/cmd/pwsh/wsl 来自主进程（quick-launch-terminals.ts:107），**要 pwsh 优先就在渲染端排序**，不改主进程（K15）；(3) 复用 TemplateModal.vue 的遮罩/头部/footer 类名与 Dropdown、ConfirmDialog；(4) 删除走 ql_delete、exe 走 ql_pick_exe；(5) 卡片根类名 module-quick 已定（K30），不得改名。
+【任务 12 起点 · 2026-10-12 17:3x】HEAD 8b79057、工作区干净；全量基线我实测 npm test = 46 files / 782 tests passed（exit 0）。
+Task 12: 派单前取证定三条口径（docs 先行：5660067 / 4f7e5ca / 8b79057）：
+Task 12: Ruling: K31(1) —— 弹窗 props 的 id 是 string | null。依据：任务 12 表 E8 要求新建态传 null、卡片 editingId 就是 string | null（QuickLaunch.vue:42），而**计划 :422 原写 id: string 与 E8 自相矛盾**——这是计划自身的缺陷，已更正计划与 C1。
+Task 12: Ruling: K31(2) —— 重名错误显示主进程返回的文案（errMsg → err.ql.nameDup「名字「X」已存在」），不在渲染端把 VALIDATION: 映射成 ql.err.nameTaken。依据：带名字更有用 + 与 TemplateModal 错误区口径一致；实测 key-coverage.test.ts 只有 :117（调用点的键必须存在）与 :131（占位符双向一致），**没有 unused-key 检查**，所以留着不红。代价：ql.err.nameTaken 成为未被引用的键 → 登记为冗余，删它要同步任务 8 表 C8，留最终整分支审查决定。
+Task 12: Ruling: K31(3) —— M1 关闭：终端下拉不重排，按主进程返回序 powershell/cmd/pwsh/wsl（quick-launch-terminals.ts:107-113），预选第一项可用。依据：规格 §6.1 的表序就是 UI 序，规格与计划都没要求 pwsh 优先；在渲染端排序是扩范围。
+Task 12: 我自己写表/改表的三处笔误当场修并如实提交：5660067→4f7e5ca（C1/C3 多写一列；计划接口行锚点因把 | 写成 | 而未命中）、8b79057（B3 加进范围后 G1/G3/H1 必须同步——G1 还要把 QuickLaunch.test.ts 加进回归门）。教训：改 B 段范围必须同批改 G/H 段。
+Task 12: 已派单（brief 5374 字符：三文件范围、C1-C3 逐字含单飞、9 条用例（含 E9 卡片接线）、F1-F5、三条门 + npm test 只增不减 + tsc、四处变异（去单飞 / 去加载中禁用 / 删除不开确认框 / 卡片不接 saved）、「卡片既有 7 条用例一字不改」）。
 仍有效的跨任务待办：任务 13 按 K27(1) 用 v-model:active 驱动「自动激活」并**必须把 update:active 写回**（任务 13 表 C6 已钉）；按 K24(1) 重启路径显式 `fit(true)`；读 App.test.ts:33-34 的捕获数组（M9）；任务 14 真机门（页签横向滚动外观 = 硬门 8、两处 [x] 的 UI 复核 M15、M17 嵌套 button 键盘可达性、任务 6 D6b 与任务 7 G3 的退出实测）。
 【验收勾缺失 · 我的流程缺陷】用户指出「从任务 5 起就没有勾选」。实测确认：任务 1-4 的 A-I 全勾；任务 5-9 只有 H/I 部分勾，A-G 行 173 行 + I 段清单 16 项全是 ☐ —— 我从任务 5 起改成「把验收证据追加到 J 段」，就没有回落勾。证据一直在 J 段，但 AGENTS.md 明说「表里的勾是我验收用的」，J 段不能替代勾。
 已逐行补齐（commit 4de6e3b）：任务 5 勾 41、任务 6 勾 40、任务 7 勾 28、任务 8 勾 56（含 C 段 zh/en 两个附加列各 9/8 处）、任务 9 勾 40；三处**故意保持未勾并写明去处**：任务 5 H3（pnpm-lock.yaml 处置，本任务不做）、任务 6 D6b 与任务 7 G3（真机门，K12/K19）。
