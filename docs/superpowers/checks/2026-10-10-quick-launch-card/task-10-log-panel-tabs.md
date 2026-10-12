@@ -49,6 +49,7 @@
 | E5 | 页签多于 6 条时页签条不换行（断言 `.tab-bar` 的 nowrap 类/样式） | 规格 §11-2 | ☐ |
 | E6 | 静态两页签（`launcher` / `llama-server`）能力与代码不受影响：**不传 `tabs` 时**页签条与两个文本面板照旧（既有 11 条用例一字不改即证） | 规格 §9.1 结论 / 索引 K26 | ☐ |
 | E7 | 页签 `title` 只在 `label !== fullLabel` 时挂 `fullLabel`（未截断不挂，与 `LaunchBar.vue:93` 的 `grace=2` 口径同形） | 规格 §11-1 / 索引 K26 | ☐ |
+| E8 | **切到别的页签再切回来，terminal 页签不卸载**：断假 xterm 的 `dispose` 与 `unregister` 在切换过程中**没有被调用**（`v-show` 保活） | 索引 K26(4) / 任务 9 表 E1 | ☐ |
 
 ## F. 实现口径
 
@@ -60,12 +61,13 @@
 | F4 | **职责划分（索引 K26）**：短名由**构造方**用 `truncateByWidth(fullLabel, 16)` 生成并放进 `LogTabItem.label`（构造方 = 任务 13 的 App 接线）；`LogPanel` 只渲染 `item.label`，并在 `label !== fullLabel` 时挂 `title=fullLabel`。**不得在 `LogPanel` 里二次截断**（两处预算会互相抵消）。`TerminalTabView` 根节点的 `data-tab-label`/`data-tab-full-label` 只是测试/调试钩子，页签文案**不从 `data-*` 反取**（索引 M4） | 规格 §11-1 / 索引 K26 / M4 | ☐ |
 | F5 | 页签文案走 `t()` | G6 | ☐ |
 | F6 | 不改 `LogTabView.vue` 内部实现（规格 §9.1「不改」） | 规格 §9.1 | ☐ |
+| F7 | **两种页签的内容一律 `v-show` 保活，terminal 页签不得用 `v-if`**：`TerminalTabView` 卸载即 `unregister` + `term.dispose()`（`TerminalTabView.vue:169-178`），用 `v-if` 就等于「切页签杀终端」；隐藏期间它自己也不 `fit`（任务 9 表 E4） | 索引 K26(4) / 任务 9 表 E1/E4 | ☐ |
 
 ## G. 回归门
 
 | # | 命令 | 预期 | ✓ |
 |---|---|---|---|
-| G1 | `npx vitest run src/modules/LogPanel.test.ts src/modules/LogTabView.test.ts src/modules/TerminalTabView.test.ts` | 全 PASS | ☐ |
+| G1 | `npx vitest run src/modules/LogPanel.test.ts src/modules/LogTabView.test.ts src/modules/TerminalTabView.test.ts` | 全 PASS（既有 11 + 21 + 22 条一字未改仍绿） | ☐ |
 | G2 | `npx vitest run src-main/i18n` | 全 PASS | ☐ |
 | G3 | `git diff --name-only` | 只含 B1-B4 | ☐ |
 
@@ -79,7 +81,7 @@
 
 ## I. 完成判据
 
-- [ ] E1-E6 有测试；E3/E5 是 R3 与页签溢出的钉桩
+- [ ] E1-E8 有测试；E3/E5 是 R3 与页签溢出的钉桩，E8 是「切页签不杀终端」的钉桩
 - [ ] D2 先红、D4 后绿
 - [ ] G1-G3 通过
 - [ ] H1-H2 完成
