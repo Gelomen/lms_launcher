@@ -118,7 +118,7 @@
 | # | Minor（含落点） | 会在哪个任务触到 | 处置要求 |
 |---|---|---|---|
 | M1 | 终端检测的返回顺序固定为 powershell/cmd/pwsh/wsl（`quick-launch-terminals.ts:107`） | 任务 12 | 若要 pwsh 优先，**在渲染端排序**，不改主进程（任务 4 已定口径，K15） |
-| M2 | `dict.ts:492` 的 en `ql.invalid` = `{n} invalid entries skipped`，n=1 时语法不成立 | 任务 11（首个调用点） | 改成 `invalid entries skipped: {n}`（对齐既有计数键风格；现在无调用点零成本） |
+| M2 | **已解决（2026-10-12 核对）**：en `ql.invalid` 已在任务 11 的代码提交 `381690a` 改成 `invalid entries skipped: {n}`（现 `dict.ts:492`），调用点 `QuickLaunch.vue:150` 与用例 `QuickLaunch.test.ts:176` 都用 `{n}` 形式。证据：`git log -L 492,492:src-main/i18n/dict.ts` 显示 `- {n} invalid entries skipped / + invalid entries skipped: {n}` | — | 关闭 |
 | M3 | 终端挂载点用内联 `overflow: hidden; min-height: 0` 压掉 `.log-view` 的重复滚动条 | 任务 10（B3 正在改 `style.css`） | 若要收进 CSS：**只搬 `overflow: hidden`**，`min-height: 0` 是冗余项（`overflow` 非 visible 的 flex item 自动最小尺寸本就是 0） |
 | M4 | `TerminalTabView` 的 `label`/`fullLabel` 落点：`data-tab-label` 装**短名**，另有 `data-tab-full-label` 装全名 | 任务 10 | 页签文案与全名 tooltip 在 `LogPanel`/`log-tabs` 侧渲染 → 简报必须指定取值来源，**不要从 `data-*` 反取**（那是给调试/测试的钩子） |
 | M5 | 组件内副作用导入 `@xterm/xterm/css/xterm.css`（落在叶子组件上） | 任务 10 / 13 | 确认页签条接入后样式仍被加载；最终审查决定是否收进入口 |
