@@ -95,15 +95,43 @@ class FakeExe {
   }
 }
 
+/**
+ * 假 PTY 句柄：quick-launch.ts:60-67 那个 PtyHandle 的最小面，喂给**真** PtyProcess。
+ * 修复轮 C2 的两条分支都在 PtyProcess 内部（:123 的 stopping 守卫、:125-129 对 handle.kill() 的 try/catch），
+ * FakeShell 自带的 stopGraceful 走不到那里 —— 所以那两条用例必须用真 PtyProcess 包假句柄。
+ * killThrows：置位后 kill() 抛，就是真机上「进程已不在」时 node-pty 的行为（:127 注释所指）。
+ * 默认不发 exit 事件：与 FakeShell.silentStop 同一口径（强杀后 exit 事件可能不落地）。
+ */
+class FakePtyHandle {
+  constructor(readonly pid: number, readonly killThrows = false) {}
+  /** 可观察后果之一：底层被终止的次数（幂等守卫的判据） */
+  killCount = 0;
+  private exitCbs: Array<(e: { exitCode: number }) => void> = [];
+  write(_d: string): void {}
+  resize(_cols: number, _rows: number): void {}
+  kill(): void {
+    this.killCount++;
+    if (this.killThrows) throw new Error('kill boom');
+  }
+  onData(_cb: (d: string) => void): void {}
+  onExit(cb: (e: { exitCode: number }) => void): void { this.exitCbs.push(cb); }
+  /** 测试侧让 exit 事件落地：真机上由 ConPTY 异步送达，可能晚于 stop() 返回 */
+  emitExit(code: number): void { this.exitCbs.forEach((cb) => cb({ exitCode: code })); }
+}
+
 /** 可注入假 shell 的测试子类：C5 的构造签名逐字不动，接缝放在 protected 方法上 */
 class TestManager extends QuickLaunchManager {
   shells: FakeShell[] = [];
   shellFails = false;
+  /** 修复轮 C2：置位后本 manager 造的是**真** PtyProcess（包住这个假句柄），用来喂 PtyProcess 内部的两条防御分支。
+   *  默认 null —— 既有用例的假 Shell 路径一字不变。 */
+  ptyHandle: FakePtyHandle | null = null;
   /** A2·I-3：每造一个假进程就回调一次，用来给它的 stopGraceful 装 onStopStart */
   onShellCreated: ((s: FakeShell) => void) | null = null;
   /** 注入假进程时共享的事件时间线（E4/E5 的顺序判据） */
   timeline: string[] | null = null;
-  protected override createShellProcess(): FakeShell {
+  protected override createShellProcess(): FakeShell | PtyProcess {
+    if (this.ptyHandle) return new PtyProcess(this.ptyHandle); // 修复轮 C2：真 PtyProcess 才走得到 :123 / :125-129
     if (this.shellFails) throw new Error('spawn boom');
     const f = new FakeShell(this.timeline);
     this.shells.push(f);
@@ -448,6 +476,58 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
     await m.stop('c1'); // 双 stop：走「实例已摘 → 直接返回」的早退路径
     expect(ctx.exits.length).toBe(1);
     expect(m.shells[0].stopArgs).toEqual([3]); // 第二次没有再走一遍 stopGraceful
+  });
+
+  // ── 修复轮 C2·C：PtyProcess.stopGraceful 对 handle.kill() 的 try/catch（quick-launch.ts:125-129）──
+  // 真机上进程已不在时 node-pty 的 kill() 会抛。没有那个 try/catch，stopGraceful 当场 reject：
+  // §7.5 的「超时 → taskkill /T /F」整条升级链一步都不走，页签按钮回落只剩 stopInternal 的兜底 catch 侥幸兜住。
+  // 用真 PtyProcess 穿过 createShellProcess 接缝，断言的全是可观察后果：stop() 不 reject、强杀升级照常发生、
+  // exit 事件不落地仍按 -1 收尾摘实例、迟到的 exit 事件不重复上报。
+  it('handle.kill() 抛异常时 stop() 不 reject，仍升级到 taskkill 并按 -1 收尾摘实例', async () => {
+    vi.useFakeTimers();
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    const handle = new FakePtyHandle(4321, true); // kill() 抛
+    m.ptyHandle = handle;
+    const entry: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd' }; // 不带 cmd：不建 5s 兜底计时器
+    await m.start('c1', entry);
+    expect(m.states()).toEqual({ c1: { running: true, stopping: false } });
+    const stopping = m.stop('c1');
+    await vi.advanceTimersByTimeAsync(4000); // 越过 3s 超时 + 强杀后等 exit 落地的 1s
+    await expect(stopping).resolves.toBeUndefined(); // 可观察后果 1：stop() 不 reject
+    expect(m.shells.length).toBe(0); // 走的是真 PtyProcess，不是假 Shell
+    // 可观察后果 2：try/catch 生效 → 时序照常走到强杀（把 :125-129 去掉，这里就是空数组）
+    expect(taskkillCalls).toEqual([{ cmd: 'taskkill', args: ['/T', '/F', '-PID', '4321'] }]);
+    // 可观察后果 3：exit 事件不落地 → 按未知退出码收尾、实例摘除、states() 不再报它
+    expect(ctx.exits).toEqual([{ configId: 'c1', code: -1 }]);
+    expect(m.states()).toEqual({});
+    // 迟到的 exit 事件：实例已摘，不得再上报一次（否则页签按钮闪回 [停止]）
+    handle.emitExit(1);
+    expect(ctx.exits.length).toBe(1);
+    expect(m.states()).toEqual({});
+  });
+
+  // ── 修复轮 C2·D：幂等守卫的 `|| this.stopping` 半边（quick-launch.ts:123）──
+  // 与上面「exit 事件不落地时 stop 按 -1 收尾并摘实例；再次 stop 不重复上报」那条不重复：
+  // 那条钉**顺序**二次 stop（实例已摘 → stopInternal 早退）；
+  // 这条钉**并发**二次进入 —— 第一个 stopGraceful 还停在等待循环里、实例仍在表中，只有 :123 的 stopping 半边挡得住。
+  // 少了它：同一次 [停止] 会对同一个 ConPTY 终止两次，并再走一遍 taskkill /T /F。
+  it('并发两次 stop：只 kill 一次、只升级一次 taskkill、只上报一次退出', async () => {
+    vi.useFakeTimers();
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    const handle = new FakePtyHandle(4321);
+    m.ptyHandle = handle;
+    const entry: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd' };
+    await m.start('c1', entry);
+    // 并发：第一个 stop 还停在 stopGraceful 的等待循环里，第二个就进来了
+    const stopping = Promise.all([m.stop('c1'), m.stop('c1')]);
+    await vi.advanceTimersByTimeAsync(4000);
+    await stopping;
+    expect(handle.killCount).toBe(1); // 去掉 :123 的 || this.stopping 就是 2
+    expect(taskkillCalls.length).toBe(1); // 同一次停止只升级一次强杀
+    expect(ctx.exits).toEqual([{ configId: 'c1', code: -1 }]); // 只 finalize 一次
+    expect(m.states()).toEqual({});
   });
 
   // E10
