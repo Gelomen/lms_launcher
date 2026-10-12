@@ -248,7 +248,15 @@ Task 11: Ruling: K28(1) —— 「复制插到源行正后方」= 卡片本地�
 Task 11: Ruling: K29 —— 弹窗归卡片持有（QuickLaunch 本地 modalOpen/editingId），不加 new/edit emits。依据：规格 §9.4 明确列出卡片 emits 只有 start/stop/changed，而弹窗 props 是 {open,id,entry} 必须有人持有；既有同构 = TemplateModule.vue:11 直接 import 弹窗。落点：任务 11 只留本地状态不 import；任务 12 表加 B3（挂载接线）+ E9（新建/编辑打开回填、saved/deleted 刷新并冒泡 changed）；任务 13 不碰弹窗。
 Task 11: M2 落点扩进任务 11：B3 一行改 en dict.ts:492 ql.invalid → invalid entries skipped: {n}（H1 暂存范围同步加 dict.ts）。
 Task 11: 我自己写表的两处笔误已当场修并如实提交（6c426ce：B3 行多写一格；a4dd3ca：新行误编号 E7 且插在 E2 后，应为 E9 排在 E8 后）。教训：往已有表里加行前必须先读该段现有编号，不能只看计划。
-Task 11: 已派单（brief 4958 字符：三文件范围、C1-C4 逐字、6+1 条用例、E1-E7/F1-F7、三条门 + npm test 只增不减 + tsc、三处变异（本地重排→E5 红 / 去 stopping 分支→E4 红 / 删 invalid 提示→E6 红）、明确不做与「范围外文件先停下报告」）。
+Task 11: 已派单（brief 4958 字符：三文件范围、C1-C4 逐字、6+1 条用例、E1-E7/F1-F7、三条门 + npm test 只增不减 + tsc、三处变异（本地重排→E5 红 / 去 stopping 分支→E4 红 / 删 invalid 提示→E6 红）、明确不做与「范围外文件先停下报告」）。Task 11: 实现回来（QuickLaunch.vue 167 行 + 7 用例 + dict.ts 一行）。我的验收取证：
+  - 范围门：git diff --numstat 代码侧只有 dict.ts 1/1（恰好一行）+ 两份未跟踪新文件；check 表 J 段的改动属文档
+  - 我的门复跑：G1 10 passed / G2 25 passed / tsc exit 0 —— 与实现者逐条一致
+  - 我的四处变异：① 本地重排→追加末尾 = 1 红（E5）② 去 stopping 分支 = 1 红（E4）③ 去 invalid 提示 = 1 红（E6）④ BUDGET 30→25 = 2 红（E2+E3）——与实现者报的逐条一致；还原 SHA 0a0739585295 一致
+  - 代码核对：C1/C2 逐字（:26/:29-33）、C4 不订阅事件（全文无 onIpc）、F7 本地 modalOpen/editingId 且未 import 弹窗（:41-48）、E5 本地重排与 TemplateModule.vue:86-93 同构（:77-82）、F1/F2 复用既有类名与图标、BUDGET=30 + grace=2 才挂 tooltip（:104-114）
+Task 11: Ruling: K30 —— (1) stopping 占位符 = 半角三点 ...（不是 U+2026）。依据：LaunchBar.vue:129 既有实现就是 ...，同一语义两处必须一致；计划 :406 也写半角三点。**是我把 E4 行转录成「…」导致实现照表做**——已更正 A4/E4 并要求定向修复轮 1。(2) 我简报「模板卡用 25」为错：TemplateModule.vue:113 实为 const BUDGET = 30，style.css:340 的「25」是过时注释；A4 已补取证。(3) 卡片根类名定为 section.module.module-quick，写进任务 13 表 C5。docs 先行 92cb87b。
+Task 11: Ruling: 测试强度边界（K24(2)/K27(4) 先例，实现者提的 3 条我全部接受、不扩范围）：ql_list 的 catch → .error-text 无用例（计划的 6 条里没有）；F7 的 modalOpen/editingId 只写不读、无断言（任务 12 的 E9 才钉）；nameOf 的 id 回退是沿用模板卡的防御冗余。
+Task 11: minor (deferred): 复制后 emit changed 但不重拉 ql_list（K28(1) 的必然取舍：重拉即回到文件序、E5 当场失效）→ 重新加载后复制项在末尾，与模板卡既有行为一致；最终整分支审查时若用户觉得别扭再议。
+Task 11: fix round 1/5 已派（只改 stopping 占位符 U+2026 → 半角三点；提醒了别误伤 truncateByWidth 的 U+2026；变异：改回 U+2026 → E4 红）。
 索引新增 M 组（commit 5afbb71）：把 45 条 minor (deferred) 里**会被任务 10-14 触到或放大**的 16 条路由到对应任务（M1-M16，含落点与处置要求），其余 29 条留在本账本交最终整分支审查。派任务 10-14 时把对应 M 行原样贴进简报。
 流程事故（我的提交范围）：.gitignore 的 !.superpowers/ 与 !.superpowers/** 是**用户本人**改的（我先前误记成实现者所为，已更正）。结果我的 docs 提交 a7be5fb 把 .gitignore + 43 个 .superpowers/ 文件一起带进去了（9105 行）。已 git reset --soft + restore --staged 拆成两半：5afbb71 只含 00-index.md；.gitignore 与 .superpowers/ 回到未跟踪/未暂存，等用户决定是否入仓。教训：提交前必须看 git show --stat 的实际文件数，不能只看自己 add 的路径。
 
