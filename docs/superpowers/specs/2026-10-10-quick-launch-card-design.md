@@ -241,6 +241,7 @@ pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo
 - **终端数据路由**：App 持 `Map<tabId, (data: string) => void>`，`TerminalTabView` 挂载时注册、卸载时注销；`onQlData` 按 `tabId` 派发（未知 tabId 忽略，防竞态）。
 - `logBuckets` 只需容纳静态两页签（`launcher` / `llama-server`）：v1 的「动态桶」改动**作废**。
 - 点 `[启动]`（shell）→ 建页签（若不存在）+ **自动激活**（用户决策）+ `fit()` + 聚焦。
+- **激活状态的所有权（索引 K27(1)）**：`active` 由 **App 持有**，经 `v-model:active`（prop `active` + emit `update:active`）传给 `LogPanel`；`LogPanel` 点击页签时冒泡 `update:active`，不传时自持（既有行为不变）。规格原文只写「自动激活」没写机制，而 `active` 原本在 `LogPanel` 内部 → 任务 13 无法驱动它。另：`LogPanel` 在激活项被从 `tabs` 里摘掉时回落到第一个页签（关掉页签不得让面板空白）。
 - `onQlExit` → 更新 `qlStates`（卡片按钮回落），页签保留。
 - `.grid` 四列；JSX 顺序 `stack → QuickLaunch（第 3 列）→ GPU（第 4 列）`。
 
@@ -250,7 +251,7 @@ pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo
 - 挂载时：新建 `Terminal({ scrollback: 5000, fontFamily: 'Cascadia Code', Consolas, monospace（与 style.css:29 的 --font-mono 同值）, fontSize: 13 })`（**更正，索引 K23(1)**：原写 `fontFamily: var(--font-mono)` 在测量路径上不解析——xterm 5.5.0 的 `CharSizeService.ts:29-33` 优先选 `TextMetricsMeasureStrategy`，`:122` 把值拼成 canvas 的 `ctx.font = "13px var(--font-mono)"`，canvas 不解析 CSS 变量 → 无效值被忽略、格子按 canvas 默认字体量，而 DomRenderer 渲染时 CSS 变量会解析 → 网格与字形不一致。字面量栈必须与 `--font-mono` 逐字同值，两处改动要同步） + `FitAddon` + `SearchAddon` + `WebLinksAddon(open_external)`，`open(el)`，注册数据 sink，`ResizeObserver` + `fit()` → `onResize`。
 - `term.onData` → `onInput`（含 Ctrl+C 的 `\x03`）。
 - 键盘：`attachCustomKeyEventHandler` —— `Ctrl+Shift+C` 复制（有选中时）、`Ctrl+Shift+V` 粘贴、`Ctrl+C` **一律交给终端**（中断）；右键 = 粘贴。
-- 工具条：清空 + 查找（输入框 + 上/下 + 计数）。
+- 工具条：清空 + 查找（输入框 + 上/下 + 计数）+ `[x]`（**更正，索引 K27(2)**：原文漏列。`closable`/`closeDisabled` 是本页签 props（§9.3 props 行已含），任务 9 表 E6 与计划 审查重点 3 都要求它禁用；它与页签条上的 `[x]`（§8 表「页签 `[x]`」行）冒泡同一个 `close(id)`。两处并存是否保留其一 → 任务 14 的 UI 复核（M15）决定，不在实现任务里动。）
 - `v-show` 保活（切走不销毁，终端状态保留）；隐藏期间不做 fit，激活时再 fit。
 
 ### 9.4 卡片与弹窗

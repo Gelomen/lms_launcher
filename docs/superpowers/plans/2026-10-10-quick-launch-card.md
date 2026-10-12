@@ -368,8 +368,8 @@ export const QL_TAB_PREFIX = 'ql:';
 export function qlTabId(configId: string): string;
 export type LogTabKind = 'text' | 'terminal';
 export interface LogTabItem { id: string; label: string; fullLabel: string; kind: LogTabKind; closable: boolean; closeDisabled: boolean; configId?: string }
-// LogPanel props：tabs?: LogTabItem[]（**缺省 = 由 LOG_TABS 生成两个 text 页签**，索引 K26）, buckets: Record<string, LogEntry[]>
-// LogPanel emits：clear: [id], close: [id], 以及透传 terminal 的 register/unregister/onInput/onResize
+// LogPanel props：tabs?: LogTabItem[]（**缺省 = 由 LOG_TABS 生成两个 text 页签**，索引 K26）, buckets: Record<string, LogEntry[]>, active?: string（索引 K27(1)）
+// LogPanel emits：clear: [id], close: [id], update:active: [id]（索引 K27(1)：active 由 App 持有，v-model:active 驱动「自动激活」）, 以及透传 terminal 的 register/unregister/onInput/onResize
 ```
 
 > **接口更正（索引 K26）**：`tabs` 是**可选** prop，缺省由 `LOG_TABS` 生成两个 `'text'` 页签（`closable: false`）。取证：`src/App.vue:373` 只传 `:buckets`；`src/modules/LogPanel.test.ts` 有 7 处 `mount(LogPanel, { props: { buckets } })`（:20/:63/:81/:103/:127/:159/:168）。任务 10 的 B 段不含 `App.vue`（属任务 13）——若把 `tabs` 设为必填，任务 10 一落地应用就失去日志面板，且 7 处既有用例被迫改夹具，两者都违反 B4/E6。任务 13 起显式传 `tabs`。
