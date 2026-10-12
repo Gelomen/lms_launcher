@@ -11,6 +11,11 @@ import { describe, it, expect } from 'vitest';
 import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import LogPanel from './LogPanel.vue';
+// 任务 10 追加（页签条两种页签 + [x] + 横向滚动）：假 xterm 打桩与 CSS 规则取证所需，见文件末段。
+import { vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { LogTabItem } from './log-tabs';
 
 interface E { line: string; stream: 'sys' | 'out' | 'err' }
 
@@ -174,4 +179,314 @@ describe('LogPanel 清空日志按钮', () => {
     w.unmount();
   });
 });
+
+// ============================================================================
+// 任务 10 · 页签条支持两种页签 + [x] + 横向滚动（check 表 E1-E8；规格 §9.1 / §11-1 / §11-2）
+// 与上面 11 条的区别：这里显式传 tabs；上面 7 处 mount 只传 buckets = 缺省页签路径（E6 的证据）。
+// xterm 与三个 addon 必须打桩（索引 G8 / 规格 §12.5：真实渲染不在单测范围），打桩法照 TerminalTabView.test.ts。
+// ============================================================================
+
+const xh = vi.hoisted(() => {
+  const state: { terms: any[] } = { terms: [] };
+  class FakeTerminal {
+    cols = 80; rows = 24; disposed = false; written: string[] = [];
+    dataCb: ((d: string) => void) | null = null;
+    constructor() { state.terms.push(this); }
+    open(): void { /* 真实渲染不在范围 */ }
+    loadAddon(addon: any): void { if (addon && typeof addon.activate === 'function') addon.activate(this); }
+    write(d: string): void { this.written.push(d); }
+    paste(): void { /* noop */ }
+    clear(): void { /* noop */ }
+    focus(): void { /* noop */ }
+    dispose(): void { this.disposed = true; }
+    getSelection(): string { return ''; }
+    hasSelection(): boolean { return false; }
+    onData(cb: (d: string) => void): { dispose: () => void } { this.dataCb = cb; return { dispose: () => {} }; }
+    onResize(): { dispose: () => void } { return { dispose: () => {} }; }
+    attachCustomKeyEventHandler(): void { /* noop */ }
+  }
+  class FakeFitAddon {
+    activate(): void { /* noop */ }
+    dispose(): void { /* noop */ }
+    fit(): void { /* noop */ }
+    proposeDimensions(): { cols: number; rows: number } { return { cols: 80, rows: 24 }; }
+  }
+  class FakeSearchAddon {
+    activate(): void { /* noop */ }
+    dispose(): void { /* noop */ }
+    clearDecorations(): void { /* noop */ }
+    onDidChangeResults(): { dispose: () => void } { return { dispose: () => {} }; }
+    findNext(): boolean { return false; }
+    findPrevious(): boolean { return false; }
+  }
+  class FakeWebLinksAddon {
+    constructor(_handler: unknown) { /* noop */ }
+    activate(): void { /* noop */ }
+    dispose(): void { /* noop */ }
+  }
+  return { state, FakeTerminal, FakeFitAddon, FakeSearchAddon, FakeWebLinksAddon };
+});
+
+vi.mock('@xterm/xterm', () => ({ Terminal: xh.FakeTerminal }));
+vi.mock('@xterm/addon-fit', () => ({ FitAddon: xh.FakeFitAddon }));
+vi.mock('@xterm/addon-search', () => ({ SearchAddon: xh.FakeSearchAddon }));
+vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: xh.FakeWebLinksAddon }));
+
+// happy-dom 无 ResizeObserver：TerminalTabView.onMounted 会 new 一个，给它空壳（照 TerminalTabView.test.ts 的做法）
+class NoopResizeObserver {
+  observe(): void { /* noop */ }
+  unobserve(): void { /* noop */ }
+  disconnect(): void { /* noop */ }
+}
+const realResizeObserver = globalThis.ResizeObserver;
+
+function emptyBuckets(): Record<'launcher' | 'llama-server', E[]> {
+  return { launcher: [], 'llama-server': [] };
+}
+function textTab(id: 'launcher' | 'llama-server', over: Partial<LogTabItem> = {}): LogTabItem {
+  return { id, label: id, fullLabel: id, kind: 'text', closable: false, closeDisabled: false, ...over };
+}
+function termTab(id: string, over: Partial<LogTabItem> = {}): LogTabItem {
+  return { id, label: id, fullLabel: id, kind: 'terminal', closable: true, closeDisabled: false, configId: id.slice(3), ...over };
+}
+// 页签按钮上的测试钩子 data-tab-id（与 LogTabView / TerminalTabView 的根节点同名钩子，M4：只作测试用）
+function tabBtn(w: any, id: string) { return w.find('.tab-bar .log-tab[data-tab-id="' + id + '"]'); }
+
+describe('LogPanel 两种页签（E1/E2/E8）', () => {
+  beforeEach(() => {
+    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver;
+    xh.state.terms = [];
+  });
+  afterEach(() => { globalThis.ResizeObserver = realResizeObserver; });
+
+  // E1（规格 §9.1）：kind=text 渲染 LogTabView，行渲染/着色/清空行为一字不改（F6：不改 LogTabView）
+  it('text_tab_renders_logtabview_and_clear_behaviour_unchanged', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), textTab('llama-server')] } });
+    expect(w.findAll('.log-pane .log-view').length).toBe(2);
+    await w.setProps({ buckets: { launcher: [{ line: 'ERROR: model file not found', stream: 'out' }], 'llama-server': [] } });
+    expect(w.find('.log-pane[data-tab-id="launcher"] p').classes()).toContain('ln-err');
+    const clears = w.findAll('button[aria-label="清空日志"]');
+    expect(clears.length).toBe(2);
+    await clears[1].trigger('click');
+    expect(w.emitted('clear')).toEqual([['llama-server']]);
+    w.unmount();
+  });
+
+  // E2（规格 §9.1）：kind=terminal 渲染 TerminalTabView；未激活时它仍在 DOM 里、只是 v-show 隐藏（F7）
+  it('terminal_tab_renders_terminaltabview', () => {
+    const register = vi.fn(); const unregister = vi.fn(); const onInput = vi.fn(); const onResize = vi.fn();
+    const w = mount(LogPanel, {
+      props: {
+        buckets: emptyBuckets(),
+        tabs: [textTab('launcher'), termTab('ql:demo', { label: 'Demo', fullLabel: 'Demo · PowerShell 7 (pwsh)' })],
+        register, unregister, onInput, onResize,
+      },
+    });
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(register.mock.calls[0][0]).toBe('ql:demo');
+    expect(typeof register.mock.calls[0][1]).toBe('function');
+    expect(xh.state.terms.length).toBe(1);
+    const term = w.find('.log-pane[data-tab-id="ql:demo"]');
+    expect(term.exists()).toBe(true);
+    expect(term.attributes('style') ?? '').toContain('display: none');
+    expect(w.find('.log-pane[data-tab-id="launcher"]').attributes('style') ?? '').not.toContain('display: none');
+    w.unmount();
+    expect(unregister).toHaveBeenCalledTimes(1);
+    expect(unregister).toHaveBeenCalledWith('ql:demo');
+  });
+
+  // E8（索引 K26(4) / F7）：切页签不卸载终端页签 —— 卸载即 unregister + term.dispose()
+  it('switching_tabs_does_not_unmount_terminal_tab', async () => {
+    const register = vi.fn(); const unregister = vi.fn();
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), termTab('ql:demo')], register, unregister } });
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(unregister).not.toHaveBeenCalled();
+    await tabBtn(w, 'ql:demo').trigger('click');
+    expect(tabBtn(w, 'ql:demo').classes()).toContain('active');
+    expect(w.find('.log-pane[data-tab-id="ql:demo"]').attributes('style') ?? '').not.toContain('display: none');
+    await tabBtn(w, 'launcher').trigger('click');
+    await tabBtn(w, 'ql:demo').trigger('click');
+    expect(unregister).not.toHaveBeenCalled();
+    expect(xh.state.terms.length).toBe(1);
+    expect(xh.state.terms[0].disposed).toBe(false);
+    w.unmount();
+    expect(unregister).toHaveBeenCalledTimes(1);
+    expect(xh.state.terms[0].disposed).toBe(true);
+  });
+});
+
+describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
+  beforeEach(() => {
+    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver;
+    xh.state.terms = [];
+  });
+  afterEach(() => { globalThis.ResizeObserver = realResizeObserver; });
+
+  // E3（计划 审查重点 3 / R3）：只有 closable 的页签出 [x]；closeDisabled 时禁用且点击无效
+  it('only_closable_tabs_render_close_button_and_close_disabled_when_closeDisabled', async () => {
+    const w = mount(LogPanel, {
+      props: {
+        buckets: emptyBuckets(),
+        tabs: [textTab('launcher'), textTab('llama-server', { closable: true }), termTab('ql:running', { closeDisabled: true }), termTab('ql:idle')],
+      },
+    });
+    expect(w.findAll('.tab-bar .btn-close-tab').length).toBe(3);
+    expect(tabBtn(w, 'ql:running').find('.btn-close-tab').attributes('disabled')).toBeDefined();
+    expect(tabBtn(w, 'ql:idle').find('.btn-close-tab').attributes('disabled')).toBeUndefined();
+    await tabBtn(w, 'ql:running').find('.btn-close-tab').trigger('click');
+    expect(w.emitted('close')).toBeUndefined();
+    // 缺省路径（不传 tabs）：两个 text 页签 closable:false → 页签条没有 [x]（索引 K26(1)）
+    const d = mount(LogPanel, { props: { buckets: emptyBuckets() } });
+    expect(d.findAll('.tab-bar .btn-close-tab').length).toBe(0);
+    d.unmount();
+    w.unmount();
+  });
+
+  // E4（计划 步骤 1）：点 [x] 冒泡 close(id)；且 [x] 的点击不切换激活页签
+  it('clicking_close_emits_close_with_tab_id', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), termTab('ql:demo')] } });
+    await tabBtn(w, 'ql:demo').find('.btn-close-tab').trigger('click');
+    expect(w.emitted('close')).toEqual([['ql:demo']]);
+    expect(tabBtn(w, 'ql:demo').classes()).not.toContain('active');
+    // 终端页签工具条里的 [x]（任务 9 的组件）同样经 LogPanel 冒泡 close(id)
+    await w.find('.log-pane[data-tab-id="ql:demo"] .btn-close-tab').trigger('click');
+    expect(w.emitted('close')).toEqual([['ql:demo'], ['ql:demo']]);
+    w.unmount();
+  });
+
+  // E5（规格 §11-2）：页签多于 6 条时页签条不换行。
+  // happy-dom 不加载外部 CSS，computed style 读不到 style.css → 断的是「渲染出的页签数 + style.css 里的规则文本」，
+  // 即 .tab-bar 的 flex-wrap:nowrap / overflow-x:auto 与 .log-tab 的 flex:none（不被压扁）。见 check 表 J 段说明。
+  it('tab_bar_does_not_wrap_with_many_tabs', async () => {
+    const many: LogTabItem[] = [textTab('launcher'), textTab('llama-server')];
+    for (let i = 1; i <= 8; i++) many.push(termTab('ql:cfg' + i));
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: many, register: vi.fn(), unregister: vi.fn() } });
+    expect(w.findAll('.tab-bar .log-tab').length).toBe(10);
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
+    const barRule = css.slice(css.indexOf('.tab-bar {'), css.indexOf('.log-tab {'));
+    expect(barRule).toMatch(/flex-wrap:\s*nowrap/);
+    expect(barRule).toMatch(/overflow-x:\s*auto/);
+    const tabRule = css.slice(css.indexOf('.log-tab {'), css.indexOf('.log-tab +'));
+    expect(tabRule).toMatch(/flex:\s*none/);
+    // F2：切换页签时把激活页签滚进可视区（happy-dom 无 scrollIntoView → 打桩断被调用与参数）
+    const seen: unknown[] = [];
+    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (o: unknown) => void };
+    const realScroll = proto.scrollIntoView;
+    proto.scrollIntoView = (o: unknown) => { seen.push(o); };
+    try {
+      await tabBtn(w, 'ql:cfg8').trigger('click');
+    } finally {
+      proto.scrollIntoView = realScroll;
+    }
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toMatchObject({ inline: 'nearest' });
+    w.unmount();
+  });
+
+  // E7（规格 §11-1 / 索引 K26(2)）：title 只在 label !== fullLabel 时挂 fullLabel；页签文案原样渲染、不二次截断
+  it('tab_title_attribute_only_when_label_differs_from_fullLabel', () => {
+    const full = 'Very Long Launch Name · PowerShell 7 (pwsh)';
+    const w = mount(LogPanel, {
+      props: {
+        buckets: emptyBuckets(),
+        tabs: [textTab('launcher'), termTab('ql:short', { label: 'Short', fullLabel: 'Short' }), termTab('ql:long', { label: 'Very Long Launch Na…', fullLabel: full })],
+      },
+    });
+    expect(tabBtn(w, 'launcher').attributes('title')).toBeUndefined();
+    expect(tabBtn(w, 'ql:short').attributes('title')).toBeUndefined();
+    expect(tabBtn(w, 'ql:long').attributes('title')).toBe(full);
+    expect(tabBtn(w, 'ql:long').text()).toBe('Very Long Launch Na…');
+    w.unmount();
+    // 构造方没截断时，LogPanel 也不截断（两处预算会互相抵消 → 截断职责只在构造方）
+    const w2 = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [termTab('ql:raw', { label: full, fullLabel: full })] } });
+    expect(tabBtn(w2, 'ql:raw').text()).toBe(full);
+    expect(tabBtn(w2, 'ql:raw').attributes('title')).toBeUndefined();
+    w2.unmount();
+  });
+});
+
+// ============================================================================
+// 任务 10 · 定向修复轮 1（E9/E10）：受控激活 —— 规格 §9.2:243「自动激活」/ §9.2:244 所有权 + 索引 K27(1)。
+// 缺口：active 原本写死在 LogPanel 内部，任务 13 的 B 段不含 LogPanel.vue → 点 [启动] 无法自动激活该页签。
+// 接口（C4）：可选 prop `active?: string` + emit `update:active: [id]`；不传时自持（既有 11 条用例一字不变）。
+// ============================================================================
+
+describe('LogPanel 受控激活（E9/E10 · 索引 K27(1)）', () => {
+  beforeEach(() => {
+    globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver;
+    xh.state.terms = [];
+  });
+  afterEach(() => { globalThis.ResizeObserver = realResizeObserver; });
+
+  // 可见 pane = v-show 未隐藏的那个（「面板空白」的判据：一个都没有）
+  function visiblePanes(w: any): string[] {
+    return w.findAll('.log-pane')
+      .filter((p: any) => !(p.attributes('style') ?? '').includes('display: none'))
+      .map((p: any) => p.attributes('data-tab-id') ?? '');
+  }
+
+  // E9（规格 §9.2:243-244 / K27(1)）：传 active → 面板以 prop 为准；点击只冒泡 update:active、不自行切换；
+  // App 改 prop → 面板切换且激活页签 scrollIntoView（F2 在受控路径同样生效）；不传 active → 自持（既有行为不变）。
+  it('active_is_controlled_when_prop_given_and_emits_update_active', async () => {
+    const tabs = [textTab('launcher'), termTab('ql:demo')];
+    const w = mount(LogPanel, {
+      props: { buckets: emptyBuckets(), tabs, active: 'ql:demo', register: vi.fn(), unregister: vi.fn() },
+    });
+    // 面板按 prop 显示（不是「默认第一个」）
+    expect(tabBtn(w, 'ql:demo').classes()).toContain('active');
+    expect(visiblePanes(w)).toEqual(['ql:demo']);
+    // 点另一个页签 → 只冒泡 update:active(id)，面板不自行切换（切换归 App）
+    await tabBtn(w, 'launcher').trigger('click');
+    expect(w.emitted('update:active')).toEqual([['launcher']]);
+    expect(tabBtn(w, 'ql:demo').classes()).toContain('active');
+    expect(tabBtn(w, 'launcher').classes()).not.toContain('active');
+    expect(visiblePanes(w)).toEqual(['ql:demo']);
+    // App 改 prop → 面板切换 + 该页签滚进可视区（F2）
+    const seen: unknown[] = [];
+    const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (o: unknown) => void };
+    const realScroll = proto.scrollIntoView;
+    proto.scrollIntoView = (o: unknown) => { seen.push(o); };
+    try {
+      await w.setProps({ active: 'launcher' });
+    } finally {
+      proto.scrollIntoView = realScroll;
+    }
+    expect(tabBtn(w, 'launcher').classes()).toContain('active');
+    expect(visiblePanes(w)).toEqual(['launcher']);
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toMatchObject({ inline: 'nearest' });
+    w.unmount();
+    // 不传 active：自持，点击即切换（既有行为回归，与 E8 同一路径）
+    const u = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs } });
+    await tabBtn(u, 'ql:demo').trigger('click');
+    expect(tabBtn(u, 'ql:demo').classes()).toContain('active');
+    expect(visiblePanes(u)).toEqual(['ql:demo']);
+    u.unmount();
+  });
+
+  // E10（K27(1) 后半）：激活项被摘掉 → 不得留空白面板。非受控内部回落第一个；受控只冒泡 update:active(第一个 id)。
+  it('removed_active_tab_falls_back_to_first_not_blank', async () => {
+    // 非受控：摘掉当前激活页签 → 内部回落到第一个，面板不空白
+    const w = mount(LogPanel, {
+      props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), termTab('ql:demo')], register: vi.fn(), unregister: vi.fn() },
+    });
+    await tabBtn(w, 'ql:demo').trigger('click');
+    expect(visiblePanes(w)).toEqual(['ql:demo']);
+    await w.setProps({ tabs: [textTab('launcher')] });
+    expect(tabBtn(w, 'launcher').classes()).toContain('active');
+    expect(visiblePanes(w)).toEqual(['launcher']);   // 不空白
+    w.unmount();
+    // 受控：状态归 App，不越权改它 → 断 update:active 带第一个 id；App 应用后面板不空白
+    const c = mount(LogPanel, {
+      props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), termTab('ql:demo')], active: 'ql:demo', register: vi.fn(), unregister: vi.fn() },
+    });
+    await c.setProps({ tabs: [textTab('launcher')] });
+    expect(c.emitted('update:active')).toEqual([['launcher']]);
+    await c.setProps({ active: 'launcher' });
+    expect(tabBtn(c, 'launcher').classes()).toContain('active');
+    expect(visiblePanes(c)).toEqual(['launcher']);
+    c.unmount();
+  });
+});
+
 

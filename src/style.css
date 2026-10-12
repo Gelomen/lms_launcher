@@ -237,12 +237,18 @@ body {
 .tab-bar {
   position: relative; z-index: 1;        /* 高于 .log-pane（pane 后绘制会盖住顶缘 1px 重叠区）：底部 1px 行与页签底边线压在上面 */
   display: flex; align-self: stretch; width: 100%;
+  /* 页签溢出（规格 §11-2 / F1）：不换行 + 横向滚动；页签自身 flex:none 不被压扁（见 .log-tab）。
+     overflow-y 显式 hidden：overflow-x 非 visible 时它按规范算成 auto，多出来的一条横向滚动条会把页签条顶高。 */
+  flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
   margin-right: -16px;   /* 抵消 .log-panel 右侧 --card-pad：灰线延伸到面板右缘而非仅 tab 区右缘 */
   padding-bottom: 0;
   background: linear-gradient(0deg, var(--border) 1px, transparent 1px);  /* 仅底部 1px 灰（最右无页签段） */
 }
 .log-tab {
   position: relative; margin-left: -1px;
+  flex: none;                                        /* 页签不被压扁（规格 §11-2 / F1）：横向滚动时保持自身宽度 */
+  display: inline-flex; align-items: center; gap: 6px;   /* 页签文案 + [x] 同行（任务 10） */
+  white-space: nowrap;                               /* 文案不折行：截断由构造方做（索引 K26(2)），这里不二次处理 */
   height: 26px; padding: 0 14px; font-size: var(--fs-label); color: var(--muted);
   background: #F6F7F8;                              /* 未激活 = 浅灰（合上的文件夹页签） */
   border: 1px solid var(--border);                  /* 下边线 = 灰线同色 1px，与 tab-bar 底色融合成连续横线 */
@@ -257,6 +263,10 @@ body {
   border-bottom-color: var(--card);                 /* 底边线涂白：激活页签切断横线（可见线从其右下角/右缘向右延伸） */
   color: var(--primary); font-weight: 600;   /* 选中文字紫，与重要按钮统一（2026-08-29） */
 }
+/* 页签内 [x]（任务 10 / F3）：26px 高的页签里放 16×16 无框图标按钮——.icon-btn 默认 32×32 会顶破页签高度。
+   禁用态复用 .icon-btn:disabled（本文件 :232）；运行中 closeDisabled 时按钮禁用、tooltip 换成「请先停止」（审查重点 3）。 */
+.log-tab .btn-close-tab { width: 16px; height: 16px; padding: 0; border: none; background: transparent; color: inherit; }
+.log-tab .btn-close-tab:hover { background: transparent; color: var(--primary); }
 /* 未选中页签 = 浅灰底(#F6F7F8) + 自身 1px 灰底边 —— 底边即横线段（穿过该页签）；
    选中页签白底白底线切断；页签条最右空段 + margin-right 延伸 = 线到面板右缘。 */
 /* pane 高度链：.log-panel flex column → .log-pane(flex:1) → .log-view(flex:1)，中间层必须 min-height:0 */
@@ -358,7 +368,7 @@ body {
 }
 
 /* ---- #12 滚动条美化（两态透明度：idle 隐形 / 容器 hover 浮现 ≈5%；
-     覆盖 .dropdown-panel(下拉) / .template-list(模板列表) / .log-view(日志)）---- */
+     覆盖 .dropdown-panel(下拉) / .template-list(模板列表) / .log-view(日志) / .tab-bar(页签条横向滚动，任务 10)）---- */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
@@ -366,11 +376,11 @@ body {
   border-radius: 5px;
   border: 2px solid var(--card);    /* 与容器留白，视觉悬浮 */
 }
-.modal-body:hover, .log-view:hover, .template-list:hover, .dropdown-panel:hover {
+.modal-body:hover, .log-view:hover, .template-list:hover, .dropdown-panel:hover, .tab-bar:hover {
   --sb-thumb: rgba(0, 0, 0, 0.05);
   scrollbar-color: rgba(0, 0, 0, .05) transparent; /* Firefox hover：≈5% */
 }
-.modal-body, .log-view, .template-list, .dropdown-panel {
+.modal-body, .log-view, .template-list, .dropdown-panel, .tab-bar {
   --sb-thumb: transparent;
   scrollbar-color: transparent transparent;         /* Firefox idle：隐形 */
 }
@@ -378,7 +388,8 @@ body {
 .modal-body::-webkit-scrollbar-thumb,
 .log-view::-webkit-scrollbar-thumb,
 .template-list::-webkit-scrollbar-thumb,
-.dropdown-panel::-webkit-scrollbar-thumb { background: var(--sb-thumb); }
+.dropdown-panel::-webkit-scrollbar-thumb,
+.tab-bar::-webkit-scrollbar-thumb { background: var(--sb-thumb); }
 
 
 /* ---- 图标按钮 + tooltip（2026-08-25）：「新建模板」+ / 行内「编辑」铅笔 ---- */
