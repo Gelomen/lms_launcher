@@ -63,15 +63,15 @@
 
 | # | 命令 | 预期 | ✓ |
 |---|---|---|---|
-| G1 | `npx vitest run src/modules/QuickLaunchModal.test.ts src/modules/TemplateModal.test.ts` | 全 PASS | ☐ |
+| G1 | `npx vitest run src/modules/QuickLaunchModal.test.ts src/modules/QuickLaunch.test.ts src/modules/TemplateModal.test.ts` | 全 PASS（B3 改了卡片，卡片 7 条必须一字不改仍绿） | ☐ |
 | G2 | `npx vitest run src-main/i18n` | 全 PASS | ☐ |
-| G3 | `git diff --name-only` | 只含 B1-B2 | ☐ |
+| G3 | `git diff --name-only` | 只含 B1-B3 | ☐ |
 
 ## H. 提交门
 
 | # | 检查项 | 命令 / 值 | ✓ |
 |---|---|---|---|
-| H1 | 暂存范围 | `git add src/modules/QuickLaunchModal.vue src/modules/QuickLaunchModal.test.ts` | ☐ |
+| H1 | 暂存范围 | `git add src/modules/QuickLaunchModal.vue src/modules/QuickLaunchModal.test.ts src/modules/QuickLaunch.vue` | ☐ |
 | H2 | 提交信息逐字 | `feat(module): 新建/编辑启动弹窗（类型二选一 + 终端探测 + 删除确认）` | ☐ |
 | H3 | **验收勾完整性（索引 K25）**：本表 A-I 不得有裸 `☐` 或 `- [ ]`；确实未满足的项写成 `☐（原因 + 去处）`。带附加列的段（如 zh / en）每一列都要落勾 | `node .superpowers/sdd/2026-10-10-quick-launch-card/tick-census.mjs` → 本表行必须显示 `裸☐=0` 且 `I段 -[ ]=0`（H2 已勾时普查整体退出码 0） | ☐ |
 
