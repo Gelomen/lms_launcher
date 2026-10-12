@@ -233,6 +233,16 @@ Task 13: Ruling: K34(2)(3)(4)(6) —— App 持 qlConfigs 只读镜像=接受（
 Task 13: Ruling: K35(1)(2)(3) —— E9 从 LogPanel 的 onInput/onResize props 驱动=接受（App 侧守卫只能这样测，子组件侧由 TerminalTabView.test.ts 钉）；describe 标题 E1-E7→E1-E9 由我本人改（一处标签，在 018eeb7 内，如实登记）；**我的落勾脚本把字面 § 当转义管道占位符还原，普查到 53 处「规格 §x.y」被写成「规格 \|x.y」**（任务 10/11/12/13 + 索引），已批量修回；今后落勾脚本必须用不可能出现在正文里的占位符或只改目标单元格。
 Task 13: Ruling: K36 —— 已提交任务的 I 段延期项不得写成 - [ ]（tick-census.mjs:16 无标注分支），要写成普通项目符号 + ☐（原因 + 去处）。
 Task 13: complete (commits 018eeb7 代码 / e616e9e + 3c7672c + 本次 docs 文档；fix rounds 1/5；App.test.ts 57 用例；表内 37 勾、裸☐=0、普查退出码 0；G3/G4 真机门交任务 14)
+【任务 14 起点 · 2026-10-12 18:2x】HEAD d17b5cc 干净、基线 47/800。派单前取证：build.bat:70-90 只跑 --win dir（无 portable，依据 ef23ac6）、electron-builder.yml 原 31 行无 asarUnpack、dist-release 已有旧产物。
+Task 14: 实现回来（electron-builder.yml +5/−0、规格 +9/−4、计划 +3/−3、表 J 段）。我的验收取证：
+  - 范围：git diff --name-only 只有 electron-builder.yml（代码/配置侧）；yml:12-17 内容与 C1 逐字一致 + 三行注释
+  - 产物：lms_launcher.exe = 177,150,464 B（18:28 新构建）、*-portable.exe = 0、unpacked 21 个文件（四个原生二进制全在，.pdb 被默认过滤）
+  - **我独立复现了它对 D2 前提的纠正**：临时删掉 asarUnpack 段 build → unpacked 仍有 **18** 个文件（含四个原生）、外层 node-pty/index.js 未解出；还原重跑 → **21** 个、外层 index.js 解出。还原后 yml SHA 与验收前一致（931e7ad812b2）
+  - 回归：npm test 47 files / 800 passed exit 0；tsc exit 0
+Task 14: Ruling: K37 —— app.asar.unpacked 存在不是 asarUnpack 生效的证据（electron-builder 25.1.8 自动探测已解出平台包）；asarUnpack 的净增量是外层包装包文件；配置保留（规格 §7.2 要求显式声明），但不得把「unpacked 目录存在」当验收证据。打包门的真正缺口 = 运行时 dlopen，R4 至今零证据，只能靠真机 E1。取证陷阱：builder-effective-config.yaml 不被 --win dir 重写、旧 app.asar 可能陈旧（旧产物 lydell 条目为 0，早于 90c9320）。
+Task 14: Ruling: K38 —— 我的操作失误：H1 要求逐文件 git add，我用了 git add docs/superpowers 宽范围，把实现者留在工作区的规格/计划改动扫进了 856e1bc，导致 a2cbd74 只剩 yml。内容未丢，但「同一 commit」没做到。规则：验收提交按 H1 逐文件 add，提交前 git status --porcelain 核对范围。
+Task 14: complete (commits a2cbd74 配置 / 856e1bc + 本次 docs 文档；表内 19 勾、裸☐=0、I段 -[ ]=0、普查退出码 0；**E1-E9 真机门未验收，交用户**；E10 已如实标注 WSL 未验收)
+【停线点 · 当前】14 个任务的自动化门全部完成。剩余：(1) 用户真机验收 E1-E9（含任务 6 D6b、任务 7 G3、任务 13 G3/G4、M12/M13/M15/M17/M19）；(2) 最终整分支宽审查 + 处置 M 组遗留（M18 tplModal.close→common.close、M22 冗余键、M21 getCurrentInstance、M16 类型门）；(3) finishing-a-development-branch。
 【停线点 · 当前】恢复时第一件事：读任务 14 表（打包硬门 + 真机验收），先取证 dist-release 真实布局与 asarUnpack 产物（规格 §7.2 / K1），再决定哪些门本环境可跑、哪些交用户真机。
 仍有效的跨任务待办：任务 13 按 K27(1) 用 v-model:active 驱动「自动激活」并**必须把 update:active 写回**（任务 13 表 C6 已钉）；按 K24(1) 重启路径显式 `fit(true)`；读 App.test.ts:33-34 的捕获数组（M9）；任务 14 真机门（页签横向滚动外观 = 硬门 8、两处 [x] 的 UI 复核 M15、M17 嵌套 button 键盘可达性、任务 6 D6b 与任务 7 G3 的退出实测）。
 【验收勾缺失 · 我的流程缺陷】用户指出「从任务 5 起就没有勾选」。实测确认：任务 1-4 的 A-I 全勾；任务 5-9 只有 H/I 部分勾，A-G 行 173 行 + I 段清单 16 项全是 ☐ —— 我从任务 5 起改成「把验收证据追加到 J 段」，就没有回落勾。证据一直在 J 段，但 AGENTS.md 明说「表里的勾是我验收用的」，J 段不能替代勾。

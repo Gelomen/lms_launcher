@@ -8,18 +8,18 @@
 
 | # | 检查项 | 怎么验 | 预期 | ✓ |
 |---|---|---|---|---|
-| A1 | 工作区干净、全量绿 | `git status --porcelain` / `npm test` | 无输出 / 全绿 | ☐ |
-| A2 | **验收对象 = win-unpacked（已定，不是待决项）** | 读 `build.bat:70-110` + `git log --oneline -- build.bat` | `npx electron-builder --config electron-builder.yml --win dir` 只出 `dist-release\win-unpacked`，并删除旧 `*-portable.exe`——这是**既定行为**（commit `ef23ac6 build: 打包只产出 win-unpacked，不再生成 portable exe`）。**不生成 portable exe，也不改 `build.bat`**；计划与规格里「portable exe」是过时措辞，按 F3 更正 | ☐ |
-| A3 | 现有打包配置 | 读 `electron-builder.yml` 全文 | 当前**没有** `asarUnpack`；`asar: true` | ☐ |
+| A1 | 工作区干净、全量绿 | `git status --porcelain` / `npm test` | 无输出 / 全绿 | ☑（起点我实测：HEAD `d17b5cc` 干净、`npm test = 47 files / 800 passed`） |
+| A2 | **验收对象 = win-unpacked（已定，不是待决项）** | 读 `build.bat:70-110` + `git log --oneline -- build.bat` | `npx electron-builder --config electron-builder.yml --win dir` 只出 `dist-release\win-unpacked`，并删除旧 `*-portable.exe`——这是**既定行为**（commit `ef23ac6 build: 打包只产出 win-unpacked，不再生成 portable exe`）。**不生成 portable exe，也不改 `build.bat`**；计划与规格里「portable exe」是过时措辞，按 F3 更正 | ☑（已定：`build.bat:70-90` 两次 `--win dir`、`:104` 清旧 portable 残留，依据 `ef23ac6`。验收对象 = `dist-release\win-unpacked\lms_launcher.exe`） |
+| A3 | 现有打包配置 | 读 `electron-builder.yml` 全文 | 当前**没有** `asarUnpack`；`asar: true` | ☑（我实测：`electron-builder.yml` 原 31 行、`:12 asar: true`、无任何 `asarUnpack`） |
 
 ## B. 改动范围
 
 | # | 文件 | 动作 | 边界 | ✓ |
 |---|---|---|---|---|
-| B1 | `electron-builder.yml` | 加 `asarUnpack` | 只加这一段 | ☐ |
-| B2 | `docs/superpowers/specs/2026-10-10-quick-launch-card-design.md` | 改「状态」行 + 更正 §7.2 / §12-1 的「portable exe」措辞 | 只写事实与验收结果 | ☐ |
-| B3 | `docs/superpowers/plans/2026-10-10-quick-launch-card.md` | 更正任务 14 步骤 2/3 的「portable exe」措辞 | 只改措辞，不动任务边界 | ☐ |
-| B4 | `build.bat` | **不改** | 改它去产出 portable exe 属越界（见 A2） | ☐ |
+| B1 | `electron-builder.yml` | 加 `asarUnpack` | 只加这一段 | ☑（`electron-builder.yml:12-17`，`+5/−0`：两行配置 + 三行注释。注释说明依据与「不依赖自动探测」，见索引 K37） |
+| B2 | `docs/superpowers/specs/2026-10-10-quick-launch-card-design.md` | 改「状态」行 + 更正 §7.2 / §12-1 的「portable exe」措辞 | 只写事实与验收结果 | ☑（规格 `+9/−4`：状态行只记已跑过的事实并显式写「文件布局取证 ≠ 运行时 dlopen 成功」；§7.2 / §12-1 的 portable 措辞按 `ef23ac6` 更正） |
+| B3 | `docs/superpowers/plans/2026-10-10-quick-launch-card.md` | 更正任务 14 步骤 2/3 的「portable exe」措辞 | 只改措辞，不动任务边界 | ☑（计划 `+3/−3`，只改任务 14 步骤 2/3 措辞，任务边界未动） |
+| B4 | `build.bat` | **不改** | 改它去产出 portable exe 属越界（见 A2） | ☑（`git diff --name-only -- build.bat` 无输出） |
 
 ## C. 配置门
 
@@ -31,7 +31,7 @@
 
 | # | 步骤 | 命令 | 预期 | ✓ |
 |---|---|---|---|---|
-| D1 | 打包 | `build.bat` | 成功退出；产物 = `dist-release\win-unpacked\lms_launcher.exe`；`dist-release` 下**没有** `*-portable.exe`（属预期，见 A2） | ☐ |
+| D1 | 打包 | `build.bat` | 成功退出；产物 = `dist-release\win-unpacked\lms_launcher.exe`；`dist-release` 下**没有** `*-portable.exe`（属预期，见 A2） | ☑（我复跑 `build.bat` 两次 exit 0；`lms_launcher.exe = 177,150,464 B`、`*-portable.exe` 计数 0） |
 | D2 | 解包检查 | 列 `dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64` | `conpty.node` / `conpty\conpty.dll` / `conpty\OpenConsole.exe` **三个都在**。基线核对：改动前 `resources` 只有 `app.asar` + `icon.ico`，**没有** `app.asar.unpacked` → 加 `asarUnpack` 后它必须出现，出现即证明解包生效 | ☑（三个原生文件都在：`conpty.node`(291328) / `conpty\conpty.dll`(110152) / `conpty\OpenConsole.exe`(1062472)`，另有 `conpty_console_list.node`(134656)；`.pdb` 被 `builder-debug.yml` 的默认过滤排除。**本行的前提已按索引 K37 更正**：`app.asar.unpacked` 存在本身不是 `asarUnpack` 生效的证据——不加它也有 18 个文件） |
 
 ## E. 硬门验收（逐条记录命令与输出；第 1 条 dev 与打包产物**各做一次**）
@@ -47,39 +47,39 @@
 | E7 | exe 类型 | 启动记事本 | 无页签、按钮变红；关闭记事本 → 按钮回落 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
 | E8 | 页签溢出与长名 | 建 8 条页签 + 超长名 | 横向滚动；列表与页签都截断 + tooltip | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
 | E9 | 退出应用 | 退出后 `tasklist` | 所有终端进程消失 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
-| E10 | **WSL 不得声称已验收** | 本机无发行版 | 文档如实写「未验收，待安装发行版后补」 | ☐ |
+| E10 | **WSL 不得声称已验收** | 本机无发行版 | 文档如实写「未验收，待安装发行版后补」 | ☑（规格状态行明写「**WSL：未验收。** 本机无 WSL 发行版（§12-10 / §13.3），待安装发行版后补」，未声称已验收） |
 
 ## F. 文档门
 
 | # | 检查项 | 预期 | ✓ |
 |---|---|---|---|
-| F1 | 规格「状态」行 | 写明：验收结果、打包验收结论、WSL 待补 | ☐ |
-| F2 | 未验证项如实保留 | 规格 §13 的 5 条不得被改成「已解决」 | ☐ |
-| F3 | 更正过时措辞 | 计划 任务 14 步骤 2/3 与规格 §7.2 / §12-1 里的「portable exe」改为「win-unpacked 产物」，并注明依据 `ef23ac6`（用户已明确：不要 portable exe） | ☐ |
+| F1 | 规格「状态」行 | 写明：验收结果、打包验收结论、WSL 待补 | ☑（规格状态行分四条：自动化门 / 打包门文件级 / 真机 1-9 未验收 / WSL 未验收） |
+| F2 | 未验证项如实保留 | 规格 §13 的 5 条不得被改成「已解决」 | ☑（`git diff` 里 §13 五条一字未改） |
+| F3 | 更正过时措辞 | 计划 任务 14 步骤 2/3 与规格 §7.2 / §12-1 里的「portable exe」改为「win-unpacked 产物」，并注明依据 `ef23ac6`（用户已明确：不要 portable exe） | ☑（计划与规格里的「portable exe」全部改为「win-unpacked 产物」并注明依据 `ef23ac6`） |
 
 ## G. 回归门
 
 | # | 命令 | 预期 | ✓ |
 |---|---|---|---|
-| G1 | `npm test` | 全绿 | ☐ |
-| G2 | `git diff --name-only` | 只含 B1-B2（及 A2 选定时的 B3） | ☐ |
+| G1 | `npm test` | 全绿 | ☑（我复跑 `47 files / 800 passed`，exit 0） |
+| G2 | `git diff --name-only` | 只含 B1-B2（及 A2 选定时的 B3） | ☑（我复跑 `git diff --name-only -- src src-main build.bat package.json package-lock.json electron-builder.yml` 只出 `electron-builder.yml`） |
 
 ## H. 提交门
 
 | # | 检查项 | 命令 / 值 | ✓ |
 |---|---|---|---|
-| H1 | 暂存范围 | `git add electron-builder.yml docs/superpowers/specs/2026-10-10-quick-launch-card-design.md docs/superpowers/plans/2026-10-10-quick-launch-card.md`（含 F3 的措辞更正） | ☐ |
-| H2 | 提交信息逐字 | `build: asarUnpack 解出 node-pty 原生二进制 + 打包真机验收记录` | ☐ |
-| H3 | **验收勾完整性（索引 K25）**：本表 A-I 不得有裸 `☐` 或 `- [ ]`；确实未满足的项写成 `☐（原因 + 去处）`。带附加列的段（如 zh / en）每一列都要落勾 | `node .superpowers/sdd/2026-10-10-quick-launch-card/tick-census.mjs` → 本表行必须显示 `裸☐=0` 且 `I段 -[ ]=0`（H2 已勾时普查整体退出码 0） | ☐ |
+| H1 | 暂存范围 | `git add electron-builder.yml docs/superpowers/specs/2026-10-10-quick-launch-card-design.md docs/superpowers/plans/2026-10-10-quick-launch-card.md`（含 F3 的措辞更正） | ☑（**实际分两次提交，与逐字暂存范围不同**：`a2cbd74` 只含 `electron-builder.yml`；规格与计划的 B2/B3/F1/F3 改动被我的 `856e1bc`（`git add docs/superpowers` 宽范围）一并扫走。内容齐全无遗漏，偏差登记索引 K38） |
+| H2 | 提交信息逐字 | `build: asarUnpack 解出 node-pty 原生二进制 + 打包真机验收记录` | ☑（逐字用于 `a2cbd74`） |
+| H3 | **验收勾完整性（索引 K25）**：本表 A-I 不得有裸 `☐` 或 `- [ ]`；确实未满足的项写成 `☐（原因 + 去处）`。带附加列的段（如 zh / en）每一列都要落勾 | `node .superpowers/sdd/2026-10-10-quick-launch-card/tick-census.mjs` → 本表行必须显示 `裸☐=0` 且 `I段 -[ ]=0`（H2 已勾时普查整体退出码 0） | ☑（普查本表：`裸☐=0`、`I段 -[ ]=0`，整体退出码 0） |
 
 ## I. 完成判据
 
-- [ ] D2 三个文件都在（实测清单见 J 段「D2」行）
+- [x] D2 三个文件都在（我实测四个原生文件全在：`conpty.node`/`conpty.dll`/`OpenConsole.exe`/`conpty_console_list.node`；本条前提已按索引 K37 更正）
 - ☐（**原因**：E1-E9 要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `electron.exe` 立即退出 `0x80000003`，索引 K33。**去处**：用户真机逐条验收，结果回填 E 段与 J 段）E1-E9 逐条有命令与输出记录
-- [ ] E10 如实标注未验收（规格「状态」行已写「WSL：未验收」）
-- [ ] F1-F3 文档更新
-- [ ] G1-G2 通过
-- [ ] H1-H2 完成
+- [x] E10 如实标注未验收（规格「状态」行明写「**WSL：未验收。** 本机无 WSL 发行版」，未声称已验收）
+- [x] F1-F3 文档更新
+- [x] G1-G2 通过 —— 我复跑 47 files / 800 passed、`git diff --name-only` 只含 `electron-builder.yml` + 三份文档
+- [x] H1-H2 完成（`a2cbd74` = `electron-builder.yml`；规格/计划的改动落在 `856e1bc`，与 H1 的「同一 commit」不符，偏差登记索引 K38）
 
 ## J. 执行记录（实现时填写，**每条都要有命令与输出**）
 
