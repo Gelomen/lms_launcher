@@ -38,7 +38,7 @@
 
 | # | 验收项 | 操作 | 预期 | ✓ |
 |---|---|---|---|---|
-| E1 | **R4：打包产物里开终端** | 运行 `dist-release\win-unpacked\lms_launcher.exe` → 新建 cmd 配置 → 启动 | 终端页签出现提示符、能输入 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E1 | **R4：打包产物里开终端** | 运行 `dist-release\win-unpacked\lms_launcher.exe` → 新建 cmd 配置 → 启动 | 终端页签出现提示符、能输入 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段）。**已有一条非 GUI 的运行时补证**（J 段「运行时补证」行：从打包解包目录 `require` + `spawn('cmd.exe')` 成功、`exitCode 0`）——它证明解包布局可用，但**不覆盖**页签渲染、输入回写、颜色、进程树清理，本行仍必须真机做 |
 | E2 | 中文与颜色 | pwsh / powershell / cmd 各跑一条中文输出命令 | 中文正确、ANSI 颜色正常 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
 | E3 | 交互输入 | cmd 配置命令写 `set /p X=NAME?` → 页签内输入 `Alice` → 回车 → 敲 `echo %X%` | 显示 `Alice` | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
 | E4 | TUI / 清屏 | 页签内跑 `cls`；再跑一个交互式程序（如 `python`） | 清屏正常；能输入输出 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
