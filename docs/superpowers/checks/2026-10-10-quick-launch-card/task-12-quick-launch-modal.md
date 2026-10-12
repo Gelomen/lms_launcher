@@ -16,7 +16,7 @@
 |---|---|---|---|---|
 | B1 | `src/modules/QuickLaunchModal.vue` | 新建 | 表单 + 校验回显，不写文件（保存走 `ql_save`） | ☐ |
 | B2 | `src/modules/QuickLaunchModal.test.ts` | 新建 | 计划给出的 6 个用例（invoke 用 mock） | ☐ |
-| B3 | `src/modules/QuickLaunch.vue` | 修改（挂载接线） | **弹窗由卡片持有**（索引 K29）：`import QuickLaunchModal` + 本地 `modalOpen`/`editingId`，新建/编辑按钮打开它并回填；`saved`/`deleted` → 重拉 `ql_list` + `emit('changed')`。不改弹窗内部、不改 `App.vue` | 索引 K29 / 既有 `TemplateModule.vue:11` 同构 | ☐ |
+| B3 | `src/modules/QuickLaunch.vue` | 修改（挂载接线） | **弹窗由卡片持有**（索引 K29）：`import QuickLaunchModal` + 本地 `modalOpen`/`editingId`，新建/编辑按钮打开它并回填；`saved`/`deleted` → 重拉 `ql_list` + `emit('changed')`。不改弹窗内部、不改 `App.vue`（索引 K29 / 与既有 `TemplateModule.vue:11` 同构） | ☐ |
 
 ## C. 接口契约（逐字）
 
@@ -41,13 +41,13 @@
 |---|---|---|---|
 | E1 | 默认类型为「命令行」→ 显示终端下拉 + 命令输入框 | 计划 步骤 1 | ☐ |
 | E2 | 切到「可执行程序」→ 隐藏终端与命令，显示 exe 路径 + 选择按钮 | 计划 步骤 1 | ☐ |
-| E7 | **卡片接线（B3）**：点卡片「新建」→ 弹窗以空表单打开；点行内「编辑」→ 以该条回填打开；弹窗 `saved` → 卡片重拉列表并冒泡 `changed`；`deleted` → 该行消失且冒泡 `changed`；`close` → 只关窗不改动 | 索引 K29 / 规格 §9.4 | ☐ |
 | E3 | 终端下拉来自 `ql_terminals`；**加载中禁用**（`ql.modal.terminal.loading`） | 规格 §9.4 | ☐ |
 | E4 | 名字为空 → 保存被拦下并显示错误文案（`ql.err.nameRequired`） | 规格 §5.3-1 | ☐ |
 | E5 | 主进程返回 `VALIDATION:` 重名 → 错误区显示「名字已存在」且**不关窗** | 规格 §5.3-2 | ☐ |
 | E6 | 仅编辑态显示删除按钮；删除需 `ConfirmDialog` 二次确认 | 规格 §9.4 | ☐ |
 | E7 | 保存成功 → emit `saved` 并关窗，父组件负责刷新列表 | 计划 emits | ☐ |
 | E8 | 新建态 `id` 传 `null`（由主进程生成 `ql` 前缀 id） | 规格 §5.4 | ☐ |
+| E9 | **卡片接线（B3）**：点卡片「新建」→ 弹窗以空表单打开；点行内「编辑」→ 以该条回填打开；弹窗 `saved` → 卡片重拉列表并冒泡 `changed`；`deleted` → 该行消失且冒泡 `changed`；`close` → 只关窗不改动 | 索引 K29 / 规格 §9.4 | ☐ |
 
 ## F. 实现口径
 
@@ -77,7 +77,7 @@
 
 ## I. 完成判据
 
-- [ ] E1-E8 有测试
+- [ ] E1-E9 有测试（E9 = 卡片挂载接线，索引 K29）
 - [ ] D2 先红、D4 后绿
 - [ ] G1-G3 通过
 - [ ] H1-H2 完成
