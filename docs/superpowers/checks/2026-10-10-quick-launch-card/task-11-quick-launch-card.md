@@ -18,7 +18,7 @@
 |---|---|---|---|---|
 | B1 | `src/modules/QuickLaunch.vue` | 新建 | 不订阅事件，运行态由 App 下发 | ☐ |
 | B2 | `src/modules/QuickLaunch.test.ts` | 新建 | 计划给出的 6 个用例 | ☐ |
-| B3 | `src-main/i18n/dict.ts` | 修改（**仅一行**） | 索引 M2：en `ql.invalid`（:492）由 `{n} invalid entries skipped` 改为 `invalid entries skipped: {n}`（n=1 时原句语法不成立；本任务是首个调用点）。zh 侧不动、不新增键 | 索引 M2 / K28(2) | ☐ |
+| B3 | `src-main/i18n/dict.ts` | 修改（**仅一行**） | 索引 M2：en `ql.invalid`（:492）由 `{n} invalid entries skipped` 改为 `invalid entries skipped: {n}`（n=1 时原句语法不成立；本任务是首个调用点）。zh 侧不动、不新增键（索引 M2 / K28(2)） | ☐ |
 
 ## C. 接口契约（逐字）
 
