@@ -419,7 +419,7 @@ it('invalid 非空时显示「N 条配置无效」提示', async () => {});
 
 **文件：** 创建 `src/modules/QuickLaunchModal.vue`；测试 `src/modules/QuickLaunchModal.test.ts`
 
-**接口：** props `{ open: boolean; id: string; entry: QuickLaunchEntry | null }`；emits `{ saved: []; deleted: [id: string]; close: [] }`
+**接口：** props `{ open: boolean; id: string \| null; entry: QuickLaunchEntry | null }`（`id = null` = 新建，索引 K31(1)）；emits `{ saved: []; deleted: [id: string]; close: [] }`
 
 - [ ] **步骤 1：编写失败的测试**
 

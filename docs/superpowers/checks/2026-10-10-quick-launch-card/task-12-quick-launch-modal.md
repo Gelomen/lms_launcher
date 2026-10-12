@@ -22,9 +22,9 @@
 
 | # | 契约 | ✓ |
 |---|---|---|
-| C1 | props：`{ open: boolean; id: string \| null; entry: QuickLaunchEntry \| null }`。**`id` 必须可为 `null`**（索引 K31(1)）：本表 E8 要求「新建态 `id` 传 `null`」，卡片侧 `editingId` 就是 `string \| null`（`QuickLaunch.vue:42`）——计划 :422 原写 `id: string` 与 E8 自相矛盾，已更正 | 本表 E8 / `QuickLaunch.vue:42` / 索引 K31(1) | ☐ |
+| C1 | props：`{ open: boolean; id: string \| null; entry: QuickLaunchEntry \| null }`。**`id` 必须可为 `null`**（索引 K31(1)）：本表 E8 要求「新建态 `id` 传 `null`」，卡片侧 `editingId` 就是 `string \| null`（`QuickLaunch.vue:42`）——计划 :422 原写 `id: string` 与 E8 自相矛盾，已更正（出处：本表 E8 / `QuickLaunch.vue:42` / 索引 K31(1)） | ☐ |
 | C2 | emits：`{ saved: []; deleted: [id: string]; close: [] }` | ☐ |
-| C3 | invoke：`ql_terminals`（`open` 变 true 时拉取，`main.ts:1104` → `TerminalInfo[] {id, path}`，`quick-launch-terminals.ts:17-20`）、`ql_save`（`main.ts:1095`，返回 `string`：空串 = 成功）、`ql_delete`（`main.ts:1100`，不存在 → 抛 `VALIDATION:`）、`ql_pick_exe`（`main.ts:1139` → `string \| null`，取消 = `null`不改表单）。**保存按钮必须单飞**（索引 K14(2)：`ql_save(id=null)` 重复点击会生成两条新配置；`saving` 标志 + `:disabled`，与 `TemplateModal.vue:442` 同构） | 规格 §8 / 索引 K14(2) | ☐ |
+| C3 | invoke：`ql_terminals`（`open` 变 true 时拉取，`main.ts:1104` → `TerminalInfo[] {id, path}`，`quick-launch-terminals.ts:17-20`）、`ql_save`（`main.ts:1095`，返回 `string`：空串 = 成功）、`ql_delete`（`main.ts:1100`，不存在 → 抛 `VALIDATION:`）、`ql_pick_exe`（`main.ts:1139` → `string \| null`，取消 = `null`不改表单）。**保存按钮必须单飞**（索引 K14(2)：`ql_save(id=null)` 重复点击会生成两条新配置；`saving` 标志 + `:disabled`，与 `TemplateModal.vue:442` 同构）（出处：规格 \|8 / 索引 K14(2)） | ☐ |
 
 ## D. TDD 步骤门
 
