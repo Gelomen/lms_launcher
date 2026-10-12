@@ -22,9 +22,9 @@
 
 | # | 契约 | ✓ |
 |---|---|---|
-| C1 | props：`{ open: boolean; id: string; entry: QuickLaunchEntry \| null }` | ☐ |
+| C1 | props：`{ open: boolean; id: string \| null; entry: QuickLaunchEntry \| null }`。**`id` 必须可为 `null`**（索引 K31(1)）：本表 E8 要求「新建态 `id` 传 `null`」，卡片侧 `editingId` 就是 `string \| null`（`QuickLaunch.vue:42`）——计划 :422 原写 `id: string` 与 E8 自相矛盾，已更正 | 本表 E8 / `QuickLaunch.vue:42` / 索引 K31(1) | ☐ |
 | C2 | emits：`{ saved: []; deleted: [id: string]; close: [] }` | ☐ |
-| C3 | invoke：`ql_terminals`（`open` 变 true 时拉取）、`ql_save`、`ql_delete`、`ql_pick_exe` | ☐ |
+| C3 | invoke：`ql_terminals`（`open` 变 true 时拉取，`main.ts:1104` → `TerminalInfo[] {id, path}`，`quick-launch-terminals.ts:17-20`）、`ql_save`（`main.ts:1095`，返回 `string`：空串 = 成功）、`ql_delete`（`main.ts:1100`，不存在 → 抛 `VALIDATION:`）、`ql_pick_exe`（`main.ts:1139` → `string \| null`，取消 = `null`不改表单）。**保存按钮必须单飞**（索引 K14(2)：`ql_save(id=null)` 重复点击会生成两条新配置；`saving` 标志 + `:disabled`，与 `TemplateModal.vue:442` 同构） | 规格 §8 / 索引 K14(2) | ☐ |
 
 ## D. TDD 步骤门
 
@@ -41,9 +41,9 @@
 |---|---|---|---|
 | E1 | 默认类型为「命令行」→ 显示终端下拉 + 命令输入框 | 计划 步骤 1 | ☐ |
 | E2 | 切到「可执行程序」→ 隐藏终端与命令，显示 exe 路径 + 选择按钮 | 计划 步骤 1 | ☐ |
-| E3 | 终端下拉来自 `ql_terminals`；**加载中禁用**（`ql.modal.terminal.loading`） | 规格 §9.4 | ☐ |
+| E3 | 终端下拉来自 `ql_terminals`；**加载中禁用**并用 `placeholder = t('ql.modal.terminal.loading')`（`Dropdown.vue:22-24` 支持 `disabled`/`placeholder`）。**顺序不重排**：按主进程返回序 powershell/cmd/pwsh/wsl（`quick-launch-terminals.ts:107-113`），预选第一项可用；标签取 `ql.term.*`（`dict.ts:158-161`/`:500-503`）。**M1 关闭**（索引 K31(3)：规格与计划都没要求 pwsh 优先，要改先改规格 §6.1） | 规格 §9.4 / §6.1 / 索引 K31(3) | ☐ |
 | E4 | 名字为空 → 保存被拦下并显示错误文案（`ql.err.nameRequired`） | 规格 §5.3-1 | ☐ |
-| E5 | 主进程返回 `VALIDATION:` 重名 → 错误区显示「名字已存在」且**不关窗** | 规格 §5.3-2 | ☐ |
+| E5 | 主进程返回 `VALIDATION:` 重名 → 错误区显示**主进程返回的文案**（`errMsg(e)`，即 `err.ql.nameDup` = 「名字「X」已存在」，`dict.ts:310`/`:652`）且**不关窗、不冒泡 `saved`**。**不在渲染端把 `VALIDATION:` 映射成 `ql.err.nameTaken`**（索引 K31(2)：主进程文案带名字、与 `TemplateModal` 错误区口径一致；`ql.err.nameTaken` 因此未被引用，登记为冗余键不删——无 unused-key 门，删它要同步任务 8 表 C8） | 规格 §5.3-2 / 索引 K31(2) | ☐ |
 | E6 | 仅编辑态显示删除按钮；删除需 `ConfirmDialog` 二次确认 | 规格 §9.4 | ☐ |
 | E7 | 保存成功 → emit `saved` 并关窗，父组件负责刷新列表 | 计划 emits | ☐ |
 | E8 | 新建态 `id` 传 `null`（由主进程生成 `ql` 前缀 id） | 规格 §5.4 | ☐ |
