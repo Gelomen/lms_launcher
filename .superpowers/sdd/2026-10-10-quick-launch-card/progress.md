@@ -299,3 +299,15 @@ Task 11: complete (commits 381690a 代码 / af5b53f + 6c426ce + b331618 + a4dd3c
 流程事故（我的提交范围）：.gitignore 的 !.superpowers/ 与 !.superpowers/** 是**用户本人**改的（我先前误记成实现者所为，已更正）。结果我的 docs 提交 a7be5fb 把 .gitignore + 43 个 .superpowers/ 文件一起带进去了（9105 行）。已 git reset --soft + restore --staged 拆成两半：5afbb71 只含 00-index.md；.gitignore 与 .superpowers/ 回到未跟踪/未暂存，等用户决定是否入仓。教训：提交前必须看 git show --stat 的实际文件数，不能只看自己 add 的路径。
 
 Task 1 主代理验收取证（与子代理独立复跑）：npx vitest run src/util/copy-name.test.ts src/modules/TemplateModule.test.ts → exit 0，2 files / 23 tests passed；git diff --name-only → TemplateModule.vue + 该 check 表（J 段所致，见上条 Ruling），未跟踪新增 = copy-name.ts / copy-name.test.ts，范围 = B1-B3。
+
+## 最终整分支审查与修复轮（2026-10-12 晚）
+
+审查报告：`.superpowers/sdd/2026-10-10-quick-launch-card/final-review.md`（对 `341319a..HEAD` 全分支；无 Critical；结论「修完再合」）。逐条裁决落 `00-index.md` 的 K40/K41/K42/K43 与 M 组（M1-M27）。
+
+- **A1**（`1b1785b`）：真机用例自动记录起过的进程并按 PID 差分清掉记事本窗口（M10/M23）。附带纠正我自己的错误描述：记事本不是「自我再生」，而是 stub 把窗口交给真进程（M23/K39(2)）。
+- **A2**（`70444ee`）：`stopAll` 循环到表空（去掉无条件 `clear()`，上限 64 为不可达护栏）+ `states()` 用 `proc.isRunning()`（I-3/M7/M12）。我核实退出耗时不变：`stopInternal` 必走 `finalize`。
+- **B/B1**（`151e680`）：运行中的条目禁用 [删除]（接上零引用的 `ql.err.running`）、启动在途给反馈、下拉标签按 `Dropdown.vue:4` 契约截断 + `option.tip`；页签名不再回退成 id、确认文案 trim、夹具补 `paramsMeta`（332→0 条警告）。**B1 是我验收发现的**：`data-tooltip` 不是渲染条件，`.tip-up` 类才是（`style.css:414-425`）→ 那句 tooltip 真机上根本不显示；且必须条件挂载（`attr()` 缺属性时求值为空串 → 空气泡）。
+- **C2**（`de3850f`）：给 `kill()` 的 try/catch 与停止幂等守卫的 `stopping` 半边各补一条用例（真实 Minor 6 缺口）。**C 轮是我重复派单**——审查报告是对 A2 之前的代码写的，A2 已钉过那两条；实现者停下来报告、一个字没改。
+- 文档同步：规格 §11-1 追加终端下拉预算、§12 追加真机硬门 11/12；任务 12 表 E3、任务 14 表 E11/E12；计划任务 12 的 props 契约与修订说明。
+- 我自己的两个流程错误（已登记 K43）：按审查清单派单前没对当前 HEAD 复核（重复派单）；一次变异探针用了多行 `\n` 锚点而仓库是 CRLF → 替换从未发生，那次「取证」是空的。此后：探针先断言标记串已写入再跑测试。
+- 收尾时全量：`npm test` 47 files / **814 passed**、`tsc -p tsconfig.main.json` exit 0、i18n 25 passed、卫生门 notepad 0、`build.bat` exit 0（win-unpacked，21 个解包文件）。真机 §12 硬门 1-12 仍待用户验收（本 harness 起不了 Electron，索引 K33）。
