@@ -215,7 +215,14 @@ Task 12: Ruling: K31(1) —— 弹窗 props 的 id 是 string | null。依据：
 Task 12: Ruling: K31(2) —— 重名错误显示主进程返回的文案（errMsg → err.ql.nameDup「名字「X」已存在」），不在渲染端把 VALIDATION: 映射成 ql.err.nameTaken。依据：带名字更有用 + 与 TemplateModal 错误区口径一致；实测 key-coverage.test.ts 只有 :117（调用点的键必须存在）与 :131（占位符双向一致），**没有 unused-key 检查**，所以留着不红。代价：ql.err.nameTaken 成为未被引用的键 → 登记为冗余，删它要同步任务 8 表 C8，留最终整分支审查决定。
 Task 12: Ruling: K31(3) —— M1 关闭：终端下拉不重排，按主进程返回序 powershell/cmd/pwsh/wsl（quick-launch-terminals.ts:107-113），预选第一项可用。依据：规格 §6.1 的表序就是 UI 序，规格与计划都没要求 pwsh 优先；在渲染端排序是扩范围。
 Task 12: 我自己写表/改表的三处笔误当场修并如实提交：5660067→4f7e5ca（C1/C3 多写一列；计划接口行锚点因把 | 写成 | 而未命中）、8b79057（B3 加进范围后 G1/G3/H1 必须同步——G1 还要把 QuickLaunch.test.ts 加进回归门）。教训：改 B 段范围必须同批改 G/H 段。
-Task 12: 已派单（brief 5374 字符：三文件范围、C1-C3 逐字含单飞、9 条用例（含 E9 卡片接线）、F1-F5、三条门 + npm test 只增不减 + tsc、四处变异（去单飞 / 去加载中禁用 / 删除不开确认框 / 卡片不接 saved）、「卡片既有 7 条用例一字不改」）。
+Task 12: 已派单（brief 5374 字符：三文件范围、C1-C3 逐字含单飞、9 条用例（含 E9 卡片接线）、F1-F5、三条门 + npm test 只增不减 + tsc、四处变异（去单飞 / 去加载中禁用 / 删除不开确认框 / 卡片不接 saved）、「卡片既有 7 条用例一字不改」）。Task 12: 实现回来（QuickLaunchModal.vue 350 行 / 9 用例 + 卡片接线 16/2）。我的验收取证：
+  - 范围门：git diff 代码侧只有 QuickLaunch.vue 16/2 + 两份新文件；QuickLaunch.test.ts 的 diff 为空（卡片 7 条一字未改）
+  - 我的门复跑：G1 3 files / 78 passed（卡片 7 · 弹窗 9 · TemplateModal 62）/ G2 25 passed / npm test 47 files 791 passed / tsc exit 0 —— 与实现者逐条一致
+  - 我的六处变异：① 去 saving 守卫 = 1 红 E7 ② 去 :disabled="terminalsLoading" = 1 红 E3 ③ 删除不开确认框 = 2 红 E6+E9 ④ 卡片不接 saved = 1 红 E9 ⑤ 终端重排 = 1 红 E3（K31(3) 有牙）⑥ props.id ?? 空串 = 1 红 E8（K31(1) 有牙）——与实现者报的逐条一致；还原 SHA 372cf7fcd798 / 0a34c322a00b 一致
+  - 实现者的取证质量：happy-dom 对 disabled 按钮不派发 click，故把两次点击放同一 tick，让红点落在 JS 守卫而不是 :disabled 上——这是对的（单飞是 JS 契约）
+Task 12: Ruling: K32(1) —— 我写在简报与 C3 的「ql_save 返回 string：空串 = 成功」与实测不符（main.ts:1095-1098 = 成功 resolve 最终 id / 失败 reject 带 VALIDATION: 前缀；STATE: 不在保存路径）。实现者按实测做是对的，C3 已更正。顺带修掉我合并单元格时把「规格 §8」弄成「规格 \|8」的老毛病（教训第二次踩：改表只能定点改目标单元格）。
+Task 12: Ruling: K32(2)/(3) —— 接受复用 tplModal.close 作 aria-label（登记 M18：规格 §10 没有 ql.modal.close，为一个 aria-label 加键要同时改规格 §10 + 任务 8 表 = 扩范围；干净做法是提到 common.close 并让 TemplateModal 一起改，留最终审查）；接受不做删除确认/终端标签的长名截断（登记 M19 → 任务 14 真机 UI 复核，ConfirmDialog 自带 word-break 兜底）。E7「关窗」由持有者做 = 接受（与 TemplateModal.vue:216 / TemplateModule.vue:143 分工同构）。四条失败分支无用例 = 测试强度边界（K24(2) 先例）。
+Task 12: complete (commits 4c518d1 代码 / 5660067 + 4f7e5ca + 8b79057 + d35a60f + 本次 docs 文档；fix rounds 0/5；QuickLaunchModal.test.ts 9 用例；表内 32 勾、裸☐=0、普查退出码 0)
 仍有效的跨任务待办：任务 13 按 K27(1) 用 v-model:active 驱动「自动激活」并**必须把 update:active 写回**（任务 13 表 C6 已钉）；按 K24(1) 重启路径显式 `fit(true)`；读 App.test.ts:33-34 的捕获数组（M9）；任务 14 真机门（页签横向滚动外观 = 硬门 8、两处 [x] 的 UI 复核 M15、M17 嵌套 button 键盘可达性、任务 6 D6b 与任务 7 G3 的退出实测）。
 【验收勾缺失 · 我的流程缺陷】用户指出「从任务 5 起就没有勾选」。实测确认：任务 1-4 的 A-I 全勾；任务 5-9 只有 H/I 部分勾，A-G 行 173 行 + I 段清单 16 项全是 ☐ —— 我从任务 5 起改成「把验收证据追加到 J 段」，就没有回落勾。证据一直在 J 段，但 AGENTS.md 明说「表里的勾是我验收用的」，J 段不能替代勾。
 已逐行补齐（commit 4de6e3b）：任务 5 勾 41、任务 6 勾 40、任务 7 勾 28、任务 8 勾 56（含 C 段 zh/en 两个附加列各 9/8 处）、任务 9 勾 40；三处**故意保持未勾并写明去处**：任务 5 H3（pnpm-lock.yaml 处置，本任务不做）、任务 6 D6b 与任务 7 G3（真机门，K12/K19）。
