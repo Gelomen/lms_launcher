@@ -881,9 +881,9 @@ describe('App tray settings', () => {
   });
 });
 
-// GPU 卡片（spec 2026-09-09-gpu-card-design §5，2026-09 挪位）：挂载位置 = .grid 第三列，TemplateModule 右侧
+// GPU 卡片（spec 2026-09-09-gpu-card-design §5，2026-09 挪位）：挂载位置 = .grid 第四列，快捷启动卡右侧（2026-10-10 规格 §4 把快捷启动插到第 3 列，GPU 顺移到第 4 列）
 describe('App GPU card mount', () => {
-  it('GPU 卡片是网格第三列（顺序契约 左列 dir → launch；列2 template；列3 gpu）', async () => {
+  it('GPU 卡片是网格第四列（顺序契约 左列 dir → launch；列2 template；列3 quick；列4 gpu）', async () => {
     const { w } = mountApp();
     await flush();
     const stacks = w.findAll('.stack');
@@ -892,13 +892,14 @@ describe('App GPU card mount', () => {
     expect(leftCards.length).toBe(2);
     expect(leftCards[0].find('.module-dir').exists()).toBe(true);
     expect(leftCards[1].find('.module-launch').exists()).toBe(true);
-    // 网格直接子级 = 3 项：左列堆叠 / 模板卡 / GPU 卡
+    // 网格直接子级 = 4 项：左列堆叠 / 模板卡 / 快捷启动卡 / GPU 卡（2026-10-10 规格 §4：快捷启动插到第 3 列）
     const grid = w.find('.grid');
     expect(grid.exists()).toBe(true);
     const gridItems = [...(grid.element as HTMLElement).children];
-    expect(gridItems.length).toBe(3);
+    expect(gridItems.length).toBe(4);
     expect(gridItems[1].querySelector('.module-template')).not.toBeNull();
-    const gpuEl = gridItems[2].querySelector('.module-gpu') as HTMLElement;
+    expect(gridItems[2].querySelector('.module-quick')).not.toBeNull();
+    const gpuEl = gridItems[3].querySelector('.module-gpu') as HTMLElement;
     expect(gpuEl).not.toBeNull();
     expect(gpuEl.querySelector('h2')).toBeNull(); // 卡片 h2「GPU 信息」已删除（用户 2026-09-10：卡名上位到原 h2 行=层顶行）
     // 首帧未到达：占位与数据态位置结构一致（用户 2026-09-10 指定）——标题占位 "–"、四格占位、‹ › 禁用，无圆点
@@ -916,7 +917,7 @@ describe('App GPU card mount', () => {
     const GB = 1073741824;
     gpuStatsHandlers.at(-1)!({ gpus: [{ luid: '0x0000edff_00000000', name: 'NVIDIA GeForce RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB, dxgiIndex: 0 }] });
     await flush();
-    const gpuCard = w.find('.grid > .card:nth-child(3)'); // 第三列直接子级 = GPU 卡
+    const gpuCard = w.find('.grid > .card:nth-child(4)'); // 第四列直接子级 = GPU 卡（第 3 列已被快捷启动占位）
     expect(gpuCard.find('.module-gpu').exists()).toBe(true);
     expect(gpuCard.find('.gpu-title').text()).toBe('#GPU 0 NVIDIA GeForce RTX 4090');
     expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 / 24.0 GB');
@@ -1096,5 +1097,337 @@ describe('快捷启动 IPC 封装（任务 6）', () => {
     const real = await vi.importActual<typeof import('./ipc')>('./ipc');
     expect(typeof real.onQlData).toBe('function');
     expect(typeof real.onQlExit).toBe('function');
+  });
+});
+
+
+// ===== 任务 13：App 接线（四列布局 / 终端页签数据路由 / 重载复原）=====
+// 索引 M9：本文件 :33-34 登记的 qlDataHandlers / qlExitHandlers 由这一段驱动（任务 6 只登记不驱动）。
+// xterm 与三个 addon 一律打桩（规格 §12.5 / 计划 全局约束）：App 级只测接线，真实渲染不在单测范围。
+// happy-dom 无布局：原型级 offsetWidth/offsetHeight 覆写 = 「页签可见」，假 FitAddon 固定给出 118×41
+// （与 TerminalTabView.test.ts 同一手法），于是「挂载首报 + 上层强制重报」两条尺寸路径都可观察。
+const xh = vi.hoisted(() => {
+  const state: { terms: any[]; fitCalls: number; proposed: { cols: number; rows: number } } = {
+    terms: [], fitCalls: 0, proposed: { cols: 118, rows: 41 },
+  };
+  class FakeTerminal {
+    cols = 80; rows = 24; written: string[] = []; focusCalls = 0; disposed = false;
+    constructor(_options: unknown) { state.terms.push(this); }
+    open(): void { /* 真实渲染不在范围 */ }
+    loadAddon(addon: any): void { if (addon && typeof addon.activate === 'function') addon.activate(this); }
+    write(data: string): void { this.written.push(data); }
+    paste(): void {} clear(): void {}
+    focus(): void { this.focusCalls += 1; }
+    dispose(): void { this.disposed = true; }
+    getSelection(): string { return ''; }
+    onData(): { dispose: () => void } { return { dispose: () => {} }; }
+    onResize(): { dispose: () => void } { return { dispose: () => {} }; }
+    attachCustomKeyEventHandler(): void {}
+  }
+  class FakeFitAddon {
+    term: any = null;
+    activate(term: any): void { this.term = term; }
+    dispose(): void {}
+    proposeDimensions(): { cols: number; rows: number } { return { ...state.proposed }; }
+    fit(): void {
+      state.fitCalls += 1;
+      if (this.term) { this.term.cols = state.proposed.cols; this.term.rows = state.proposed.rows; }
+    }
+  }
+  class FakeSearchAddon {
+    activate(): void {} dispose(): void {}
+    onDidChangeResults(): { dispose: () => void } { return { dispose: () => {} }; }
+    findNext(): boolean { return true; }
+    findPrevious(): boolean { return true; }
+    clearDecorations(): void {}
+  }
+  class FakeWebLinksAddon { constructor(_handler: unknown) {} activate(): void {} dispose(): void {} }
+  return { state, FakeTerminal, FakeFitAddon, FakeSearchAddon, FakeWebLinksAddon };
+});
+vi.mock('@xterm/xterm', () => ({ Terminal: xh.FakeTerminal }));
+vi.mock('@xterm/addon-fit', () => ({ FitAddon: xh.FakeFitAddon }));
+vi.mock('@xterm/addon-search', () => ({ SearchAddon: xh.FakeSearchAddon }));
+vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: xh.FakeWebLinksAddon }));
+
+// afterEach 不在文件顶部的 import 里（既有一字不改）：按同一模块取函数引用，只在下面的 describe 内注册
+const { afterEach: afterEachQl } = await import('vitest');
+
+// 两条配置：c1 = shell（有终端页签）、c2 = exe（无页签，只变红按钮）。E3/E7 的分流依据是 ql_list 的 type
+const QL_ITEMS = {
+  c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd' },
+  c2: { name: '记事本', type: 'exe', exe: 'notepad.exe' },
+};
+
+function qlRowBtn(w: any, index: number): any {
+  const rows = w.findAll('.module-quick .tpl-row');
+  expect(rows.length).toBe(2); // 行序 = ql_list 的键序（卡片侧契约，任务 11）
+  return rows[index].find('.btn');
+}
+function tabIds(w: any): string[] {
+  return w.findAll('.log-tab').map((b: any) => b.attributes('data-tab-id') ?? '');
+}
+function tabClose(w: any, id: string): any {
+  return w.find(`.log-tab[data-tab-id="${id}"] .btn-close-tab`);
+}
+function qlInvokes(cmd: string): unknown[][] {
+  return invoke.mock.calls.filter((c) => c[0] === cmd).map((c) => c.slice(1));
+}
+function termWrites(): string[] {
+  return xh.state.terms.flatMap((t: any) => t.written);
+}
+
+// startTabId = ql_start 的返回（exe 配置 = null）。停止/启动都即时 resolve：本段不测在途态
+function mountQl(over: {
+  states?: Record<string, { running: boolean; stopping: boolean }>;
+  items?: Record<string, unknown>;
+  startTabId?: string | null;
+} = {}) {
+  const items = over.items ?? QL_ITEMS;
+  const states = over.states ?? {};
+  let startTabId: string | null = over.startTabId === undefined ? 'ql:c1' : over.startTabId;
+  invoke.mockImplementation((cmd: string): Promise<unknown> => {
+    switch (cmd) {
+      case 'get_state': return Promise.resolve(READY);
+      case 'get_configs': return Promise.resolve(cfg());
+      case 'ql_list': return Promise.resolve({ items, invalid: [] });
+      case 'ql_states': return Promise.resolve(states);
+      case 'ql_start': return Promise.resolve({ tabId: startTabId });
+      case 'ql_stop': return Promise.resolve(undefined);
+      default: return Promise.resolve(undefined);
+    }
+  });
+  const w = mount(App) as import('@vue/test-utils').VueWrapper<any>;
+  return { w, setStartTabId: (v: string | null): void => { startTabId = v; } };
+}
+
+describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
+  const realResizeObserver = globalThis.ResizeObserver;
+  beforeEach(() => {
+    invoke.mockClear(); // 文件级 vi.fn()：不清则本段的按次断言会读到前面用例的调用
+    Object.assign(xh.state, { terms: [], fitCalls: 0, proposed: { cols: 118, rows: 41 } });
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 800 });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 600 });
+    class FakeRO { constructor(_cb: unknown) {} observe(): void {} unobserve(): void {} disconnect(): void {} }
+    globalThis.ResizeObserver = FakeRO as unknown as typeof ResizeObserver;
+  });
+  afterEachQl(() => {
+    globalThis.ResizeObserver = realResizeObserver;
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 0 });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 0 });
+  });
+
+  // E1（计划 步骤 1）：按 tabId 派发；未知 tabId 忽略、不抛错（防竞态）
+  it('ql_data_dispatches_to_registered_sink_and_ignores_unknown_tab_id', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 点卡片的 [启动]
+    await flush();
+    expect(xh.state.terms.length).toBe(1); // 页签已建 → 它的 sink 已注册
+    qlDataHandlers.at(-1)!({ tabId: 'ql:c1', data: 'hello' });
+    qlDataHandlers.at(-1)!({ tabId: 'ql:nope', data: 'ghost' });
+    await flush();
+    expect(xh.state.terms[0].written).toContain('hello');
+    expect(termWrites()).not.toContain('ghost');
+    w.unmount();
+  });
+
+  // E2（规格 §7.5）：ql-exit → 运行态清空、按钮回落，页签保留（用户决策）
+  it('ql_exit_clears_running_state_but_keeps_tab', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(qlRowBtn(w, 0).classes()).toContain('btn-danger'); // 运行中：红 [停止]
+    qlExitHandlers.at(-1)!({ configId: 'c1', code: 0 });
+    await flush();
+    expect(qlRowBtn(w, 0).classes()).toContain('btn-launch'); // 按钮回落 [启动]
+    expect(tabIds(w)).toContain('ql:c1');                     // 页签保留
+    expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeUndefined(); // 已退出 → [x] 可用
+    w.unmount();
+  });
+
+  // E3（规格 §7.6 / 索引 K11(2)(5)）：只给 shell 建空页签；历史不回放；复原路径发一次尺寸
+  it('on_mounted_rebuilds_empty_tabs_for_running_shell_configs_only', async () => {
+    const { w } = mountQl({ states: { c1: { running: true, stopping: false }, c2: { running: true, stopping: false } } });
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
+    expect(tabIds(w)).not.toContain('ql:c2'); // states() 不区分 shell/exe → 必须 join ql_list 的 type
+    expect(termWrites()).toEqual([]);         // 空页签：历史不回放
+    // 挂载首报（K11(2)）+ 复原路径的显式强制重报（K24(1)）= 两次；缺后者即「复原不发尺寸」
+    expect(qlInvokes('ql_resize')).toEqual([['c1', 118, 41], ['c1', 118, 41]]);
+    expect(qlInvokes('ql_write')).toEqual([]);
+    w.unmount();
+  });
+
+  // E4（计划 步骤 1 / 审查重点 R3）：停止后 [x] 由禁用变可用
+  it('stop_makes_tab_close_button_enabled', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(tabClose(w, 'ql:c1').exists()).toBe(true);
+    expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeDefined(); // 运行中禁用
+    await qlRowBtn(w, 0).trigger('click'); // 红 [停止]
+    await flush();
+    expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeUndefined(); // 停止后可关
+    expect(tabIds(w)).toContain('ql:c1'); // 停止不关页签（规格 §7.5）
+    w.unmount();
+  });
+
+  // E5（规格 §9.2/§9.3 / 索引 K27(1) K24(1)）：建页签 + 真回写激活 + fit + 聚焦；
+  // 两条尺寸路径分别钉：普通激活不重发（去重），同一页签再次启动必须重发一次
+  it('start_success_creates_tab_activates_it_and_calls_fit_focus', async () => {
+    const { w } = mountQl();
+    await flush();
+    expect(tabIds(w)).toEqual(['launcher', 'llama-server']); // 未启动：只有静态两页签
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
+    const tab = w.find('.log-tab[data-tab-id="ql:c1"]');
+    expect(tab.classes()).toContain('active');          // 自动激活：状态归 App 且真回写
+    expect(tab.attributes('aria-selected')).toBe('true');
+    expect(qlInvokes('ql_resize')).toEqual([['c1', 118, 41]]); // 只有挂载首报；激活路径的 fit() 被去重吞掉
+    expect(xh.state.terms[0].focusCalls).toBeGreaterThan(0);   // 聚焦
+    // 同一页签再次启动：主进程把 PTY 重建为 80×24，尺寸没变也必须重报 → 显式 fit(true)
+    await qlRowBtn(w, 0).trigger('click'); // 停止
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 再启动
+    await flush();
+    expect(qlInvokes('ql_resize')).toEqual([['c1', 118, 41], ['c1', 118, 41]]);
+    expect(tabIds(w).filter((id) => id === 'ql:c1').length).toBe(1); // 已存在不重复建
+    w.unmount();
+  });
+
+  // E6（规格 §7.5）：close → 删页签 + 注销 sink；running || stopping 时不触发
+  it('tab_close_removes_tab_and_unregisters_sink', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    await tabClose(w, 'ql:c1').trigger('click'); // 运行中：点了也不关
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
+    await qlRowBtn(w, 0).trigger('click'); // 停止
+    await flush();
+    await tabClose(w, 'ql:c1').trigger('click');
+    await flush();
+    expect(tabIds(w)).not.toContain('ql:c1');
+    const before = termWrites().length;
+    qlDataHandlers.at(-1)!({ tabId: 'ql:c1', data: 'after-close' });
+    await flush();
+    expect(termWrites().length).toBe(before); // sink 已注销
+    w.unmount();
+  });
+
+  // E7（规格 §7.5）：exe 启动返回 tabId = null → 不建页签，只有按钮变红；也不发 write/resize（M8）
+  it('exe_start_with_null_tab_id_creates_no_tab_only_red_button', async () => {
+    const { w } = mountQl({ startTabId: null });
+    await flush();
+    await qlRowBtn(w, 1).trigger('click'); // c2 = exe
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c2']]);
+    expect(tabIds(w)).toEqual(['launcher', 'llama-server']); // 不建页签
+    expect(qlRowBtn(w, 1).classes()).toContain('btn-danger'); // 只按钮变红
+    expect(qlInvokes('ql_resize')).toEqual([]);
+    expect(qlInvokes('ql_write')).toEqual([]);
+    w.unmount();
+  });
+
+  // E8（索引 K14(2) / K34(5)）：启动按钮单飞 —— ql_start 在途（最坏 ≈9s 的终端探测）期间重复点击只发一次。
+  // 卡片侧在途期间没有 disabled（App 只在 ql_start 返回后才下发 states），所以这道守卫只能在 App：
+  // 去掉 App.vue:448 的 if (qlStarting.has(configId)) return; 本用例必须红。
+  // 另钉「单飞 ≠ 永久禁用」：在途结束后同一行照常再启动。
+  it('start_button_is_single_flight_while_ql_start_pending', async () => {
+    const { w } = mountQl();
+    // 只把 ql_start 换成挂住的 promise，其余路由沿用 mountQl 的实现（不另起 harness）
+    const gate = Promise.withResolvers<{ tabId: string | null }>();
+    const route = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_start' ? gate.promise : route(cmd, ...args));
+    await flush();
+    expect(qlRowBtn(w, 0).classes()).toContain('btn-launch');
+    await qlRowBtn(w, 0).trigger('click'); // 第一次点 [启动]
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c1']]);
+    // 在途：states 还没下发 → 卡片按钮既没变红也没禁用，点击确实到达 App（守卫只能在 App 才拦得住）
+    expect(qlRowBtn(w, 0).classes()).toContain('btn-launch');
+    expect(qlRowBtn(w, 0).attributes('disabled')).toBeUndefined();
+    await qlRowBtn(w, 0).trigger('click');
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c1']]); // 单飞：在途期间不再发
+    gate.resolve({ tabId: 'ql:c1' });
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1'); // 第一次点击的结果照常生效
+    expect(qlRowBtn(w, 0).classes()).toContain('btn-danger');
+    await qlRowBtn(w, 0).trigger('click'); // 停止
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 第三次点同一行 [启动]：不是永久禁用
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c1'], ['c1']]);
+    w.unmount();
+  });
+
+  // E9（索引 M8 / K34(5)）：不可写的配置一律不发 ql_write / ql_resize。三种不可写：
+  // ① 没有终端页签（未启动 / 页签已关）② exe 配置（ql_start 返回 tabId = null，运行态在也没有页签）
+  // ③ 页签在但状态 = stopping（PTY 已 kill）。正例同测：可写时两个入口各发一次，否则「永远不发」也能过。
+  // 两个入口就是 App.vue:577 递给 LogPanel、LogPanel 再透传给 TerminalTabView 的那两个回调（App 侧的守卫是这里唯一的新逻辑）。
+  it('no_ql_write_or_ql_resize_for_non_writable_config', async () => {
+    const { default: LogPanel } = await import('./modules/LogPanel.vue');
+    const { w } = mountQl();
+    const onInput = w.findComponent(LogPanel).props('onInput') as (id: string, data: string) => void;
+    const onResize = w.findComponent(LogPanel).props('onResize') as (id: string, cols: number, rows: number) => void;
+    expect(typeof onInput).toBe('function');
+    expect(typeof onResize).toBe('function');
+    await flush();
+
+    // ① 没有页签：未启动的 shell 配置，两个入口都不发
+    onInput('ql:c1', 'ls\r');
+    onResize('ql:c1', 100, 30);
+    await flush();
+    expect(qlInvokes('ql_write')).toEqual([]);
+    expect(qlInvokes('ql_resize')).toEqual([]);
+
+    // 正例：页签在 + running + 非 stopping → write 发一次、resize 发一次（挂载首报之外再显式一次）
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
+    onInput('ql:c1', 'ls\r');
+    onResize('ql:c1', 100, 30);
+    await flush();
+    expect(qlInvokes('ql_write')).toEqual([['c1', 'ls\r']]);
+    expect(qlInvokes('ql_resize')).toEqual([['c1', 118, 41], ['c1', 100, 30]]); // 首报（K11(2)）+ 这一次
+
+    // ③ 页签在但 stopping：把 ql_stop 挂住，停在「停止中」
+    const stopGate = Promise.withResolvers<void>();
+    const stopRoute = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_stop' ? stopGate.promise : stopRoute(cmd, ...args));
+    await qlRowBtn(w, 0).trigger('click'); // 红 [停止]
+    await flush();
+    expect(qlRowBtn(w, 0).attributes('disabled')).toBeDefined(); // 确认确实停在 stopping
+    onInput('ql:c1', 'late\r');
+    onResize('ql:c1', 90, 20);
+    await flush();
+    expect(qlInvokes('ql_write')).toEqual([['c1', 'ls\r']]); // 没有新增
+    expect(qlInvokes('ql_resize')).toEqual([['c1', 118, 41], ['c1', 100, 30]]);
+    stopGate.resolve();
+    await flush();
+
+    // ② exe 配置：ql_start 返回 tabId = null → 无页签；运行态置上了也不发
+    const startRoute = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_start' && args[0] === 'c2' ? Promise.resolve({ tabId: null }) : startRoute(cmd, ...args));
+    await qlRowBtn(w, 1).trigger('click'); // c2 = exe
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c1'], ['c2']]);
+    expect(tabIds(w)).not.toContain('ql:c2');
+    expect(qlRowBtn(w, 1).classes()).toContain('btn-danger'); // 运行态确实置上了（不是靠「没运行」蒙过守卫）
+    onInput('ql:c2', 'x');
+    onResize('ql:c2', 118, 41);
+    await flush();
+    expect(qlInvokes('ql_write')).toEqual([['c1', 'ls\r']]);
+    expect(qlInvokes('ql_resize')).toEqual([['c1', 118, 41], ['c1', 100, 30]]);
+    w.unmount();
   });
 });
