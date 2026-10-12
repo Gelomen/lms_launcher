@@ -10,6 +10,11 @@ files:
   - "!dist-main/*.test.js"
   - "!dist-main/test-utils.js"
 asar: true
+# 规格 §7.2（硬门）：.node 无法从 asar 内 dlopen，conpty.dll / OpenConsole.exe 也无法从 asar 内执行，
+# 必须解到 app.asar.unpacked 才能被 node-pty 按包内相对路径加载。
+# 显式声明，不依赖 electron-builder 对原生模块的自动探测（它只按「检测到 .node」解出平台包本身）。
+asarUnpack:
+  - "**/node_modules/@lydell/**"
 electronDist: node_modules/electron/dist
 # 更新脚本随包分发：win-unpacked/lms-launcher-update.ps1（portable 解压后与主 exe 同目录）
 extraFiles:
