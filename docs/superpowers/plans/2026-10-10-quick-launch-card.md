@@ -433,9 +433,9 @@ it('编辑态才显示删除按钮，删除需二次确认', async () => {});
 ```
 
 - [ ] **步骤 2：运行测试验证失败** —— FAIL
-- [ ] **步骤 3：实现** —— 复用 `TemplateModal.vue` 的遮罩/头部/footer 类名与 `Dropdown` 组件；`open` 变 true 时拉 `ql_terminals` 并回填表单
+- [ ] **步骤 3：实现** —— 复用 `TemplateModal.vue` 的遮罩/头部/footer 类名与 `Dropdown` 组件；`open` 变 true 时拉 `ql_terminals` 并回填表单。**并在 `QuickLaunch.vue` 内挂载弹窗**（索引 K29：弹窗归卡片持有，本地 `modalOpen`/`editingId`；`saved`/`deleted` → 重拉列表 + `emit('changed')`）
 - [ ] **步骤 4：运行测试验证通过** —— 全 PASS
-- [ ] **步骤 5：Commit** —— `git add src/modules/QuickLaunchModal.vue src/modules/QuickLaunchModal.test.ts && git commit -m "feat(module): 新建/编辑启动弹窗（类型二选一 + 终端探测 + 删除确认）"`
+- [ ] **步骤 5：Commit** —— `git add src/modules/QuickLaunchModal.vue src/modules/QuickLaunchModal.test.ts src/modules/QuickLaunch.vue && git commit -m "feat(module): 新建/编辑启动弹窗（类型二选一 + 终端探测 + 删除确认）"`（含卡片挂载接线，索引 K29）
 
 ---
 
