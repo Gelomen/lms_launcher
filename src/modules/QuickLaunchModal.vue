@@ -8,6 +8,7 @@ import { invoke, errMsg } from '../ipc';
 import { t } from '../i18n';
 import Dropdown from '../components/Dropdown.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import { truncateByWidth, visualWidth } from '../util/truncate'; // M19：下拉 label 截断由父级负责（Dropdown.vue:4）
 // 类型只有一份真源（主进程的配置层 / 探测层）；import type 在构建期被擦除，不引入运行时依赖
 // ——与 QuickLaunch.vue:11-12 同一先例。
 import type { QuickLaunchEntry, QuickLaunchKind, TerminalId } from '../src-main/quick-launch-config';
@@ -27,11 +28,17 @@ const byPrefixAndName = {
 
 // 接口（check C1 / 索引 K31(1)）：id = null → 新建，新 id 由主进程生成（规格 §5.4）；
 // entry = null → 空表单。emits（C2）：saved / deleted(id) / close —— 关窗与刷新列表归持有者。
-const props = defineProps<{
+// running（修复轮 B · I-1）：本条目此刻是否处于运行 / 停止中。来源链 = 主进程 ql_states →
+// App.vue 的只读镜像 qlStates（:339）→ App.vue:567 以 :states 下发卡片（QuickLaunch.vue:27 接住）→
+// 卡片按 editingId 取一项传进来（QuickLaunch.vue 的 editingRunning）。弹窗只读、不写。
+// 用途只有一个：运行中的条目禁用 [删除]（删掉后卡片行消失、页签 [x] 又因 closeDisabled 永久禁用 →
+// 既停不掉也关不掉）。tooltip 用**已存在**的键 ql.err.running（src-main/i18n/dict.ts:184 zh / :526 en），不新建键。
+const props = withDefaults(defineProps<{
   open: boolean;
   id: string | null;
   entry: QuickLaunchEntry | null;
-}>();
+  running?: boolean;
+}>(), { running: false });
 const emit = defineEmits<{
   (e: 'saved'): void;
   (e: 'deleted', id: string): void;
@@ -75,7 +82,18 @@ const typeOptions = computed(() => [
   { value: 'shell', label: t('ql.modal.type.shell') },
   { value: 'exe', label: t('ql.modal.type.exe') },
 ]);
-const terminalOptions = computed(() => terminals.value.map((info) => ({ value: info.id, label: TERM_LABEL[info.id]() })));
+// M19（修复轮 B）：Dropdown.vue:4 明写「label 截断由父级负责」，此前传的是未截断全名。
+// 预算 16 = 规格 §11-1 的下拉/页签预算（与 App.vue 的 TAB_LABEL_BUDGET 同值；列表行 30 在卡片侧）。
+// 完整名走 option.tip（Dropdown.vue:18 / :72 已支持）；「只有真截断才挂 tip」沿用 LaunchBar.vue:93-94 的 grace 口径。
+const TERMINAL_LABEL_BUDGET = 16;
+const terminalOptions = computed(() => terminals.value.map((info) => {
+  const full = TERM_LABEL[info.id]();
+  return {
+    value: info.id,
+    label: truncateByWidth(full, TERMINAL_LABEL_BUDGET),
+    tip: visualWidth(full) > TERMINAL_LABEL_BUDGET + 2 ? full : undefined,
+  };
+}));
 
 function fill(): void {
   attemptedSave.value = false;
@@ -142,7 +160,11 @@ async function save(): Promise<void> {
 
 // 删除（E6 / F2）：仅编辑态渲染；[删除] 只开 ConfirmDialog(tone=danger)，点[确认]才 invoke('ql_delete')。
 // 失败（不存在 → VALIDATION:）进错误区，与 TemplateModal.vue:244-252 同口径。
-function onDelete(): void { confirmDeleteOpen.value = true; }
+// I-1：运行中 / 停止中不给删。模板已 :disabled，这里再守一道（禁用样式挡不住键盘 Enter 与程序化点击）。
+function onDelete(): void {
+  if (props.running) return;
+  confirmDeleteOpen.value = true;
+}
 async function doDelete(): Promise<void> {
   const id = props.id;
   if (id === null) return;
@@ -155,7 +177,8 @@ async function doDelete(): Promise<void> {
   }
 }
 
-const deleteMessage = computed(() => t('ql.modal.delete.message', { name: formName.value }));
+// Minor 9：确认文案用 trim 后的名字，与 save() 里的 formName.value.trim() 同一处理
+const deleteMessage = computed(() => t('ql.modal.delete.message', { name: formName.value.trim() }));
 function close(): void { emit('close'); }
 </script>
 <template>
@@ -213,7 +236,13 @@ function close(): void { emit('close'); }
 
         <!-- 底栏：左下删除（仅编辑态，F2）+ 右下紫色保存（单飞：:disabled=saving，与 TemplateModal.vue:442 同构） -->
         <footer class="modal-actions">
-          <button v-if="isEdit" class="btn-delete" :aria-label="t('ql.modal.btn.delete')" @click="onDelete">
+          <!-- I-1：运行中的条目禁用 [删除]，原因挂 tooltip（ql.err.running 是既有键，本轮不新建）。
+               修复轮 B1：tooltip 的渲染条件是**类选择器**（style.css:414-425 `.tip-up::after { content: attr(data-tooltip) }`），
+               本组件的 .btn-delete 自身没有 ::after 规则 → 光有 data-tooltip 属性真机上什么都不显示。
+               故类与属性**同条件**（running）成对挂载，与 App.vue:565（tip-down + :data-tooltip）同一用法。
+               不能无条件挂 .tip-up：attr() 在属性缺失时求值为空串，仍会渲染一个带 padding 的空白气泡。 -->
+          <button v-if="isEdit" class="btn-delete" :class="{ 'tip-up': running }" :aria-label="t('ql.modal.btn.delete')"
+            :disabled="running" :data-tooltip="running ? t('ql.err.running') : undefined" @click="onDelete">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['trash-can']" />
           </button>
           <button class="modal-save" :disabled="saving" :aria-label="t('ql.modal.btn.save')" @click="save">
@@ -326,6 +355,10 @@ function close(): void { emit('close'); }
   cursor: pointer;
 }
 .btn-delete:hover { background: var(--danger); color: #fff; }
+/* 修复轮 B1：只 :disabled 不改外观 = 用户看不出为什么点不动。禁用口径照 style.css:232
+   （.icon-btn:disabled 同色同 cursor）与本文件 .modal-save:disabled（下方）同一语言。
+   tooltip 类 .tip-up 复用 style.css:414-425，本文件不复制、不改 style.css。 */
+.btn-delete:disabled { color: #C7CCD4; cursor: not-allowed; }
 .modal-save {
   position: absolute;
   right: 0;

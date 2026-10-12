@@ -51,6 +51,16 @@ function openEdit(id: string): void {
 // 列表数据的所有权在卡片（C1），刷新因此在这里做、不在弹窗里；close 只关窗、不改动。
 function onModalSaved(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
 function onModalDeleted(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
+// I-1（修复轮 B）：运行中的条目不能删 —— 把「当前编辑项是否运行/停止中」传进弹窗去禁用 [删除]。
+// 运行态的唯一来源 = App 下发的 props.states（C1：卡片不持有进程状态），这里只按 editingId 取一项；
+// App 的 stopping 恒带 running = true（App.vue doQlStop / doQlStart），所以 || stopping 只是防御性写法。
+function editingRunning(): boolean {
+  const id = editingId.value;
+  if (id === null) return false;
+  const s = stateOf(id);
+  return s.running || s.stopping;
+}
+
 // 回填给弹窗的条目：新建（id = null，索引 K31(1)）或列表不可用时 = null → 弹窗以空表单打开
 function entryFor(id: string | null): QuickLaunchEntry | null {
   if (id === null || !list.value) return null;
@@ -175,7 +185,8 @@ onMounted(() => { void reload(); });
     <p v-if="list && Object.keys(list.items).length === 0" class="label">{{ t('ql.empty.none') }}</p>
     <!-- 新建 / 编辑弹窗由卡片持有（索引 K29）：id = null → 新建（K31(1)）；
          saved / deleted → 重拉列表 + changed；close → 只关窗 -->
-    <QuickLaunchModal :open="modalOpen" :id="editingId" :entry="entryFor(editingId)"
+    <!-- running：见上面 editingRunning()（I-1）——运行中的条目在弹窗里禁用 [删除] -->
+    <QuickLaunchModal :open="modalOpen" :id="editingId" :entry="entryFor(editingId)" :running="editingRunning()"
       @saved="onModalSaved" @deleted="onModalDeleted" @close="modalOpen = false" />
   </section>
 </template>

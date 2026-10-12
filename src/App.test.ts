@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import App from './App.vue';
+import QuickLaunch from './modules/QuickLaunch.vue'; // 修复轮 B：按组件取卡片实例，驱动它的 changed → App.refreshQlConfigs
 
 const invoke = vi.fn();
 // §4.6：托盘「退出」→ 确认对话框（ConfirmDialog）。测试捕获最新注册的回调以模拟托盘事件。
@@ -33,7 +34,13 @@ const llamaUpdateProgressHandlers: Array<(e: { percent: number; stage: string })
 const qlDataHandlers: Array<(e: { tabId: string; data: string }) => void> = [];
 const qlExitHandlers: Array<(e: { configId: string; code: number }) => void> = [];
 vi.mock('./ipc', () => ({
-  invoke: (cmd: string, ...args: unknown[]) => invoke(cmd, ...args),
+  // Minor 10（修复轮 B）：夹具层补一份符合 ParamMeta 类型的空参数表（形状见 TemplateModal.vue:30-37）。
+  // 各 harness 的 default 分支返回 undefined（例：本文件 mountQl 的 default 行）会让 TemplateModule.vue:63
+  // 把 paramsMeta 置成 undefined → 每次渲染打 [Vue warn]: Invalid prop: type check failed for prop
+  // "paramsMeta"（基线 332 条），淹掉真警告。放在 mock 边界 = 一处覆盖全部 harness；
+  // 仍把调用转给 invoke，所以按次断言与 invoke.mock.calls 记录不受影响，也不改任何断言。
+  invoke: (cmd: string, ...args: unknown[]) =>
+    cmd === 'get_params' ? Promise.resolve({ params: {}, required: [] }) : invoke(cmd, ...args),
   errMsg: (e: unknown): string => (e as Error).message,
   isMissing: (m: string): boolean => m.includes('MISSING:'),
   isValidation: (m: string): boolean => m.includes('VALIDATION:'),
@@ -1169,6 +1176,9 @@ function tabIds(w: any): string[] {
 function tabClose(w: any, id: string): any {
   return w.find(`.log-tab[data-tab-id="${id}"] .btn-close-tab`);
 }
+function tabLabel(w: any, id: string): string {
+  return w.find(`.log-tab[data-tab-id="${id}"] .log-tab-label`).text();
+}
 function qlInvokes(cmd: string): unknown[][] {
   return invoke.mock.calls.filter((c) => c[0] === cmd).map((c) => c.slice(1));
 }
@@ -1333,10 +1343,12 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
-  // E8（索引 K14(2) / K34(5)）：启动按钮单飞 —— ql_start 在途（最坏 ≈9s 的终端探测）期间重复点击只发一次。
-  // 卡片侧在途期间没有 disabled（App 只在 ql_start 返回后才下发 states），所以这道守卫只能在 App：
-  // 去掉 App.vue:448 的 if (qlStarting.has(configId)) return; 本用例必须红。
-  // 另钉「单飞 ≠ 永久禁用」：在途结束后同一行照常再启动。
+  // E8（索引 K14(2) / K34(5) + 修复轮 B · I-2）：启动在途（最坏 ≈9s 的终端探测）必须有界面反馈。
+  // 【本轮明示的契约变更】原断言「在途期间按钮既没变红也没禁用」是任务 13 修复轮的特征化快照、不是需求；
+  // 现在 doQlStart 在 invoke('ql_start') 之前置 { running: true, stopping: true }，按钮走既有的
+  // 「正在停止」视觉语言（红底 + 半角三点 + 禁用；QuickLaunch.vue:171 与 LaunchBar.vue:129 逐字一致，索引 K30(1)）。
+  // 单飞断言保留：在途期间重复点击只发一次 ql_start（去掉 App.vue:448 的 qlStarting 守卫或去掉
+  // doQlStart 的前置状态，本用例都必须红）。另钉「在途反馈 ≠ 永久禁用」：结束后同一行照常再启动。
   it('start_button_is_single_flight_while_ql_start_pending', async () => {
     const { w } = mountQl();
     // 只把 ql_start 换成挂住的 promise，其余路由沿用 mountQl 的实现（不另起 harness）
@@ -1349,9 +1361,11 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     await qlRowBtn(w, 0).trigger('click'); // 第一次点 [启动]
     await flush();
     expect(qlInvokes('ql_start')).toEqual([['c1']]);
-    // 在途：states 还没下发 → 卡片按钮既没变红也没禁用，点击确实到达 App（守卫只能在 App 才拦得住）
-    expect(qlRowBtn(w, 0).classes()).toContain('btn-launch');
-    expect(qlRowBtn(w, 0).attributes('disabled')).toBeUndefined();
+    // 在途：红底 + 半角三点 + 禁用（I-2 的界面反馈）。点击仍到 App：单飞守卫照旧拦得住
+    const busy = qlRowBtn(w, 0);
+    expect(busy.classes()).toContain('btn-danger');
+    expect(busy.attributes('disabled')).toBeDefined();
+    expect(busy.text()).toBe('...');
     await qlRowBtn(w, 0).trigger('click');
     await qlRowBtn(w, 0).trigger('click');
     await flush();
@@ -1360,11 +1374,60 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     await flush();
     expect(tabIds(w)).toContain('ql:c1'); // 第一次点击的结果照常生效
     expect(qlRowBtn(w, 0).classes()).toContain('btn-danger');
+    expect(qlRowBtn(w, 0).attributes('disabled')).toBeUndefined(); // 在途结束 → 红 [停止] 可点
     await qlRowBtn(w, 0).trigger('click'); // 停止
     await flush();
     await qlRowBtn(w, 0).trigger('click'); // 第三次点同一行 [启动]：不是永久禁用
     await flush();
     expect(qlInvokes('ql_start')).toEqual([['c1'], ['c1']]);
+    w.unmount();
+  });
+
+  // I-2 正对照（修复轮 B）：ql_start 失败（reject）→ 前置的「正在停止」态必须回落，
+  // 按钮回到绿 [启动] 且可点、不建页签（否则卡在「...」里：既停不掉也再启动不了）。
+  // 失败分支由 App.vue doQlStart 的 catch → clearQlState 兜住（既有代码，本轮不新增文案）。
+  it('ql_start_rejection_falls_back_to_enabled_start_button', async () => {
+    const { w } = mountQl();
+    const route = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_start' ? Promise.reject(new Error('STATE: 终端不可用')) : route(cmd, ...args));
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c1']]);
+    const btn = qlRowBtn(w, 0);
+    expect(btn.classes()).toContain('btn-launch');                 // 回落绿 [启动]
+    expect(btn.attributes('disabled')).toBeUndefined();            // 不是卡在禁用的「...」
+    expect(btn.text()).not.toBe('...');
+    expect(tabIds(w)).toEqual(['launcher', 'llama-server']);       // 失败不建页签
+    // 失败后同一行还能再点（不是永久禁用）：仍 reject，只钉请求确实又到达了 App
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(qlInvokes('ql_start').length).toBe(2);
+    w.unmount();
+  });
+
+  // Minor 2（修复轮 B）：页签名在建页签时随页签存一份，不再每次回查 qlConfigs 只读镜像。
+  // 旧实现（App.vue:359 `qlConfigs[id]?.name || tab.configId`）在「删除已停止的条目」后把页签名
+  // 退化成配置 id。这里走真实路径：启动 → 卡片冒泡 changed → App.refreshQlConfigs 把镜像刷空。
+  it('tab_label_keeps_the_entry_name_after_the_config_is_deleted', async () => {
+    const { w } = mountQl();
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签，文案 = ql_list 里的「我的终端」
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
+    expect(tabLabel(w, 'ql:c1')).toBe('我的终端');
+
+    // 删除该条目：ql_list 变空 + 卡片冒泡 changed → App 的只读镜像里不再有 c1
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: {}, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+
+    expect(tabIds(w)).toContain('ql:c1');            // 页签仍在（App 拥有页签，删配置不关页签）
+    expect(tabLabel(w, 'ql:c1')).toBe('我的终端');   // 不是 'c1'
     w.unmount();
   });
 

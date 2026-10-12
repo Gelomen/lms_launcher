@@ -419,7 +419,7 @@ it('invalid 非空时显示「N 条配置无效」提示', async () => {});
 
 **文件：** 创建 `src/modules/QuickLaunchModal.vue`；测试 `src/modules/QuickLaunchModal.test.ts`
 
-**接口：** props `{ open: boolean; id: string \| null; entry: QuickLaunchEntry | null }`（`id = null` = 新建，索引 K31(1)）；emits `{ saved: []; deleted: [id: string]; close: [] }`
+**接口：** props `{ open: boolean; id: string \| null; entry: QuickLaunchEntry | null; running?: boolean }`（`id = null` = 新建，索引 K31(1)；`running` 由最终审查修复轮 B 追加 = 当前编辑项是否运行/停止中，用于禁用 [删除]，索引 K41）；emits `{ saved: []; deleted: [id: string]; close: [] }`
 
 - [ ] **步骤 1：编写失败的测试**
 
@@ -434,6 +434,8 @@ it('编辑态才显示删除按钮，删除需二次确认', async () => {});
 
 - [ ] **步骤 2：运行测试验证失败** —— FAIL
 - [ ] **步骤 3：实现** —— 复用 `TemplateModal.vue` 的遮罩/头部/footer 类名与 `Dropdown` 组件；`open` 变 true 时拉 `ql_terminals` 并回填表单。**并在 `QuickLaunch.vue` 内挂载弹窗**（索引 K29：弹窗归卡片持有，本地 `modalOpen`/`editingId`；`saved`/`deleted` → 重拉列表 + `emit('changed')`）
+
+> **修订（最终审查修复轮 B/B1，索引 K41）**：终端下拉标签按规格 §11-1 追加的预算 16 截断 + `option.tip` 全名；运行中的条目禁用 [删除]（tooltip 用既有键 `ql.err.running`，且必须与 `.tip-up` 类同条件挂载——`src/style.css:414-425` 的 tooltip 是类选择器，光有 `data-tooltip` 属性不渲染）；删除确认文案用 trim 后的名字。
 - [ ] **步骤 4：运行测试验证通过** —— 全 PASS
 - [ ] **步骤 5：Commit** —— `git add src/modules/QuickLaunchModal.vue src/modules/QuickLaunchModal.test.ts src/modules/QuickLaunch.vue && git commit -m "feat(module): 新建/编辑启动弹窗（类型二选一 + 终端探测 + 删除确认）"`（含卡片挂载接线，索引 K29）
 

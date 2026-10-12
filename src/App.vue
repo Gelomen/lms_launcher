@@ -332,7 +332,9 @@ function onExitClose(): void {
 // ---------- 快捷启动（任务 13）：终端页签状态 / 数据路由 / 重载复原（规格 §9.2 / §7.5 / §7.6）----------
 // 进程与页签的所有权在 App：卡片只接收 states（任务 11 的 props），ql-data / ql-exit 也只订阅一次。
 interface QlProcState { running: boolean; stopping: boolean }
-interface QlTabRef { id: string; configId: string }
+// name：建页签当时的那份配置名（修复轮 B · Minor 2）。页签文案此前每次回查 qlConfigs 只读镜像，
+// 条目被删除（已停止的条目可以删）后镜像里没有它 → 页签名退化成配置 id。名字因此随页签存一份。
+interface QlTabRef { id: string; configId: string; name: string }
 interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void }
 
 const qlTabs = ref<QlTabRef[]>([]);
@@ -356,7 +358,9 @@ const logTabItems = computed<LogTabItem[]>(() => {
     id: tab.id, label: tab.label, fullLabel: tab.label, kind: 'text', closable: false, closeDisabled: false,
   }));
   const terminals: LogTabItem[] = qlTabs.value.map((tab) => {
-    const full = qlConfigs.value[tab.configId]?.name || tab.configId;
+    // Minor 2：文案取页签自己存的 name（构造方 = 下面的 openTerminalTab），不回查镜像；
+    // 镜像只用于 type 过滤（索引 K11(5)）。截断仍在这里做（索引 K26(2)：LogPanel 不二次截断）。
+    const full = tab.name;
     const s = qlStates.value[tab.configId];
     return {
       id: tab.id,
@@ -378,7 +382,12 @@ function hasTerminalTab(configId: string): boolean {
 // 建页签（已存在则不重复建）+ 自动激活（规格 §9.2）。返回值 = 是不是「同一页签再次启动」
 function openTerminalTab(configId: string): boolean {
   const restart = hasTerminalTab(configId);
-  if (!restart) qlTabs.value = [...qlTabs.value, { id: qlTabId(configId), configId }];
+  if (!restart) {
+    // 名字来源 = qlConfigs 只读镜像（卡片 changed 时刷新；restoreTerminals 先刷镜像再建页签）。
+    // 镜像此刻缺项只影响这一份文案的兜底（= 配置 id），此后不再随镜像变化（Minor 2）。
+    const name = qlConfigs.value[configId]?.name ?? configId;
+    qlTabs.value = [...qlTabs.value, { id: qlTabId(configId), configId, name }];
+  }
   activeTabId.value = qlTabId(configId);
   return restart;
 }
@@ -447,6 +456,12 @@ async function refreshQlConfigs(): Promise<void> {
 async function doQlStart(configId: string): Promise<void> {
   if (qlStarting.has(configId)) return; // 索引 K14(2)：单飞
   qlStarting.add(configId);
+  // 修复轮 B · I-2：ql_start 带最坏 ≈9s 的终端探测，在途期间界面必须给反馈（旧行为 = 按钮毫无变化）。
+  // 复用既有的「正在停止」视觉语言：QuickLaunch.vue:171 的 stopping 分支（红底 + 半角三点 + 禁用），
+  // 与 LaunchBar.vue:129 逐字一致（索引 K30(1)）——不新增 CSS 类、不新增 i18n 键。
+  // 成功分支：try 内的赋值把 stopping 置回 false（进程真退出由 ql-exit 事件负责清空）；
+  // 失败分支：catch 里既有的 clearQlState 兜住，不会卡在「...」。
+  qlStates.value = { ...qlStates.value, [configId]: { running: true, stopping: true } };
   try {
     const r = await invoke<{ tabId: string | null }>('ql_start', configId);
     qlStates.value = { ...qlStates.value, [configId]: { running: true, stopping: false } };

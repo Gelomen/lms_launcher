@@ -41,7 +41,7 @@
 |---|---|---|---|
 | E1 | 默认类型为「命令行」→ 显示终端下拉 + 命令输入框 | 计划 步骤 1 | ☑ |
 | E2 | 切到「可执行程序」→ 隐藏终端与命令，显示 exe 路径 + 选择按钮 | 计划 步骤 1 | ☑ |
-| E3 | 终端下拉来自 `ql_terminals`；**加载中禁用**并用 `placeholder = t('ql.modal.terminal.loading')`（`Dropdown.vue:22-24` 支持 `disabled`/`placeholder`）。**顺序不重排**：按主进程返回序 powershell/cmd/pwsh/wsl（`quick-launch-terminals.ts:107-113`），预选第一项可用；标签取 `ql.term.*`（`dict.ts:158-161`/`:500-503`）。**M1 关闭**（索引 K31(3)：规格与计划都没要求 pwsh 优先，要改先改规格 §6.1） | 规格 §9.4 / §6.1 / 索引 K31(3) | ☑（我的变异②去 `:disabled="terminalsLoading"` = 1 红；⑤终端重排 = 1 红 → K31(3) 有牙） |
+| E3 | 终端下拉来自 `ql_terminals`；**加载中禁用**并用 `placeholder = t('ql.modal.terminal.loading')`（`Dropdown.vue:22-24` 支持 `disabled`/`placeholder`）。**顺序不重排**：按主进程返回序 powershell/cmd/pwsh/wsl（`quick-launch-terminals.ts:107-113`），预选第一项可用；标签取 `ql.term.*`（**修复轮 B 起按规格 §11-1 追加的预算 16 截断 + `option.tip` 全名**，索引 K41）（`dict.ts:158-161`/`:500-503`）。**M1 关闭**（索引 K31(3)：规格与计划都没要求 pwsh 优先，要改先改规格 §6.1） | 规格 §9.4 / §6.1 / 索引 K31(3) | ☑（我的变异②去 `:disabled="terminalsLoading"` = 1 红；⑤终端重排 = 1 红 → K31(3) 有牙） |
 | E4 | 名字为空 → 保存被拦下并显示错误文案（`ql.err.nameRequired`） | 规格 §5.3-1 | ☑ |
 | E5 | 主进程 reject 且消息带 `VALIDATION:`（重名）→ 错误区显示**主进程返回的文案**（`errMsg(e)`，即 `err.ql.nameDup` = 「名字「X」已存在」，`dict.ts:310`/`:652`）且**不关窗、不冒泡 `saved`**。**不在渲染端把 `VALIDATION:` 映射成 `ql.err.nameTaken`**（索引 K31(2)：主进程文案带名字、与 `TemplateModal` 错误区口径一致；`ql.err.nameTaken` 因此未被引用，登记为冗余键不删——无 unused-key 门，删它要同步任务 8 表 C8） | 规格 §5.3-2 / 索引 K31(2) | ☑（按 reject 建模，显示 `errMsg`、不关窗、不冒泡 `saved`；K32(1)） |
 | E6 | 仅编辑态显示删除按钮；删除需 `ConfirmDialog` 二次确认 | 规格 §9.4 | ☑（我的变异③删除不开确认框 = 2 红 E6+E9） |

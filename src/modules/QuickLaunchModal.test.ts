@@ -9,6 +9,7 @@ import { mount, flushPromises as flush } from '@vue/test-utils';
 import QuickLaunchModal from './QuickLaunchModal.vue';
 import QuickLaunch from './QuickLaunch.vue';
 import { t } from '../i18n';
+import { truncateByWidth } from '../util/truncate';
 import type { QuickLaunchEntry, QuickLaunchList } from '../src-main/quick-launch-config';
 import type { TerminalInfo } from '../src-main/quick-launch-terminals';
 
@@ -51,7 +52,8 @@ function mockLms(o: MockOpts = {}): void {
   };
 }
 
-function mountModal(props: { open: boolean; id: string | null; entry: QuickLaunchEntry | null }) {
+// running（修复轮 B · I-1）：App 的只读镜像 qlStates 经卡片派生给弹窗的运行态标志（缺省 = 未运行）
+function mountModal(props: { open: boolean; id: string | null; entry: QuickLaunchEntry | null; running?: boolean }) {
   return mount(QuickLaunchModal, { attachTo: document.body, props });
 }
 
@@ -184,7 +186,9 @@ describe('QuickLaunchModal', () => {
     await flush();
     expect((triggerOf(termLabel) as HTMLButtonElement).getAttribute('disabled')).toBeNull();
     const labels = await openOptionLabels(dropdownOf(termLabel)!);
-    expect(labels).toEqual([t('ql.term.powershell'), t('ql.term.cmd'), t('ql.term.pwsh'), t('ql.term.wsl')]);
+    // M19（修复轮 B）带来的期望变更：label 由父级按预算 16 截断，'PowerShell 7 (pwsh)'（宽 19）→ 'PowerShell 7 (pw…'。
+    // 本用例钉的是「顺序 = 主进程返回序、不重排、不 pwsh 优先」，与截断无关，故只把期望值换成截断后的标签。
+    expect(labels).toEqual([t('ql.term.powershell'), t('ql.term.cmd'), truncateByWidth(t('ql.term.pwsh'), 16), t('ql.term.wsl')]);
     // 预选第一项可用（K31(3)）
     expect(triggerText(termLabel)).toBe(t('ql.term.powershell'));
     w.unmount();
@@ -398,7 +402,8 @@ describe('QuickLaunchModal', () => {
     expect(box()!.textContent).toContain(t('ql.modal.editTitle'));
     expect((inputOf(t('ql.modal.name')) as HTMLInputElement).value).toBe('webui');
     expect((inputOf(t('ql.modal.cmd')) as HTMLInputElement).value).toBe('python -m webui');
-    expect(triggerText(t('ql.modal.terminal'))).toBe(t('ql.term.pwsh'));
+    // M19（修复轮 B）：trigger 显示的是截断后的 label（同 :189 的期望变更），本行钉的是「编辑态不被预选覆盖」
+    expect(triggerText(t('ql.modal.terminal'))).toBe(truncateByWidth(t('ql.term.pwsh'), 16));
     expect(document.querySelector('.btn-delete')).not.toBeNull();
 
     // 改名字后保存 → 弹窗关、卡片重拉 ql_list、行名更新、冒泡 changed
@@ -431,6 +436,126 @@ describe('QuickLaunchModal', () => {
     expect(emittedKeys).toContain('changed');
     expect(emittedKeys).not.toContain('new');
     expect(emittedKeys).not.toContain('edit');
+    w.unmount();
+  });
+
+  // ===== 修复轮 B（最终审查 I-1 / M19 / Minor 9）新增用例 =====
+
+  // I-1（必修）：运行中的条目不能删 —— 删掉后卡片行消失（没有 [停止] 了），而页签的 [x] 因
+  // closeDisabled（App.vue:358-369）永久禁用 → 既关不掉也停不掉。裁定 = 禁用 [删除]，
+  // tooltip 接上**已存在**的键 ql.err.running（src-main/i18n/dict.ts:184 zh / :526 en，本轮不新建键）。
+  it('delete_button_is_disabled_for_running_entry_and_shows_ql_err_running', async () => {
+    let delCalls = 0;
+    mockLms({ del: (id) => { delCalls += 1; void id; return Promise.resolve(null); } });
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY, running: true });
+    await flush();
+
+    // 编辑态仍渲染删除按钮（F2 的位置/图标不变），只是不可用
+    const del = document.querySelector('.btn-delete') as HTMLButtonElement;
+    expect(del).not.toBeNull();
+    expect(del.getAttribute('disabled')).not.toBeNull();
+    expect(del.getAttribute('data-tooltip')).toBe(t('ql.err.running'));
+
+    // 机制断言（修复轮 B1）：tooltip 的渲染条件是**类选择器**，不是「属性存在」——
+    // src/style.css:414-425 = `.tip-up::after { content: attr(data-tooltip) }` +
+    // `.tip-up:hover::after { opacity: 1 }`；本组件的 .btn-delete（QuickLaunchModal.vue:338-353）
+    // 没有任何 ::after 规则，所以只挂 data-tooltip 在真机上什么都不渲染（jsdom 只看属性 → 上一轮漏网）。
+    // 对照正确用法：src/App.vue:565 = class="winbtn winbtn--github tip-down" + :data-tooltip（类与属性成对）。
+    expect(del.classList.contains('tip-up'),
+      'data-tooltip 已挂但缺 .tip-up 类 → style.css:414-425 的 ::after 不渲染（真机看不到 tooltip）').toBe(true);
+
+    // 点了也不开二次确认、不发 ql_delete（守卫在模板与 onDelete 两处，任一被去掉本用例都红）
+    del.click();
+    await flush();
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    expect(delCalls).toBe(0);
+    expect(calls.filter((c) => c.cmd === 'ql_delete').length).toBe(0);
+    expect(w.emitted('deleted')).toBeUndefined();
+    w.unmount();
+  });
+
+  // I-1 负面对照（修复轮 B1）：tip-up 必须与 data-tooltip **同条件**挂载（只在 running 为真时）。
+  // 理由在 style.css:414-425：`content: attr(data-tooltip)` 在属性缺失时求值为空串，
+  // 而 .tip-up::after 仍带 padding / border-radius / 深灰底 → 无条件挂 tip-up 会让未运行条目的
+  // 删除按钮在 hover 时弹出一个空白气泡。本用例就是钉这条负面对照（变异门 b 让它红）。
+  it('tip_up_class_and_data_tooltip_are_mounted_only_while_running', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY, running: false });
+    await flush();
+
+    const del = document.querySelector('.btn-delete') as HTMLButtonElement;
+    expect(del).not.toBeNull();
+    expect(del.classList.contains('tip-up'), '未运行却挂了 .tip-up → hover 时渲染空 tooltip 气泡').toBe(false);
+    expect(del.getAttribute('data-tooltip')).toBeNull();
+    w.unmount();
+  });
+
+  // I-1 正对照：非运行的条目照旧可删（E6 的行为一字不变）——可用、不挂「正在运行」tooltip、
+  // 点它开二次确认，[确认] 才发 ql_delete
+  it('delete_button_stays_enabled_and_deletes_for_not_running_entry', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY, running: false });
+    await flush();
+
+    const del = document.querySelector('.btn-delete') as HTMLButtonElement;
+    expect(del).not.toBeNull();
+    expect(del.getAttribute('disabled')).toBeNull();
+    expect(del.getAttribute('data-tooltip')).toBeNull(); // 未运行 → 不挂 ql.err.running
+
+    del.click();
+    await flush();
+    expect(document.querySelector('.confirm-box')).not.toBeNull();
+    (document.querySelector('.confirm-ok') as HTMLButtonElement).click();
+    await flush();
+    expect(calls.filter((c) => c.cmd === 'ql_delete').map((c) => c.args[0])).toEqual(['qla1b2c3d4']);
+    expect(w.emitted('deleted')).toEqual([['qla1b2c3d4']]);
+    w.unmount();
+  });
+
+  // M19（只修下拉那一半）：Dropdown.vue:4 明写「label 截断由父级负责」，此前传的是未截断全名。
+  // 预算 16 = 规格 §11-1（与 App.vue:350 的页签预算同值）；完整名走 option.tip（Dropdown.vue:18 / :72）。
+  it('terminal_dropdown_labels_are_truncated_to_budget_with_full_name_tip', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const dd = dropdownOf(t('ql.modal.terminal'))!;
+    await openOptionLabels(dd);
+    const items = [...dd.querySelectorAll('ul.dropdown-panel li')];
+    const texts = items.map((li) => (li.textContent ?? '').trim());
+    const tips = items.map((li) => li.getAttribute('data-tooltip'));
+
+    // 夹具前提：'PowerShell 7 (pwsh)' 宽 19 > 16+2 → 确实该被截断（否则本用例测不到东西）
+    const full = t('ql.term.pwsh');
+    const cut = truncateByWidth(full, 16);
+    expect(cut).not.toBe(full);
+    const i = texts.indexOf(cut);
+    expect(i, '终端标签未按预算 16 截断，实际 = ' + JSON.stringify(texts)).toBeGreaterThanOrEqual(0);
+    expect(tips[i]).toBe(full); // 完整名在 tip 里（零新组件、零新键）
+
+    // 短名不截断也不挂 tip：与 LaunchBar.vue:93-94 的 grace 口径一致（grace 内全量渲染 → 无 …、无 tooltip）
+    const short = t('ql.term.wsl');
+    const j = texts.indexOf(short);
+    expect(j, '短名标签被误截断，实际 = ' + JSON.stringify(texts)).toBeGreaterThanOrEqual(0);
+    expect(tips[j]).toBeNull();
+    w.unmount();
+  });
+
+  // Minor 9：删除确认文案用 trim 后的名字（与 save() 的 formName.trim() 同一处理），
+  // 否则带尾空格的表单值在确认框里显示成「webui   」
+  it('delete_confirm_message_uses_trimmed_name', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, 'webui   ');
+    (document.querySelector('.btn-delete') as HTMLButtonElement).click();
+    await flush();
+
+    const confirm = document.querySelector('.confirm-box');
+    expect(confirm).not.toBeNull();
+    expect(confirm!.textContent).toContain(t('ql.modal.delete.message', { name: 'webui' }));
+    expect(confirm!.textContent).not.toContain('webui   '); // 未 trim 的原文不出现
     w.unmount();
   });
 });

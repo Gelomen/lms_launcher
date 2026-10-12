@@ -281,6 +281,7 @@ pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo
 ## 11 两个已知问题的解法（不变）
 
 1. **长名** → `truncateByWidth`：页签预算 16、列表行预算 30；只在真实超预算 + grace 时截断并加 `…`；hover 弹全名 tooltip（fixed 浮层）。
+   - **终端下拉标签与下拉选项**（最终审查修复轮 B 追加，索引 K41）：预算 **16**（与页签同值），完整名走 `Dropdown` 的 `option.tip`（`.dd-tip` fixed 浮层）。截断**在调用方做**——`src/components/Dropdown.vue:4` 明写「label 截断由父级负责」；`tip` 只在真实超预算 + grace 时挂（沿用 `LaunchBar.vue:93-94` 口径）。
 2. **页签溢出** → `.tab-bar` 横向滚动、页签不被压扁，切换时激活页签 `scrollIntoView({ inline: 'nearest' })`。
 
 ## 12 测试与验收
