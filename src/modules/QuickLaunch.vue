@@ -8,6 +8,7 @@ import { invoke, errMsg } from '../ipc';
 import { t } from '../i18n';
 import { truncateByWidth, visualWidth } from '../util/truncate';
 import { nextCopyName } from '../util/copy-name';
+import QuickLaunchModal from './QuickLaunchModal.vue';
 // 类型只有一份真源（主进程配置层）；与 src/i18n.ts:3 同一先例——import type 在构建期被擦除，不引入运行时依赖。
 import type { QuickLaunchEntry, QuickLaunchList, QuickLaunchMap } from '../src-main/quick-launch-config';
 
@@ -36,8 +37,8 @@ const list = ref<QuickLaunchList | null>(null);
 const error = ref<string | null>(null);
 const copying = ref(false);
 
-// 弹窗状态归卡片（索引 K29）：QuickLaunchModal 在任务 12 落地，届时由本文件挂载并回填 editingId。
-// 本任务只留本地状态：null → 新建，非 null → 编辑该 id。
+// 弹窗状态归卡片（索引 K29）：QuickLaunchModal 由本文件挂载（任务 12 / B3）。editingId = null → 新建，
+// 非 null → 编辑该 id。卡片 emits 仍是 start/stop/changed —— 新建与编辑不开新事件。
 const modalOpen = ref(false);
 const editingId = ref<string | null>(null);
 function openNew(): void { editingId.value = null; modalOpen.value = true; }
@@ -45,6 +46,15 @@ function openEdit(id: string): void {
   if (!list.value || !list.value.items[id]) return;
   editingId.value = id;
   modalOpen.value = true;
+}
+// 弹窗保存 / 删除成功：关窗 + 重拉 ql_list + 冒泡 changed（与 TemplateModule.vue:141-143 同构）。
+// 列表数据的所有权在卡片（C1），刷新因此在这里做、不在弹窗里；close 只关窗、不改动。
+function onModalSaved(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
+function onModalDeleted(): void { modalOpen.value = false; void (async () => { await reload(); emit('changed'); })(); }
+// 回填给弹窗的条目：新建（id = null，索引 K31(1)）或列表不可用时 = null → 弹窗以空表单打开
+function entryFor(id: string | null): QuickLaunchEntry | null {
+  if (id === null || !list.value) return null;
+  return list.value.items[id] ?? null;
 }
 
 // ql_list 永不抛 MISSING（规格 §5.2：首次必然没有这个文件 → 空表）；走到 catch 只剩 YAML: 这类真错误。
@@ -163,5 +173,9 @@ onMounted(() => { void reload(); });
       </div>
     </div>
     <p v-if="list && Object.keys(list.items).length === 0" class="label">{{ t('ql.empty.none') }}</p>
+    <!-- 新建 / 编辑弹窗由卡片持有（索引 K29）：id = null → 新建（K31(1)）；
+         saved / deleted → 重拉列表 + changed；close → 只关窗 -->
+    <QuickLaunchModal :open="modalOpen" :id="editingId" :entry="entryFor(editingId)"
+      @saved="onModalSaved" @deleted="onModalDeleted" @close="modalOpen = false" />
   </section>
 </template>
