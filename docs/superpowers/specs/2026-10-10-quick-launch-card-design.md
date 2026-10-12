@@ -1,7 +1,12 @@
 # 快捷启动卡片（Quick Launch · 交互终端版）设计规格
 
 - 日期：2026-10-10（v1 日志版）→ **2026-10-11 v2：命令行类型改为交互终端页签**
-- 状态：v2 设计已由用户逐项确认（grill-me 共 18 问），待写实现计划
+- 状态：v2 设计已由用户逐项确认（grill-me 共 18 问）；实现计划已写，任务 1-13 已验收并提交。**任务 14（2026-10-12）验收状态如下，只记已跑过的事实**：
+  - **自动化门：通过。** `npm test` → `Test Files 47 passed (47)` / `Tests 800 passed (800)`，exit 0（与任务 13 基线逐字相同，无减少）；`npx tsc -p tsconfig.main.json --noEmit` → 无输出、exit 0。
+  - **打包门（§7.2 / §12-1）：文件级通过。** `build.bat` exit 0，产物 = `dist-release\win-unpacked\lms_launcher.exe`；`dist-release` 下无 `*-portable.exe`（属预期，`ef23ac6`）。`electron-builder.yml` 已加 `asarUnpack: ["**/node_modules/@lydell/**"]`；实测 `resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64\` 下 `conpty.node` / `conpty\conpty.dll` / `conpty\OpenConsole.exe`（另有 `conpty_console_list.node`）都在，asar 头里这些条目标记 `"unpacked": true`。**这只是文件布局取证，不等于运行时 dlopen 成功**——见下一条。
+  - **真机验收 §12 硬门 1-9：未验收。** 本实现环境起不了 Electron GUI（实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003 STATUS_BREAKPOINT`，与 §13.2 记载一致），打包产物同为 Electron 故同样起不来 → **待用户在真机逐条验收**（记录表：`docs/superpowers/checks/2026-10-10-quick-launch-card/task-14-build-acceptance.md` E 段）。
+  - **WSL：未验收。** 本机无 WSL 发行版（§12-10 / §13.3），待安装发行版后补。
+  - §13 的 5 条未验证项**保持原样**，未因本次打包门而改为「已解决」。
 - 依据：本文「实测」结论均在**本机真机**取得，证据见 §6.3 / §7.4 / §9.5
 
 ## 0 v2 相对 v1 的变更（为什么重写）
@@ -144,8 +149,8 @@ prebuilds/win32-x64/conpty/OpenConsole.exe       ← ConPTY 宿主
 ```
 
 - `electron-builder.yml` 必须加 `asarUnpack`：`**/node_modules/@lydell/**`（`.node` 无法从 asar 内 dlopen；`.dll`/`.exe` 也无法从 asar 内执行）。
-- **`dev 能跑 ≠ 打包能跑`**：打包产物（portable exe）里必须能真的开出终端页签，这是**硬门验收项**（§12 第 1 条）。
-- 打包后需确认这两处：`app.asar.unpacked/node_modules/@lydell/**` 存在；portable 运行时解包目录里同样存在。
+- **`dev 能跑 ≠ 打包能跑`**：打包产物里必须能真的开出终端页签，这是**硬门验收项**（§12 第 1 条）。验收对象 = **win-unpacked 产物** `dist-release\win-unpacked\lms_launcher.exe`——`build.bat:70-90` 只跑 `electron-builder --win dir`，**不生成 portable exe**（依据 commit `ef23ac6 build: 打包只产出 win-unpacked，不再生成 portable exe`；`build.bat:104` 还会清掉旧的 `*-portable.exe` 残留）。
+- 打包后需确认：`dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\**` 存在。（不产出 portable exe，所以没有「portable 运行时解包目录」这一处——原文的两处确认按 `ef23ac6` 收敛为一处。）
 
 ### 7.3 PTY 启动
 
@@ -290,7 +295,7 @@ pty.spawn(exe, args, {   // args 来自 shellExe()：pwsh/powershell = ['-NoLogo
 
 **硬门验收（真机，逐条记录）**
 
-1. **打包产物**：`build.bat` 出 portable exe → 运行 → 开一个终端页签成功（验证 `asarUnpack` 与 `.node`/`conpty.dll` 加载）。
+1. **打包产物**：`build.bat` 出 **win-unpacked 产物**（`dist-release\win-unpacked\lms_launcher.exe`；依据 `ef23ac6` 不生成 portable exe）→ 运行 → 开一个终端页签成功（验证 `asarUnpack` 与 `.node`/`conpty.dll` 加载）。
 2. 三种终端各跑一条中文输出命令 → 中文正确、颜色正常。
 3. **交互**：运行 `cmd` 配置，命令写 `set /p X=NAME?`，在终端页签里输入 `Alice` → 回车后能看到回显；再敲 `echo %X%` → `Alice`。
 4. **TUI**：在 `cmd` 页签跑 `python`（或任一带提示符的交互程序）能正常交互；跑 `cls` 能正确清屏。

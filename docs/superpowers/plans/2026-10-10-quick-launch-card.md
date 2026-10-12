@@ -479,12 +479,12 @@ asarUnpack:
 
 - [ ] **步骤 2：打包**
 
-运行：`build.bat`（或 `npm run build && npx electron-builder`，以仓库既有脚本为准）
-预期：`dist-release/` 出 portable exe；解包检查 `app.asar.unpacked/node_modules/@lydell/node-pty-win32-x64/prebuilds/win32-x64/` 下 `conpty.node` / `conpty/conpty.dll` / `conpty/OpenConsole.exe` **三个都在**。
+运行：`build.bat`（它只跑 `npx electron-builder --config electron-builder.yml --win dir`，见 `build.bat:83`/`:90`）
+预期：**win-unpacked 产物** `dist-release\win-unpacked\lms_launcher.exe` 存在；`dist-release/` 下没有 `*-portable.exe` 属预期（依据 commit `ef23ac6 build: 打包只产出 win-unpacked，不再生成 portable exe`，`build.bat:104` 还会清掉旧残留）。解包检查 `dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64\` 下 `conpty.node` / `conpty/conpty.dll` / `conpty/OpenConsole.exe` **三个都在**。
 
 - [ ] **步骤 3：硬门验收（逐条记录命令与输出）**
 
-1. **打包产物里开终端**（审查重点 4）：运行 portable exe → 新建一条 cmd 配置 → 启动 → 终端页签出现提示符、能输入（**先 dev 后打包各做一次**）。
+1. **打包产物里开终端**（审查重点 4）：运行 **win-unpacked 产物** `dist-release\win-unpacked\lms_launcher.exe`（依据 `ef23ac6`，不产出 portable exe）→ 新建一条 cmd 配置 → 启动 → 终端页签出现提示符、能输入（**先 dev 后打包各做一次**）。
 2. 三种终端各跑一条中文输出命令 → 中文正确、颜色正常。
 3. **交互**：cmd 配置命令写 `set /p X=NAME?` → 页签内输入 `Alice` → 回车 → 再敲 `echo %X%` → 显示 `Alice`。
 4. **TUI/清屏**：页签内跑 `cls` 清屏正常；跑一个交互式程序（如 `python`）能输入输出。

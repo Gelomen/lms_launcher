@@ -25,28 +25,28 @@
 
 | # | 检查项 | 预期 | ✓ |
 |---|---|---|---|
-| C1 | `asarUnpack` 内容 | 逐字两行：`asarUnpack:` 换行 + `- "**/node_modules/@lydell/**"` | ☐ |
+| C1 | `asarUnpack` 内容 | 逐字两行：`asarUnpack:` 换行 + `- "**/node_modules/@lydell/**"` | ☑（`electron-builder.yml:12-17`，另加三行注释说明依据与「不依赖自动探测」） |
 
 ## D. 打包门
 
 | # | 步骤 | 命令 | 预期 | ✓ |
 |---|---|---|---|---|
 | D1 | 打包 | `build.bat` | 成功退出；产物 = `dist-release\win-unpacked\lms_launcher.exe`；`dist-release` 下**没有** `*-portable.exe`（属预期，见 A2） | ☐ |
-| D2 | 解包检查 | 列 `dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64` | `conpty.node` / `conpty\conpty.dll` / `conpty\OpenConsole.exe` **三个都在**。基线核对：改动前 `resources` 只有 `app.asar` + `icon.ico`，**没有** `app.asar.unpacked` → 加 `asarUnpack` 后它必须出现，出现即证明解包生效 | ☐ |
+| D2 | 解包检查 | 列 `dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64` | `conpty.node` / `conpty\conpty.dll` / `conpty\OpenConsole.exe` **三个都在**。基线核对：改动前 `resources` 只有 `app.asar` + `icon.ico`，**没有** `app.asar.unpacked` → 加 `asarUnpack` 后它必须出现，出现即证明解包生效 | ☑（三个原生文件都在：`conpty.node`(291328) / `conpty\conpty.dll`(110152) / `conpty\OpenConsole.exe`(1062472)`，另有 `conpty_console_list.node`(134656)；`.pdb` 被 `builder-debug.yml` 的默认过滤排除。**本行的前提已按索引 K37 更正**：`app.asar.unpacked` 存在本身不是 `asarUnpack` 生效的证据——不加它也有 18 个文件） |
 
 ## E. 硬门验收（逐条记录命令与输出；第 1 条 dev 与打包产物**各做一次**）
 
 | # | 验收项 | 操作 | 预期 | ✓ |
 |---|---|---|---|---|
-| E1 | **R4：打包产物里开终端** | 运行 `dist-release\win-unpacked\lms_launcher.exe` → 新建 cmd 配置 → 启动 | 终端页签出现提示符、能输入 | ☐ |
-| E2 | 中文与颜色 | pwsh / powershell / cmd 各跑一条中文输出命令 | 中文正确、ANSI 颜色正常 | ☐ |
-| E3 | 交互输入 | cmd 配置命令写 `set /p X=NAME?` → 页签内输入 `Alice` → 回车 → 敲 `echo %X%` | 显示 `Alice` | ☐ |
-| E4 | TUI / 清屏 | 页签内跑 `cls`；再跑一个交互式程序（如 `python`） | 清屏正常；能输入输出 | ☐ |
-| E5 | 进程树 | 跑 `ping -n 60 127.0.0.1` → `[停止]` → `tasklist \| findstr PING` | 无残留；页签保留、`[x]` 可用 | ☐ |
-| E6 | 自动执行 | 启动配置 | 命令自动执行并停在提示符（可继续输入） | ☐ |
-| E7 | exe 类型 | 启动记事本 | 无页签、按钮变红；关闭记事本 → 按钮回落 | ☐ |
-| E8 | 页签溢出与长名 | 建 8 条页签 + 超长名 | 横向滚动；列表与页签都截断 + tooltip | ☐ |
-| E9 | 退出应用 | 退出后 `tasklist` | 所有终端进程消失 | ☐ |
+| E1 | **R4：打包产物里开终端** | 运行 `dist-release\win-unpacked\lms_launcher.exe` → 新建 cmd 配置 → 启动 | 终端页签出现提示符、能输入 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E2 | 中文与颜色 | pwsh / powershell / cmd 各跑一条中文输出命令 | 中文正确、ANSI 颜色正常 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E3 | 交互输入 | cmd 配置命令写 `set /p X=NAME?` → 页签内输入 `Alice` → 回车 → 敲 `echo %X%` | 显示 `Alice` | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E4 | TUI / 清屏 | 页签内跑 `cls`；再跑一个交互式程序（如 `python`） | 清屏正常；能输入输出 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E5 | 进程树 | 跑 `ping -n 60 127.0.0.1` → `[停止]` → `tasklist \| findstr PING` | 无残留；页签保留、`[x]` 可用 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E6 | 自动执行 | 启动配置 | 命令自动执行并停在提示符（可继续输入） | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E7 | exe 类型 | 启动记事本 | 无页签、按钮变红；关闭记事本 → 按钮回落 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E8 | 页签溢出与长名 | 建 8 条页签 + 超长名 | 横向滚动；列表与页签都截断 + tooltip | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
+| E9 | 退出应用 | 退出后 `tasklist` | 所有终端进程消失 | ☐（**原因**：要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `node_modules\electron\dist\electron.exe` 立即退出，退出码 `0x80000003`，索引 K33；打包产物同为 Electron。**去处**：用户真机逐条验收，结果回填本行与 J 段） |
 | E10 | **WSL 不得声称已验收** | 本机无发行版 | 文档如实写「未验收，待安装发行版后补」 | ☐ |
 
 ## F. 文档门
@@ -74,9 +74,10 @@
 
 ## I. 完成判据
 
-- [ ] D2 三个文件都在
-- [ ] E1-E9 逐条有命令与输出记录；E10 如实标注未验收
-- [ ] F1-F2 文档更新
+- [ ] D2 三个文件都在（实测清单见 J 段「D2」行）
+- ☐（**原因**：E1-E9 要打开 GUI 做窗口操作，本实现环境起不了 Electron——实测 `electron.exe` 立即退出 `0x80000003`，索引 K33。**去处**：用户真机逐条验收，结果回填 E 段与 J 段）E1-E9 逐条有命令与输出记录
+- [ ] E10 如实标注未验收（规格「状态」行已写「WSL：未验收」）
+- [ ] F1-F3 文档更新
 - [ ] G1-G2 通过
 - [ ] H1-H2 完成
 
@@ -84,15 +85,24 @@
 
 | 项 | 命令 / 操作 | 实际输出（摘要） | 结论 |
 |---|---|---|---|
-| A2 | 验收对象选择 |  |  |
-| D1 |  |  |  |
-| D2 |  |  |  |
-| E1 |  |  |  |
-| E2 |  |  |  |
-| E3 |  |  |  |
-| E4 |  |  |  |
-| E5 |  |  |  |
-| E6 |  |  |  |
-| E7 |  |  |  |
-| E8 |  |  |  |
-| E9 |  |  |  |
+| A1 | `git rev-parse --short HEAD` / `git status --porcelain` | HEAD=`d17b5cc`；工作区只有 `?? .superpowers/sdd/2026-10-10-quick-launch-card/task-14-brief.md`。全量基线（47 files / 800 passed）沿用主代理简报实测；改动后又跑了一次，见「G1」行 | 起点与简报一致 |
+| A2 | `git log --oneline -3 -- build.bat` + 读 `build.bat:70-110` | `ef23ac6 build: 打包只产出 win-unpacked，不再生成 portable exe`（2026-10-08 03:30）；`:70` echo「win-unpacked only」、`:83`/`:90` 两次 `call npx electron-builder --config electron-builder.yml --win dir`、`:104-107` 删除旧 `*-portable.exe` | 验收对象 = `dist-release\win-unpacked\lms_launcher.exe`；B4 不改 build.bat |
+| A3 | 读 `electron-builder.yml` 全文（31 行） | `:12 asar: true`，**无** `asarUnpack`；`:28 win.target: portable` 被 `--win dir` 覆盖（`build.bat:73-78` 注释说明） | 与简报 A3 一致 |
+| 起点取证（**前提不成立**） | 用 `@electron/asar` 的 `listPackage` 读旧 `dist-release\win-unpacked\resources\app.asar` | 旧产物（app.asar LastWriteTime 2026-10-11 01:51:56）里 **lydell 条目 = 0**，且打进包里的 `package.json` 的 dependencies **没有** `@lydell/node-pty` → 该产物早于任务 5 的依赖提交 `90c9320`（2026-10-11 19:25）。所以「改动前 .node/.dll 在 asar 里」不能拿旧产物取证 | 已改为现跑一次不带 asarUnpack 的构建取证（下两行） |
+| 前置构建（**不带** asarUnpack） | `cmd /c build.bat`（日志 `.temp\task14-build-before.log`） | exit 0；vite `✓ built in 1.64s`；electron-builder 25.1.8 `packaging platform=win32 arch=x64 electron=28.3.3 appOutDir=dist-release\win-unpacked`；日志里出现 `signing with signtool.exe path=...\resources\app.asar.unpacked\...\OpenConsole.exe` → **没加 asarUnpack 也已经有 app.asar.unpacked**。墙钟 ≈15s（日志 CreationTime 18:26:49 → LastWriteTime 18:27:04） | 基线本身就能打包；D2 的「改动前没有 app.asar.unpacked」前提不成立 |
+| 加 asarUnpack **前**取证 | `@electron/asar` 的 `listPackage` + `getRawHeader` | asar 共 3927 条，其中 lydell 32 条；4 个原生文件在 asar **头**里列出但带 `"unpacked": true`：`conpty.node`(291328)、`conpty\conpty.dll`(110152)、`conpty\OpenConsole.exe`(1062472)、`conpty_console_list.node`(134656)；`app.asar.unpacked` **已存在**，物理 18 个文件 = 平台包 `@lydell\node-pty\node_modules\@lydell\node-pty-win32-x64\` 全部（12 个 lib/*.js + package.json + LICENSE + 4 个原生）；外层 `@lydell\node-pty\index.js` 仍是 `{"offset":"11531252"}`（字节在 asar 内） | electron-builder 25.1.8 的**原生模块自动探测**已把平台包整包解出 |
+| B1/C1 | 编辑 `electron-builder.yml`（紧跟 `asar: true` 之后） | 新增 5 行 = 3 行注释（写明依据规格 §7.2）+ `asarUnpack:` + `  - "**/node_modules/@lydell/**"`；`git diff --numstat` → `electron-builder.yml 5/0` | 与 C1 逐字一致（多出的只是注释，简报允许） |
+| D1 | `cmd /c build.bat`（日志 `.temp\task14-build-after.log`） | **exit 0，一次成功、未走 `:pack_retry`**；产物 `dist-release\win-unpacked\lms_launcher.exe` = 177,150,464 B（18:28:30）；`(Get-ChildItem dist-release -Filter "*-portable.exe" -Recurse -Force \| Measure-Object).Count` = **0**；墙钟 ≈9s（18:28:21 → 18:28:30） | 打包门通过（比简报估的「几分钟」快：工具缓存已预热、Defender 未拦） |
+| D2 | 逐个列 `dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64` | 真实清单（实测字节数）：`conpty.node` 291328、`conpty_console_list.node` 134656、`conpty\conpty.dll` 110152、`conpty\OpenConsole.exe` 1062472 → **要求的三个都在**，另有 `conpty_console_list.node`。源码目录里的 `conpty.pdb`(6311936) 与 `conpty_console_list.pdb`(4321280) **不在包里**：electron-builder 默认过滤 `!**/*.{...,pdb}`（见 `dist-release\builder-debug.yml` 的 firstOrDefaultFilePatterns） | 三个都在；缺 .pdb 属默认过滤，不影响加载 |
+| 加 asarUnpack **后**取证 | 同一命令重跑 | asar 仍 3927 条 / lydell 仍 32 条 —— **头里仍列出，这是 asar 的语义**：unpacked 文件在头里保留条目并标 `"unpacked": true`，字节改放 `app.asar.unpacked` 下。真实差别：`app.asar.unpacked` 物理文件 **18 → 21**，新增外层 `@lydell\node-pty\index.js`(2059)、`package.json`(755)、`LICENSE`(1091)，其头条目由 `{"offset":"11531252"}` 变为 `{"unpacked":true}`；4 个原生文件前后都是 `"unpacked": true` | 显式 `asarUnpack` 的实际作用 = 把整个 `@lydell` 作用域解出，不再依赖自动探测只覆盖平台包 |
+| 路径解析未变（「牙」第 3 条） | 读 `dist-main\quick-launch.js:46`、`node_modules\@lydell\node-pty\index.js:1`、`node-pty-win32-x64\lib\utils.js` 的 `loadNativeModule` | 编译产物是 `require("@lydell/node-pty")`（**包名解析，无硬编码 asar 路径**）→ `require("@lydell/node-pty-" + platform + "-" + arch)` → `require("../prebuilds/win32-x64/conpty.node")`（相对包目录，先试 build/Release、build/Debug）。`src-main/quick-launch.ts:8` 的 `import * as pty from '@lydell/node-pty'` 一字未改 | 解包后由 Electron 的 asar 补丁把 asar 内路径映射到 `.unpacked`，代码侧不需要改 |
+| E1 | 打开 `dist-release\win-unpacked\lms_launcher.exe` 做窗口操作 | **未执行（本环境无 GUI）**：`node_modules\electron\dist\electron.exe` 立即退出 `0x80000003`（索引 K33），打包产物同为 Electron 故同样起不来 | ☐（原因 + 去处：用户真机验收） |
+| E2-E9 | 同上（中文/颜色、交互输入、TUI、进程树、自动执行、exe 类型、页签溢出、退出应用） | **未执行（本环境无 GUI）**，原因同 E1 | ☐（原因 + 去处：用户真机验收） |
+| E10 | 本机 WSL | 未跑：本机无 WSL 发行版；已在规格「状态」行写「**WSL：未验收**」 | 如实标注，未声称已验收 |
+| F1 | 改规格「状态」行（`docs/superpowers/specs/...design.md:4-9`） | 写明：自动化门（47 files / 800 passed、tsc exit 0）、打包门**文件级**结论（含 D2 真实清单与 `"unpacked": true`）、**真机 §12 硬门 1-9 未验收**（附 `0x80000003` 原因与记录表路径）、**WSL 未验收**、§13 五条保持原样 | 只写已跑过的事实 |
+| F2 | `git diff` 对规格 §13 | §13 的 5 条一字未改；`git diff --numstat` 对规格 = `9/4`，全部落在「状态」行与 §7.2（`:152-153`）/ §12-1（`:298`）的措辞 | 未验证项如实保留 |
+| F3 | 改措辞 + `grep -n portable` 复核 | 规格 `:152-153`（§7.2）、`:298`（§12-1）、计划 `:483`（步骤 2）、`:487`（步骤 3 第 1 条）：「portable exe」→「win-unpacked 产物 `dist-release\win-unpacked\lms_launcher.exe`」并注明依据 `ef23ac6`。复核后 spec/plan 里剩下的 `portable` 只出现在「**不生成** portable exe」这类说明句里 | 措辞更正完成，任务边界未动 |
+| G1 | `npm test` | `Test Files 47 passed (47)` / `Tests 800 passed (800)`，`Start at 18:29:35`，`Duration 9.24s`，`TEST_EXIT=0`（与基线逐字相同，无减少） | 全绿 |
+| G2 | `git diff --name-only` / `git diff --numstat` | 四个：`electron-builder.yml`（**B1，唯一的非文档改动**，+5/−0）、`docs/superpowers/specs/...design.md`（B2，+9/−4）、`docs/superpowers/plans/...md`（B3，+3/−3）、本表 `docs/superpowers/checks/.../task-14-build-acceptance.md`（J 段 + I 段延期项写法 + E 段显式未勾，+34/−24）。未跟踪只有 `.superpowers/sdd/.../task-14-brief.md` 与 `task-14-report.md`；`.temp/` 被 gitignore | **代码/配置侧只含 B1**，其余三处都是本任务允许的文档（B2/B3 + J 段） |
+| 类型门 | `npx tsc -p tsconfig.main.json --noEmit` | 无输出，`TSC_EXIT=0` | 主进程侧未触碰且干净 |
+| 取证陷阱 | `Get-Item dist-release\builder-effective-config.yaml` | 它的 LastWriteTime 仍是 **2026-10-11 01:51:54**（`--win dir` 构建不重写它），里面也没有 `asarUnpack` → **不能**用它判断本次生效配置；生效证据是上面的 asar 头与 `app.asar.unpacked` 物理清单 | 别拿这个文件当证据 |
