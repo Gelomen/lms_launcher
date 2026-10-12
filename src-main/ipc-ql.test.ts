@@ -8,6 +8,7 @@
 //   • preload 的两个订阅（check E3）：清理后不再收到 → 重复订阅不叠加。
 // 范围：不改 src-main/process.ts（索引 G4），不新增通道（check F4）。
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process'; // M23：tasklist / taskkill，只清测试自己造出来的记事本窗口
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -114,8 +115,15 @@ function handlerOf(name: string): Handler {
   if (!fn) throw new Error('NO_HANDLER_REGISTERED: ' + name);
   return fn;
 }
+/**
+ * 本文件真起过进程的配置 id（cmd.exe / notepad.exe）。
+ * M10：自动记录，不再手维护清单——硬编码的 KNOWN_STARTED_IDS 会让新增用例静默不清理。
+ * afterAll 逐个兜底 ql_stop：某条用例在自己的 ql_stop 之前抛错时，不让它们活到 worker 退出（修复轮 1 · Minor #8）。
+ */
+const startedIds = new Set<string>();
 /** 模拟渲染端 invoke：ipcMain.handle 的监听器签名是 (event, ...args) */
 function invoke(name: string, ...args: unknown[]): unknown {
+  if (name === 'ql_start') startedIds.add(String(args[0]));
   return handlerOf(name)(undefined, ...args);
 }
 /**
@@ -166,18 +174,42 @@ beforeAll(() => {
     },
   });
 });
-// 本文件里真起过进程的配置 id（cmd.exe / notepad.exe）。afterAll 兜底停一遍：
-// 某条用例在 ql_stop 之前抛错时，不让它们活到 worker 退出（修复轮 1 · Minor #8）。
-const KNOWN_STARTED_IDS = [
-  'qlshape01', 'qlshape02', 'qlshape03', 'qlshape04',
-  'qlfixexe01', 'qlfixsh01', 'qlconc01', 'qlconc02',
-];
+/**
+ * M23（索引）：本文件拿真 notepad.exe 当 exe 样本，而 Windows 11 的打包版记事本
+ * （Microsoft.WindowsNotepad）不是「一个进程 = 一个窗口」：`notepad.exe` 的 stub 在启动时就把窗口
+ * 交给真正的记事本进程（命令行带 /SESSION:，父 PID 就是那个 stub），而 quick-launch 只跟踪 stub 的 PID。
+ * → ql_stop 的 child.kill(SIGTERM) 只杀掉 stub，窗口进程不在实例表里，每跑一次本文件漏一个空白窗口。
+ * 本机取证（主代理与实现者各测一次，结论一致）：spawn notepad.exe → 0.5s 内就有两个 notepad PID
+ * （stub + 窗口进程）；对 stub 发 SIGTERM 只杀掉 stub，窗口进程留下；taskkill /F 杀掉窗口进程后 12s 内
+ * 不再出现新的 notepad（清理是终态的，不会连锁再生）。
+ * 做法：文件开头快照一次 notepad 的 PID 集合，afterAll 只清「快照里没有」的 PID——用户自己开着的记事本不动。
+ */
+function notepadPids(): number[] {
+  try {
+    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq notepad.exe', '/NH', '/FO', 'CSV'], { encoding: 'utf8' });
+    return out.split(/\r?\n/)
+      .filter((line) => /^"notepad\.exe",/i.test(line)) // tasklist 输出的镜像名是 Notepad.exe
+      .map((line) => Number(line.split('","')[1]))
+      .filter((pid) => Number.isInteger(pid));
+  } catch {
+    return []; // tasklist 不可用 → 没有可对照的基线，也就不清（清理不是判据）
+  }
+}
+/** 测试开始前就存在的记事本（用户自己开的）：这些 PID 一个都不许清掉 */
+const NOTEPAD_BASELINE = new Set<number>(notepadPids());
 
 afterAll(async () => {
-  // 顺序：先停进程（要 cwd 吗？不要——stopGraceful 只 kill/taskkill），再还原 cwd、删临时目录。
+  // 顺序：先停进程（要 cwd 吗？不要——stopGraceful 只 kill/taskkill），再清记事本再生窗口，最后还原 cwd、删临时目录。
   // 吞异常：兜底清理不是判据；未启动的 id 走 quick-launch.ts:334 的直接 return。
-  for (const id of KNOWN_STARTED_IDS) {
+  for (const id of startedIds) {
     try { await handlerOf('ql_stop')(undefined, id); } catch { /* 已停 / 未启动 */ }
+  }
+  // M23：上面的 ql_stop 只杀掉被跟踪的 notepad stub，真正的记事本窗口进程（/SESSION: 那个）还留在桌面上。
+  // 等 1.5s 让再生进程稳定（实测它在 spawn 时就已出现，1.5s 是余量），再对「不在基线快照里」的 PID 逐个强杀。
+  await new Promise((r) => setTimeout(r, 1500));
+  for (const pid of notepadPids()) {
+    if (NOTEPAD_BASELINE.has(pid)) continue; // 用户自己开着的记事本：不碰
+    try { execFileSync('taskkill', ['/F', '/PID', String(pid)]); } catch { /* 已退出 */ }
   }
   // 证据：本文件对 detectTerminals 的真实调用次数（修复轮 1 · 重要 #1 的前后对比靠它）
   console.log('[ipc-ql] detectTerminals 真实调用次数 =', cap.termProbes);
