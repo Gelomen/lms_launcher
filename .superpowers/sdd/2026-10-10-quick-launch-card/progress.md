@@ -207,9 +207,9 @@ Task 9: Ruling: K24(1) —— fit 默认不强制重报；「同一页签再次�
 Task 9: Ruling: K24(2) —— 接受一处测试强度边界：resultIndex<0 钳位删掉后 22 全绿（文档哨兵就是 -1，-1+1=0），用例只能钉「不产出负数/NaN」；不为此喂 -2（API 永不产生的输入 = 虚构契约）。钳位作为防御保留，边界如实登记。
 Task 9: complete (commits 151046e + 03b031e 代码 / 41e04a2 + 49df85c + 0ff8763 + c898f4b 文档；fix rounds 2/5；TerminalTabView.test.ts 22 用例)
 
-【停线点 · 当前】用户要求：修完任务 9 的两条重要后，在开始任务 10 之前停下。已停：工作区干净，HEAD = c898f4b。
-恢复时第一件事：派任务 10（页签条两种页签 + [x] + 横向滚动）。其简报必须先定两件事：(1) 页签全名 tooltip 的取值来源——TerminalTabView 现在同时提供 data-tab-label（短名）与 data-tab-full-label（全名），但页签条本身在 LogPanel/log-tabs 侧（任务 10 的 B 段），要说明用哪一侧；(2) 是否把 TerminalTabView 的内联 overflow: hidden 收进 style.css（B3 正好在改该文件；注意 min-height:0 是冗余项，别一起搬）。
-另外已登记给后续任务的待办：任务 11 顺手改 dict.ts:492 的 en ql.invalid 语法（invalid entries skipped: {n}）；任务 13 按 K24(1) 在重启路径显式 fit(true)；任务 14 真机门六项（见上一行 Task 9 记录）。
+【停线点 · 当前（2026-10-12 16:4x）】任务 10 已验收并提交（代码 e351a9b）。工作区在 docs 提交后应干净，HEAD 见 git log。
+恢复时第一件事：派任务 11（QuickLaunch.vue 卡片）。简报必须带：(1) M2 —— 顺手修 dict.ts:492 的 en `ql.invalid` 语法（invalid entries skipped: {n}）；(2) 卡片 props/emits 以规格 §9.4 为准（`states` / `start/stop/changed`），列表行「复制/编辑/启动/停止」与长名 tooltip 沿用 truncateByWidth 预算 30；(3) 任务 10 已落地的页签接口（`LogTabItem` / `qlTabId` / `QL_TAB_PREFIX`）——卡片**不直接**碰页签，只发 start/stop，页签由任务 13 的 App 接线建；(4) 检测顺序 powershell/cmd/pwsh/wsl 在渲染端排序（M1）。
+仍有效的跨任务待办：任务 13 按 K27(1) 用 v-model:active 驱动「自动激活」并**必须把 update:active 写回**（任务 13 表 C6 已钉）；按 K24(1) 重启路径显式 `fit(true)`；任务 14 真机门（含页签横向滚动外观 = 硬门 8、两处 [x] 的 UI 复核 M15、M17 嵌套 button 的键盘可达性、任务 6 D6b 与任务 7 G3 的退出实测）。
 【验收勾缺失 · 我的流程缺陷】用户指出「从任务 5 起就没有勾选」。实测确认：任务 1-4 的 A-I 全勾；任务 5-9 只有 H/I 部分勾，A-G 行 173 行 + I 段清单 16 项全是 ☐ —— 我从任务 5 起改成「把验收证据追加到 J 段」，就没有回落勾。证据一直在 J 段，但 AGENTS.md 明说「表里的勾是我验收用的」，J 段不能替代勾。
 已逐行补齐（commit 4de6e3b）：任务 5 勾 41、任务 6 勾 40、任务 7 勾 28、任务 8 勾 56（含 C 段 zh/en 两个附加列各 9/8 处）、任务 9 勾 40；三处**故意保持未勾并写明去处**：任务 5 H3（pnpm-lock.yaml 处置，本任务不做）、任务 6 D6b 与任务 7 G3（真机门，K12/K19）。
 Ruling: K25 —— 验收通过后必须把该任务表 A-I 每行的 ☐ 改成 ☑；未满足的行写成 ☐（原因 + 去处）；带附加列的表每一列都要落勾；J 段是证据不是勾。
@@ -238,6 +238,10 @@ Task 10: Ruling: K27(3) —— B3 边界判定为「在边界内」：改 .log-t
 Task 10: Ruling: K27(4) —— 测试强度边界（K24(2) 先例）：去掉 onCloseClick 的 closeDisabled 守卫 0 红，该行为由 disabled 属性保证；不为此造虚构契约。已写进任务 10 表 E3 行。
 Task 10: minor (deferred): M17 —— 页签 <button> 内嵌 [x] <button>（HTML 内容模型不允许；Vue 走 DOM API 渲染/点击正常）。已登记索引 M 组 → 任务 14 真机 + 键盘可达性复核。
 Task 10: fix round 1/5 已派（受控激活 active/update:active + E9/E10；范围只 LogPanel.vue + LogPanel.test.ts；两处变异：去 emit → E9 红、去兜底 watch → E10 红）。
+Task 10: fix round 1 验收（我的复跑）：G1 63 passed / App 48 passed / i18n 25 passed / tsc exit 0；测试文件 numstat 315 插入 / **0 删除**（两轮纯追加，既有 18 条与 7 处 mount 未动）；我的变异①去受控 emit = 1 红（E9）、②关兜底 watch = 1 红（E10），还原 SHA 6ba11a074e46 一致。
+Task 10: Ruling: K27(1) 补充 —— 非受控（不传 active）点击**不**冒泡 update:active：没有监听者、冒泡是噪声，且「不传时行为一字不变」是兼容性保证；该行为无消费者，按 K24(2) 不为它造断言（要改只需把 emit 提到 if (controlled.value) 之前，现有用例不红）。边界登记：兜底只观察 items，受控下 active 指向不在 tabs 里的 id 且 tabs 不变时不自动纠正（规格未要求；任务 13 的 App 自己保证一致）。已写进索引 K27 与任务 10 表 E10、任务 13 表 C6。
+Task 10: minor (deferred): (a) 受控下摘掉激活页签 → App 回应前短暂空白（K27(1) 明写的取舍，任务 13 必须回写 update:active 才不留白）；(b) E5 只能断 CSS 规则文本 + 页签数 + scrollIntoView 参数，真机横向滚动外观 → 任务 14 硬门 8；(c) 两处 [x] 是否保留其一 → 任务 14 UI 复核（M15）；(d) M17 嵌套 button。
+Task 10: complete (commits e351a9b 代码 / b7bffbe + 1ae9e07 + 5ca9cb1 + a193bca + 本次 docs 文档；fix rounds 1/5；LogPanel.test.ts 20 用例 = 既有 11 + 新增 9；表内 39 勾、裸☐=0、普查退出码 0)
 索引新增 M 组（commit 5afbb71）：把 45 条 minor (deferred) 里**会被任务 10-14 触到或放大**的 16 条路由到对应任务（M1-M16，含落点与处置要求），其余 29 条留在本账本交最终整分支审查。派任务 10-14 时把对应 M 行原样贴进简报。
 流程事故（我的提交范围）：.gitignore 的 !.superpowers/ 与 !.superpowers/** 是**用户本人**改的（我先前误记成实现者所为，已更正）。结果我的 docs 提交 a7be5fb 把 .gitignore + 43 个 .superpowers/ 文件一起带进去了（9105 行）。已 git reset --soft + restore --staged 拆成两半：5afbb71 只含 00-index.md；.gitignore 与 .superpowers/ 回到未跟踪/未暂存，等用户决定是否入仓。教训：提交前必须看 git show --stat 的实际文件数，不能只看自己 add 的路径。
 
