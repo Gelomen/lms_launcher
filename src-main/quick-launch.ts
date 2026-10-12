@@ -30,6 +30,9 @@ const POLL_MS = 100; // 与 src-main/process.ts:82 同口径
 // 强杀之后再等一小段时间让 exit 事件落地：否则 stop() 返回时 states() 里还留着 stopping:true，
 // 渲染端按钮不回落（规格 §7.5「行按钮回落 [启动]」）。
 const FORCE_EXIT_WAIT_MS = 1000;
+// A2·I-3：stopAll 的轮次上限。正常路径每轮都在摘除实例，这个上限只防「每轮都有新实例进表」的病态情况，
+// 与停止语义无关（不改 3s / taskkill 的任何时序）。
+const STOP_ALL_MAX_ROUNDS = 64;
 // 规格 §7.5：终端页签 id = 'ql:<configId>'。渲染端同名常量在 src/modules/log-tabs.ts（任务 10 C1）。
 const QL_TAB_PREFIX = 'ql:';
 
@@ -309,16 +312,24 @@ export class QuickLaunchManager {
    * 应用退出（§7.5，接线在任务 7）：逐个停，单个失败不影响其余。
    * 口径 C5(a) / 索引 K11(1)（任务 5 审查 Important #1）：timeoutSecs 必须**透传**给每个停止动作，
    * 不得被 stop() 里的 STOP_TIMEOUT_SECS 覆盖 —— 任务 7 按 exit_app 的超时调用 stopAll(n)。
+   *
+   * A2·I-3：不能「取一次快照逐个停」后无条件 instances.clear()。await 期间窗口还活着、[启动] 仍可点，
+   * 新实例会进表而不在那次快照里 → 被 clear() 抹掉却**没被停** → app.exit(0) 之后就是孤儿 ConPTY。
+   * finalize 已逐个摘除实例，clear() 唯一能清掉的恰是「没被停的实例」，所以删掉它、改成循环到表空；
+   * 上限 STOP_ALL_MAX_ROUNDS 只是防御性护栏（到上限就停手，宁可留实例也不静默丢弃）。
+   * 停止语义一字未改：仍是逐个 await、终止 → 3s → taskkill /T /F，超时按调用方透传。
    */
   async stopAll(timeoutSecs: number): Promise<void> {
-    for (const configId of Array.from(this.instances.keys())) {
-      try {
-        await this.stopInternal(configId, timeoutSecs);
-      } catch {
-        // 继续停下一个
+    let guard = 0;
+    while (this.instances.size && ++guard <= STOP_ALL_MAX_ROUNDS) {
+      for (const configId of Array.from(this.instances.keys())) {
+        try {
+          await this.stopInternal(configId, timeoutSecs);
+        } catch {
+          // 继续停下一个
+        }
       }
     }
-    this.instances.clear();
   }
 
   /** 停止的公共实现：stop() 用默认超时（3s），stopAll() 透传调用方给的秒数 */
@@ -342,7 +353,9 @@ export class QuickLaunchManager {
   states(): Record<string, { running: boolean; stopping: boolean }> {
     const out: Record<string, { running: boolean; stopping: boolean }> = {};
     for (const [configId, inst] of this.instances) {
-      out[configId] = { running: !inst.stopping, stopping: inst.stopping };
+      // A2·M7：running 不能只由 !inst.stopping 推出 —— 真机上 exit 事件是异步的，
+      // 进程已退出而 onExit 尚未到达时那是假状态。isRunning() 是 ShellProcess / ExeProcess 共有的最小面。
+      out[configId] = { running: !inst.stopping && inst.proc.isRunning(), stopping: inst.stopping };
     }
     return out;
   }

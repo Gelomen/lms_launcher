@@ -34,6 +34,10 @@ class FakeShell {
   /** 任务 7 F4：置位后 stopGraceful 挂起，直到测试 releaseStop() —— 用来钉「逐个 await」而不是 Promise.all */
   stopHeld = false;
   stopHeldStarted = false;
+  /** A2·Minor-6b：置位后 stopGraceful 正常返回但**不**触发 exit 事件 —— 模拟强杀后 exit 事件不落地 */
+  silentStop = false;
+  /** A2·I-3：stopGraceful 一进来就调用它 —— 模拟「stopAll 的 await 期间又有 [启动] 进表」 */
+  onStopStart: (() => void) | null = null;
   private releaseStop: (() => void) | null = null;
   private dataCbs: Array<(d: string) => void> = [];
   private exitCbs: Array<(code: number) => void> = [];
@@ -47,6 +51,7 @@ class FakeShell {
   isRunning(): boolean { return this.running; }
   async stopGraceful(timeoutSecs: number): Promise<void> {
     this.stopArgs.push(timeoutSecs);
+    this.onStopStart?.(); // A2·I-3：新实例在 await 期间进表，不在本轮快照里
     if (this.stopThrows) throw new Error('stop boom');
     if (this.stopHeld) {
       this.stopHeldStarted = true;
@@ -55,6 +60,7 @@ class FakeShell {
     // 真进程不会同步就死：让出一个微任务，使「停止中」状态在 stop() 返回前可观察（E6）
     await Promise.resolve();
     this.running = false;
+    if (this.silentStop) return; // A2·Minor-6b：不发 exit 事件 → 走 stopInternal 的 -1 收尾路径
     this.exitCbs.forEach((cb) => cb(0)); // 真进程被杀后一定会有 exit 事件，假实现照做
   }
   /** 测试侧触发 shell 输出 */
@@ -93,12 +99,15 @@ class FakeExe {
 class TestManager extends QuickLaunchManager {
   shells: FakeShell[] = [];
   shellFails = false;
+  /** A2·I-3：每造一个假进程就回调一次，用来给它的 stopGraceful 装 onStopStart */
+  onShellCreated: ((s: FakeShell) => void) | null = null;
   /** 注入假进程时共享的事件时间线（E4/E5 的顺序判据） */
   timeline: string[] | null = null;
   protected override createShellProcess(): FakeShell {
     if (this.shellFails) throw new Error('spawn boom');
     const f = new FakeShell(this.timeline);
     this.shells.push(f);
+    this.onShellCreated?.(f); // A2·I-3
     return f;
   }
 }
@@ -364,6 +373,83 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
     expect(m.states()).toEqual({});
   });
 
+  // ── A2·I-3（索引 K19：退出接线此前没有任何测试保护）──
+  // stopAll 的 await 期间窗口仍活着、[启动] 仍可点 → 新实例进表。
+  // 旧实现「取一次快照逐个停」+ 末尾无条件 instances.clear()：新实例没被停就被抹掉 → app.exit(0) 之后是孤儿 ConPTY。
+  it('stopAll 的 await 期间又起的实例也会被停，不被 clear() 静默丢弃', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    m.shells[0].stopHeld = true; // 退出窗口：第一个实例还卡在 stopGraceful 里
+    const stopping = m.stopAll(3);
+    await vi.waitFor(() => expect(m.shells[0].stopHeldStarted).toBe(true));
+    // 用户在退出窗口内又点了一次 [启动] —— 它不在 stopAll 取的那一次快照里
+    await m.start('c2', SHELL_ENTRY);
+    m.shells[0].releaseStopNow();
+    await stopping;
+    // 两轮都被停到：新实例的 stopGraceful 被调用，且拿到透传的超时（K11(1)）
+    expect(m.shells[1].stopArgs).toEqual([3]);
+    // 没有任何实例被静默丢弃：两个都上报退出，最终表为空
+    expect(ctx.exits.map((e) => e.configId).sort()).toEqual(['c1', 'c2']);
+    expect(m.states()).toEqual({});
+  });
+
+  // A2·I-3 的另一半：循环必须**有上限**，而且到上限时也不得把没停的实例静默抹掉。
+  // 病态情况：每停掉一个就有新的 [启动] 进表（假进程的 stopGraceful 自己起一个）——
+  // 旧实现在第一轮之后 clear()，第二个实例一次都没被停就消失；新实现跑满上限后把它留在表里。
+  it('stopAll 的轮次有上限，到上限也不把没停过的实例静默丢弃', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    const entry: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd' }; // 不带 cmd：不建 5s 兜底计时器
+    let n = 0;
+    m.onShellCreated = (s) => { s.onStopStart = () => { void m.start('c' + (++n), entry); }; };
+    await m.start('c0', entry);
+    await m.stopAll(3); // 不得无限循环：STOP_ALL_MAX_ROUNDS 到顶就收手
+    // 有上限：实例总数远小于「每轮都新起一个」的无界情况（上限 64 轮）
+    expect(m.shells.length).toBeGreaterThan(1);
+    expect(m.shells.length).toBeLessThanOrEqual(200);
+    // 除最后一个（它是收手时留下的）之外，每个实例都被停过一次
+    for (const s of m.shells.slice(0, -1)) expect(s.stopArgs).toEqual([3]);
+    expect(m.shells[m.shells.length - 1].stopArgs).toEqual([]);
+    // 留下的那个仍在 states() 里：clear() 会把它静默抹掉 → 孤儿 ConPTY 又回来了
+    expect(Object.keys(m.states())).toEqual(['c' + n]);
+    expect(ctx.exits.length).toBe(m.shells.length - 1);
+  });
+
+  // ── A2·M7：states() 必须问进程死活 ──
+  // 真机上 exit 事件是异步的：进程已退出而 onExit 尚未到达时，只由 !stopping 推出的 running:true 是假状态。
+  it('进程已退出但 onExit 未到达时，states() 不得报 running:true', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    await m.start('c2', EXE_ENTRY);
+    // 只把进程侧标记为已退出，不触发 exit 回调 —— 就是那段竞态窗口
+    m.shells[0].running = false;
+    ctx.exeHandles[0].running = false;
+    expect(m.states()).toEqual({
+      c1: { running: false, stopping: false },
+      c2: { running: false, stopping: false },
+    });
+    // exit 事件到达后照常摘除
+    m.shells[0].exit(0);
+    ctx.exeHandles[0].exit(0);
+    expect(m.states()).toEqual({});
+  });
+
+  // ── A2·Minor-6b：stopInternal 的 -1 收尾 + 双 stop 的早退路径（钉既有实现，不改语义）──
+  it('exit 事件不落地时 stop 按 -1 收尾并摘实例；再次 stop 不重复上报', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    m.shells[0].silentStop = true; // 强杀之后 exit 事件永远不来
+    await m.stop('c1');
+    expect(ctx.exits).toEqual([{ configId: 'c1', code: -1 }]);
+    expect(m.states()).toEqual({}); // 立即摘实例 → 按钮回落 [启动]
+    await m.stop('c1'); // 双 stop：走「实例已摘 → 直接返回」的早退路径
+    expect(ctx.exits.length).toBe(1);
+    expect(m.shells[0].stopArgs).toEqual([3]); // 第二次没有再走一遍 stopGraceful
+  });
+
   // E10
   it('shell 返回 tabId ql:<id>；exe 返回 null 且经 onSysLine 反馈', async () => {
     const ctx = makeDeps();
@@ -426,6 +512,31 @@ describe('PtyProcess.stopGraceful（规格 §7.5：终止 → 超时 → taskkil
     // 强杀后 exit 事件落地 → isRunning 变 false，onExit 回调收到退出码
     exitCbs.forEach((cb) => cb({ exitCode: 1 }));
     expect(p.isRunning()).toBe(false);
+  });
+
+  // ── A2·Minor-6a：PtyProcess.onExit 的订阅晚于进程退出时必须补发（钉既有实现，不改语义）──
+  // 不补发就永远停在 running：任务 6/13 的页签按钮卡在 [停止]，任务 13 的复原依据也拿不到退出码。
+  it('onExit 订阅晚于进程退出时立即补发退出码，且不重复触发已注册的订阅者', async () => {
+    const exitCbs: Array<(e: { exitCode: number }) => void> = [];
+    const handle = {
+      pid: 4711,
+      write: () => {}, resize: () => {}, kill: () => {},
+      onData: () => ({ dispose() {} }),
+      onExit: (cb: (e: { exitCode: number }) => void) => { exitCbs.push(cb); return { dispose() {} }; },
+    };
+    const p = new PtyProcess(handle);
+    const early: number[] = [];
+    p.onExit((code) => early.push(code)); // 正常订阅：退出之前就注册
+    exitCbs.forEach((cb) => cb({ exitCode: 3 })); // 进程先退出
+    expect(p.isRunning()).toBe(false);
+    expect(early).toEqual([3]);
+    // 订阅晚于退出：必须立即补发，两个迟到的订阅者都要拿到
+    const late: number[] = [];
+    p.onExit((code) => late.push(code));
+    p.onExit((code) => late.push(code));
+    expect(late).toEqual([3, 3]);
+    // 补发是一次性的：不得把已注册的订阅者再叫一遍
+    expect(early).toEqual([3]);
   });
 
   it('已退出的进程 stopGraceful 不再 taskkill', async () => {
