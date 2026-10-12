@@ -42,27 +42,27 @@
 
 | # | 断言 | 出处 | ✓ |
 |---|---|---|---|
-| E1 | `kind: 'text'` 渲染 `LogTabView`，清空行为不变（既有用例继续通过） | 规格 \|9.1 | ☑ |
-| E2 | `kind: 'terminal'` 渲染 `TerminalTabView`（mock xterm） | 规格 \|9.1 | ☑ |
+| E1 | `kind: 'text'` 渲染 `LogTabView`，清空行为不变（既有用例继续通过） | 规格 §9.1 | ☑ |
+| E2 | `kind: 'terminal'` 渲染 `TerminalTabView`（mock xterm） | 规格 §9.1 | ☑ |
 | E3 | 仅 `closable` 的页签渲染 `[x]`；`closeDisabled` 时禁用（**R3**）。**强度边界（K27(4)）**：去掉 handler 里的 `closeDisabled` 守卫 → 0 红，该行为由 `disabled` 属性保证 | 计划 审查重点 3 | ☑（含 K27(4) 强度边界：去 handler 守卫 0 红，行为由 disabled 属性保证） |
 | E4 | 点击 `[x]` 冒泡 `close(id)` | 计划 步骤 1 | ☑ |
-| E5 | 页签多于 6 条时页签条不换行（断言 `.tab-bar` 的 nowrap 类/样式） | 规格 \|11-2 | ☑（断的是「渲染出的页签数 + style.css 规则文本 + scrollIntoView 参数」——happy-dom 不加载外部 CSS；真机横向滚动外观 → 任务 14 硬门 8。我的变异④删 nowrap/overflow-x → 1 红，证明不空转） |
-| E6 | 静态两页签（`launcher` / `llama-server`）能力与代码不受影响：**不传 `tabs` 时**页签条与两个文本面板照旧（既有 11 条用例一字不改即证） | 规格 \|9.1 结论 / 索引 K26 | ☑ |
-| E7 | 页签 `title` 只在 `label !== fullLabel` 时挂 `fullLabel`（未截断不挂，与 `LaunchBar.vue:93` 的 `grace=2` 口径同形） | 规格 \|11-1 / 索引 K26 | ☑ |
+| E5 | 页签多于 6 条时页签条不换行（断言 `.tab-bar` 的 nowrap 类/样式） | 规格 §11-2 | ☑（断的是「渲染出的页签数 + style.css 规则文本 + scrollIntoView 参数」——happy-dom 不加载外部 CSS；真机横向滚动外观 → 任务 14 硬门 8。我的变异④删 nowrap/overflow-x → 1 红，证明不空转） |
+| E6 | 静态两页签（`launcher` / `llama-server`）能力与代码不受影响：**不传 `tabs` 时**页签条与两个文本面板照旧（既有 11 条用例一字不改即证） | 规格 §9.1 结论 / 索引 K26 | ☑ |
+| E7 | 页签 `title` 只在 `label !== fullLabel` 时挂 `fullLabel`（未截断不挂，与 `LaunchBar.vue:93` 的 `grace=2` 口径同形） | 规格 §11-1 / 索引 K26 | ☑ |
 | E8 | **切到别的页签再切回来，terminal 页签不卸载**：断假 xterm 的 `dispose` 与 `unregister` 在切换过程中**没有被调用**（`v-show` 保活） | 索引 K26(4) / 任务 9 表 E1 | ☑ |
-| E9 | **受控激活（定向修复轮 1 新增）**：外部改 `active` → 面板切到该页签；点击页签 → 冒泡 `update:active(id)`；不传 `active` 时自持（既有行为不变） | 规格 \|9.2「自动激活」/ 索引 K27(1) | ☑（我的变异①去掉受控 emit → 1 红 = E9） |
+| E9 | **受控激活（定向修复轮 1 新增）**：外部改 `active` → 面板切到该页签；点击页签 → 冒泡 `update:active(id)`；不传 `active` 时自持（既有行为不变） | 规格 §9.2「自动激活」/ 索引 K27(1) | ☑（我的变异①去掉受控 emit → 1 红 = E9） |
 | E10 | **激活项被摘掉时回落第一个页签**（关掉当前页签不得让面板空白）：非受控内部回落、受控只冒泡 `update:active(第一个 id)`。**边界（K27(1) 登记）**：兜底只观察 `items`，受控下 `active` 指向不在 `tabs` 里的 id 且 `tabs` 不变时不自动纠正 | 索引 K27(1) 后半 | ☑（我的变异②关掉兜底 → 1 红 = E10） |
 
 ## F. 实现口径
 
 | # | 口径 | 出处 | ✓ |
 |---|---|---|---|
-| F1 | `.tab-bar` 加 `overflow-x: auto; flex-wrap: nowrap`；页签不被压扁 | 规格 \|11-2 | ☑ |
-| F2 | 切换页签时对激活页签 `scrollIntoView({ inline: 'nearest' })` | 规格 \|11-2 | ☑ |
+| F1 | `.tab-bar` 加 `overflow-x: auto; flex-wrap: nowrap`；页签不被压扁 | 规格 §11-2 | ☑ |
+| F2 | 切换页签时对激活页签 `scrollIntoView({ inline: 'nearest' })` | 规格 §11-2 | ☑ |
 | F3 | 关闭图标用 `faXmark`，在本组件内 `library.add` | 计划 步骤 3 | ☑ |
-| F4 | **职责划分（索引 K26）**：短名由**构造方**用 `truncateByWidth(fullLabel, 16)` 生成并放进 `LogTabItem.label`（构造方 = 任务 13 的 App 接线）；`LogPanel` 只渲染 `item.label`，并在 `label !== fullLabel` 时挂 `title=fullLabel`。**不得在 `LogPanel` 里二次截断**（两处预算会互相抵消）。`TerminalTabView` 根节点的 `data-tab-label`/`data-tab-full-label` 只是测试/调试钩子，页签文案**不从 `data-*` 反取**（索引 M4） | 规格 \|11-1 / 索引 K26 / M4 | ☑ |
+| F4 | **职责划分（索引 K26）**：短名由**构造方**用 `truncateByWidth(fullLabel, 16)` 生成并放进 `LogTabItem.label`（构造方 = 任务 13 的 App 接线）；`LogPanel` 只渲染 `item.label`，并在 `label !== fullLabel` 时挂 `title=fullLabel`。**不得在 `LogPanel` 里二次截断**（两处预算会互相抵消）。`TerminalTabView` 根节点的 `data-tab-label`/`data-tab-full-label` 只是测试/调试钩子，页签文案**不从 `data-*` 反取**（索引 M4） | 规格 §11-1 / 索引 K26 / M4 | ☑ |
 | F5 | 页签文案走 `t()` | G6 | ☑ |
-| F6 | 不改 `LogTabView.vue` 内部实现（规格 \|9.1「不改」） | 规格 \|9.1 | ☑ |
+| F6 | 不改 `LogTabView.vue` 内部实现（规格 §9.1「不改」） | 规格 §9.1 | ☑ |
 | F7 | **两种页签的内容一律 `v-show` 保活，terminal 页签不得用 `v-if`**：`TerminalTabView` 卸载即 `unregister` + `term.dispose()`（`TerminalTabView.vue:169-178`），用 `v-if` 就等于「切页签杀终端」；隐藏期间它自己也不 `fit`（任务 9 表 E4） | 索引 K26(4) / 任务 9 表 E1/E4 | ☑ |
 
 ## G. 回归门

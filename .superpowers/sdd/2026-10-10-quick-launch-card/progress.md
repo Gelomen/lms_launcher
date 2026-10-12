@@ -222,7 +222,18 @@ Task 12: 已派单（brief 5374 字符：三文件范围、C1-C3 逐字含单飞
   - 实现者的取证质量：happy-dom 对 disabled 按钮不派发 click，故把两次点击放同一 tick，让红点落在 JS 守卫而不是 :disabled 上——这是对的（单飞是 JS 契约）
 Task 12: Ruling: K32(1) —— 我写在简报与 C3 的「ql_save 返回 string：空串 = 成功」与实测不符（main.ts:1095-1098 = 成功 resolve 最终 id / 失败 reject 带 VALIDATION: 前缀；STATE: 不在保存路径）。实现者按实测做是对的，C3 已更正。顺带修掉我合并单元格时把「规格 §8」弄成「规格 \|8」的老毛病（教训第二次踩：改表只能定点改目标单元格）。
 Task 12: Ruling: K32(2)/(3) —— 接受复用 tplModal.close 作 aria-label（登记 M18：规格 §10 没有 ql.modal.close，为一个 aria-label 加键要同时改规格 §10 + 任务 8 表 = 扩范围；干净做法是提到 common.close 并让 TemplateModal 一起改，留最终审查）；接受不做删除确认/终端标签的长名截断（登记 M19 → 任务 14 真机 UI 复核，ConfirmDialog 自带 word-break 兜底）。E7「关窗」由持有者做 = 接受（与 TemplateModal.vue:216 / TemplateModule.vue:143 分工同构）。四条失败分支无用例 = 测试强度边界（K24(2) 先例）。
-Task 12: complete (commits 4c518d1 代码 / 5660067 + 4f7e5ca + 8b79057 + d35a60f + 本次 docs 文档；fix rounds 0/5；QuickLaunchModal.test.ts 9 用例；表内 32 勾、裸☐=0、普查退出码 0)
+Task 12: complete (commits 4c518d1 代码 / 5660067 + 4f7e5ca + 8b79057 + d35a60f + 本次 docs 文档；fix rounds 0/5；QuickLaunchModal.test.ts 9 用例；表内 32 勾、裸☐=0、普查退出码 0)【任务 13 起点 · 2026-10-12 17:4x】HEAD 0e735d6、干净；基线我实测 npm test = 47 files / 791 passed。派单前先取证 K33：electron.exe --version 与 electron.exe . 都立即退出 0x80000003（与规格 §13.2 一致）→ 任务 13 的 G3/G4 真机门按 K25 写成 ☐（原因+去处）交任务 14。
+Task 13: 实现回来（App.vue +209/−4、style.css +1/−1、App.test.ts +240/−5）。我的验收取证：
+  - 门复跑：D4 4 files / 104 passed；npm test 47 files / 798 passed；tsc exit 0；i18n 25 passed
+  - 六处变异逐条复现：①全派发=1红E1 ②exit删页签=1红E2 ③fit(false)=1红E3 ④停止不清态=3红 ⑤不置activeTabId=1红E5 ⑥tabId=null也建页签=1红E7；还原 SHA 5d863ad37536
+  - **我另跑两处发现两条硬要求没有测试保护**：⑦去 qlStarting 单飞守卫（K14(2)）= 0 红；⑧terminalWritable→return true（M8）= 0 红 → 新增 E8/E9 并派修复轮 1
+Task 13: fix round 1/5（只改 App.test.ts，生产代码一行未改；App.vue SHA 全程 5d863ad37536）。修复后我复跑：App 57 / D4 106 / npm test 47 files 800 passed / tsc 0；⑦⑧各 = 1 红（修复前 0 红）。E9 含「可写时恰发一次」正例，E8 含「单飞≠永久禁用」正例。
+Task 13: Ruling: K34(1) —— 我写的「既有用例一字不改」与 C5/F1 不能同时成立：App.test.ts:886-918 钉的是旧三列契约，四列必然让它红。实现者只更正那一条（−5/+7，含新增「第 3 列 = .module-quick」断言）= 接受；B3 与计划步骤 1 已同步（计划原来只列 4 条测试名，实际 E-list 7 条，一并补齐到 9 条）。
+Task 13: Ruling: K34(2)(3)(4)(6) —— App 持 qlConfigs 只读镜像=接受（新增 C7）；getCurrentInstance().exposed 取 fit/focus=接受（M21）；ql.log.exit/fail 不补调用点=接受（主进程已发 sys 行；与 ql.err.nameTaken 合并登记 M22 冗余键）；onTerminalResize 比 M8 更严=接受。
+Task 13: Ruling: K35(1)(2)(3) —— E9 从 LogPanel 的 onInput/onResize props 驱动=接受（App 侧守卫只能这样测，子组件侧由 TerminalTabView.test.ts 钉）；describe 标题 E1-E7→E1-E9 由我本人改（一处标签，在 018eeb7 内，如实登记）；**我的落勾脚本把字面 § 当转义管道占位符还原，普查到 53 处「规格 §x.y」被写成「规格 \|x.y」**（任务 10/11/12/13 + 索引），已批量修回；今后落勾脚本必须用不可能出现在正文里的占位符或只改目标单元格。
+Task 13: Ruling: K36 —— 已提交任务的 I 段延期项不得写成 - [ ]（tick-census.mjs:16 无标注分支），要写成普通项目符号 + ☐（原因 + 去处）。
+Task 13: complete (commits 018eeb7 代码 / e616e9e + 3c7672c + 本次 docs 文档；fix rounds 1/5；App.test.ts 57 用例；表内 37 勾、裸☐=0、普查退出码 0；G3/G4 真机门交任务 14)
+【停线点 · 当前】恢复时第一件事：读任务 14 表（打包硬门 + 真机验收），先取证 dist-release 真实布局与 asarUnpack 产物（规格 §7.2 / K1），再决定哪些门本环境可跑、哪些交用户真机。
 仍有效的跨任务待办：任务 13 按 K27(1) 用 v-model:active 驱动「自动激活」并**必须把 update:active 写回**（任务 13 表 C6 已钉）；按 K24(1) 重启路径显式 `fit(true)`；读 App.test.ts:33-34 的捕获数组（M9）；任务 14 真机门（页签横向滚动外观 = 硬门 8、两处 [x] 的 UI 复核 M15、M17 嵌套 button 键盘可达性、任务 6 D6b 与任务 7 G3 的退出实测）。
 【验收勾缺失 · 我的流程缺陷】用户指出「从任务 5 起就没有勾选」。实测确认：任务 1-4 的 A-I 全勾；任务 5-9 只有 H/I 部分勾，A-G 行 173 行 + I 段清单 16 项全是 ☐ —— 我从任务 5 起改成「把验收证据追加到 J 段」，就没有回落勾。证据一直在 J 段，但 AGENTS.md 明说「表里的勾是我验收用的」，J 段不能替代勾。
 已逐行补齐（commit 4de6e3b）：任务 5 勾 41、任务 6 勾 40、任务 7 勾 28、任务 8 勾 56（含 C 段 zh/en 两个附加列各 9/8 处）、任务 9 勾 40；三处**故意保持未勾并写明去处**：任务 5 H3（pnpm-lock.yaml 处置，本任务不做）、任务 6 D6b 与任务 7 G3（真机门，K12/K19）。
