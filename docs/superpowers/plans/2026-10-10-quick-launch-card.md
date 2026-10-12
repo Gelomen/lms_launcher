@@ -404,14 +404,14 @@ it('空列表显示空态文案', async () => {});
 it('行显示截断后的名字，长名带 data-tooltip 全名（预算 30）', async () => {});
 it('名字含 emoji 且超长时截断不切断代理对', async () => {});
 it('未运行 = 紫底「启动」；运行中 = 红底「停止」；stopping = 「...」且禁用', async () => {});
-it('复制插入到源行正后方且名字为 “X - copy”', async () => {});
+it('复制名字为 “X - copy”（走 nextCopyName）且卡片本地把新行插到源行正后方（落盘仍是追加，索引 K28(1)）', async () => {});
 it('invalid 非空时显示「N 条配置无效」提示', async () => {});
 ```
 
 - [ ] **步骤 2：运行测试验证失败** —— FAIL
 - [ ] **步骤 3：实现** —— 复用 `.tpl-row` / `.tpl-row__id` / `.tpl-row__actions` / `.icon-btn--sm`；启动按钮 `.btn-launch`（紫）/ 运行中 `.btn-danger`（红），图标 `faRocket` / `faStop`；长名 tooltip 用模板卡同款 `position: fixed` 浮层
 - [ ] **步骤 4：运行测试验证通过** —— 全 PASS
-- [ ] **步骤 5：Commit** —— `git add src/modules/QuickLaunch.vue src/modules/QuickLaunch.test.ts && git commit -m "feat(module): 快捷启动卡片（列表/复制/编辑/启动停止）"`
+- [ ] **步骤 5：Commit** —— `git add src/modules/QuickLaunch.vue src/modules/QuickLaunch.test.ts src-main/i18n/dict.ts && git commit -m "feat(module): 快捷启动卡片（列表/复制/编辑/启动停止）"`（`dict.ts` 只改 en `ql.invalid` 一行，索引 M2 / K28(2)）
 
 ---
 

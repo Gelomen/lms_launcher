@@ -18,6 +18,7 @@
 |---|---|---|---|---|
 | B1 | `src/modules/QuickLaunch.vue` | 新建 | 不订阅事件，运行态由 App 下发 | ☐ |
 | B2 | `src/modules/QuickLaunch.test.ts` | 新建 | 计划给出的 6 个用例 | ☐ |
+| B3 | `src-main/i18n/dict.ts` | 修改（**仅一行**） | 索引 M2：en `ql.invalid`（:492）由 `{n} invalid entries skipped` 改为 `invalid entries skipped: {n}`（n=1 时原句语法不成立；本任务是首个调用点）。zh 侧不动、不新增键 | 索引 M2 / K28(2) | ☐ |
 
 ## C. 接口契约（逐字）
 
@@ -45,7 +46,7 @@
 | E2 | 行显示截断后的名字；长名带 `data-tooltip` 全名（**预算 30**） | 规格 §11-1 | ☐ |
 | E3 | 名字含 emoji 且超长时截断**不切断代理对** | 计划 步骤 1 | ☐ |
 | E4 | 未运行 = 紫底「启动」；运行中 = 红底「停止」；`stopping` = 「…」且禁用 | 规格 §9.4 | ☐ |
-| E5 | 复制插入到**源行正后方**且名字为 `X - copy`（用 `nextCopyName`，不自己拼后缀） | 规格 §5.4 | ☐ |
+| E5 | 复制的名字为 `X - copy`（走 `nextCopyName`，不自己拼后缀），且**卡片本地把新行插到源行正后方**——与既有 `TemplateModule.vue:86-93` 同一手法（遍历现有键序、源 id 后插入新 id）。**边界（索引 K28(1)）**：`ql_save` 落盘是追加语义（`quick-launch-config.ts:137-139`），文件里没有 insert-after 通道，所以「正后方」只存在于卡片本地显示序；重新加载后按文件序（末尾）。规格 §5.4 只讲 id 与复制命名，不讲位置——原引用已更正 | 计划 步骤 1 + 既有 `TemplateModule.vue:71-95` / 索引 K28(1) | ☐ |
 | E6 | `invalid` 非空时显示「N 条配置无效」提示（`ql.invalid`） | 规格 §5.2 | ☐ |
 | E7 | 每行按钮顺序 = `[复制][编辑][启动/停止]` | 规格 §4 | ☐ |
 
@@ -66,13 +67,13 @@
 |---|---|---|---|
 | G1 | `npx vitest run src/modules/QuickLaunch.test.ts src/util/copy-name.test.ts` | 全 PASS | ☐ |
 | G2 | `npx vitest run src-main/i18n` | 全 PASS | ☐ |
-| G3 | `git diff --name-only` | 只含 B1-B2 | ☐ |
+| G3 | `git diff --name-only` | 只含 B1-B3 | ☐ |
 
 ## H. 提交门
 
 | # | 检查项 | 命令 / 值 | ✓ |
 |---|---|---|---|
-| H1 | 暂存范围 | `git add src/modules/QuickLaunch.vue src/modules/QuickLaunch.test.ts` | ☐ |
+| H1 | 暂存范围 | `git add src/modules/QuickLaunch.vue src/modules/QuickLaunch.test.ts src-main/i18n/dict.ts` | ☐ |
 | H2 | 提交信息逐字 | `feat(module): 快捷启动卡片（列表/复制/编辑/启动停止）` | ☐ |
 | H3 | **验收勾完整性（索引 K25）**：本表 A-I 不得有裸 `☐` 或 `- [ ]`；确实未满足的项写成 `☐（原因 + 去处）`。带附加列的段（如 zh / en）每一列都要落勾 | `node .superpowers/sdd/2026-10-10-quick-launch-card/tick-census.mjs` → 本表行必须显示 `裸☐=0` 且 `I段 -[ ]=0`（H2 已勾时普查整体退出码 0） | ☐ |
 
