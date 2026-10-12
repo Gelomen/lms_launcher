@@ -447,10 +447,17 @@ it('编辑态才显示删除按钮，删除需二次确认', async () => {});
 
 ```ts
 it('ql-data 按 tabId 派发到已注册的终端 sink，未知 tabId 被忽略', async () => {});
-it('ql-exit 后该配置运行态清空，卡片行按钮回落为「启动」', async () => {});
-it('onMounted 读到 ql_states 里 running 的配置时为其重建终端页签', async () => {});
+it('ql-exit 后该配置运行态清空，卡片行按钮回落为「启动」'（页签保留）, async () => {});
+it('onMounted 读到 ql_states 里 running 的配置时为其重建终端页签'（只给 shell）, async () => {});
 it('停止后该终端页签的 [x] 由禁用变为可用', async () => {});
+it('启动成功且 tabId 非 null → 建页签 + 自动激活 + fit + 聚焦', async () => {});
+it('页签 close → 删页签 + 注销 sink（running/stopping 时不触发）', async () => {});
+it('exe 类型启动（tabId = null）不建页签，仅按钮变红', async () => {});
+it('启动按钮单飞：ql_start 未返回期间重复点击只发一次', async () => {});   // 索引 K14(2)
+it('不可写配置（无页签 / exe / 停止中）不调 ql_write / ql_resize', async () => {});  // 索引 M8
 ```
+
+> **更正（索引 K34(1)）**：本任务把 `.grid` 从三列改四列，既有 `App.test.ts:886`「GPU 卡片是网格第三列」的 `toBe(3)`/`nth-child(3)` 必然转红——它钉的是**旧的列序契约**，而新列序正是本任务要建立的。允许**只更正这一条**既有用例（列数 4、第 3 列断言为快捷启动、第 4 列为 GPU），其余既有用例一字不改。
 
 - [ ] **步骤 2：运行测试验证失败** —— FAIL
 - [ ] **步骤 3：实现** —— `.grid` 改 `280px 350px 330px 330px`，卡片顺序 `stack → QuickLaunch → GPU`；新增 `qlTabs` / `qlStates` / `terminalSinks: Map<string, (d: string) => void>`；`onQlData` 按 `tabId` 派发；启动成功且 `tabId !== null` → 建页签（不存在时）+ 激活 + fit + 聚焦；页签 `close` → 删页签 + 注销 sink
