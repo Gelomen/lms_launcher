@@ -164,13 +164,14 @@ export class ShellExecProcess {
 - 调用点必须是**字面量** `t('err.proc.uacCancelled', { exe })`，占位符名与词典逐字一致（`key-coverage.test.ts:39-46` 双向比对）。
 - 不登记 `src-main/i18n/err-keys.ts` 的 `IPC_ERROR_KEYS`：这条文案只进日志，不经 IPC 传 key。
 - 前缀只用既有的 `PROC:`（索引 G7 五种前缀之一），不新增前缀、不新增日志通道。
+- **日志行的行首是 `[lms_launcher] `，`PROC:` 紧随其后**（§8-K8）：抛出的 Error 仍以 `PROC: ` 开头（分类前缀不变），但写进 sys 日志通道的那一行必须带 `[lms_launcher] `——sys 通道的每一行都由启动器撰写，与 `main.ts:324` / `:1078` 同一口径。
 
 ### 6.6 适配器怎么接（`src-main/main.ts:1053-1074` 重写）
 
 ```
 spawnExeProcess(exe, configId):
   try { proc = launchShellExe(winShell, exe) }
-  catch (e) { emitLog(e instanceof Error ? e.message : String(e), 'sys'); throw e }  // 通道与现状 :1067 一致；取 message 不取 String(e)（E21 / §8-K7：日志行必须以 PROC: 开头）。rethrow 让 ql_start reject → App.vue:477 回落按钮
+  catch (e) { emitLog('[lms_launcher] ' + (e instanceof Error ? e.message : String(e)), 'sys'); throw e }  // 通道与现状 :1067 一致；取 message 不取 String(e)（E21 / §8-K7：分类前缀 PROC: 不得被 Error: 吃掉）；行首加 [lms_launcher]（§8-K8）。rethrow 让 ql_start reject → App.vue:477 回落按钮
   return { onExit(cb) { proc.onExit((code) => cb(code)) },
            stopGraceful: (s) => proc.stopGraceful(s),
            isRunning: () => proc.isRunning() }
@@ -178,7 +179,7 @@ spawnExeProcess(exe, configId):
 
 - 不再 `new ProcessState()`、不再 `takePipes()`（Shell 路径没有管道可排空）。
 - `main.ts:1084` 的接线（`qlStartContextOrThrow('spawnExe').configId`）**不变**；`qlStartContextOrThrow` 守卫（`:1022-1027`）与 `qlStartContext` 槽（`:1012`）不变。
-- 用户可见结果：UAC 期间按钮是红「...」（`App.vue:464` 预置），点「否」→ 日志出现 `PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`、按钮回落绿 `[启动]`、无残留运行态。
+- 用户可见结果：UAC 期间按钮是红「...」（`App.vue:464` 预置），点「否」→ 日志出现 `[lms_launcher] PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`、按钮回落绿 `[启动]`、无残留运行态。
 
 ### 6.7 `[停止]`（§8-Q7）
 
@@ -225,7 +226,7 @@ stopGraceful(timeoutSecs):
 改写 `src-main/ipc-ql.test.ts` 的两处（E17）：
 
 - `:423-468` 并发用例的观察点从 `ProcessState.prototype.launch` 换成 `winShell.shellExecute`；断言保持同等强度：两次并发 `ql_start` 各自的 `file` 不串、调用时 `qlStartContextOrThrow('probe')` 返回本次 configId、`ql_states` 两条各自 running、`get_state`（`main.ts:59` 的 `ps` 单例）不被污染。原「`launch(exe, [], configId)` 逐字」断言随 K13 口径一并作废
-- 「exe 启动失败：前缀由 ProcessState 自带」用例改为新路径：不存在的 exe → `ok=false` → 日志通道收到 `PROC: ` 行、`ql_start` 被拒（`App.vue:477` 的回落路径不变）
+- 「exe 启动失败：前缀由 ProcessState 自带」用例改为新路径：不存在的 exe → `ok=false` → 日志通道收到 `[lms_launcher] PROC: ` 行、`ql_start` 被拒（`App.vue:477` 的回落路径不变）
 
 ### 7.2 打包真机硬门（用户执行）
 
@@ -233,12 +234,12 @@ stopGraceful(timeoutSecs):
 
 1. 对 `E:\QiYou\QiYou.exe` 这条点 `[启动]` → **出现系统 UAC 弹窗**（本机实测会弹，E6）→ 点「是」→ 奇游启动，日志出现 `启动命令 · E:\QiYou\QiYou.exe`
 2. 点 `[停止]` → 奇游进程真的消失（第 1 步 `taskkill` 打不到、第 3 步句柄兜底），行按钮回落绿 `[启动]`
-3. 再点 `[启动]`，在 UAC 点「否」→ 日志出现 `PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`，按钮回落，无残留运行态
+3. 再点 `[启动]`，在 UAC 点「否」→ 日志出现 `[lms_launcher] PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`（行首 `[lms_launcher] `，§8-K8），按钮回落，无残留运行态
 4. 不需要管理员的条目（例：`C:\Windows\System32\notepad.exe`）→ 照常启动、停止、退出后 `进程退出 code=` 正常
 5. 打包目录里存在 `resources\app.asar.unpacked\node_modules\@koromix\koffi-win32-x64\win32_x64\koffi.node`
 6. 应用退出路径（托盘退出 / `[更新]`）仍不留孤儿进程（`ql.stopAll` 走的是新的 `stopGraceful`）
 
-顺带观察（不判过否，回报现象即可）：把某条目的 exe 改成一个**不存在的路径**再点 `[启动]` —— 按 E19 会弹系统的「找不到文件」错误框，点「确定」后我们的 `PROC: … win32=<码>` 日志才出现。本次接受（§9-R8），只观察现象。
+顺带观察（不判过否，回报现象即可）：把某条目的 exe 改成一个**不存在的路径**再点 `[启动]` —— 按 E19 会弹系统的「找不到文件」错误框，点「确定」后我们的 `[lms_launcher] PROC: … win32=<码>` 日志才出现。本次接受（§9-R8），只观察现象。
 
 **不得用「自动化已过」代替这一组。**
 
@@ -267,7 +268,8 @@ stopGraceful(timeoutSecs):
 - **K4** `fMask` 加 `SEE_MASK_FLAG_NO_UI`（§6.3）。**实现期更正**：实测它不覆盖「文件 / 路径不存在」那类弹窗（E19），该位仍保留（对其他 Shell UI 有效），该类弹窗作为已知边界接受（§9-R8）
 - **K5** 主线程同步阻塞本次接受，与 `spawnSync` 同口径（§6.9）
 - **K6** `quick-launch.ts:5-6` 文件头注释里「生产侧由任务 6 接 ProcessState 适配器」一句随实现同步改写（**只改注释，可执行代码零改动**）——仓库惯例是注释随其描述的取值一起更新，留着会指错
-- **K7** 适配器写日志通道时取 `e.message`，不取 `String(e)`（E21）：`String(new Error('PROC: …'))` 会得到 `Error: PROC: …`，行首前缀就不是 `PROC:` 了（索引 G7 的五前缀口径要求前缀在行首）。可观察要求（本节末条「日志出现 `PROC: <exe> 已取消管理员权限请求`」）只有取 `message` 才成立
+- **K7** 适配器写日志通道时取 `e.message`，不取 `String(e)`（E21）：`String(new Error('PROC: …'))` 会得到 `Error: PROC: …`，分类前缀 `PROC:` 就被 `Error: ` 挤到中间去了（索引 G7 的五前缀口径要求分类前缀紧跟行首的 `[lms_launcher] `，见 K8）。可观察要求（§6.6 末条「日志出现 `[lms_launcher] PROC: <exe> 已取消管理员权限请求`」）只有取 `message` 才成立
+- **K8** sys 日志行的行首必须是 `[lms_launcher] `，`PROC:` 分类标记紧随其后（2026-10-13 23:1x 真机清单第 3 步：用户指出日志区出现裸 `PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`，与同卡片成功行 `[lms_launcher] 启动命令 · …` 不一致）。口径来源：`src/App.vue:107-110` 的 `appendSys` 注释「sys 行统一 `[lms_launcher]` 前缀」+ `main.ts` 全部 sys 调用点的既有写法（`:324` / `:364` / `:1078`）。**只改适配器写日志这一处**（`main.ts:1062`），抛出的 Error 仍以 `PROC: ` 开头（`shell-execute.ts:196/198` 不动，`ipc-ql.test.ts:357` 的 `rejects.toThrow(/^PROC: /)` 不变）；`main.ts:334`（llama-server 启动失败的 `PROC:` 行）同样缺前缀，属本次范围外（Q9 明确 llama-server 不纳入），另立改动
 
 ## 9 风险与未验证项
 

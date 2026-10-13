@@ -16,7 +16,7 @@
 - **不改 `src-main/process.ts`**，不改 `main.ts:64` 的 `ps` 单例，不改 `quick-launch.ts` 的任何可执行语句，不改 `src/App.vue`、`src/modules/*`、`src-main/quick-launch-terminals.ts`（规格 §5）。
 - **`QlDeps.spawnExe(exe)` 返回形状逐字不变**：`{ onExit(cb); stopGraceful(s); isRunning() }`（`quick-launch.ts:171`）。`main.ts:1084` 的接线与 `qlStartContextOrThrow` 守卫不动（规格 §6.6）。
 - **Win32 取值逐字按规格 §6.3**：`fMask = 0x40 | 0x04`、`lpVerb = null`（**不是 `"runas"`**）、`nShow = 1`、`lpParameters = null`、`lpDirectory = null`、`cbSize = koffi.sizeof(SHELLEXECUTEINFOW)`（x64 = 112）。
-- **错误前缀只用 `PROC:`**（索引 G7）。新键只有 `err.proc.uacCancelled`（zh/en 同时加，占位符只有 `{exe}`），其余失败复用既有 `err.proc.spawnFail` 并把 Win32 错误码放进 `{err}`（规格 §6.5）。调用点必须是字面量 `t('…')`，否则 `key-coverage.test.ts` 认不到。
+- **错误前缀只用 `PROC:`**（索引 G7）；**写进 sys 日志通道的行行首必须是 `[lms_launcher] `，`PROC:` 紧随其后**（规格 §8-K8；抛出的 Error 仍以 `PROC: ` 开头）。新键只有 `err.proc.uacCancelled`（zh/en 同时加，占位符只有 `{exe}`），其余失败复用既有 `err.proc.spawnFail` 并把 Win32 错误码放进 `{err}`（规格 §6.5）。调用点必须是字面量 `t('…')`，否则 `key-coverage.test.ts` 认不到。
 - **包管理器用 npm**（实测：`node_modules/.package-lock.json` 存在、`node_modules/@lydell` 是真实目录而非 pnpm 符号链接、`package-lock.json` 最近提交 `90c9320` 2026-10-11，`pnpm-lock.yaml` 停在 `fa8f87e` 2026-09-14）。**只改 `package.json` + `package-lock.json`，不动 `pnpm-lock.yaml`**（它已落后，刷新它属于另一件事）。
 - **不加 `allowScripts` 条目**：koffi 的 `install` 脚本不执行也可用（规格 E12），任务 1 步骤 2 用真实加载取证。
 - 单测命令 `npx vitest run <路径>`，全量 `npm test`；主进程类型检查 `npx tsc -p tsconfig.main.json --noEmit`；渲染端语法门 `npx vite build`（本次没改渲染端，任务 3 收尾跑一次即可）。
@@ -28,7 +28,7 @@
 
 规格隐含、单测容易漏掉、且最可能伤到使用者的六条；每条都钉在对应任务的测试或真机清单里：
 
-1. **用户在 UAC 点「否」**（`GetLastError()=1223`）→ 期望日志出现 `PROC: <exe> 已取消管理员权限请求`、按钮回落绿 `[启动]`、**不残留「运行中」假状态**，而不是再报一次 `EACCES` 或让按钮卡在红「...」。钉住：任务 2 步骤 1 的第 3 条断言 + 任务 3 改写的「exe 启动失败」用例 + 真机清单第 3 步。
+1. **用户在 UAC 点「否」**（`GetLastError()=1223`）→ 期望日志出现 `[lms_launcher] PROC: <exe> 已取消管理员权限请求`（行首 `[lms_launcher] `，规格 §8-K8）、按钮回落绿 `[启动]`、**不残留「运行中」假状态**，而不是再报一次 `EACCES` 或让按钮卡在红「...」。钉住：任务 2 步骤 1 的第 3 条断言 + 任务 3 改写的「exe 启动失败」用例 + 真机清单第 3 步。
 2. **提权进程 `taskkill /T /F` 打不到**（规格 E9 实测失败）→ 期望 `TerminateProcess(句柄)` 兜底真的停掉，且 `[停止]` 不挂死。钉住：任务 2 步骤 1 的第 5 条断言 + 真机清单第 2 步。
 3. **不需要管理员的 exe 回退**（notepad 这类）→ 期望照常启动/停止/报退出码，且**不因为走 Shell 路径而多弹一次 UAC**（`lpVerb=null` 是关键）。钉住：任务 2 步骤 1 的第 6 条断言 + 任务 3 的并发用例（真起两个 notepad）+ 真机清单第 4 步。
 4. **打包后 `koffi.node` 加载不了**（`.node` 不能从 asar 内 dlopen）→ 期望 `asarUnpack` 两条到位、真机第 5 步能在 `app.asar.unpacked` 里看到该文件。钉住：任务 1 步骤 1/2/3 + 真机清单第 5 步。
@@ -226,7 +226,7 @@ git commit -m "feat(main): shell-execute.ts —— ShellExecuteEx 提权启动�
 - [ ] **步骤 1：先改测试（三处），验证它们变红**
 
 1. `:324-344`：只改标题与注释——「每配置一个新 ProcessState」→「每配置一个新 ShellExecProcess（规格 §6.6）」；**断言一条不动**（两条 `ql_start` 各自 `{tabId:null}`、两条各自 running、`get_state` 不被污染、`ql_stop` 后清空）
-2. `:346-357`：改为新路径。标题改「exe 启动失败：前缀由 shell-execute 自带（规格 §6.5），经既有日志通道反馈且 `ql_start` 被拒」；断言改为 `await expect(invoke('ql_start', 'qlshape04')).rejects.toThrow(/^PROC: /)` + 仍断言 `log-line` 里出现 `stream==='sys'` 且 `/^PROC:/` 的行（`App.vue:477-478` 的回落路径依赖这条日志）。删除 `expect(res).toEqual({ tabId: null })`——旧行为（先返回、错误异步到）已被同步失败取代（规格 §6.6）。**实现期补充（规格 E19 / §9-R8，索引 K17）**：本用例必须把 `winShell.shellExecute` 临时替换成返回 `{ ok:false, handle:null, win32Error:1223 }` 的假实现（保存原函数、`finally` 还原）——真路径打一个不存在的 exe 会弹 Shell 的系统错误框并把 vitest worker 卡住；替换后顺带钉 UAC 取消的可辨文案（含 `t('err.proc.uacCancelled', { exe })`、不含 `EACCES`）。真路径的失败由任务 4 的真机清单守
+2. `:346-357`：改为新路径。标题改「exe 启动失败：前缀由 shell-execute 自带（规格 §6.5），经既有日志通道反馈且 `ql_start` 被拒」；断言改为 `await expect(invoke('ql_start', 'qlshape04')).rejects.toThrow(/^PROC: /)` + 仍断言 `log-line` 里出现 `stream==='sys'` 且 `/^\[lms_launcher\] PROC:/` 的行（行首 `[lms_launcher] ` 是 sys 通道统一口径，规格 §8-K8）（`App.vue:477-478` 的回落路径依赖这条日志）。删除 `expect(res).toEqual({ tabId: null })`——旧行为（先返回、错误异步到）已被同步失败取代（规格 §6.6）。**实现期补充（规格 E19 / §9-R8，索引 K17）**：本用例必须把 `winShell.shellExecute` 临时替换成返回 `{ ok:false, handle:null, win32Error:1223 }` 的假实现（保存原函数、`finally` 还原）——真路径打一个不存在的 exe 会弹 Shell 的系统错误框并把 vitest worker 卡住；替换后顺带钉 UAC 取消的可辨文案（含 `t('err.proc.uacCancelled', { exe })`、不含 `EACCES`）。真路径的失败由任务 4 的真机清单守
 3. `:423-468`：观察点换成 `winShell.shellExecute`（`import { winShell } from './shell-execute'`；保存原函数、替换属性、finally 还原）。保留同等强度的断言：两次并发 `ql_start` 记录到的 `file` 分别是两条配置的 exe、调用时 `guardOf()('probe')` 返回的 configId 与本次一致、`ql_states` 两条各自 running、`get_state` 不被污染。删掉 `launch(exe, [], configId)` 的 `args` 逐字断言（K13 口径作废，规格 §7.1）。**实现期补充（表 E4 的牙）**：两条配置的 exe 必须**不同**（实测用 `notepad.exe` / `mspaint.exe`）——两条都写同一个 exe 时「各自的 `file` 不串」抓不到任何错误；包装只做透传（记下参数再调用原函数），其余六个方法保持真实现，所以两条真进程照常启动 / 停止（表 E8）
 
 运行：`npx vitest run src-main/ipc-ql.test.ts`
@@ -271,7 +271,7 @@ function spawnExeProcess(exe: string, configId: string | null): {
   try {
     proc = launchShellExe(winShell, exe);
   } catch (e) {
-    emitLog(e instanceof Error ? e.message : String(e), 'sys'); // 与旧 :1067 同一通道、同一前缀（索引 G7）；取 message 不取 String(e)（规格 E21 / §8-K7）
+    emitLog('[lms_launcher] ' + (e instanceof Error ? e.message : String(e)), 'sys'); // 与旧 :1067 同一通道；取 message 不取 String(e)（规格 E21 / §8-K7）；行首 [lms_launcher]（规格 §8-K8）
     throw e;
   }
   return {
@@ -327,14 +327,14 @@ git commit -m "fix(main): 快捷启动 exe 改走 ShellExecuteEx 提权路径，
 
 1. 对 `E:\QiYou\QiYou.exe` 这条点 `[启动]` → 出现系统 UAC 弹窗 → 点「是」→ 奇游启动，日志出现 `启动命令 · E:\QiYou\QiYou.exe`
 2. 点 `[停止]` → 奇游进程真的消失（任务管理器里 `QiYou.exe` 与其子进程都要看），行按钮回落绿 `[启动]`
-3. 再点 `[启动]`，在 UAC 点「否」→ 日志出现 `PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`，按钮回落，无残留运行态
+3. 再点 `[启动]`，在 UAC 点「否」→ 日志出现 `[lms_launcher] PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`（行首 `[lms_launcher] `，规格 §8-K8），按钮回落，无残留运行态
 4. 不需要管理员的条目（例：`C:\Windows\System32\notepad.exe`）→ 照常启动、停止、退出后 `进程退出 code=` 正常
 5. 打包目录里存在 `resources\app.asar.unpacked\node_modules\@koromix\koffi-win32-x64\win32_x64\koffi.node`
 6. 应用退出路径（托盘退出 / `[更新]`）仍不留孤儿进程
 
 顺带观察（不判过否，回报现象即可）：UAC 挂起那几秒主界面是否只是红「...」、没有「未响应」或崩溃（规格 §9-R1 的接受前提）。
 
-顺带观察 2（规格 §9-R8 / E19）：把某条目的 exe 改成不存在的路径再点 `[启动]` → 预期弹系统的「找不到文件」错误框，点「确定」后日志才出现 `PROC: … win32=<码>`。回报现象即可。
+顺带观察 2（规格 §9-R8 / E19）：把某条目的 exe 改成不存在的路径再点 `[启动]` → 预期弹系统的「找不到文件」错误框，点「确定」后日志才出现 `[lms_launcher] PROC: … win32=<码>`。回报现象即可。
 
 - [ ] **步骤 4：等回报并把结果填进该任务 check 表的 J 段**（逐条：通过 / 不通过 + 现象）。本实现环境起不了 Electron GUI（规格 §7.2 取证），**不得用「自动化已过」代替这一条**。
 

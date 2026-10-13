@@ -1058,8 +1058,10 @@ function spawnExeProcess(exe: string, configId: string | null): {
     proc = launchShellExe(winShell, exe);
   } catch (e) {
     // 取 e.message 而不是 String(e)：String(new Error('PROC: …')) 会得到「Error: PROC: …」，
-    // 行首前缀就被吃掉了（索引 G7 的前缀口径；规格 E21 / §8-K7）
-    emitLog(e instanceof Error ? e.message : String(e), 'sys'); // 与旧 :1067 同一通道、同一前缀
+    // 分类前缀就被吃掉了（索引 G7 的前缀口径；规格 E21 / §8-K7）
+    // '[lms_launcher] ' 在最前：sys 通道的每一行都由启动器撰写，行首必须是它（与 :324 / :1078 同一口径；
+    // 真机 2026-10-13 用户指出本行缺该前缀 → 索引 K23）。PROC: 分类标记紧随其后，不删不改。
+    emitLog('[lms_launcher] ' + (e instanceof Error ? e.message : String(e)), 'sys'); // 与旧 :1067 同一通道
     throw e;
   }
   return {

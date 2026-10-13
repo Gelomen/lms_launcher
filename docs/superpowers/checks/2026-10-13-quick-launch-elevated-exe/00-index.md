@@ -25,7 +25,7 @@
 | G2 | 不改 `src-main/process.ts`、不改 `main.ts:64` 的 `ps` 单例、不改 `quick-launch.ts` 任何可执行语句、不改 `src/App.vue` / `src/modules/*` / `src-main/quick-launch-terminals.ts` | `git diff --name-only` + `Select-String` 复核 `quick-launch.ts:171` 签名与 `:272` 调用一字未变 | T3 B/F |
 | G3 | `QlDeps.spawnExe(exe)` 返回形状逐字 = `{ onExit(cb); stopGraceful(s); isRunning() }`；`main.ts:1084` 接线与 `qlStartContextOrThrow` 守卫不动 | 读 `quick-launch.ts:171` 与 `main.ts:1084` 现值；`ipc-ql.test.ts` 的守卫用例仍绿 | T3 C/G |
 | G4 | Win32 取值逐字：`fMask = 0x40 \| 0x04`、`lpVerb = null`（不是 `"runas"`）、`nShow = 1`、`lpParameters = null`、`lpDirectory = null`、`cbSize = koffi.sizeof(SHELLEXECUTEINFOW)` | 读 `shell-execute.ts` 源码逐字比对规格 §6.3 | T2 C/E |
-| G5 | 错误前缀只用 `PROC:`（索引 G7 of 旧 feature 的五前缀口径）；新键只有 `err.proc.uacCancelled`（zh/en 同时、占位符只有 `{exe}`）；其余失败复用 `err.proc.spawnFail` 带 `win32=<码>`；调用点必须是字面量 `t('…')` | `key-coverage.test.ts` + `no-hardcoded.test.ts` + `dict.test.ts` 定向绿；读调用点 | T3 C/E/G |
+| G5 | 错误前缀只用 `PROC:`（索引 G7 of 旧 feature 的五前缀口径）；**写进 sys 日志通道的行行首必须是 `[lms_launcher] `，`PROC:` 紧随其后**（索引 K23；抛出的 Error 仍以 `PROC: ` 开头）；新键只有 `err.proc.uacCancelled`（zh/en 同时、占位符只有 `{exe}`）；其余失败复用 `err.proc.spawnFail` 带 `win32=<码>`；调用点必须是字面量 `t('…')` | `key-coverage.test.ts` + `no-hardcoded.test.ts` + `dict.test.ts` 定向绿；读调用点 | T3 C/E/G |
 | G6 | 包管理器 = npm（`node_modules/.package-lock.json` 存在、`node_modules/@lydell` 为真实目录、`pnpm-lock.yaml` 停在 `fa8f87e`）；**只改 `package.json` + `package-lock.json`**，`pnpm-lock.yaml` 不进暂存 | `git diff --name-only` 不含 `pnpm-lock.yaml` | T1 B/H |
 | G7 | 不加 `allowScripts` 条目、不 `npm rebuild koffi`；koffi 的 `install` 脚本被拦下仍可用由加载冒烟证明 | 读 `package.json` 的 `allowScripts` 仍只有 electron；`node --input-type=module -e "import koffi …"` 输出 `function function 16`（索引 K16） | T1 D/F |
 | G8 | 命令口径：定向 `npx vitest run <路径>`、全量 `npm test`、类型 `npx tsc -p tsconfig.main.json --noEmit`、语法 `npx vite build` | 每张表 D/G 段的命令逐字 | 全部 |
@@ -37,7 +37,7 @@
 
 | # | 风险（规格 §9 对应项） | 期望行为 | 钉住 |
 |---|---|---|---|
-| R1 | UAC 点「否」（`GetLastError()=1223`） | 日志 `PROC: <exe> 已取消管理员权限请求`、按钮回落绿 `[启动]`、无残留运行态；**不再出现 `EACCES`** | T2 E3、T3 E（`ipc-ql.test.ts:346-357` 改写）、T4 清单第 3 步 |
+| R1 | UAC 点「否」（`GetLastError()=1223`） | 日志 `[lms_launcher] PROC: <exe> 已取消管理员权限请求`（行首 `[lms_launcher] `，索引 K23）、按钮回落绿 `[启动]`、无残留运行态；**不再出现 `EACCES`** | T2 E3、T3 E（`ipc-ql.test.ts:346-357` 改写）、T4 清单第 3 步 |
 | R2 | 提权进程 `taskkill /T /F` 打不到（E9） | `TerminateProcess(句柄, 1)` 兜底真停，`[停止]` 不挂死 | T2 E5、T4 清单第 2 步 |
 | R3 | 不需要管理员的 exe 回退（notepad，E8） | 照常启动/停止/报退出码，且**不多弹一次 UAC**（`lpVerb=null`） | T2 E6、T3 E（并发用例真起两个 notepad）、T4 清单第 4 步 |
 | R4 | `koffi.node` 无法从 asar 内 dlopen | `asarUnpack` 两条到位；打包目录里能看到该文件 | T1 D/E、T4 步骤 2 + 清单第 5 步 |
@@ -82,3 +82,4 @@
 | K20 | 本次偏离（E19 / R8）的 **spec + plan + 两张 check 表与代码同一提交**，所以任务 2 的 H1 暂存范围在三个代码文件之外另加 4 份文档 | AGENTS.md 工作流第 4 步「偏离 spec：先改 spec / plan / check 表（同一 commit）再改代码」优先于 plan H1 的逐字范围；任务 1（纯依赖、无偏离）不受影响 | T2 H1、J-24 |
 | K21 | 适配器写日志通道取 `e.message`，不取 `String(e)`：`String(new Error('PROC: x'))` = `Error: PROC: x`（实测 `node -e`），行首前缀被吃掉 → 违反索引 G7 与规格 §6.6 的可观察要求 | 规格 E21 / §6.6 伪代码更正 / §8-K7；plan 任务 3 步骤 3 已同步；实测红因 = `npx vitest run src-main/ipc-ql.test.ts` 的 `TIMEOUT waiting for PROC: 日志行` | T3 C1 / E2、J-4 |
 | K22 | 任务 3 的 E5 牙位更正：`ctxOk` 测的是「spawnExe 时刻槽非空且属于本次」（由用例里的 spy 自己调 `guard('probe')`），**不测**接线的 configId 传参 —— 把接线改成 `spawnExeProcess(exe, null)` 实测不红（适配器 `void configId`）。有牙的变异是把 `ql_start` 的槽赋值置空 → `STATE: ql_start context is missing at spawnExe`。另：E9（退出码链路）在 exe 侧无单测牙（`cb(0)` 变异 23 全绿），牙在 `quick-launch.ts` 一字未改 + 任务 4 真机清单第 5 步 | 变异取证实测 `.temp/mut-task03.mjs` / `.temp/mut-task03b.mjs`（E5 变异 `Tests 23 passed (23)`；E5b 四条红） | T3 E5 / E9、J-16 / J-17 / J-20 |
+| K23 | **sys 日志行的行首必须是 `[lms_launcher] `，`PROC:` 分类标记紧随其后**：`main.ts` 的 exe 失败适配器改为 `emitLog('[lms_launcher] ' + (e instanceof Error ? e.message : String(e)), 'sys')`。抛出的 Error 不变（`shell-execute.ts:196/198` 仍以 `PROC: ` 开头，`ipc-ql.test.ts:357` 的 `rejects.toThrow(/^PROC: /)` 不变）。K21 里「行首前缀」的措辞据此理解为「紧跟 `[lms_launcher] ` 之后」。`main.ts:334`（llama-server 启动失败的 `PROC:` 行）同样缺前缀，按规格 Q9（llama-server 不纳入）留在本次范围外，另立改动 | 真机清单第 3 步用户回报（2026-10-13 23:1x）：日志区出现裸 `PROC: E:\QiYou\QiYou.exe 已取消管理员权限请求`，与同卡片成功行 `[lms_launcher] 启动命令 · …` 不一致；口径依据 `src/App.vue:107-110`（`appendSys` 注释「sys 行统一 `[lms_launcher]` 前缀」）与 `main.ts:324` / `:364` / `:1078` 的既有写法。牙：去掉前缀 → `npx vitest run src-main/ipc-ql.test.ts` 的 `TIMEOUT waiting for [lms_launcher] PROC: 日志行`（实测）；带前缀 23 passed、全量 48 / 834、tsc exit 0。已同步 spec §6.5 / §6.6 / §7.1 / §7.2 / §8-K7 + 新增 §8-K8、plan 全局约束与任务 3 步骤 2/3、任务 4 清单第 3 步 | T3 C10 / E3、T4 E3、索引 G5 / R1 |

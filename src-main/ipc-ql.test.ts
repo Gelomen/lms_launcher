@@ -355,12 +355,13 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
     try {
       // 新路径：失败在调用栈里同步可见 → ql_start 直接 reject（规格 §6.6，取代旧「先返回、错误异步到」）
       await expect(invoke('ql_start', 'qlshape04')).rejects.toThrow(/^PROC: /);
+      // 日志行行首必须是 [lms_launcher]（sys 通道统一口径，索引 K23），PROC: 分类标记紧随其后
       await waitFor(
-        () => cap.sends.some((s) => s.channel === 'log-line' && /^PROC:/.test(String((s.payload as { line?: string }).line ?? ''))),
-        5000, 'PROC: 日志行',
+        () => cap.sends.some((s) => s.channel === 'log-line' && /^\[lms_launcher\] PROC:/.test(String((s.payload as { line?: string }).line ?? ''))),
+        5000, '[lms_launcher] PROC: 日志行',
       );
       const logLines = sendsOf('log-line') as Array<{ line: string; stream: string }>;
-      const procLine = logLines.find((l) => l.stream === 'sys' && /^PROC:/.test(l.line));
+      const procLine = logLines.find((l) => l.stream === 'sys' && /^\[lms_launcher\] PROC:/.test(l.line));
       expect(procLine, 'sys 通道里必须有 PROC: 行 —— App.vue:477-478 的 catch 只负责回落按钮，原因行只由这条日志负责').toBeTruthy();
       // 索引 R1 / K2：UAC 取消必须给出可辨文案（带 exe），不再是 spawn 时代的 EACCES
       expect(procLine!.line).toContain(t('err.proc.uacCancelled', { exe: 'no-such-exe-zzz.exe' }));
