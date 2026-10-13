@@ -1,0 +1,76 @@
+# 快捷启动「可执行程序」提权启动 — check 表索引
+
+- 计划：[2026-10-13-quick-launch-elevated-exe.md](../../plans/2026-10-13-quick-launch-elevated-exe.md) · 规格：[2026-10-13-quick-launch-elevated-exe-design.md](../../specs/2026-10-13-quick-launch-elevated-exe-design.md)
+- 生成时间：2026-10-13 19:5x（主代理；文档提交 `0f7c597` 之后、「开始实现」之前）
+- 工作基线：分支 `feat/quick-launch`，HEAD `0f7c597 docs: 快捷启动 exe 需要管理员权限时提权启动 —— spec + plan（代码一行未改）`，`git status --porcelain` 只要求**无已跟踪改动**（生成期未跟踪的 `.superpowers/` 与 `docs/superpowers/checks/` 是预期产物 —— 索引 K13）
+- 测试基线（规格 E18，主代理 19:25 实测）：`npm test` → `Test Files 47 passed (47)` / `Tests 826 passed (826)`，exit 0
+- 普查：`node .superpowers/sdd/2026-10-13-quick-launch-elevated-exe/tick-census.mjs`（已就位；H3 用它）
+
+## 清单表
+
+| # | 任务 | 表 | 前置 | 钉住的审查重点 |
+|---|---|---|---|---|
+| 1 | 引入 koffi 依赖 + 打包解包声明 | [task-01-koffi-dependency-and-asarunpack.md](task-01-koffi-dependency-and-asarunpack.md) | 无 | R4 |
+| 2 | `src-main/shell-execute.ts` —— Win32 接缝与进程生命周期 | [task-02-shell-execute-module.md](task-02-shell-execute-module.md) | 任务 1（要 import koffi） | R1 R2 R3 R5 |
+| 3 | `main.ts` 适配器接线 + 新词典键 + `ipc-ql.test.ts` 两处改写 | [task-03-main-adapter-and-i18n.md](task-03-main-adapter-and-i18n.md) | 任务 2（消费其导出） | R1 R3 R6 |
+| 4 | 打包真机硬门（用户执行） | [task-04-packaged-realmachine.md](task-04-packaged-realmachine.md) | 任务 1–3 | R1 R2 R3 R4 |
+
+派单粒度与顺序按 AGENTS.md 第 4 步：**一次一个子代理，按 1→2→3 串行**（编号即拓扑序），任务 4 由主代理打包 + 用户验收。
+
+## G 组：全局约束（逐条可验证）
+
+| # | 约束 | 怎么验 | 落在哪张表 |
+|---|---|---|---|
+| G1 | 改动文件只有：`package.json`、`package-lock.json`、`electron-builder.yml`、新建 `src-main/shell-execute.ts` / `src-main/shell-execute.test.ts`、`src-main/main.ts`（`:1038-1074`）、`src-main/i18n/dict.ts`、`src-main/ipc-ql.test.ts`、`src-main/quick-launch.ts`（**仅 :5-6 注释**） | 每任务末尾 `git diff --name-only` 逐字比对 | T1 B / T2 B / T3 B |
+| G2 | 不改 `src-main/process.ts`、不改 `main.ts:64` 的 `ps` 单例、不改 `quick-launch.ts` 任何可执行语句、不改 `src/App.vue` / `src/modules/*` / `src-main/quick-launch-terminals.ts` | `git diff --name-only` + `Select-String` 复核 `quick-launch.ts:171` 签名与 `:272` 调用一字未变 | T3 B/F |
+| G3 | `QlDeps.spawnExe(exe)` 返回形状逐字 = `{ onExit(cb); stopGraceful(s); isRunning() }`；`main.ts:1084` 接线与 `qlStartContextOrThrow` 守卫不动 | 读 `quick-launch.ts:171` 与 `main.ts:1084` 现值；`ipc-ql.test.ts` 的守卫用例仍绿 | T3 C/G |
+| G4 | Win32 取值逐字：`fMask = 0x40 \| 0x04`、`lpVerb = null`（不是 `"runas"`）、`nShow = 1`、`lpParameters = null`、`lpDirectory = null`、`cbSize = koffi.sizeof(SHELLEXECUTEINFOW)` | 读 `shell-execute.ts` 源码逐字比对规格 §6.3 | T2 C/E |
+| G5 | 错误前缀只用 `PROC:`（索引 G7 of 旧 feature 的五前缀口径）；新键只有 `err.proc.uacCancelled`（zh/en 同时、占位符只有 `{exe}`）；其余失败复用 `err.proc.spawnFail` 带 `win32=<码>`；调用点必须是字面量 `t('…')` | `key-coverage.test.ts` + `no-hardcoded.test.ts` + `dict.test.ts` 定向绿；读调用点 | T3 C/E/G |
+| G6 | 包管理器 = npm（`node_modules/.package-lock.json` 存在、`node_modules/@lydell` 为真实目录、`pnpm-lock.yaml` 停在 `fa8f87e`）；**只改 `package.json` + `package-lock.json`**，`pnpm-lock.yaml` 不进暂存 | `git diff --name-only` 不含 `pnpm-lock.yaml` | T1 B/H |
+| G7 | 不加 `allowScripts` 条目、不 `npm rebuild koffi`；koffi 的 `install` 脚本被拦下仍可用由加载冒烟证明 | 读 `package.json` 的 `allowScripts` 仍只有 electron；`node --input-type=module -e "import koffi …"` 输出 `function function 8` | T1 D/F |
+| G8 | 命令口径：定向 `npx vitest run <路径>`、全量 `npm test`、类型 `npx tsc -p tsconfig.main.json --noEmit`、语法 `npx vite build` | 每张表 D/G 段的命令逐字 | 全部 |
+| G9 | 基线 = 47 files / 826 tests（规格 E18）。**实现者不重跑全量**；每任务末尾跑一次，计数必须 = 基线 + 该任务新增，且不得有任何减少 | 任务 2 后应为 `Tests 834 passed (834)` / `Test Files 48 passed (48)`；任务 3 后计数不变；差额必须在 J 段说明 | T2 G / T3 G |
+| G10 | 提交信息 Conventional Commits + 中文；**由主代理在验收通过后执行**；子代理不 `git add`、不 commit | 各表 H 段 + J 段留 HEAD 证据 | 全部 |
+| G11 | 不得扩范围（规格 §5 非目标：`process.ts`、提权引导、manifest 检测、参数/cwd、终端类型、额外日志、提权进程杀树） | 各表 F 段逐条对照 | 全部 |
+
+## R 组：审查重点 → 钉住它的地方
+
+| # | 风险（规格 §9 对应项） | 期望行为 | 钉住 |
+|---|---|---|---|
+| R1 | UAC 点「否」（`GetLastError()=1223`） | 日志 `PROC: <exe> 已取消管理员权限请求`、按钮回落绿 `[启动]`、无残留运行态；**不再出现 `EACCES`** | T2 E3、T3 E（`ipc-ql.test.ts:346-357` 改写）、T4 清单第 3 步 |
+| R2 | 提权进程 `taskkill /T /F` 打不到（E9） | `TerminateProcess(句柄, 1)` 兜底真停，`[停止]` 不挂死 | T2 E5、T4 清单第 2 步 |
+| R3 | 不需要管理员的 exe 回退（notepad，E8） | 照常启动/停止/报退出码，且**不多弹一次 UAC**（`lpVerb=null`） | T2 E6、T3 E（并发用例真起两个 notepad）、T4 清单第 4 步 |
+| R4 | `koffi.node` 无法从 asar 内 dlopen | `asarUnpack` 两条到位；打包目录里能看到该文件 | T1 D/E、T4 步骤 2 + 清单第 5 步 |
+| R5 | 定时器泄漏 / `onExit` 多次（R6） | 退出只上报一次；`clearInterval` + `close()` 都执行 | T2 E2、E7 |
+| R6 | i18n 三门 | 新键 zh/en 同时、字面量调用点与占位符逐字一致、源码零中文字面量 | T3 G（`dict.test.ts` / `key-coverage.test.ts` / `no-hardcoded.test.ts` 定向） |
+| R7 | UAC 挂起期间主线程同步阻塞（实测 4.1s，规格 R1） | 本次接受（与 `detectTerminals` 的 `spawnSync` 同口径，E16）；真机只观察现象、不判过否 | T4 清单「顺带观察」 |
+
+## V 组：跨任务回归门
+
+| 时机 | 必须跑 | 预期 |
+|---|---|---|
+| 任务 1 末尾 | `npm test` | 与基线逐字相同：47 / 826（本任务不加用例） |
+| 任务 2 末尾 | `npx tsc -p tsconfig.main.json --noEmit`；`npm test` | tsc 无输出；48 / 834（+8 全在新文件） |
+| 任务 3 末尾 | `npx vitest run src-main/ipc-ql.test.ts`；i18n 三份；tsc；`npx vite build`；`npm test` | ipc-ql 23 passed（用例数不变）；i18n 全绿；tsc/build exit 0；全量仍 48 / 834 |
+| 每个任务验收前（主代理） | 独立复跑该表 G 段全部命令 | 与 J 段同值；不接受实现者自述 |
+| 任务 4 | `.\\build.bat` + 解包核对 + 用户真机 6 步 | 产物里 `app.asar.unpacked\\node_modules\\@koromix\\koffi-win32-x64\\win32_x64\\koffi.node` 存在；6 步逐条回报 |
+
+## K 组：已定口径（含生成表时的取证）
+
+| # | 口径 | 依据 | 落在哪 |
+|---|---|---|---|
+| K1 | 新模块名 `src-main/shell-execute.ts`（Win32 API 名，避免与「终端 shell 类型」混） | 规格 §8-K1 | T2 |
+| K2 | `err.proc.uacCancelled` 带 `{exe}` 占位符 | 规格 §8-K2（这条路径上 `log.launcher.start.cmd` 不会写，见 `quick-launch.ts:285`） | T3 |
+| K3 | 判存活用 `WaitForSingleObject(h,0)`，不用 `STILL_ACTIVE=259` 比对 | 规格 §8-K3 / E11（真实退出码 259 会歧义） | T2 |
+| K4 | `fMask` 必须含 `SEE_MASK_FLAG_NO_UI` | 规格 §8-K4（否则 Shell 自己弹错误框，绕过日志通道） | T2 |
+| K5 | 主线程同步阻塞本次接受 | 规格 §8-K5 / §6.9 / E16 | T4 观察项 |
+| K6 | `quick-launch.ts:5-6` 只改注释、可执行代码零改动 | 规格 §8-K6 | T3 |
+| K7 | 旧口径「exe 走 spawn / 复用 ProcessState」（旧规格 §7.3 / 索引 K13）被本 feature 取代；`ipc-ql.test.ts:423-468` 的 `launch(exe, [], configId)` 逐字断言作废 | 规格开头「取代关系」/ §7.1 | T3 |
+| K8 | 生效包管理器是 npm 11.19.0，`pnpm-lock.yaml` 已落后（`fa8f87e` 2026-09-14）→ 本次不刷新它 | 主代理实测（`node_modules/.package-lock.json` 存在、`@lydell` 非符号链接、两份 lockfile 的最近提交 `90c9320` / `fa8f87e`） | T1 B/H、G6 |
+| K9 | 任务 3 的适配器保留未使用的 `configId` 形参（`void configId`），`main.ts:1084` 接线一字不改 | `tsconfig.main.json` 无 `noUnusedParameters`（实测）；:1084 的 `qlStartContextOrThrow('spawnExe')` 是修复轮 1 · 重要 #2 的槽守卫，删掉即静默降级 | T3 C/F |
+| K10 | 打包产物不污染工作区：`dist-release/` 被 `.gitignore:2` 的 `dist-*/` 忽略 | 主代理实测 `git check-ignore -v` 命中 | T4 B |
+| K11 | 计数「无减少」的判据：全量总数 = 基线 + 新增，且唯一改动的测试文件计数增量 = 新增数 ⇒ 其余文件不可能减少 | 沿用上一 feature 索引 K11 的算术判据 | T2 G / T3 G |
+| K12 | `killTree` 的 PID 开关按 plan 逐字写 `/PID`（taskkill 对 `/PID` 与 `-PID` 都接受）；plan 原写「utf16le 先例 = `process.ts:87`」**不实**，已改为 `src-main/quick-launch-terminals.ts:96`（实测 `buf.toString('utf16le')`；`process.ts:87` 与 `quick-launch.ts:134` 是 taskkill 调用、用 `-PID`、无 encoding） | 任务 2 表 A4 的实测 + 本次复核 grep；plan 步骤 3 已同步更正（同一提交） | T2 A4 / C10 |
+| K13 | 索引「工作基线」的 `git status --porcelain` 判据 = **无已跟踪改动**；生成期未跟踪的 `.superpowers/`（普查脚本）与 `docs/superpowers/checks/`（本表目录）属预期产物 | 实测：`git status --porcelain` 恰为 `?? .superpowers/` 与 `?? docs/superpowers/checks/`，`git diff --stat` 空 | T1 A1 |
+| K14 | **本次由主代理内联实现**（用户 2026-10-13 21:04 明确「不使用 SDD，直接实现」）：不派实现子代理，但 check 表仍逐行执行并落勾、J 段填真实命令输出、提交仍按各表 H 段、顺序仍按 plan 任务号 | 用户指令 + AGENTS.md「例外」条款（写明并获明确同意的偏离）；执行载体改为 `executing-plans` | 全部四张表的 H/J 段 |
+| K15 | **词典两条键（`err.proc.uacCancelled` zh/en）随任务 2 的实现同一提交落地**，任务 3 只核对不再改；任务 2 的 H1 暂存范围相应为三个文件、任务 3 的为三个文件 | 任务 2 表 G3 的实测：`key-coverage.test.ts:117-129` 扫 `src-main/**` 的非 `.test.ts` 文件，「有调用点、无键」必红 → plan 原排序（键放任务 3 步骤 2）会让任务 2 末尾的全量必为 1 failed。plan 任务 2 步骤 2b / 任务 3 步骤 2 与两张表的 B/G/H 段已同步（同一提交） | T2 B3/G3/G6/H1、T3 B2/D3/G6/H1 |

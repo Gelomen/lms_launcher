@@ -119,6 +119,7 @@ git commit -m "build: 引入 koffi FFI 依赖并声明 asarUnpack（快捷启动
 **文件：**
 - 新建：`src-main/shell-execute.ts`
 - 测试：`src-main/shell-execute.test.ts`（新建）
+- 修改：`src-main/i18n/dict.ts`（zh `:299` 后、en `:641` 后各一条键）—— **必须与本任务同一提交**：实现里的字面量 `t('err.proc.uacCancelled', { exe })` 会让 `key-coverage.test.ts:117-129` 在缺键时报红（索引 K15）
 
 - [ ] **步骤 1：编写失败的测试**
 
@@ -165,6 +166,17 @@ function fakeApi(over: Partial<WinShellApi> = {}): WinShellApi & { calls: string
 运行：`npx vitest run src-main/shell-execute.test.ts`
 预期：FAIL — `Failed to load... shell-execute`（模块不存在）。把输出贴进 check 表 J 段。
 
+- [ ] **步骤 2b：加词典键（先改行号大的 en，再改 zh，避免行号漂移）**
+
+`dict.ts` zh 侧 `err.proc.spawnFail`（`:299`）之后插入一行，en 侧 `:641` 之后插入一行，逐字：
+
+```ts
+'err.proc.uacCancelled': '{exe} 已取消管理员权限请求',          // zh
+'err.proc.uacCancelled': '{exe}: elevation request cancelled',  // en
+```
+
+不登记 `src-main/i18n/err-keys.ts` 的 `IPC_ERROR_KEYS`（规格 §6.5）。**这两条键不能拖到任务 3**：任务 2 的实现一落地，`key-coverage.test.ts` 就会扫到调用点（索引 K15）。
+
 - [ ] **步骤 3：实现 `src-main/shell-execute.ts`**
 
 接口逐字见规格 §6.2。实现要点（踩过的坑，照做不要再试）：
@@ -173,7 +185,7 @@ function fakeApi(over: Partial<WinShellApi> = {}): WinShellApi & { calls: string
 - `koffi.load('kernel32.dll')` 取 `GetProcessId` / `WaitForSingleObject` / `GetExitCodeProcess` / `TerminateProcess` / `CloseHandle` / `GetLastError`
 - `GetLastError` 必须在 `ShellExecuteExW` 返回 false 后**立刻**取，中间不要插别的 Win32 调用
 - `winShell` 是 `export const` 的普通对象，方法内惰性 `koffi.load`（首次调用才加载，测试替换属性时不必碰 koffi）
-- `killTree` = `spawnSync('taskkill', ['/T','/F','/PID', String(pid)], { windowsHide: true, encoding: 'utf16le' })` → `status === 0`。**注意**：taskkill 的中文输出按 utf16le 解（仓库先例 `src-main/process.ts:87`）
+- `killTree` = `spawnSync('taskkill', ['/T','/F','/PID', String(pid)], { windowsHide: true, encoding: 'utf16le' })` → `status === 0`。**注意**：中文 Windows 下 taskkill 的输出是 UTF-16LE，故 `encoding: 'utf16le'`（仓库的 utf16le 先例实测是 `src-main/quick-launch-terminals.ts:96` 的 `buf.toString('utf16le')`；`process.ts:87` 只是 taskkill 调用本身、不带 encoding —— 索引 K12）。PID 开关两种写法 taskkill 都接受：仓库两处先例（`process.ts:87`、`quick-launch.ts:134`）用 `-PID`，本计划按 `/PID` 逐字落笔
 - 轮询 `setInterval(…, 100)`；退出分支必须 `clearInterval` + `api.close(handle)` + 只触发一次 `onExit`（规格 §6.4 / R6）
 - `stopGraceful` 按规格 §6.7 五步；`stopping` 标志保证幂等（先例 `src-main/process.ts:74`）
 - 抛错文案按规格 §6.5，`t()` 用字面量 key
@@ -192,8 +204,8 @@ function fakeApi(over: Partial<WinShellApi> = {}): WinShellApi & { calls: string
 - [ ] **步骤 6：Commit（由主代理在验收通过后执行）**
 
 ```bash
-git add src-main/shell-execute.ts src-main/shell-execute.test.ts
-git commit -m "feat(main): shell-execute.ts —— ShellExecuteEx 提权启动与句柄生命周期（规格 §6.2-§6.7）"
+git add src-main/shell-execute.ts src-main/shell-execute.test.ts src-main/i18n/dict.ts
+git commit -m "feat(main): shell-execute.ts —— ShellExecuteEx 提权启动与句柄生命周期，含 err.proc.uacCancelled 词典键（规格 §6.2-§6.7 / §6.5）"
 ```
 
 ---
@@ -201,7 +213,8 @@ git commit -m "feat(main): shell-execute.ts —— ShellExecuteEx 提权启动�
 ### 任务 3：`main.ts` 适配器接线 + 新词典键 + `ipc-ql.test.ts` 两处改写
 
 **文件：**
-- 修改：`src-main/main.ts:1038-1074`（注释 + `spawnExeProcess` 函数体）、`src-main/i18n/dict.ts`（zh `:299` 后、en `:641` 后）、`src-main/quick-launch.ts:5-6`（**仅注释**）
+- 修改：`src-main/main.ts:1038-1074`（注释 + `spawnExeProcess` 函数体）、`src-main/quick-launch.ts:5-6`（**仅注释**）
+- 核对不改：`src-main/i18n/dict.ts` 的两条键已在任务 2 步骤 2b 落地（索引 K15）—— 本任务只核对它们仍在、占位符只有 `{exe}`
 - 测试：`src-main/ipc-ql.test.ts:324-344`（标题与注释）、`:346-357`（失败路径）、`:423-468`（观察点）
 
 - [ ] **步骤 0：起点核对（真实行号，2026-10-13 实测）**
@@ -217,7 +230,9 @@ git commit -m "feat(main): shell-execute.ts —— ShellExecuteEx 提权启动�
 运行：`npx vitest run src-main/ipc-ql.test.ts`
 预期：FAIL —— 三处都红（`winShell` 尚不存在 / `ql_start` 仍按旧路径返回）。输出贴进 check 表 J 段。
 
-- [ ] **步骤 2：加词典键（先改行号大的 en，再改 zh，避免行号漂移）**
+- [ ] **步骤 2：核对词典键已在任务 2 落好（索引 K15）**
+
+本任务不再改 `dict.ts`。核对 zh `:299` 后与 en `:641` 后各有一行 `err.proc.uacCancelled`、占位符只有 `{exe}`；缺任一行 → 停下回任务 2 补，不在这里补写。下面三行是核对基准（逐字）：
 
 `dict.ts` zh 侧 `err.proc.spawnFail`（`:299`）之后插入一行，en 侧 `:641` 之后插入一行，逐字：
 
@@ -285,7 +300,7 @@ function spawnExeProcess(exe: string, configId: string | null): {
 - [ ] **步骤 6：Commit（由主代理在验收通过后执行）**
 
 ```bash
-git add src-main/main.ts src-main/i18n/dict.ts src-main/quick-launch.ts src-main/ipc-ql.test.ts
+git add src-main/main.ts src-main/quick-launch.ts src-main/ipc-ql.test.ts
 git commit -m "fix(main): 快捷启动 exe 改走 ShellExecuteEx 提权路径，UAC 取消给出可辨文案（规格 §6.1/§6.5/§6.6）"
 ```
 

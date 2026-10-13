@@ -3,7 +3,7 @@
 - 日期：2026-10-13
 - 状态：设计已由用户逐项确认（grill-me 共 13 问，口径见 §8）；**待写实现计划**，代码一行未改
 - 取代关系：本规格修订 `docs/superpowers/specs/2026-10-10-quick-launch-card-design.md` §7.3 的「可执行程序类型走 `spawn(exe, [], { windowsHide, stdio: 'ignore' })`、实现口径复用 `src-main/process.ts` 的 `ProcessState`（索引 K13）」（旧文档 `:168-169`）。旧文档已在 `b330a5c chore: clean docs and temp working files` 从工作区删除且未被 git 跟踪，本规格自带所需上下文，**不改写旧文档**（沿用 `2026-10-13-grid-fill-width-design.md` §6-Q6 的口径）
-- 取证方式：本文结论全部来自本机实测。探针脚本与原始输出在 `\temp\uac-probe\`（`.temp/` 被 `.gitignore:5` 的 `.*/` 忽略、不入库），关键数值在 §3 逐字记录
+- 取证方式：本文结论全部来自本机实测。探针脚本与原始输出在 `\temp\uac-probe\`（`.temp/` 被 `.gitignore:4` 的 `.*/` 忽略（实测：:4 = `.*/`，:5 = `!.superpowers/`）、不入库），关键数值在 §3 逐字记录
 
 ## 1 现象
 
