@@ -197,14 +197,21 @@ function close(): void { emit('close'); }
           <!-- 主进程校验文案（VALIDATION: / YAML:）原样显示（索引 K31(2)） -->
           <p v-if="saveError" class="error-text">{{ saveError }}</p>
 
-          <label class="label" style="display: block; margin-top: 8px;">{{ t('ql.modal.name') }}</label>
-          <input class="input" :class="{ error: attemptedSave && nameError !== null }" v-model="formName" />
-          <p v-if="attemptedSave && nameError" class="error-text">{{ nameError }}</p>
-
           <div class="flag-grid">
-            <label class="label flag-label">{{ t('ql.modal.type') }}</label>
-            <div class="dropdown">
-              <Dropdown :value="formType" :options="typeOptions" @update:value="onTypeChange" />
+            <!-- 名字 + 类型同一行（2026-10-13 直接改）：名字输入框占控件列的余下宽度，
+                 类型下拉定宽（.type-field，见下方样式）贴在最右。
+                 空名报错放在 .name-cell 内部（名字那一格下方），不占网格列——
+                 否则 grid 的自动排布会把下一行的「终端」标签挤到报错同一行。 -->
+            <label class="label flag-label name-label">{{ t('ql.modal.name') }}</label>
+            <div class="name-cell">
+              <div class="row-cell">
+                <input class="input" :class="{ error: attemptedSave && nameError !== null }" v-model="formName" />
+                <label class="label type-label">{{ t('ql.modal.type') }}</label>
+                <div class="dropdown type-field">
+                  <Dropdown :value="formType" :options="typeOptions" @update:value="onTypeChange" />
+                </div>
+              </div>
+              <p v-if="attemptedSave && nameError" class="error-text">{{ nameError }}</p>
             </div>
 
             <!-- 命令行：终端下拉（加载中禁用 + 占位文案，E3）+ 命令输入框 -->
@@ -322,8 +329,20 @@ function close(): void { emit('close'); }
   text-align: right;
   white-space: nowrap;
 }
-.row-cell { display: flex; gap: 8px; min-width: 0; }
+.row-cell { display: flex; gap: 8px; min-width: 0; align-items: center; }
 .row-cell .input { flex: 1; }
+/* 名字 + 类型同行（2026-10-13 直接改）：
+   .name-cell = 网格第二列里的纵向容器（输入行 + 空名报错），min-width:0 让里面的 flex 行能收缩；
+   .type-field = 类型下拉定宽。原来它跟着 style.css:289 的 .dropdown { width: 100% } 占满控件列
+   （520px 弹窗里 ≈ 418px），现按「可执行程序」/「Command line」两个标签都能放下定到 140px。
+   选择器写成 .row-cell .type-field（特异性 0,2,0 + scoped 属性）以压过 style.css:289 的 width:100%。 */
+.name-cell { min-width: 0; }
+/* 名字标签对齐到输入行本身：.flag-grid 是 align-items:center，空名报错出现后 .name-cell 变高，
+   默认居中会把标签压到「输入框 + 报错」两行的中间。改为顶对齐 + 8px 内边距
+   = (32px 控件高 − 17px 行高) / 2，有无报错都对齐输入框的中线。 */
+.flag-grid .name-label { align-self: start; padding-top: 8px; }
+.row-cell .type-label { flex: none; white-space: nowrap; }
+.row-cell .type-field { flex: none; width: 140px; }
 .file-btn {
   flex-shrink: 0; height: var(--h-control); display: inline-flex; align-items: center; justify-content: center;
   padding: 0 14px; font-size: var(--fs-label);

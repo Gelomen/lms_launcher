@@ -541,6 +541,42 @@ describe('QuickLaunchModal', () => {
     w.unmount();
   });
 
+  // 2026-10-13（用户直接改）：名字与类型同一行 —— 名字输入框占控件列余下宽度，
+  // 类型下拉定宽（.type-field，见 QuickLaunchModal.vue 的 <style scoped>）贴在名字输入框右边。
+  // 这里钉的是 DOM 结构：同一个 .row-cell 里的兄弟节点，且类型在名字之后（= 视觉右侧）。
+  it('name_input_and_type_dropdown_share_one_row', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const nameInput = inputOf(t('ql.modal.name')) as HTMLInputElement;
+    const typeField = dropdownOf(t('ql.modal.type')) as HTMLElement;
+    expect(nameInput).not.toBe(null);
+    expect(typeField).not.toBe(null);
+
+    // 同一行 = 同一个行容器里的兄弟节点（此前名字在 .flag-grid 之外、类型另占一行）
+    const row = nameInput.parentElement as HTMLElement;
+    expect(row.classList.contains('row-cell'), '名字输入框不在 .row-cell 行容器里').toBe(true);
+    expect(typeField.parentElement).toBe(row);
+
+    // 类型在名字输入框右边（DOM 顺序即视觉顺序：flex 行不反向）
+    const kids = [...row.children];
+    expect(kids.indexOf(typeField)).toBeGreaterThan(kids.indexOf(nameInput));
+    // 定宽靠 .type-field（压过 style.css:289 的 .dropdown { width: 100% }）；缺类 = 又占满整列
+    expect(typeField.classList.contains('type-field')).toBe(true);
+
+    // 空名报错仍在名字那一格内（不占网格列，否则会把下一行「终端」标签挤到报错同一行）
+    saveBtn().click();
+    await flush();
+    const err = row.parentElement!.querySelector('.error-text');
+    expect(err, '空名提示不在名字那一格里').not.toBe(null);
+    expect(err!.textContent).toBe(t('ql.err.nameRequired'));
+    // 下一行字段仍是「label + 控件」相邻（controlOf 的相邻兄弟前提没被 grid 自动排布打乱）
+    expect(dropdownOf(t('ql.modal.terminal'))).not.toBe(null);
+    expect(inputOf(t('ql.modal.cmd'))).not.toBe(null);
+    w.unmount();
+  });
+
   // Minor 9：删除确认文案用 trim 后的名字（与 save() 的 formName.trim() 同一处理），
   // 否则带尾空格的表单值在确认框里显示成「webui   」
   it('delete_confirm_message_uses_trimmed_name', async () => {
