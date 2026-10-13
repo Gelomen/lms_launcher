@@ -100,7 +100,9 @@ vi.mock('./quick-launch-terminals', async (importOriginal) => {
 // 取不到（= 守卫退回 `?? 默认值` 的静默降级）时相关用例必须红，而不是整文件报错。
 import * as mainModule from './main';
 import './preload';
-import { ProcessState } from './process';
+// 任务 3（规格 §6.6）：exe 类型的观察点从 ProcessState.prototype.launch 换到 winShell.shellExecute。
+// 只替换 shellExecute 一个属性（其余六个方法保持真实现），finally 里还原。
+import { winShell } from './shell-execute';
 
 /** main.ts 里强制 qlStartContext 不变量的守卫（重要 #2）；不存在 → undefined */
 const GUARD_EXPORT = 'qlStartContextOrThrow';
@@ -321,13 +323,13 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
     }
   }, 60000);
 
-  it('exe 配置：{ tabId: null }；每配置一个新 ProcessState，且不动 llama-server 的 ps 单例（索引 K13）', async () => {
+  it('exe 配置：{ tabId: null }；每配置一个新 ShellExecProcess（规格 §6.6），且不动 llama-server 的 ps 单例', async () => {
     await invoke('ql_save', 'qlshape02', { name: '形状门 exe A', type: 'exe', exe: 'notepad.exe' });
     await invoke('ql_save', 'qlshape03', { name: '形状门 exe B', type: 'exe', exe: 'notepad.exe' });
 
     const a = await invoke('ql_start', 'qlshape02');
     expect(a).toEqual({ tabId: null });
-    // 若复用 main.ts:59 的 ps 单例，第二次 launch 会抛 STATE:（process.ts:28）
+    // 若复用 main.ts:64 的 ps 单例，第二条会与第一条撞车（规格 §6.6 的「每配置一个新实例」不变量）
     const b = await invoke('ql_start', 'qlshape03');
     expect(b).toEqual({ tabId: null });
 
@@ -335,7 +337,7 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
       qlshape02: { running: true, stopping: false },
       qlshape03: { running: true, stopping: false },
     });
-    // 既有 get_state 通道读的是 ps 单例：快捷启动的 exe 不得污染它
+    // 既有 get_state 通道读的是 main.ts:64 的 ps 单例：快捷启动的 exe 不得污染它
     expect(invoke('get_state')).toEqual({ running: false, stopping: false, configId: null });
 
     await invoke('ql_stop', 'qlshape02');
@@ -343,17 +345,30 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
     expect(invoke('ql_states')).toEqual({});
   }, 30000);
 
-  it('exe 启动失败：前缀由 ProcessState 自带（索引 K11(4)），并经既有日志通道反馈（check E4）', async () => {
+  it('exe 启动失败：前缀由 shell-execute 自带（规格 §6.5），经既有日志通道反馈且 `ql_start` 被拒', async () => {
     await invoke('ql_save', 'qlshape04', { name: '形状门 badexe', type: 'exe', exe: 'no-such-exe-zzz.exe' });
-    const res = await invoke('ql_start', 'qlshape04');
-    expect(res).toEqual({ tabId: null }); // 启动失败是异步的（child.on('error')），start 本身已返回
-    await waitFor(
-      () => cap.sends.some((s) => s.channel === 'log-line' && /^PROC:/.test(String((s.payload as { line?: string }).line ?? ''))),
-      5000, 'PROC: 日志行',
-    );
-    const logLines = sendsOf('log-line') as Array<{ line: string; stream: string }>;
-    expect(logLines.some((l) => l.stream === 'sys' && /^PROC:/.test(l.line))).toBe(true);
-    await invoke('ql_stop', 'qlshape04');
+    // 观察点 = 真接缝的 shellExecute 属性。这里必须替换它：真 ShellExecuteEx 打一个不存在的 exe
+    // 会弹系统错误框并把 vitest worker 卡住（规格 E19 / §9-R8，索引 R8 / K17）；真路径的失败由任务 4
+    // 的真机清单守，本用例只钉适配器这一层的分工（同步 reject + 既有日志通道 + 可辨文案）。
+    const original = winShell.shellExecute;
+    winShell.shellExecute = () => ({ ok: false, handle: null, win32Error: 1223 }); // 用户在 UAC 点了「否」
+    try {
+      // 新路径：失败在调用栈里同步可见 → ql_start 直接 reject（规格 §6.6，取代旧「先返回、错误异步到」）
+      await expect(invoke('ql_start', 'qlshape04')).rejects.toThrow(/^PROC: /);
+      await waitFor(
+        () => cap.sends.some((s) => s.channel === 'log-line' && /^PROC:/.test(String((s.payload as { line?: string }).line ?? ''))),
+        5000, 'PROC: 日志行',
+      );
+      const logLines = sendsOf('log-line') as Array<{ line: string; stream: string }>;
+      const procLine = logLines.find((l) => l.stream === 'sys' && /^PROC:/.test(l.line));
+      expect(procLine, 'sys 通道里必须有 PROC: 行 —— App.vue:477-478 的 catch 只负责回落按钮，原因行只由这条日志负责').toBeTruthy();
+      // 索引 R1 / K2：UAC 取消必须给出可辨文案（带 exe），不再是 spawn 时代的 EACCES
+      expect(procLine!.line).toContain(t('err.proc.uacCancelled', { exe: 'no-such-exe-zzz.exe' }));
+      expect(procLine!.line).not.toContain('EACCES');
+      await invoke('ql_stop', 'qlshape04');
+    } finally {
+      winShell.shellExecute = original;
+    }
   }, 30000);
 });
 
@@ -420,37 +435,36 @@ describe('修复轮 1 · 重要 #2：qlStartContext 槽的不变量由代码强�
     expect(() => (guard as (s: string) => unknown)('probe')).toThrow(/^STATE:/);
   });
 
-  it('两个 exe 配置并发 ql_start：launch(exe, [], configId) 各归各，且 spawnExe 处槽必然非空且属于本次', async () => {
+  it('两个 exe 配置并发 ql_start：ShellExecuteEx 各归各（规格 §6.6），且 spawnExe 处槽必然非空且属于本次', async () => {
     const guard = guardOf();
-    const calls: Array<{ args: string[]; configId: string | null; ctxOk: boolean }> = [];
-    const original = ProcessState.prototype.launch;
-    // 观察点 = K13 要求的那次调用本身：process.ts:27 的第三参数就是 runningConfigId 的来源。
-    ProcessState.prototype.launch = function (
-      this: ProcessState, exe: string, args: string[], configId: string | null, cwd?: string,
-    ): Promise<void> {
+    // 两条配置的 exe 必须不同：观察点记的是 lpFile，只有两条不同才抓得出「串到别的请求」（表 E4）
+    const EXE_OF: Record<string, string> = { qlconc01: 'notepad.exe', qlconc02: 'mspaint.exe' };
+    const calls: Array<{ file: string; ctxOk: boolean }> = [];
+    const original = winShell.shellExecute;
+    // 观察点 = 新路径的那次调用本身（规格 §6.6）：只记参数，随后原样真启动（两条真进程，表 E8）。
+    winShell.shellExecute = (file: string, nShow: number) => {
       let ctxOk = false;
       try {
         const ctx = guard ? guard('probe') : undefined;
-        ctxOk = !!ctx && ctx.configId === configId; // 串到别的请求 / 槽为 null → false
+        // 槽里的 configId 必须正是这条 lpFile 所属的配置：串到别的请求 / 槽为 null → false
+        ctxOk = !!ctx && EXE_OF[ctx.configId] === file;
       } catch {
         ctxOk = false;
       }
-      calls.push({ args, configId, ctxOk });
-      return original.call(this, exe, args, configId, cwd);
-    } as typeof ProcessState.prototype.launch;
+      calls.push({ file, ctxOk });
+      return original(file, nShow);
+    };
 
     try {
-      await invoke('ql_save', 'qlconc01', { name: '修复 并发 A', type: 'exe', exe: 'notepad.exe' });
-      await invoke('ql_save', 'qlconc02', { name: '修复 并发 B', type: 'exe', exe: 'notepad.exe' });
+      await invoke('ql_save', 'qlconc01', { name: '修复 并发 A', type: 'exe', exe: EXE_OF.qlconc01 });
+      await invoke('ql_save', 'qlconc02', { name: '修复 并发 B', type: 'exe', exe: EXE_OF.qlconc02 });
 
       const [a, b] = await Promise.all([invoke('ql_start', 'qlconc01'), invoke('ql_start', 'qlconc02')]);
       expect(a).toEqual({ tabId: null });
       expect(b).toEqual({ tabId: null });
 
-      // 各自的 configId 不串（顺序 = 两次 invoke 的顺序：两个 handler 各自同步跑完再让出）
-      expect(calls.map((c) => c.configId)).toEqual(['qlconc01', 'qlconc02']);
-      // 索引 K13 逐字：launch(exe, [], configId)
-      for (const c of calls) expect(c.args).toEqual([]);
+      // 各自的 lpFile 不串（顺序 = 两次 invoke 的顺序：两个 handler 各自同步跑完再让出）
+      expect(calls.map((c) => c.file)).toEqual([EXE_OF.qlconc01, EXE_OF.qlconc02]);
       // 每次 spawnExe 读到的槽就是本次启动的（槽为 null 或串到另一条 → false）
       expect(calls.map((c) => c.ctxOk)).toEqual([true, true]);
 
@@ -458,10 +472,10 @@ describe('修复轮 1 · 重要 #2：qlStartContext 槽的不变量由代码强�
         qlconc01: { running: true, stopping: false },
         qlconc02: { running: true, stopping: false },
       });
-      // 既有 get_state 读的是 main.ts:59 的 ps 单例：两条快捷启动 exe 不得污染它
+      // 既有 get_state 读的是 main.ts:64 的 ps 单例：两条快捷启动 exe 不得污染它
       expect(invoke('get_state')).toEqual({ running: false, stopping: false, configId: null });
     } finally {
-      ProcessState.prototype.launch = original;
+      winShell.shellExecute = original;
       await invoke('ql_stop', 'qlconc01');
       await invoke('ql_stop', 'qlconc02');
     }

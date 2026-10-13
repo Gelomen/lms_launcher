@@ -226,8 +226,8 @@ git commit -m "feat(main): shell-execute.ts —— ShellExecuteEx 提权启动�
 - [ ] **步骤 1：先改测试（三处），验证它们变红**
 
 1. `:324-344`：只改标题与注释——「每配置一个新 ProcessState」→「每配置一个新 ShellExecProcess（规格 §6.6）」；**断言一条不动**（两条 `ql_start` 各自 `{tabId:null}`、两条各自 running、`get_state` 不被污染、`ql_stop` 后清空）
-2. `:346-357`：改为新路径。标题改「exe 启动失败：前缀由 shell-execute 自带（规格 §6.5），经既有日志通道反馈且 `ql_start` 被拒」；断言改为 `await expect(invoke('ql_start', 'qlshape04')).rejects.toThrow(/^PROC: /)` + 仍断言 `log-line` 里出现 `stream==='sys'` 且 `/^PROC:/` 的行（`App.vue:477-478` 的回落路径依赖这条日志）。删除 `expect(res).toEqual({ tabId: null })`——旧行为（先返回、错误异步到）已被同步失败取代（规格 §6.6）
-3. `:423-468`：观察点换成 `winShell.shellExecute`（`import { winShell } from './shell-execute'`；保存原函数、替换属性、finally 还原）。保留同等强度的断言：两次并发 `ql_start` 记录到的 `file` 分别是两条配置的 exe、调用时 `guardOf()('probe')` 返回的 configId 与本次一致、`ql_states` 两条各自 running、`get_state` 不被污染。删掉 `launch(exe, [], configId)` 的 `args` 逐字断言（K13 口径作废，规格 §7.1）
+2. `:346-357`：改为新路径。标题改「exe 启动失败：前缀由 shell-execute 自带（规格 §6.5），经既有日志通道反馈且 `ql_start` 被拒」；断言改为 `await expect(invoke('ql_start', 'qlshape04')).rejects.toThrow(/^PROC: /)` + 仍断言 `log-line` 里出现 `stream==='sys'` 且 `/^PROC:/` 的行（`App.vue:477-478` 的回落路径依赖这条日志）。删除 `expect(res).toEqual({ tabId: null })`——旧行为（先返回、错误异步到）已被同步失败取代（规格 §6.6）。**实现期补充（规格 E19 / §9-R8，索引 K17）**：本用例必须把 `winShell.shellExecute` 临时替换成返回 `{ ok:false, handle:null, win32Error:1223 }` 的假实现（保存原函数、`finally` 还原）——真路径打一个不存在的 exe 会弹 Shell 的系统错误框并把 vitest worker 卡住；替换后顺带钉 UAC 取消的可辨文案（含 `t('err.proc.uacCancelled', { exe })`、不含 `EACCES`）。真路径的失败由任务 4 的真机清单守
+3. `:423-468`：观察点换成 `winShell.shellExecute`（`import { winShell } from './shell-execute'`；保存原函数、替换属性、finally 还原）。保留同等强度的断言：两次并发 `ql_start` 记录到的 `file` 分别是两条配置的 exe、调用时 `guardOf()('probe')` 返回的 configId 与本次一致、`ql_states` 两条各自 running、`get_state` 不被污染。删掉 `launch(exe, [], configId)` 的 `args` 逐字断言（K13 口径作废，规格 §7.1）。**实现期补充（表 E4 的牙）**：两条配置的 exe 必须**不同**（实测用 `notepad.exe` / `mspaint.exe`）——两条都写同一个 exe 时「各自的 `file` 不串」抓不到任何错误；包装只做透传（记下参数再调用原函数），其余六个方法保持真实现，所以两条真进程照常启动 / 停止（表 E8）
 
 运行：`npx vitest run src-main/ipc-ql.test.ts`
 预期：FAIL —— 三处都红（`winShell` 尚不存在 / `ql_start` 仍按旧路径返回）。输出贴进 check 表 J 段。
@@ -271,7 +271,7 @@ function spawnExeProcess(exe: string, configId: string | null): {
   try {
     proc = launchShellExe(winShell, exe);
   } catch (e) {
-    emitLog(String(e), 'sys'); // 与旧 :1067 同一通道、同一前缀（索引 G7）
+    emitLog(e instanceof Error ? e.message : String(e), 'sys'); // 与旧 :1067 同一通道、同一前缀（索引 G7）；取 message 不取 String(e)（规格 E21 / §8-K7）
     throw e;
   }
   return {

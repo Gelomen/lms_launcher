@@ -19,6 +19,7 @@ import { homedir } from 'node:os';
 import { qlLoad, qlSave, qlDelete, type QuickLaunchEntry, type QuickLaunchList, type TerminalId } from './quick-launch-config';
 import { detectTerminals, type TerminalInfo } from './quick-launch-terminals';
 import { QuickLaunchManager } from './quick-launch';
+import { launchShellExe, winShell, type ShellExecProcess } from './shell-execute'; // 2026-10-13-quick-launch-elevated-exe §6.6
 
 // 更新调度任务名（schtasks）：2026-09-05 探针矩阵（.temp/decisive4~11）证明本机 Electron 子进程
 // 无论 detached / 非 detached / cmd 包裹 / windowsHide / 双叉 / VBS 均无法既真正执行脚本又
@@ -1036,40 +1037,35 @@ function detectTerminalsAsync(): Promise<TerminalInfo[]> {
 }
 
 /**
- * exe 类型的进程适配器（索引 K13 / 规格 §7.3）：**每个配置一个新 ProcessState**，
- * 绝不复用 :59 的 ps 单例——它只持一个 child 与 runningConfigId，会与 llama-server 撞车。
- * process.ts 本期一行都不改（索引 G4），故按效果满足 §7.3 的「无终端、输出丢弃」：
- * 其 stdio 是 ["ignore","pipe","pipe"]（process.ts:33），适配器必须 takePipes()（:62）后把
- * 两路 .resume() 排空丢弃，否则管道写满会阻塞子进程。错误前缀由 ProcessState 自带
- * （:28 STATE: / :46 PROC:），与索引 K11(4) 一致，这里不再包前缀。
- * launch() 的函数体内没有 await，调用返回时子进程已 spawn、state 已是 running（process.ts:32-58），
- * 所以随后同步 takePipes() 取得到管道；ENOENT 一类是异步 child.on('error') →
- * onExit(-1, 'PROC: …')（process.ts:37-47），promise 不 reject。
- * 任务 6 审查 Minor #1：原先「先接住 launch 的同步失败、takePipes 报错时优先抛它」是**死代码**——
- * .catch 的回调是微任务，而 takePipes 的 catch 块在同一同步帧就跑完（launchError 此刻必为 null）；
- * 且新建实例的 state 必为 'ready'，process.ts:28 的 STATE: 分支到不了。两种前缀都属 G7、行为无影响，
- * 但注释夸大了 → 删掉该变量，下面的 .catch 只为兜住这条到不了的路径、不产生 unhandled rejection。
+ * exe 类型的进程适配器（2026-10-13-quick-launch-elevated-exe §6.6，取代旧 §7.3 / 索引 K13）：
+ * **每个配置一个新 ShellExecProcess**，绝不复用 :64 的 ps 单例——它只持一个 child 与
+ * runningConfigId，会与 llama-server 撞车（这条不变量与旧口径相同，:324-344 的用例仍在守）。
+ * 为什么不再走 spawn：CreateProcessW 不做 UAC 提权，manifest 为 requireAdministrator 的 exe
+ * 直接 EACCES（规格 §2 / E1-E3）。ShellExecuteEx 才有权按 manifest 提权（E6）。
+ * 失败（含用户在 UAC 点「否」= GetLastError 1223）先经既有日志通道 emitLog(…, 'sys') 再原样抛出：
+ * 渲染端 App.vue:477-478 的 catch 只负责把按钮回落，原因行只由这里负责（旧路径也是这个分工）。
+ * configId 形参不再被本函数使用，但 :1080 的接线（本表写的 :1084 因新块比旧块短 5 行、又新增一行 import 而上移）必须保持调用 qlStartContextOrThrow('spawnExe')
+ * ——那是「ql_start 在途」的槽守卫（修复轮 1 · 重要 #2），删掉它就退化成静默降级。
  */
 function spawnExeProcess(exe: string, configId: string | null): {
   onExit(cb: (code: number) => void): void;
   stopGraceful(s: number): Promise<void>;
   isRunning(): boolean;
 } {
-  const p = new ProcessState();
-  void p.launch(exe, [], configId).catch(() => { /* 见上：真机上到不了；只为不产生 unhandled rejection */ });
-  const { stdout, stderr } = p.takePipes();
-  stdout.resume();
-  stderr.resume();
+  void configId; // 见上：只为保留 :1080 接线的语义，不参与启动
+  let proc: ShellExecProcess;
+  try {
+    proc = launchShellExe(winShell, exe);
+  } catch (e) {
+    // 取 e.message 而不是 String(e)：String(new Error('PROC: …')) 会得到「Error: PROC: …」，
+    // 行首前缀就被吃掉了（索引 G7 的前缀口径；规格 E21 / §8-K7）
+    emitLog(e instanceof Error ? e.message : String(e), 'sys'); // 与旧 :1067 同一通道、同一前缀
+    throw e;
+  }
   return {
-    onExit(cb) {
-      p.onExit((code, error) => {
-        // 启动失败（ENOENT 等）的 PROC 文本进日志区：exe 类型没有页签（与 :326-331 的 llama-server 同模式）
-        if (error) emitLog(error, 'sys');
-        cb(code);
-      });
-    },
-    stopGraceful: (s: number) => p.stopGraceful(s),
-    isRunning: () => p.isRunning(),
+    onExit(cb) { proc.onExit((code) => cb(code)); },
+    stopGraceful: (s: number) => proc.stopGraceful(s),
+    isRunning: () => proc.isRunning(),
   };
 }
 

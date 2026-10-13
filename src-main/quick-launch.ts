@@ -3,7 +3,7 @@
 // 规格：docs/superpowers/specs/2026-10-10-quick-launch-card-design.md §7.1 / §7.3 / §7.5 / §12.4
 // 计划：docs/superpowers/plans/2026-10-10-quick-launch-card.md §任务 5（C1–C5 接口逐字，任务 6/7/13 据此调用）
 // 边界：不 import src-main/process.ts，也不改它（check B4 / G4）。exe 类型走 deps.spawnExe 接缝，
-//       生产侧由任务 6 接 ProcessState 适配器（规格 §7.3 的 windowsHide/stdio 由那一侧决定）。
+//       生产侧接 shell-execute（ShellExecuteEx，2026-10-13-quick-launch-elevated-exe §6.6）。
 import { execFileSync } from 'node:child_process';
 import * as pty from '@lydell/node-pty';
 import { t } from './i18n';

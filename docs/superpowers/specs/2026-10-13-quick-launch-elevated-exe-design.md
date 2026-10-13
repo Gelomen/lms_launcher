@@ -59,6 +59,7 @@ PROC: E:\QiYou\QiYou.exe 启动失败: spawn E:\QiYou\QiYou.exe EACCES
 | E18 | 基线（写本规格时实测）：`npm test` → `Test Files 47 passed (47)`、`Tests 826 passed (826)`，exit 0 | `npm test` 2026-10-13 19:25 |
 | E19 | **`SEE_MASK_FLAG_NO_UI` 压不住「文件 / 路径不存在」这一类 Shell 错误框**：`fMask` 取 `0x44`、`0x144`（另加 `SEE_MASK_FLAG_DDEWAIT`）、`0x104` 三种，`C:\no-such-dir\no-such.exe` 与 `Z:\no-such-dir\no-such.exe`（无效驱动器）**都弹**模态框并把调用线程卡死（node 进程 4s 未返回，需人点「确定」）；`SetErrorMode(0x3)` 也压不住。同一次调用里解码回读确认 `fMask_in_mem` 就是写入值、`cbSize=112`、`sizeof(SE)=112` → 不是传参错，是 Shell 在这条错误类上不认这个位。对照组：存在但无关联的 `.xyz` → `ok=true`、`hInstApp=42`、不阻塞（说明不是「所有 UI 都被禁掉」） | `.temp/uac-probe/no-ui-probe.mjs`（日志 `no-ui-A..E.log`）、`.temp/uac-probe/errmode-probe.mjs`（`errmode-G.log`），2026-10-13 21:44 |
 | E20 | 真接缝冒烟可用的**无 UI、无副作用**真实 Win32 调用 = 当前进程伪句柄 `-1`：`GetProcessId(-1) = 本进程 pid`、`WaitForSingleObject(-1, 0) = 258`（WAIT_TIMEOUT）、`GetExitCodeProcess(-1,…) = true / code=259`、`CloseHandle(-1) = true`；koffi 对 JS 数字 `-1` 与 `0xffffffffffffffffn` 都按 `void *` 正确传（传字符串 `'0xffffffffffffffff'` 则退化成 0，不可用） | `.temp/uac-probe/pseudo-handle-probe.mjs`，2026-10-13 21:45 |
+| E21 | `String(new Error('PROC: x'))` = `"Error: PROC: x"`；`e instanceof Error ? e.message : String(e)` = `"PROC: x"`（实测 `node -e`，2026-10-13 22:5x） | 适配器把异常写进日志通道时若照 §6.6 原伪代码写 `String(e)`，日志行以 `Error: ` 开头 → 破坏索引 G7「前缀在行首」的口径与本节「日志出现 `PROC: …`」的可观察要求。已定口径见 §8-K7；任务 3 的 `ipc-ql.test.ts` 用例（`/ ^PROC:/` 断言）实测红因正是 `TIMEOUT waiting for PROC: 日志行` |
 
 ## 4 目标
 
@@ -169,7 +170,7 @@ export class ShellExecProcess {
 ```
 spawnExeProcess(exe, configId):
   try { proc = launchShellExe(winShell, exe) }
-  catch (e) { emitLog(String(e), 'sys'); throw e }  // 日志通道与现状 :1067 一致；rethrow 让 ql_start reject → App.vue:477 回落按钮
+  catch (e) { emitLog(e instanceof Error ? e.message : String(e), 'sys'); throw e }  // 通道与现状 :1067 一致；取 message 不取 String(e)（E21 / §8-K7：日志行必须以 PROC: 开头）。rethrow 让 ql_start reject → App.vue:477 回落按钮
   return { onExit(cb) { proc.onExit((code) => cb(code)) },
            stopGraceful: (s) => proc.stopGraceful(s),
            isRunning: () => proc.isRunning() }
@@ -266,6 +267,7 @@ stopGraceful(timeoutSecs):
 - **K4** `fMask` 加 `SEE_MASK_FLAG_NO_UI`（§6.3）。**实现期更正**：实测它不覆盖「文件 / 路径不存在」那类弹窗（E19），该位仍保留（对其他 Shell UI 有效），该类弹窗作为已知边界接受（§9-R8）
 - **K5** 主线程同步阻塞本次接受，与 `spawnSync` 同口径（§6.9）
 - **K6** `quick-launch.ts:5-6` 文件头注释里「生产侧由任务 6 接 ProcessState 适配器」一句随实现同步改写（**只改注释，可执行代码零改动**）——仓库惯例是注释随其描述的取值一起更新，留着会指错
+- **K7** 适配器写日志通道时取 `e.message`，不取 `String(e)`（E21）：`String(new Error('PROC: …'))` 会得到 `Error: PROC: …`，行首前缀就不是 `PROC:` 了（索引 G7 的五前缀口径要求前缀在行首）。可观察要求（本节末条「日志出现 `PROC: <exe> 已取消管理员权限请求`」）只有取 `message` 才成立
 
 ## 9 风险与未验证项
 
