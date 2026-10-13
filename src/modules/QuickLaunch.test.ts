@@ -255,4 +255,37 @@ describe('QuickLaunch card', () => {
       row.remove();
     }
   });
+
+  // 卡片高度恒定（2026-10-13 用户反馈 + 截图：快捷启动配置多时卡片一路往下长，把整行 grid 都撑开）：
+  // 与模板卡「方案 B」同一架构（TemplateModule.test.ts:170-188）——列表包在 .template-list 固定高度
+  // 容器里，超出走容器内部滚动。类名复用模板卡那一份（与 .tpl-rows 复用同一先例，check F1），
+  // 两张卡因此恒等高，grid 行高不再由条目数决定。
+  it('list_wrapped_in_fixed_height_scroll_container', async () => {
+    if (!document.getElementById('__global-css__')) {
+      const st = document.createElement('style');
+      st.id = '__global-css__';
+      st.textContent = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
+      document.head.appendChild(st);
+    }
+    const many = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`id${i}`, entry(`item-${i}`)]));
+    // attachTo: document.body —— 读 computed style 必须让节点在 document 里（happy-dom 对游离节点返回空串）
+    mockLms({ items: many, invalid: [] });
+    const w = mount(QuickLaunch, { props: { states: {} as States }, attachTo: document.body });
+    await flush();
+
+    // 结构契约：卡片内恰一个滚动容器，全部行都在它内部（不在卡片正文里）
+    expect(w.findAll('.module-quick .template-list').length).toBe(1);
+    expect(w.findAll('.module-quick .template-list .tpl-row').length).toBe(6);
+    // 空态文案同样在容器内（卡片高度与条目数无关，与模板卡一致）
+    const empty = mountCard({ items: {}, invalid: [] });
+    await flush();
+    expect(empty.find('.module-quick .template-list p.label').exists()).toBe(true);
+    empty.unmount();
+
+    // CSS 契约：固定高度 + 纵向滚动（读真实 style.css 的 computed style，同上一个用例的手法）
+    const cs = getComputedStyle(w.find('.module-quick .template-list').element);
+    expect(cs.height).toBe('161px');
+    expect(cs.overflowY).toBe('auto');
+    w.unmount();
+  });
 });

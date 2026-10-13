@@ -320,7 +320,13 @@ body {
 /* ---- 模板列表固定高度（任务 11 方案 B 同架构；2026-08-26 高度 192 → 161）：
    2026-08-26 定稿：固定 161px + h2 块 34 + padding 32 + border 2 = 卡 229–237（= 左列 .stack 实测 237），
    消除「模板少时右卡比左列高」的底部留白；多模板超出 161px → 列表内部滚动条（行卡 44px/条），不足留白。
-   （2026-09 起 GPU 卡片为模板右侧独立列，模板卡自身高度定稿值不变。） */
+   （2026-09 起 GPU 卡片为模板右侧独立列，模板卡自身高度定稿值不变。）
+   2026-10-13（用户反馈 + 截图：快捷启动配置一多卡片就无限长、把整行 grid 撑开）：
+   快捷启动卡复用本类（QuickLaunch.vue 的列表容器），不再新造第二份高度——两张卡恒等高、
+   行高由条目数决定的问题一并消除。快捷启动行含 32px 状态按钮（.btn），实测 50px/条，
+   161px 内可见 ≈2.9 行、其余走内部滚动；改高度只改这一处，两卡同步。
+   顺带生效：下方 .template-list .tpl-row .icon-btn::after（:501，行内 tooltip 改挂左侧）与
+   :397/:401/:406 的滚动条美化同样覆盖快捷启动行——overflow 容器会裁掉朝上的 tooltip，必须同规则。 */
 .template-list {
   height: 161px;
   margin-top: 8px;
@@ -379,7 +385,8 @@ body {
 }
 
 /* ---- #12 滚动条美化（两态透明度：idle 隐形 / 容器 hover 浮现 ≈5%；
-     覆盖 .dropdown-panel(下拉) / .template-list(模板列表) / .log-view(日志) / .tab-bar(页签条横向滚动，任务 10)）---- */
+     覆盖 .dropdown-panel(下拉) / .template-list(模板列表 + 快捷启动列表，同一容器类) / .log-view(日志) /
+     .tab-bar(页签条横向滚动，任务 10)）---- */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {

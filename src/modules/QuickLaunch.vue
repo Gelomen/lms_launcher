@@ -154,35 +154,43 @@ onMounted(() => { void reload(); });
         <FontAwesomeIcon :icon="byPrefixAndName.fas['file-circle-plus']" />
       </button>
     </div>
-    <!-- YAML 坏了等真错误（ql_list 不抛 MISSING）；无效条目不在此列，它们进 invalid 计数提示 -->
-    <p v-if="error" class="error-text">{{ error }}</p>
-    <!-- 规格 §5.2：单条非法 → 跳过并把 id 收进 invalid，卡片顶部提示「N 条配置无效，已跳过」 -->
-    <p v-if="list && list.invalid.length > 0" class="label">{{ t('ql.invalid', { n: list.invalid.length }) }}</p>
     <div v-if="tip" class="tpl-tip" :style="{ left: tip.x + 'px', top: tip.y + 'px' }">{{ tip.text }}</div>
-    <!-- 行卡片复用模板卡的 .tpl-rows/.tpl-row/.tpl-row__id/.tpl-row__actions（check F1），不新造行样式 -->
-    <div v-if="list" class="tpl-rows">
-      <div v-for="id in Object.keys(list.items)" :key="id" class="tpl-row">
-        <span class="tpl-row__id" :data-tooltip="tipFor(id)"
-          @mouseenter="(e) => onLabelEnter(e as MouseEvent, id)" @mouseleave="onLabelLeave">{{ rowName(id) }}</span>
-        <!-- 按钮顺序 = [复制][编辑][启动/停止]（规格 §4 / check E7） -->
-        <div class="tpl-row__actions">
-          <button class="icon-btn icon-btn--sm" :data-tooltip="t('ql.btn.copy')" :aria-label="t('ql.btn.copy')"
-            :disabled="copying" @click="onCopy(id)">
-            <FontAwesomeIcon :icon="byPrefixAndName.fat['copy']" />
-          </button>
-          <button class="icon-btn icon-btn--sm" :data-tooltip="t('ql.btn.edit')" :aria-label="t('ql.btn.edit')" @click="openEdit(id)">
-            <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
-          </button>
-          <!-- 状态按钮复用 LaunchBar 的 .btn-launch（紫）/.btn-danger（红）与 rocket/stop（check F2）；
-               stopping → 半角三点 ... 并禁用（与 LaunchBar.vue:129 逐字一致，索引 K30） -->
-          <button :class="stateOf(id).running ? 'btn btn-danger' : 'btn btn-launch'"
-            :data-tooltip="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
-            :aria-label="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
-            :disabled="stateOf(id).stopping" @click="onToggle(id)"><template v-if="!stateOf(id).running"><FontAwesomeIcon :icon="byPrefixAndName.fas['rocket']" style="font-size: 16px;" /></template><span v-else-if="stateOf(id).stopping">...</span><FontAwesomeIcon v-else :icon="byPrefixAndName.fas['stop']" style="font-size: 14px;" /></button>
+    <!-- 列表容器复用模板卡的 .template-list（2026-10-13 用户反馈 + 截图：条目一多卡片就一路往下长，
+         连带把整行 grid 撑开）。与模板卡「方案 B」同架构：固定高度 + 内部滚动，卡片高度恒定、
+         与条目数无关；类名沿用不改（与 .tpl-rows 复用同一先例，check F1），两张卡因此恒等高。
+         错误 / invalid 提示 / 空态文案一并放进容器（同 TemplateModule.vue:163-197），
+         这样出现提示时卡片也不长高。
+         长名浮层 .tpl-tip 留在容器外：position:fixed 本就不受 overflow 裁剪，放外面更稳。 -->
+    <div class="template-list">
+      <!-- YAML 坏了等真错误（ql_list 不抛 MISSING）；无效条目不在此列，它们进 invalid 计数提示 -->
+      <p v-if="error" class="error-text">{{ error }}</p>
+      <!-- 规格 §5.2：单条非法 → 跳过并把 id 收进 invalid，卡片顶部提示「N 条配置无效，已跳过」 -->
+      <p v-if="list && list.invalid.length > 0" class="label">{{ t('ql.invalid', { n: list.invalid.length }) }}</p>
+      <!-- 行卡片复用模板卡的 .tpl-rows/.tpl-row/.tpl-row__id/.tpl-row__actions（check F1），不新造行样式 -->
+      <div v-if="list" class="tpl-rows">
+        <div v-for="id in Object.keys(list.items)" :key="id" class="tpl-row">
+          <span class="tpl-row__id" :data-tooltip="tipFor(id)"
+            @mouseenter="(e) => onLabelEnter(e as MouseEvent, id)" @mouseleave="onLabelLeave">{{ rowName(id) }}</span>
+          <!-- 按钮顺序 = [复制][编辑][启动/停止]（规格 §4 / check E7） -->
+          <div class="tpl-row__actions">
+            <button class="icon-btn icon-btn--sm" :data-tooltip="t('ql.btn.copy')" :aria-label="t('ql.btn.copy')"
+              :disabled="copying" @click="onCopy(id)">
+              <FontAwesomeIcon :icon="byPrefixAndName.fat['copy']" />
+            </button>
+            <button class="icon-btn icon-btn--sm" :data-tooltip="t('ql.btn.edit')" :aria-label="t('ql.btn.edit')" @click="openEdit(id)">
+              <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
+            </button>
+            <!-- 状态按钮复用 LaunchBar 的 .btn-launch（紫）/.btn-danger（红）与 rocket/stop（check F2）；
+                 stopping → 半角三点 ... 并禁用（与 LaunchBar.vue:129 逐字一致，索引 K30） -->
+            <button :class="stateOf(id).running ? 'btn btn-danger' : 'btn btn-launch'"
+              :data-tooltip="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
+              :aria-label="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
+              :disabled="stateOf(id).stopping" @click="onToggle(id)"><template v-if="!stateOf(id).running"><FontAwesomeIcon :icon="byPrefixAndName.fas['rocket']" style="font-size: 16px;" /></template><span v-else-if="stateOf(id).stopping">...</span><FontAwesomeIcon v-else :icon="byPrefixAndName.fas['stop']" style="font-size: 14px;" /></button>
+          </div>
         </div>
       </div>
+      <p v-if="list && Object.keys(list.items).length === 0" class="label">{{ t('ql.empty.none') }}</p>
     </div>
-    <p v-if="list && Object.keys(list.items).length === 0" class="label">{{ t('ql.empty.none') }}</p>
     <!-- 新建 / 编辑弹窗由卡片持有（索引 K29）：id = null → 新建（K31(1)）；
          saved / deleted → 重拉列表 + changed；close → 只关窗 -->
     <!-- running：见上面 editingRunning()（I-1）——运行中的条目在弹窗里禁用 [删除] -->
