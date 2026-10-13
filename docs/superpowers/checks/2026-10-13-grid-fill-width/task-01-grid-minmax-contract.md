@@ -25,7 +25,7 @@
 
 | # | 契约 | 出处 | ✓ |
 |---|---|---|---|
-| C1 | `.grid` 的 `grid-template-columns` 值逐字 = `280px 350px minmax(330px, 380px) 330px` | 规格 §3 / 索引 K1 | ☑（主代理读取现值 = `grid-template-columns: 280px 350px minmax(330px, 380px) 330px;`（style.css:82）） |
+| C1 | `.grid` 的 `grid-template-columns` 值逐字 = `280px 350px 380px 330px`（**修订轮**：原口径 `minmax(330px, 380px)` 已被取代，见规格 §7 / 索引 K13） | 规格 §7 / §4.1-1 | ☑（主代理读取现值 = `grid-template-columns: 280px 350px 380px 330px;`，style.css:83；J-16） |
 | C2 | 用例名逐字：`第 3 列 = minmax(330px, 380px)，其余三列不变（规格 §3 / §4.1-1、3）`、`四列上限 + 3×gap = 默认窗口可用宽度（不留空是算术，规格 §4.1-2）` | 计划 步骤 1 | ☑（两条用例名与 plan 步骤 1 逐字一致（diff 可见；测试块程序化核对 includes=true）） |
 | C3 | 测试不写死 1376 / 1400：窗口宽从 `src-main/main.ts` 现读、间距从 `--card-gap` 现读 | 规格 §4.1-2 / 索引 G8 | ☑（测试从 `src-main/main.ts` 现读 `winW`、从 `--card-gap` 现读 `gap`，全文无 1376/1400 字面量） |
 | C4 | 注释同步：:78-79 里「靠左排布，右侧留白」必须删掉（改后不成立），换成记录新口径与日期的注释 | 规格 §5 | ☑（「靠左排布，右侧留白」已删；新注释块按 plan 逐字，首行保留三列来历（左 424→280、模板 520→350、GPU 300→330，2026-09/10 定稿）→ 原 :80 行尾注释的信息未丢（索引 K10）） |
@@ -43,13 +43,15 @@
 | D6 | 步骤 5-2：CSS 语法门 | `npx vite build` | exit 0 | ☑（**主代理复跑**：`npx vite build` → `✓ built in 1.08s`，`BUILD=0`） |
 | D7 | 步骤 5-3：类型门 | `npx tsc -p tsconfig.main.json --noEmit` | 无输出，exit 0 | ☑（**主代理复跑**：`npx tsc -p tsconfig.main.json --noEmit` → 无输出，`TSC=0`） |
 | D8 | 步骤 5-4：全量 | `npm test` | 全绿 = A2 基线 + 2（`Tests 816 passed (816)`），`Test Files 47 passed (47)`，无减少 | ☑（**主代理复跑**：`npm test` → `Test Files 47 passed (47)` / `Tests 816 passed (816)`，exit 0（= 基线 814 + 2）） |
+| D9 | **修订轮** 先改契约（只改测试、未改 CSS） | `npx vitest run src/App.test.ts -t '网格宽度契约'` | 恰 1 红：`expected '280px 350px minmax(330px, 380px) 330px' to be '280px 350px 380px 330px'` | ☑（J-16：`1 failed \| 1 passed \| 59 skipped (61)`，exit 1；算术那条仍绿） |
+| D10 | **修订轮** CSS 改定宽 → 定向绿 | `npx vitest run src/App.test.ts` | `Tests 61 passed (61)` | ☑（J-18：61 passed，exit 0） |
 
 ## E. 必须钉住的行为断言
 
 | # | 断言 | 出处 | ✓ |
 |---|---|---|---|
 | E1 | 四列逐字（第 3 列不含 `fr` → 最大化时不会无限拉伸） | 规格 §4.1-1 / R3 | ☑（J-10 变异 ①（写死 `380px`）恰 1 红 = 逐字断言；算术仍绿 → 只有逐字断言抓得住写死写法（R3 有牙）） |
-| E2 | 第 3 列 base = 330（窗口收窄时先缩回 330 再溢出，不新增横向滚动区间） | 规格 §3 / R1 | ☑（逐字断言钉住 base=330（`minmax(330px, …)` 的第一参数）；J-11 变异 ②（`1fr`）2 红 → 无上限写法被抓住） |
+| E2 | **四列全部定宽**：任何一条 track 既不含 `minmax` 也不含 `fr`（**修订轮**：本行取代原「第 3 列 base = 330」口径；窗口 <1400 出横向滚动条属接受现状，规格 §7 / 索引 K13） | 规格 §7 / R1 | ☑（用例内 `expect(tracksRaw).not.toMatch(/minmax\|\bfr\b/)`；J-17 变异 ① 退回 `minmax` → 1 红、② 写 `1fr` → 2 红） |
 | E3 | 四列上限之和 + 3×`--card-gap` = 默认窗口宽 − 2×内边距（「不留空」是算术，不是目测） | 规格 §4.1-2 / R2 | ☑（J-12 变异 ③（`--card-gap: 16px`）恰 1 红 = 算术断言 `expected 1388 to be 1368`（R2 有牙）） |
 | E4 | 其余三列仍是 `280px` / `350px` / `330px`（防顺手扩范围） | 规格 §4.1-3 | ☑（逐字断言含 `280px` / `350px` / `330px` 三段（J-10 变异只动第 3 列即红 → 其余三段确实在断言里）） |
 | E5 | `.layout` 的 `padding: var(--card-gap)` 这一前提被断言（否则 E3 的算术失去依据） | 计划 步骤 1 | ☑（用例内 `toMatch(/padding:\s*var\(--card-gap\)/)` 存在且绿（J-8 全量里绿）） |
@@ -83,12 +85,14 @@
 | H1 | 暂存范围 = 两个文件 | `git add src/style.css src/App.test.ts` | ☑（主代理执行：`git add src/style.css src/App.test.ts`（check 表与索引另开一次 docs 提交，AGENTS.md 第 6 条）） |
 | H2 | commit message 逐字 | `git commit -m "fix: 快捷启动列改 minmax(330px, 380px)，四列填满默认窗口可用宽度"` | ☑（主代理执行：`fix: 快捷启动列改 minmax(330px, 380px)，四列填满默认窗口可用宽度`） |
 | H3 | 勾完整性门 | `node .superpowers/sdd/2026-10-13-grid-fill-width/tick-census.mjs` → 本表 `裸☐=0` 且 `I段 -[ ]=0`，退出码 0 | ☑（见 J-15：普查输出 `裸☐=0`、`I段 -[ ]=0`，退出码 0） |
+| H4 | **修订轮** 暂存范围 = 两个文件 | `git add src/style.css src/App.test.ts` | ☑（主代理执行，见 J-19 的范围核对） |
+| H5 | **修订轮** commit message 逐字 | `git commit -m "fix: 快捷启动列改定宽 380px（与其它列写法一致），四列仍填满默认窗口"` | ☑（主代理执行；文档另开一次 docs 提交，AGENTS.md 第 6 条） |
 
 ## I. 完成判据
 
-- [x] B1-B3 / C1-C5 / D1-D8 / E1-E5 / F1-F6 / G1-G6 全部成立并落勾
+- [x] B1-B3 / C1-C5 / D1-D10 / E1-E5 / F1-F6 / G1-G6 全部成立并落勾（D9/D10 = 修订轮）
 - [x] J 段有真实命令与真实输出（J 段空 = 该任务未完成）
-- [x] H1-H3 由主代理执行完毕
+- [x] H1-H5 由主代理执行完毕（H1-H3 = 原提交 `eef0d35`；H4/H5 = 修订轮提交）
 
 ## J. 执行记录（命令 + 真实输出摘要）
 
@@ -107,5 +111,9 @@
 | J-11（实现者）变异 ②：第 3 列写成 `minmax(330px, 1fr)` | `Tests 2 failed \| 59 skipped (61)`：① 逐字断言红 `expected '280px 350px minmax(330px, 1fr) 330px' to be '280px 350px minmax(330px, 380px) 330px'`；② 算术断言也红 `expected 1326 to be 1376`（`1fr` 无 px 上限 → `maxOf` 只取到 base 330，四列上限之和退回 1290）。还原后 SHA = `3c9f9af4d41966738706b0860db80848ab2233fc`、`git diff --numstat` 仍 `27\t0` + `5\t3` | **E1 / R3 有牙**（2 红：无上限的写法被逐字与算术双重抓住） |
 | J-12（实现者）变异 ③（临时）：`src/style.css:41` `--card-gap: 12px` → `16px` | `Tests 1 failed \| 1 passed \| 59 skipped (61)`：红在「四列上限 + 3×gap = 默认窗口可用宽度（不留空是算术，规格 §4.1-2）」——`expected 1388 to be 1368`（1340 + 3×16 vs 1400 − 2×16）；逐字断言仍绿。还原后 SHA = `3c9f9af4d41966738706b0860db80848ab2233fc`、`git diff --numstat` 仍 `27\t0` + `5\t3` | **E3 / R2 有牙**（恰 1 红 = 算术断言；改间距即红） |
 | J-13（实现者）三处变异全部还原后复核：`npx vitest run src/App.test.ts` | `Tests 61 passed (61)`，exit 0；`git status --porcelain` 仍只有 ` M src/App.test.ts` / ` M src/style.css`；未 `git add`、未 commit（HEAD 仍 `9e2be11`） | 工作区状态 = 待验收；**F6 成立** |
-| J-14（主代理，验收复跑）\`npx vitest run src/App.test.ts\` / \`npx tsc -p tsconfig.main.json --noEmit\` / \`npx vite build\` / \`npm test\` | App：\`✓ src/App.test.ts (61 tests)\` → \`Tests 61 passed (61)\`（15:18:52）；tsc：无输出 \`TSC=0\`；build：\`✓ built in 1.08s\` \`BUILD=0\`；全量：\`Test Files 47 passed (47)\` / \`Tests 816 passed (816)\`，exit 0 | **D4 / D6 / D7 / D8 / G1 / G3 / G4 / G5 由主代理独立复跑同值**（不接受实现者自述） |
-| J-15（主代理）程序化核对 + 普查 | 从 plan 抽出步骤 1 的 \`ts\` 块与步骤 3 的 \`css\` 块做 \`includes\` 比对 → 两者均 \`true\`（仅 CRLF 随仓库行尾）；\`git diff --name-only\` = \`src/App.test.ts\`、\`src/style.css\`（+ 本表自身）；\`const BUDGET = 30;\` 仍在 \`QuickLaunch.vue:124\`；旧规格不在改动清单里；\`node .superpowers/sdd/2026-10-13-grid-fill-width/tick-census.mjs\` → \`task-01 … ☑=39 裸☐=0 I段 -[ ]=0 H2=已提交\`，\`CENSUS=0\` | **H3 通过**；「无减少」按索引 K11 的算术判据成立 |
+| J-14（主代理，验收复跑）`npx vitest run src/App.test.ts` / `npx tsc -p tsconfig.main.json --noEmit` / `npx vite build` / `npm test` | App：`✓ src/App.test.ts (61 tests)` → `Tests 61 passed (61)`（15:18:52）；tsc：无输出 `TSC=0`；build：`✓ built in 1.08s` `BUILD=0`；全量：`Test Files 47 passed (47)` / `Tests 816 passed (816)`，exit 0 | **D4 / D6 / D7 / D8 / G1 / G3 / G4 / G5 由主代理独立复跑同值**（不接受实现者自述） |
+| J-15（主代理）程序化核对 + 普查 | 从 plan 抽出步骤 1 的 `ts` 块与步骤 3 的 `css` 块做 `includes` 比对 → 两者均 `true`（仅 CRLF 随仓库行尾）；`git diff --name-only` = `src/App.test.ts`、`src/style.css`（+ 本表自身）；`const BUDGET = 30;` 仍在 `QuickLaunch.vue:124`；旧规格不在改动清单里；`node .superpowers/sdd/2026-10-13-grid-fill-width/tick-census.mjs` → `task-01 … ☑=39 裸☐=0 I段 -[ ]=0 H2=已提交`，`CENSUS=0` | **H3 通过**；「无减少」按索引 K11 的算术判据成立 |
+| J-16（主代理，修订轮先红）只改测试、未改 CSS：`npx vitest run src/App.test.ts -t '网格宽度契约'` | `❯ src/App.test.ts (61 tests \| 1 failed \| 59 skipped)`；`AssertionError: expected '280px 350px minmax(330px, 380px) 330px' to be '280px 350px 380px 330px'`；`Tests 1 failed \| 1 passed \| 59 skipped (61)`，exit 1 | **D9 通过**：恰 1 红 = 逐字断言（算术仍绿 → 定宽与 `minmax` 在算术上等价，只有逐字断言能区分） |
+| J-17（主代理，修订轮变异）CSS ① 退回 `minmax(330px, 380px)`；② 写成 `1fr`（各跑一次 `-t '网格宽度契约'` 后还原） | ① `1 failed \| 1 passed \| 59 skipped (61)`：逐字断言红（`not.toMatch(/minmax\|\bfr\b/)` 是同条用例的第二道防线）；② `2 failed`：逐字红 + 算术红 `expected 996 to be 1376`（`1fr` 无 px 值，求和只到 996）。还原后 `git hash-object src/style.css` = `8521468a1e48c6cd13e2c27eb765e2b9a554b4bd`、`git diff --numstat` = `6\t5` | **E2 有牙**：改回 `minmax` 或写 `fr` 都会红 |
+| J-18（主代理，修订轮四道门）`npx vitest run src/App.test.ts` / 相邻三份 / `npx vite build` / `npx tsc -p tsconfig.main.json --noEmit` / `npm test` | App：`Tests 61 passed (61)` exit 0；相邻：`3 passed (3)` / `47 passed (47)` exit 0；build：`✓ built in 1.09s` `BUILD=0`；tsc：无输出 `TSC=0`；全量：`Test Files 47 passed (47)` / `Tests 816 passed (816)` exit 0（计数与修订前一致——修订只改断言、不增删用例） | **D10 / G1-G5 通过** |
+| J-19（主代理，修订轮范围）`git diff --numstat` / `git diff -U0 -- src/style.css` | `6\t5 src/style.css`（删除行 = 修订前的 4 行注释 + 1 行属性，均在 :78-83）、`13\t9 src/App.test.ts`（改 1 条用例名与断言、新增 1 条 `not.toMatch` 断言、改头注释；其余既有用例一字未改）；未碰 `App.vue` / `src/modules/**` / `src-main/**` / i18n / `package.json`；`BUDGET = 30` 仍在 | 边界内（索引 K9 的口径同样适用于修订轮） |
