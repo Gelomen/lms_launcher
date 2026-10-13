@@ -11,7 +11,6 @@ import { mount, flushPromises as flush } from '@vue/test-utils';
 import QuickLaunchModal from './QuickLaunchModal.vue';
 import QuickLaunch from './QuickLaunch.vue';
 import { t } from '../i18n';
-import { truncateByWidth } from '../util/truncate';
 import type { QuickLaunchEntry, QuickLaunchList } from '../src-main/quick-launch-config';
 import type { TerminalInfo } from '../src-main/quick-launch-terminals';
 
@@ -204,9 +203,9 @@ describe('QuickLaunchModal', () => {
     await flush();
     expect((triggerOf(termLabel) as HTMLButtonElement).getAttribute('disabled')).toBeNull();
     const labels = await openOptionLabels(dropdownOf(termLabel)!);
-    // M19（修复轮 B）带来的期望变更：label 由父级按预算 16 截断，'PowerShell 7 (pwsh)'（宽 19）→ 'PowerShell 7 (pw…'。
-    // 本用例钉的是「顺序 = 主进程返回序、不重排、不 pwsh 优先」，与截断无关，故只把期望值换成截断后的标签。
-    expect(labels).toEqual([t('ql.term.powershell'), t('ql.term.cmd'), truncateByWidth(t('ql.term.pwsh'), 16), t('ql.term.wsl')]);
+    // 2026-10-13（用户直接改）：终端标签不再按预算截断，选项 = 完整标签原文。
+    // 本用例钉的是「顺序 = 主进程返回序、不重排、不 pwsh 优先」。
+    expect(labels).toEqual([t('ql.term.powershell'), t('ql.term.cmd'), t('ql.term.pwsh'), t('ql.term.wsl')]);
     // 预选第一项可用（K31(3)）
     expect(triggerText(termLabel)).toBe(t('ql.term.powershell'));
     w.unmount();
@@ -480,8 +479,8 @@ describe('QuickLaunchModal', () => {
     expect(box()!.textContent).toContain(t('ql.modal.editTitle'));
     expect((inputOf(t('ql.modal.name')) as HTMLInputElement).value).toBe('webui');
     expect((inputOf(t('ql.modal.cmd')) as HTMLInputElement).value).toBe('python -m webui');
-    // M19（修复轮 B）：trigger 显示的是截断后的 label（同 :189 的期望变更），本行钉的是「编辑态不被预选覆盖」
-    expect(triggerText(t('ql.modal.terminal'))).toBe(truncateByWidth(t('ql.term.pwsh'), 16));
+    // 2026-10-13（用户直接改）：trigger 显示完整标签（终端标签不再截断），本行钉的是「编辑态不被预选覆盖」
+    expect(triggerText(t('ql.modal.terminal'))).toBe(t('ql.term.pwsh'));
     expect(document.querySelector('.btn-delete')).not.toBeNull();
 
     // 改名字后保存 → 弹窗关、卡片重拉 ql_list、行名更新、冒泡 changed
@@ -590,9 +589,11 @@ describe('QuickLaunchModal', () => {
     w.unmount();
   });
 
-  // M19（只修下拉那一半）：Dropdown.vue:4 明写「label 截断由父级负责」，此前传的是未截断全名。
-  // 预算 16 = 规格 §11-1（与 App.vue:350 的页签预算同值）；完整名走 option.tip（Dropdown.vue:18 / :72）。
-  it('terminal_dropdown_labels_are_truncated_to_budget_with_full_name_tip', async () => {
+  // 2026-10-13（用户直接改）：[终端] 这一格占满 .flag-grid 的控件列（520px 弹窗里 ≈418px），
+  // 原 M19 的「预算 16 + …」在宽度够的前提下仍把 'PowerShell 7 (pwsh)'（宽 19）/ 'Command Prompt (cmd)'（宽 20）
+  // 截断成带 … 的短名 —— 该截断已去掉。本用例钉的是：trigger 与面板选项都是完整标签原文，
+  // 且不挂 data-tooltip（没有截断就不需要 .dd-tip 补全悬浮层）。
+  it('terminal_dropdown_labels_are_rendered_in_full_without_tip', async () => {
     mockLms();
     const w = mountModal({ open: true, id: null, entry: null });
     await flush();
@@ -603,19 +604,13 @@ describe('QuickLaunchModal', () => {
     const texts = items.map((li) => (li.textContent ?? '').trim());
     const tips = items.map((li) => li.getAttribute('data-tooltip'));
 
-    // 夹具前提：'PowerShell 7 (pwsh)' 宽 19 > 16+2 → 确实该被截断（否则本用例测不到东西）
-    const full = t('ql.term.pwsh');
-    const cut = truncateByWidth(full, 16);
-    expect(cut).not.toBe(full);
-    const i = texts.indexOf(cut);
-    expect(i, '终端标签未按预算 16 截断，实际 = ' + JSON.stringify(texts)).toBeGreaterThanOrEqual(0);
-    expect(tips[i]).toBe(full); // 完整名在 tip 里（零新组件、零新键）
+    // 面板选项 = 完整标签，一字不差（含原本会被截断的宽 19 / 宽 20 两条）
+    expect(texts).toEqual([t('ql.term.powershell'), t('ql.term.cmd'), t('ql.term.pwsh'), t('ql.term.wsl')]);
+    expect(texts.some((s) => s.includes('…')), '选项里仍有 …：' + JSON.stringify(texts)).toBe(false);
+    expect(tips, '未截断却仍挂了 tooltip：' + JSON.stringify(tips)).toEqual([null, null, null, null]);
 
-    // 短名不截断也不挂 tip：与 LaunchBar.vue:93-94 的 grace 口径一致（grace 内全量渲染 → 无 …、无 tooltip）
-    const short = t('ql.term.wsl');
-    const j = texts.indexOf(short);
-    expect(j, '短名标签被误截断，实际 = ' + JSON.stringify(texts)).toBeGreaterThanOrEqual(0);
-    expect(tips[j]).toBeNull();
+    // trigger 同理：预选第一项显示完整名
+    expect(triggerText(t('ql.modal.terminal'))).toBe(t('ql.term.powershell'));
     w.unmount();
   });
 

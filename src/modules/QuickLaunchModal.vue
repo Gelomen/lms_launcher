@@ -8,7 +8,6 @@ import { invoke, errMsg } from '../ipc';
 import { t } from '../i18n';
 import Dropdown from '../components/Dropdown.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
-import { truncateByWidth, visualWidth } from '../util/truncate'; // M19：下拉 label 截断由父级负责（Dropdown.vue:4）
 // 类型只有一份真源（主进程的配置层 / 探测层）；import type 在构建期被擦除，不引入运行时依赖
 // ——与 QuickLaunch.vue:11-12 同一先例。
 import type { QuickLaunchEntry, QuickLaunchKind, TerminalId } from '../src-main/quick-launch-config';
@@ -93,18 +92,16 @@ const typeOptions = computed(() => [
   { value: 'shell', label: t('ql.modal.type.shell') },
   { value: 'exe', label: t('ql.modal.type.exe') },
 ]);
-// M19（修复轮 B）：Dropdown.vue:4 明写「label 截断由父级负责」，此前传的是未截断全名。
-// 预算 16 = 规格 §11-1 的下拉/页签预算（与 App.vue 的 TAB_LABEL_BUDGET 同值；列表行 30 在卡片侧）。
-// 完整名走 option.tip（Dropdown.vue:18 / :72 已支持）；「只有真截断才挂 tip」沿用 LaunchBar.vue:93-94 的 grace 口径。
-const TERMINAL_LABEL_BUDGET = 16;
-const terminalOptions = computed(() => terminals.value.map((info) => {
-  const full = TERM_LABEL[info.id]();
-  return {
-    value: info.id,
-    label: truncateByWidth(full, TERMINAL_LABEL_BUDGET),
-    tip: visualWidth(full) > TERMINAL_LABEL_BUDGET + 2 ? full : undefined,
-  };
-}));
+// 终端标签一律传全名，不做宽度预算截断（2026-10-13 用户直接改：这一格足够宽，选中项却被截断了）。
+// 原 M19 口径（预算 16 = 规格 §11-1 的下拉/页签预算，完整名走 option.tip）在这里属于「宽度够却截断」：
+// 本弹窗的终端下拉占满 .flag-grid 的控件列（520px 弹窗里 ≈418px，见本文件 style 块里的 .type-field 注释），
+// 最长的标签 'Command Prompt (cmd)' 只有 20 视觉宽（12px 字号下 ≈130px），远小于可用宽度。
+// 兜底仍在 CSS：style.css:297 / :317 的 text-overflow:ellipsis 只在文本真的超出盒子时才省略，
+// nowrap 防换行撑高的口径不变（任务 19 根因不回退）。option.tip 不再挂——没有截断就不需要补全悬浮层。
+const terminalOptions = computed(() => terminals.value.map((info) => ({
+  value: info.id,
+  label: TERM_LABEL[info.id](),
+})));
 
 function fill(): void {
   attemptedSave.value = false;
