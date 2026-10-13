@@ -267,10 +267,24 @@ function close(): void { emit('close'); }
 <style scoped>
 /* 外壳样式照抄 TemplateModal.vue:477-643 的本弹窗所需子集（.modal-overlay 是全局样式，style.css:47，不改它）。
    本弹窗没有 VRAM 指示 / 开关行 / flag tooltip，故不带那几段。 */
+/* 弹窗高度固定（2026-10-13 用户反馈 + 截图：[类型] 切到「可执行程序」时弹窗变窄）：
+   定高以「命令行」态为准 = 218px。取值来自无头 Chromium 实测（真实 style.css + 本组件 scoped 样式 +
+   两态静态复刻）：命令行态 .modal-box = 218 / 可执行程序态 = 180，差 38 = 一行控件 32 + 一个行距 6。构成：
+     .card 上下边框 2
+   + .modal-head 32
+   + .modal-body：padding 16×2 + .flag-grid margin-top 12 + 3 行 × var(--h-control)32 + 2 行距 × 6 = 152
+   + .modal-actions 32
+   = 218。可执行程序态因此表单下方留白 38px，切换类型不再长高/变窄。
+   用 min-height 而不是 height（用户 2026-10-13 决定）：保存失败的主进程文案 / 空名提示出现时
+   弹窗自然长高（实测报错态 236px，正文区 bodyScroll == bodyClient = 不出滚动条、内容不被裁），
+   不把命令输入框顶掉。
+   行数变了这个数就要重算——QuickLaunchModal.test.ts 的 modal_height_is_fixed_to_the_shell_form_height_in_both_types
+   钉着「命令行态 3 行控件」与「两态同一个定高值」。 */
 .modal-box {
   width: 90%;
   max-width: 520px;
-  max-height: 85vh;
+  min-height: 218px;            /* = 命令行态实测高度，见上方推导 */
+  max-height: 85vh;             /* 窗口很矮时的收缩兜底（定高之后它是唯一收缩门），.modal-body 内部滚动 */
   display: flex;
   flex-direction: column;
   overflow-x: hidden;

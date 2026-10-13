@@ -5,6 +5,8 @@
 // 第 9 条用例（E9 / 索引 K29）挂的是卡片：弹窗归卡片持有，接线在 QuickLaunch.vue（B3）。
 // 它放在本文件里是为了让改动范围仍是 B1-B3（G3）——QuickLaunch.test.ts 的 7 条既有用例一字不改。
 import { describe, it, expect, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import QuickLaunchModal from './QuickLaunchModal.vue';
 import QuickLaunch from './QuickLaunch.vue';
@@ -55,6 +57,22 @@ function mockLms(o: MockOpts = {}): void {
 // running（修复轮 B · I-1）：App 的只读镜像 qlStates 经卡片派生给弹窗的运行态标志（缺省 = 未运行）
 function mountModal(props: { open: boolean; id: string | null; entry: QuickLaunchEntry | null; running?: boolean }) {
   return mount(QuickLaunchModal, { attachTo: document.body, props });
+}
+
+// 真实 CSS 注入（同 QuickLaunch.test.ts:259-264 的手法）：Vitest 默认不处理 CSS，
+// 读 computed style 必须自己把真样式灌进 document。两份都要：
+//   src/style.css —— .card 的 1px 边框 / .input / .select-trigger 的 --h-control 高（218 的组成部分）；
+//   QuickLaunchModal.vue 的 <style scoped> 原文 —— 定高数字就在这一段里。
+// 原文里没有 [data-v-] 属性选择器（scoped 属性是编译期加的），所以直接灌裸文本即可命中 DOM。
+function injectRealCss(): void {
+  if (document.getElementById('__real-css__')) return;
+  const scoped = fs.readFileSync(path.join(process.cwd(), 'src', 'modules', 'QuickLaunchModal.vue'), 'utf8')
+    .split('<style scoped>')[1].split('</style>')[0];
+  const global = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
+  const st = document.createElement('style');
+  st.id = '__real-css__';
+  st.textContent = global + '\n' + scoped;
+  document.head.appendChild(st);
 }
 
 // ---------- DOM 定位（表单 = label 与控件在 .flag-grid 里交替排列，按 label 文本取相邻控件）----------
@@ -574,6 +592,43 @@ describe('QuickLaunchModal', () => {
     // 下一行字段仍是「label + 控件」相邻（controlOf 的相邻兄弟前提没被 grid 自动排布打乱）
     expect(dropdownOf(t('ql.modal.terminal'))).not.toBe(null);
     expect(inputOf(t('ql.modal.cmd'))).not.toBe(null);
+    w.unmount();
+  });
+
+  // 2026-10-13（用户反馈：[类型] 切到「可执行程序」时弹窗变窄）：弹窗高度固定，以「命令行」态为准。
+  // 218px 的构成（无头 Chromium 实测取证：真实 style.css + 本组件 scoped 样式 + 两态静态复刻；
+  // 命令行态 .modal-box = 218 / 可执行程序态 = 180，差 38 = 一行 32 + 一个行距 6）：
+  //   .card 上下边框 2 + .modal-head 32
+  //   + .modal-body（padding 16×2 + .flag-grid margin-top 12 + 3 行 × 32 + 2 行距 × 6 = 152）
+  //   + .modal-actions 32 = 218
+  // 落点 = min-height（用户 2026-10-13 决定）：两种类型的常态高度严格一致；
+  // 保存失败 / 空名的报错文案出现时允许自然长高一行，不出滚动条、不顶掉输入框。
+  it('modal_height_is_fixed_to_the_shell_form_height_in_both_types', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const style = () => getComputedStyle(box() as Element);
+    // 定高值 = 命令行态实测高度（写在 <style scoped> 的 .modal-box 上）
+    expect(style().minHeight, '弹窗未定高到命令行态的 218px').toBe('218px');
+    // 不用 height 钉死：报错文案出现时弹窗自然长高（用户决定 A）
+    expect(style().height, '用 height 钉死会把报错文案下方的输入框顶出可视区并出滚动条').not.toMatch(/^\d/);
+    // 小窗口兜底不变：max-height 仍在（定高之后它是唯一的收缩门）。
+    // 不断具体值：happy-dom 会把 85vh 按自己的视口换算成 px（本环境 768 → 652.8px），断字面量等于把用例绑到测试环境的视口高。
+    expect(style().maxHeight, 'max-height 兜底被去掉：窗口很矮时弹窗不再收缩').not.toBe('');
+
+    // 定高数字的依据 = 命令行态的 3 行控件。行数变了 218 就是旧数字，必须同步改（防陈旧门）
+    const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    const controlCells = [...grid.children].filter((el) =>
+      el.classList.contains('row-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
+    expect(controlCells.length, '命令行态的表单行数变了，218px 的推导要重算').toBe(3);
+
+    // 切到可执行程序：同一个 .modal-box、同一个定高值（不得按类型给 .modal-box 再加一条高度规则）
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
+    expect(labelByText(t('ql.modal.terminal'))).toBeNull(); // 表单确实已切到 exe 形态
+    expect(style().minHeight, '切到可执行程序后定高值变了（弹窗又会变窄）').toBe('218px');
+    expect(style().height).not.toMatch(/^\d/);
     w.unmount();
   });
 
