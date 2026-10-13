@@ -3,6 +3,8 @@
 //  idle/failed   -> green [启动]
 //  running       -> red   [停止]; stopping -> red 「...」disabled, back to green once the service truly stopped
 //  start failure -> automatically falls back to green [启动] (authoritative get_state)
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import { nextTick } from 'vue';
@@ -929,6 +931,31 @@ describe('App GPU card mount', () => {
     expect(gpuCard.find('.gpu-title').text()).toBe('#GPU 0 NVIDIA GeForce RTX 4090');
     expect(gpuCard.findAll('.gpu-val').map((v: any) => v.text())).toContain('22.0 / 24.0 GB');
     w.unmount();
+  });
+});
+
+// 2026-10-13-grid-fill-width §4.1：网格宽度契约。happy-dom 不加载外部 CSS（先例 LogPanel.test.ts:365）
+// → 断 src/style.css 的规则文本 + src-main/main.ts 的默认窗口宽：两者合起来把「不留空」钉成算术。
+describe('App 网格宽度契约（2026-10-13-grid-fill-width）', () => {
+  const css = readFileSync(join(__dirname, 'style.css'), 'utf-8');
+  const gridRule = css.slice(css.indexOf('.grid {'), css.indexOf('.stack {'));
+  const tracksRaw = gridRule.match(/grid-template-columns:\s*([^;]+);/)![1].trim();
+  // minmax(...) 内含空格，按空白切会切碎 → 一条 track 一个 token
+  const tracks = tracksRaw.match(/(?:minmax\([^)]*\)|\d+px)/g)!;
+  const maxOf = (t: string): number => Math.max(...(t.match(/(\d+(?:\.\d+)?)px/g) ?? []).map((s) => parseFloat(s)));
+
+  it('第 3 列 = minmax(330px, 380px)，其余三列不变（规格 §3 / §4.1-1、3）', () => {
+    expect(tracksRaw).toBe('280px 350px minmax(330px, 380px) 330px');
+    expect(tracks.length).toBe(4);
+  });
+
+  it('四列上限 + 3×gap = 默认窗口可用宽度（不留空是算术，规格 §4.1-2）', () => {
+    const mainSrc = readFileSync(join(__dirname, '..', 'src-main', 'main.ts'), 'utf-8');
+    const winW = Number(mainSrc.match(/width:\s*(\d+),\s*height:/)![1]);
+    const gap = Number(css.match(/--card-gap:\s*(\d+)px/)![1]);
+    // 前提：.layout 的内边距 = --card-gap（可用宽度 = 窗口宽 − 2×gap）
+    expect(css.slice(css.indexOf('.layout {'), css.indexOf('.grid {'))).toMatch(/padding:\s*var\(--card-gap\)/);
+    expect(tracks.reduce((a, t) => a + maxOf(t), 0) + 3 * gap).toBe(winW - 2 * gap);
   });
 });
 
