@@ -15,4 +15,14 @@
 
 ## 任务台账
 
-- Task 1: 已派单（brief：`.superpowers/sdd/2026-10-13-grid-fill-width/task-01-brief.md`），等待实现者报告。
+- Task 1: 已派单（brief：`.superpowers/sdd/2026-10-13-grid-fill-width/task-01-brief.md`）→ 见下。
+
+## Rulings（续）
+
+- Ruling: **不另派任务审查者，验收由主代理逐行做** — AGENTS.md 工作流第 4 步把「验收」明确交给主代理（逐行核对 check 表含 J 段真实输出），且本任务改动 = 1 行 CSS + 25 行测试；取证方式 = 三处变异（写死 380 / `1fr` / 改 `--card-gap`）+ 主代理独立复跑四道门 — 代价：少一双独立眼睛；真机门若暴露布局问题即回到任务 1 重做。
+- Ruling: **实现者疑虑 1-6 的裁决已登记为索引 K8-K12**（落点以规格为准；`+5/−3` 非越界；来历注释不补回；「无减少」用算术判据；hunk 头的 `body {` 是 git 的 funcname 猜测）。
+
+## 任务台账（续）
+
+- Task 1: **complete**（实现者报告 → 主代理逐行验收 → 落勾 39 行 + J-14/J-15 复跑取证 → 普查 `裸☐=0 / I段=0` exit 0 → 代码提交 `eef0d35`，文档提交 `b751497`）。主代理复跑：`App.test.ts 61 passed`、`npm test 47 files / 816 tests`、`tsc` exit 0、`vite build` exit 0。
+- Task 2: 进行中——真机清单五条已交给用户（本环境起不了 Electron，索引 K7），等待逐条回报后填 task-02 表 J 段，再按该表 H 段收尾提交。
