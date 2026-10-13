@@ -33,8 +33,8 @@ for %%D in (.superpowers .temp docs) do (
 )
 
 echo.
-echo [clean] Step 2: git add -A -- docs ...
-git add -A -- docs
+echo [clean] Step 2: git add -A -- .superpowers docs ...
+git add -A -- .superpowers docs
 if errorlevel 1 (
   echo [clean] FAILED: git add exited with an error.
   exit /b 1
