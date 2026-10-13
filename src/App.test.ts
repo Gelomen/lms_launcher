@@ -934,19 +934,21 @@ describe('App GPU card mount', () => {
   });
 });
 
-// 2026-10-13-grid-fill-width §4.1：网格宽度契约。happy-dom 不加载外部 CSS（先例 LogPanel.test.ts:365）
+// 2026-10-13-grid-fill-width §4.1 + §7 修订（定宽）：网格宽度契约。happy-dom 不加载外部 CSS（先例 LogPanel.test.ts:365）
 // → 断 src/style.css 的规则文本 + src-main/main.ts 的默认窗口宽：两者合起来把「不留空」钉成算术。
 describe('App 网格宽度契约（2026-10-13-grid-fill-width）', () => {
   const css = readFileSync(join(__dirname, 'style.css'), 'utf-8');
   const gridRule = css.slice(css.indexOf('.grid {'), css.indexOf('.stack {'));
   const tracksRaw = gridRule.match(/grid-template-columns:\s*([^;]+);/)![1].trim();
-  // minmax(...) 内含空格，按空白切会切碎 → 一条 track 一个 token
+  // 一条 track 一个 token（不按空白切：将来若出现 minmax(…) 内含空格会被切碎）
   const tracks = tracksRaw.match(/(?:minmax\([^)]*\)|\d+px)/g)!;
   const maxOf = (t: string): number => Math.max(...(t.match(/(\d+(?:\.\d+)?)px/g) ?? []).map((s) => parseFloat(s)));
 
-  it('第 3 列 = minmax(330px, 380px)，其余三列不变（规格 §3 / §4.1-1、3）', () => {
-    expect(tracksRaw).toBe('280px 350px minmax(330px, 380px) 330px');
+  it('四列全部定宽：第 3 列 = 380px，无 minmax / fr（规格 §7 修订 / §4.1-1、3）', () => {
+    expect(tracksRaw).toBe('280px 350px 380px 330px');
     expect(tracks.length).toBe(4);
+    // 定宽语义（用户 2026-10-13 决定：与其它三列一致，不用 minmax）：任何一条 track 既无 minmax 也无 fr
+    expect(tracksRaw).not.toMatch(/minmax|\bfr\b/);
   });
 
   it('四列上限 + 3×gap = 默认窗口可用宽度（不留空是算术，规格 §4.1-2）', () => {
