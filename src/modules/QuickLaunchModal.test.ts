@@ -713,3 +713,48 @@ describe('QuickLaunchModal', () => {
     w.unmount();
   });
 });
+
+// ---- 2026-10-13（用户反馈 + 截图）：打开 [终端] 下拉时，面板不得把 .modal-body 撑出滚动条、也不得被 .modal-box 底缘裁掉。
+// 机制 = 面板是视口浮层（position:fixed + 内联坐标来自触发按钮矩形），组件级断言在 Dropdown.test.ts 的
+// 'Dropdown panel is a viewport float' 里钉；本用例只钉弹窗这一侧的两件事：
+//   a) 面板浮出弹窗（面板底缘 > 弹窗底缘），且
+//   b) 定高门（218px）与 .modal-body 的滚动容器没有被拆掉来「绕过」滚动条。
+// 像素事实（面板矩形超出 .modal-box、.modal-body scrollHeight == clientHeight = 不出滚动条）由无头 Electron 实测取证：
+//   .temp/ql-dropdown-float/measure.html（同 .temp/ql-modal-fixed-height/ 的手法）。
+describe('QuickLaunchModal terminal dropdown floats out of the modal', () => {
+  afterEach(() => { document.body.innerHTML = ''; });
+
+  function stubRect(el: HTMLElement, left: number, width: number, top: number, height: number): void {
+    (el as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () =>
+      ({ left, right: left + width, top, bottom: top + height, width, height, x: left, y: top }) as DOMRect;
+  }
+
+  it('terminal_dropdown_panel_floats_out_of_the_modal_box', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const dd = dropdownOf(t('ql.modal.terminal')) as HTMLElement;
+    expect(dd, '终端下拉不存在').not.toBe(null);
+    // 夹具矩形：弹窗 520px 宽、顶 291、定高 218 -> 底缘 509；终端行触发按钮 顶 397 / 高 32（--h-control）
+    const BOX_TOP = 291, BOX_H = 218;
+    stubRect(box() as HTMLElement, 252, 520, BOX_TOP, BOX_H);
+    const trigger = dd.querySelector('.select-trigger') as HTMLElement;
+    stubRect(trigger, 300, 418, 397, 32);
+    (trigger as HTMLButtonElement).click();
+    await flush();
+
+    const panel = dd.querySelector('ul.dropdown-panel') as HTMLElement;
+    expect(panel, '终端下拉面板未渲染').not.toBe(null);
+    expect(getComputedStyle(panel).position, '面板不是视口浮层：会被 .modal-box 裁切并撑高 .modal-body').toBe('fixed');
+    expect(panel.style.top, '面板顶 = 触发按钮下缘 + 2px').toBe('431px');
+    // 面板 max-height 116px -> 底缘 547 > 弹窗底缘 509：超出弹窗 38px，即「浮出弹窗外」
+    expect(431 + 116, '面板没有超出弹窗底缘').toBeGreaterThan(BOX_TOP + BOX_H);
+
+    // 不是靠拆掉定高 / 拆掉 .modal-body 的滚动容器来「绕过」滚动条的
+    expect(getComputedStyle(box() as Element).minHeight).toBe('218px');
+    expect(getComputedStyle(document.querySelector('.modal-body') as Element).overflowY, '.modal-body 不再是滚动容器 = 定高兜底被拆').toBe('auto');
+    w.unmount();
+  });
+});

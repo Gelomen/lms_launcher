@@ -3,6 +3,8 @@
 // 2026-08-26 挪位 spec：tooltip 不再上方居中（会被应用窗口/裁剪区遮），改挂元素右侧垂直居中；
 // 右侧估宽放不下时翻转到左缘内侧（.dd-tip--flip）。
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { mount, flushPromises as flush } from '@vue/test-utils';
 import Dropdown from './Dropdown.vue';
 
@@ -83,6 +85,90 @@ describe('Dropdown option tooltip float', () => {
     expect(style).toContain('left: 634px');
     expect(style).toContain('top: 114px');
     expect(tipEl.classes()).toContain('dd-tip--flip');
+    w.unmount();
+  });
+});
+
+// ---- 2026-10-13（用户反馈 + 截图：快捷启动弹窗打开 [终端] 下拉，面板把 .modal-body 撑出滚动条、又被弹窗底缘裁掉）
+// 面板改视口浮层：position:fixed（与 .dd-tip / .flag-tip / .tpl-tip 同一手法），坐标由触发按钮矩形逐次写入内联 left/top/width。
+// 这里钉机制三件事：
+//   1) 面板计算样式 position = fixed（注入真实 style.css，同 QuickLaunchModal.test.ts:67-76 的手法）
+//   2) 内联坐标来自触发按钮矩形：left = 左缘、top = 下缘 + 2px（原 CSS calc(var(--h-control) + 2px) 的间距）、width = 触发按钮宽
+//   3) 打开期间所在容器滚动 / 窗口尺寸变化 -> 重算，面板恒贴触发按钮
+describe('Dropdown panel is a viewport float', () => {
+  const OPTS = [
+    { value: 'a', label: 'Windows PowerShell' },
+    { value: 'b', label: 'cmd' },
+  ];
+
+  function injectRealCss(): void {
+    if (document.getElementById('__real-css__')) return;
+    const st = document.createElement('style');
+    st.id = '__real-css__';
+    st.textContent = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
+    document.head.appendChild(st);
+  }
+
+  function stubRect(el: HTMLElement, left: number, width: number, top: number, height: number): void {
+    (el as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () =>
+      ({ left, right: left + width, top, bottom: top + height, width, height, x: left, y: top }) as DOMRect;
+  }
+
+  it('panel_is_positioned_fixed_so_no_ancestor_overflow_clips_it', async () => {
+    injectRealCss();
+    const w = mount(Dropdown, { props: { value: 'a', options: OPTS }, attachTo: document.body });
+    await flush();
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+
+    const panel = w.find('.dropdown-panel');
+    expect(panel.exists()).toBe(true);
+    // 浮层：不受 .modal-body / .modal-box / .card 的 overflow 裁剪，也不参与其滚动高度
+    expect(getComputedStyle(panel.element as HTMLElement).position).toBe('fixed');
+    w.unmount();
+  });
+
+  it('panel_coordinates_come_from_the_trigger_rect', async () => {
+    const w = mount(Dropdown, { props: { value: 'a', options: OPTS }, attachTo: document.body });
+    await flush();
+
+    const trigger = w.find('.select-trigger').element as HTMLElement;
+    // 触发按钮：左缘 300 / 宽 418 / 顶 204 / 高 32（--h-control）-> 面板顶 = 204 + 32 + 2 = 238
+    stubRect(trigger, 300, 418, 204, 32);
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+
+    const panel = w.find('.dropdown-panel').element as HTMLElement;
+    expect(panel.style.left).toBe('300px');
+    expect(panel.style.top, '面板顶 = 触发按钮下缘 + 2px（原 CSS 间距）').toBe('238px');
+    expect(panel.style.width).toBe('418px');
+    w.unmount();
+  });
+
+  it('panel_follows_the_trigger_on_scroll_and_window_resize', async () => {
+    const w = mount(Dropdown, { props: { value: 'a', options: OPTS }, attachTo: document.body });
+    await flush();
+
+    const trigger = w.find('.select-trigger').element as HTMLElement;
+    stubRect(trigger, 300, 418, 204, 32);
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+    const panel = w.find('.dropdown-panel').element as HTMLElement;
+    expect(panel.style.top).toBe('238px');
+
+    // 所在容器滚动（.modal-body / .template-list 等）：scroll 不冒泡，组件挂 capture 监听才收得到
+    stubRect(trigger, 300, 418, 90, 32);
+    (w.element.parentElement ?? document.body).dispatchEvent(new Event('scroll'));
+    await flush();
+    expect(panel.style.top, '容器滚动后面板没跟随触发按钮').toBe('124px');
+
+    // 窗口尺寸变化（弹窗 max-height:85vh 会随之重排）
+    stubRect(trigger, 120, 380, 300, 32);
+    window.dispatchEvent(new Event('resize'));
+    await flush();
+    expect(panel.style.left).toBe('120px');
+    expect(panel.style.width).toBe('380px');
+    expect(panel.style.top).toBe('334px');
     w.unmount();
   });
 });

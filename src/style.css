@@ -297,8 +297,17 @@ body {
 .select-trigger .select-label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* ▼ 指示符：固定贴按钮最右侧；颜色取下拉/输入框边框公共灰 --control-border，与线条统一 */
 .select-caret { flex: none; font-size: 11px; line-height: 1; color: var(--control-border); padding-right: 2px; }
+/* 2026-10-13（用户反馈 + 截图：快捷启动弹窗打开 [终端] 下拉，弹窗内容出现滚动条、面板又被弹窗底缘切掉）：
+   absolute -> fixed。absolute 时面板挂在 .dropdown（:289 position:relative）上，既是所在滚动容器
+   （.modal-body / .template-list / .log-view）scrollHeight 的一部分（= 撑出滚动条），又被该容器的 overflow
+   裁切（.modal-box overflow:hidden，QuickLaunchModal.vue:314-315）。改 fixed 后浮于视口，与本文件既有口径一致
+   （.dd-tip :366 / .tpl-tip :377 / .flag-tip :479 的注释都写着「position:fixed 浮于视口避开 overflow 裁剪」）。
+   定位不再由 CSS 给：fixed 的包含块是视口，CSS 拿不到触发按钮位置 —— 原 top:calc(var(--h-control) + 2px) /
+   left:0 / right:0 三条删除，改由 Dropdown.vue 按触发按钮 getBoundingClientRect 写内联 left/top/width
+   （2px 间距 = 组件里的 PANEL_GAP），并在 scroll(capture) / resize 时重算：面板恒贴触发按钮，可超出卡片/弹窗边界。
+   窗口下缘放不下时不翻转、不压缩（用户 2026-10-13 决定）：仍按 max-height 116px，超出窗口的部分由窗口裁掉。 */
 .dropdown-panel {
-  position: absolute; top: calc(var(--h-control) + 2px); left: 0; right: 0; z-index: 20;
+  position: fixed; z-index: 20;
   margin: 0; padding: 4px; list-style: none;
   background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-btn);
   box-shadow: 0 4px 12px rgba(16, 24, 40, .12);

@@ -1,9 +1,11 @@
 <!-- #13 自定义下拉（共享）：TemplateModal options/boolean 行 + LaunchBar 配置下拉。
      白底卡片风格弹层，max-height 116px 可滚动，点击外部关闭；选中项 accent 色加粗。
+     弹层是视口浮层（2026-10-13，用户截图：快捷启动弹窗打开 [终端] 下拉把弹窗内容撑出滚动条）：
+     position:fixed + 按触发按钮矩形写内联坐标，见 place() 上方注释。
      长名 tooltip（.dd-tip 悬浮层,与「编辑」按钮 tooltip 同风格）：选项 li.tip / trigger.tip 存在时 hover 显示完整名；
      label 截断（LaunchBar >10 字 + …）由父级负责。 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faList } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
@@ -25,7 +27,50 @@ const props = withDefaults(defineProps<{
 }>(), { disabled: false, placeholder: '' });
 const emit = defineEmits<{ (e: 'update:value', v: string): void }>();
 const open = ref(false);
-function pick(v: string): void { if (props.disabled) return; emit('update:value', v); open.value = false; tip.value = null; }
+
+// ---------- 弹层定位（2026-10-13，用户反馈 + 截图）----------
+// 现象：快捷启动弹窗里打开 [终端] 下拉，弹窗内容出现滚动条、面板又被弹窗底缘切掉。
+// 根因：面板原来是 position:absolute（style.css 原 :301）挂在 .dropdown（style.css:289 position:relative）上 ——
+//   它因此是所在滚动容器（.modal-body / .template-list / .log-view）scrollHeight 的一部分（撑出滚动条），
+//   同时被该容器的 overflow 裁切（.modal-box overflow:hidden，QuickLaunchModal.vue:314-315）。
+// 口径：浮层一律 position:fixed 浮于视口 —— 本仓既有做法（.dd-tip style.css:366 / .tpl-tip :377 /
+//   .flag-tip :479 的注释都写着「position:fixed 浮于视口避开 overflow 裁剪」）。DOM 不动（不 Teleport），
+//   只改定位方式：既有的 .dropdown-panel 选择器与「点击外部关闭」的 closest('.dropdown') 判断都不受影响。
+// 代价：fixed 的包含块是视口，CSS 拿不到触发按钮位置 —— 原 CSS 的 top/left/right 三条删掉，
+//   坐标由下面的 place() 按触发按钮矩形写内联；祖先滚动 / 窗口尺寸变化时重算（面板恒贴触发按钮）。
+// 窗口下缘放不下时不翻转、不压缩（用户 2026-10-13 决定）：仍按 max-height 116px，超出窗口的部分由窗口裁掉。
+const triggerEl = ref<HTMLElement | null>(null);
+const panelStyle = ref<Record<string, string>>({});
+/** 面板与触发按钮的间距 = 原 style.css 的 calc(var(--h-control) + 2px) 里那 2px。 */
+const PANEL_GAP = 2;
+
+function place(): void {
+  const el = triggerEl.value;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const next = { left: r.left + 'px', top: r.bottom + PANEL_GAP + 'px', width: r.width + 'px' };
+  // 面板自身内部滚动也会走到这里（capture）：值没变就不写，省掉一次无谓的重渲染
+  const cur = panelStyle.value;
+  if (cur.left === next.left && cur.top === next.top && cur.width === next.width) return;
+  panelStyle.value = next;
+}
+function startFollowing(): void {
+  document.addEventListener('scroll', place, true); // scroll 不冒泡：capture 才收得到任意祖先的滚动
+  window.addEventListener('resize', place);
+}
+function stopFollowing(): void {
+  document.removeEventListener('scroll', place, true);
+  window.removeEventListener('resize', place);
+}
+/** 开合的唯一入口：开之前先定位，面板首帧就带坐标（不留「先渲染再跳位」的一帧）。 */
+function setOpen(next: boolean): void {
+  if (next === open.value) return;
+  if (next) { place(); open.value = true; startFollowing(); }
+  else { open.value = false; stopFollowing(); }
+}
+function toggle(): void { setOpen(!open.value); }
+
+function pick(v: string): void { if (props.disabled) return; emit('update:value', v); setOpen(false); tip.value = null; }
 
 // 长名 tooltip（2026-08-26 spec + 当日挪位）：trigger / li 的 tip 存在时 hover 弹 .dd-tip
 // （position:fixed 浮于视口——.dropdown-panel max-height+overflow:auto 会裁剪行内 absolute 浮层，
@@ -47,26 +92,31 @@ function showTip(e: MouseEvent, text: string): void {
   tip.value = { text, x: fitsRight ? r.right + 8 : r.left - 8, y, flip: !fitsRight };
 }
 function hideTip(): void { tip.value = null; }
-onMounted(() => {
-  const close = (ev: MouseEvent) => {
-    if (!(ev.target as HTMLElement).closest('.dropdown')) { open.value = false; tip.value = null; }
-  };
-  document.addEventListener('click', close);
-  return () => document.removeEventListener('click', close);
+// 点击外部关闭：面板浮在弹窗外，但 DOM 仍是 .dropdown 的子节点，closest('.dropdown') 判断不变。
+// 清理挂 onBeforeUnmount：Vue 3 不使用 onMounted 的返回值做 teardown（那是 Vue 2 的行为，见 runtime-core
+// 的 injectHook / createHook），原来那句 return () => removeEventListener(...) 其实一直没生效。
+function closeOnOutsideClick(ev: MouseEvent): void {
+  if (!(ev.target as HTMLElement).closest('.dropdown')) { setOpen(false); tip.value = null; }
+}
+onMounted(() => { document.addEventListener('click', closeOnOutsideClick); });
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeOnOutsideClick);
+  stopFollowing();
 });
 </script>
 <template>
   <div class="dropdown">
     <!-- trigger：长名携带 data-tooltip=完整名 + hover 弹 .dd-tip（样式同「编辑」按钮 tooltip） -->
-    <button class="btn select-trigger" :disabled="props.disabled"
+    <button ref="triggerEl" class="btn select-trigger" :disabled="props.disabled"
             :data-tooltip="props.tip"
             @mouseenter="(e) => showTip(e, props.tip)"
             @mouseleave="hideTip"
-            @click.stop="open = !open">
+            @click.stop="toggle()">
       <span class="select-label">{{ props.options.find((o) => o.value === props.value)?.label ?? (props.options.length > 0 ? props.options[0].label : props.placeholder) }}</span>
       <span class="select-caret"><FontAwesomeIcon :icon="byPrefixAndName.fat['list']" /></span>
     </button>
-    <ul v-if="open" class="dropdown-panel">
+    <!-- 坐标来自 place() 的内联 style（left/top/width）；position 与外观仍在全局 .dropdown-panel 里 -->
+    <ul v-if="open" class="dropdown-panel" :style="panelStyle">
       <!-- 选项：长名截断（父级 label），li 携带完整名 tooltip + hover 弹 .dd-tip -->
       <li v-for="o in props.options" :key="o.value"
           :data-tooltip="o.tip"
