@@ -48,10 +48,9 @@
 - 修改：`src/style.css:78-80`
 - 测试：`src/App.test.ts`（追加在 `describe('App GPU card mount')` 之后，即现 `:933` 之后；import 加在 `:6` 之前）
 
-- [ ] **步骤 0：记基线**
+- [ ] **步骤 0：记基线（已由主代理完成，check 索引 K6）**
 
-运行：`npm test`
-预期：全绿；把 `Test Files N passed (N)` / `Tests M passed (M)` 两个数字抄进该任务 check 表的 A 段。后续全量结果必须 = 基线 + 1 个用例，且不得有任何减少。
+基线由主代理在生成 check 表时实测并写入任务 1 表 A2：`Test Files 47 passed (47)` / `Tests 814 passed (814)`，exit 0（其中 `src/App.test.ts` = 59 tests）。**实现者不重跑全量**；全量只在步骤 5 跑一次，结果必须 = 基线 + 2 个用例（`Tests 816 passed (816)`），且不得有任何减少。
 
 - [ ] **步骤 1：编写失败的测试**
 
