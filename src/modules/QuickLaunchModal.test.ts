@@ -234,6 +234,66 @@ describe('QuickLaunchModal', () => {
     w.unmount();
   });
 
+  // 2026-10-13（用户直接改）：名字非空而命令为空 → 「命令不能为空」从弹窗顶部错误区
+  // 挪到命令输入框下方（与空名同一手法：文案复用主进程校验的既有键 err.ql.cmdRequired，不新建键）。
+  it('empty_cmd_shows_the_error_below_the_cmd_input_not_at_the_top', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, 'webui');
+    saveBtn().click();
+    await flush();
+
+    expect(saveCalls().length).toBe(0); // 渲染端先拦下，不发无谓的 ql_save
+    const cell = controlOf(t('ql.modal.cmd'))!;
+    const err = cell.querySelector('.error-text');
+    expect(err, '命令为空时报错没有渲染在命令输入框下方').not.toBe(null);
+    expect(err!.textContent).toBe(t('err.ql.cmdRequired'));
+    expect(document.querySelector('.modal-body > .error-text'), '报错仍留在弹窗顶部错误区').toBeNull();
+    expect(document.querySelector('.name-cell .error-text'), '命令的报错串到了名字那一格').toBeNull();
+    // 输入框标红，与空名同一口径（style.css:174 .input.error）
+    expect(inputOf(t('ql.modal.cmd'))!.classList.contains('error')).toBe(true);
+
+    // 填上命令 → 即时消失，再点保存就正常发出
+    await setInput(inputOf(t('ql.modal.cmd'))!, 'ping -n 1 127.0.0.1');
+    expect(cell.querySelector('.error-text')).toBeNull();
+    saveBtn().click();
+    await flush();
+    expect(saveCalls().length).toBe(1);
+    w.unmount();
+  });
+
+  // 同上，可执行程序态：路径为空 → 「可执行程序路径不能为空」在路径输入框下方（err.ql.exeRequired）
+  it('empty_exe_shows_the_error_below_the_exe_path_input_not_at_the_top', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
+    await setInput(inputOf(t('ql.modal.name'))!, '记事本');
+    saveBtn().click();
+    await flush();
+
+    expect(saveCalls().length).toBe(0);
+    const cell = controlOf(t('ql.modal.exe'))!;
+    const err = cell.querySelector('.error-text');
+    expect(err, '路径为空时报错没有渲染在路径输入框下方').not.toBe(null);
+    expect(err!.textContent).toBe(t('err.ql.exeRequired'));
+    expect(document.querySelector('.modal-body > .error-text'), '报错仍留在弹窗顶部错误区').toBeNull();
+    expect(inputOf(t('ql.modal.exe'))!.classList.contains('error')).toBe(true);
+
+    // 选到文件 → 即时消失，再点保存就正常发出
+    mockLms({ pick: 'D:\\Tools\\notepad.exe' });
+    (cell.querySelector('button') as HTMLButtonElement).click();
+    await flush();
+    expect(cell.querySelector('.error-text')).toBeNull();
+    saveBtn().click();
+    await flush();
+    expect(saveCalls().length).toBe(1);
+    w.unmount();
+  });
+
   // E5（规格 §5.3-2 / 索引 K31(2)）：主进程的重名文案原样进错误区（errMsg 剥壳），不关窗、不冒泡 saved；
   // 不在渲染端映射成 ql.err.nameTaken
   it('duplicate_name_from_main_process_shows_its_message_and_keeps_modal_open', async () => {
@@ -612,7 +672,7 @@ describe('QuickLaunchModal', () => {
     const style = () => getComputedStyle(box() as Element);
     // 定高值 = 命令行态实测高度（写在 <style scoped> 的 .modal-box 上）
     expect(style().minHeight, '弹窗未定高到命令行态的 218px').toBe('218px');
-    // 不用 height 钉死：报错文案出现时弹窗自然长高（用户决定 A）
+    // 不用 height 钉死：报错文案（顶部的主进程文案 / 名字·命令·路径的字段级提示）出现时弹窗自然长高（用户决定 A）
     expect(style().height, '用 height 钉死会把报错文案下方的输入框顶出可视区并出滚动条').not.toMatch(/^\d/);
     // 小窗口兜底不变：max-height 仍在（定高之后它是唯一的收缩门）。
     // 不断具体值：happy-dom 会把 85vh 按自己的视口换算成 px（本环境 768 → 652.8px），断字面量等于把用例绑到测试环境的视口高。
@@ -620,8 +680,11 @@ describe('QuickLaunchModal', () => {
 
     // 定高数字的依据 = 命令行态的 3 行控件。行数变了 218 就是旧数字，必须同步改（防陈旧门）
     const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    // 控件格 = 网格第二列里的纵向容器：.name-cell（名字 + 空名报错）、.dropdown（终端下拉）、
+    // .field-cell（命令 / 路径 + 各自的报错，2026-10-13 把报错挪到输入框下方时引入）。
+    // .row-cell 现在是这些容器的子节点、不再是网格直接子节点，故不在这里数。
     const controlCells = [...grid.children].filter((el) =>
-      el.classList.contains('row-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
+      el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
     expect(controlCells.length, '命令行态的表单行数变了，218px 的推导要重算').toBe(3);
 
     // 切到可执行程序：同一个 .modal-box、同一个定高值（不得按类型给 .modal-box 再加一条高度规则）

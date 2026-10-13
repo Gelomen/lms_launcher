@@ -71,10 +71,21 @@ const saving = ref(false);
 const attemptedSave = ref(false);   // 空名提示只在点过「保存」之后出现（TemplateModal.vue:53-55 同口径）
 const confirmDeleteOpen = ref(false);
 
-// 空名即时提示（F4）：其余六条校验规则（长度 / 重名 / type / 终端可用 / cmd / exe）
-// 一律交主进程（quick-launch-config.ts:87-102 与 :129-135），这里不复制。
+// 空名即时提示（F4）。其余校验规则（长度 / 重名 / type / 终端可用）仍一律交主进程
+// （quick-launch-config.ts:87-102 与 :129-135），这里不复制。
 const nameError = computed((): string | null =>
   formName.value.trim().length === 0 ? t('ql.err.nameRequired') : null);
+
+// 空命令 / 空 exe 路径（2026-10-13 用户直接改）：报错位置从弹窗顶部错误区挪到**对应输入框下方**，
+// 与空名同一手法（attemptedSave 之后即时显示、填上内容即消失、输入框标红）。
+// 文案复用主进程校验的既有键，不新建键：err.ql.cmdRequired（dict.ts:313 zh / :655 en）、
+// err.ql.exeRequired（dict.ts:314 zh / :656 en）——渲染端与主进程共用同一份词典（src/i18n.ts:3）。
+// 主进程那两条规则原样保留（quick-launch-config.ts:94 / :99），这里只是把同一句话换个位置说，
+// 并在 save() 里先拦下不发无谓的 IPC。按类型取用：shell 只判 cmd、exe 只判 exe（§5.3-6 的字段口径）。
+const cmdError = computed((): string | null =>
+  formType.value === 'shell' && formCmd.value.trim().length === 0 ? t('err.ql.cmdRequired') : null);
+const exeError = computed((): string | null =>
+  formType.value === 'exe' && formExe.value.trim().length === 0 ? t('err.ql.exeRequired') : null);
 
 // 类型与终端都走共享 Dropdown（F1，不手写 select）。类型两项固定；终端来自探测结果，
 // 顺序照主进程返回序不重排（索引 K31(3)：规格与计划都没要求 pwsh 优先）。
@@ -142,7 +153,8 @@ async function save(): Promise<void> {
   if (saving.value) return;
   attemptedSave.value = true;
   saveError.value = null;
-  if (nameError.value !== null) return;
+  // 三条渲染端即时校验（名字 / 命令 / 路径）先拦下：报错已在各自输入框下方显示，不必再走 IPC
+  if (nameError.value !== null || cmdError.value !== null || exeError.value !== null) return;
   const name = formName.value.trim();
   const entry: QuickLaunchEntry = formType.value === 'exe'
     ? { name, type: 'exe', exe: formExe.value.trim() }
@@ -194,7 +206,9 @@ function close(): void { emit('close'); }
         </header>
         <!-- 表单区：唯一的滚动容器 -->
         <div class="modal-body">
-          <!-- 主进程校验文案（VALIDATION: / YAML:）原样显示（索引 K31(2)） -->
+          <!-- 主进程校验文案（VALIDATION: / YAML:）原样显示（索引 K31(2)）。
+               例外：名字 / 命令 / 路径「不能为空」三条不在这里——名字在名字那一格下方，
+               命令与路径在各自输入框下方（2026-10-13 用户直接改），顶部区只留重名 / 过长 / 终端不可用 / YAML 等。 -->
           <p v-if="saveError" class="error-text">{{ saveError }}</p>
 
           <div class="flag-grid">
@@ -223,19 +237,29 @@ function close(): void { emit('close'); }
                   :placeholder="terminalsLoading ? t('ql.modal.terminal.loading') : ''"
                   @update:value="onShellChange" />
               </div>
-              <label class="label flag-label">{{ t('ql.modal.cmd') }}</label>
-              <div class="row-cell"><input class="input" v-model="formCmd" /></div>
+              <label class="label flag-label cmd-label">{{ t('ql.modal.cmd') }}</label>
+              <!-- 命令为空的报错在命令那一格内（.field-cell，与 .name-cell 同一手法），不进弹窗顶部错误区 -->
+              <div class="field-cell">
+                <div class="row-cell">
+                  <input class="input" :class="{ error: attemptedSave && cmdError !== null }" v-model="formCmd" />
+                </div>
+                <p v-if="attemptedSave && cmdError" class="error-text">{{ cmdError }}</p>
+              </div>
             </template>
 
             <!-- 可执行程序：路径 + 选择按钮（规格 §2 非目标：不加启动参数 / 工作目录） -->
             <template v-else>
-              <label class="label flag-label">{{ t('ql.modal.exe') }}</label>
-              <div class="row-cell">
-                <input class="input" v-model="formExe" />
-                <button class="btn btn-secondary file-btn tip-up" :data-tooltip="t('ql.modal.btn.pick')"
-                  :aria-label="t('ql.modal.btn.pick')" @click="pickExe">
-                  <FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 14px;" />
-                </button>
+              <label class="label flag-label exe-label">{{ t('ql.modal.exe') }}</label>
+              <!-- 路径为空的报错在路径那一格内（同上），选择按钮仍在输入行右侧 -->
+              <div class="field-cell">
+                <div class="row-cell">
+                  <input class="input" :class="{ error: attemptedSave && exeError !== null }" v-model="formExe" />
+                  <button class="btn btn-secondary file-btn tip-up" :data-tooltip="t('ql.modal.btn.pick')"
+                    :aria-label="t('ql.modal.btn.pick')" @click="pickExe">
+                    <FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 14px;" />
+                  </button>
+                </div>
+                <p v-if="attemptedSave && exeError" class="error-text">{{ exeError }}</p>
               </div>
             </template>
           </div>
@@ -275,9 +299,9 @@ function close(): void { emit('close'); }
    + .modal-body：padding 16×2 + .flag-grid margin-top 12 + 3 行 × var(--h-control)32 + 2 行距 × 6 = 152
    + .modal-actions 32
    = 218。可执行程序态因此表单下方留白 38px，切换类型不再长高/变窄。
-   用 min-height 而不是 height（用户 2026-10-13 决定）：保存失败的主进程文案 / 空名提示出现时
-   弹窗自然长高（实测报错态 236px，正文区 bodyScroll == bodyClient = 不出滚动条、内容不被裁），
-   不把命令输入框顶掉。
+   用 min-height 而不是 height（用户 2026-10-13 决定）：保存失败的主进程文案 / 名字·命令·路径「不能为空」
+   的字段级提示出现时，弹窗自然长高（实测报错态 236px，正文区 bodyScroll == bodyClient = 不出滚动条、
+   内容不被裁），不把命令输入框顶掉。
    行数变了这个数就要重算——QuickLaunchModal.test.ts 的 modal_height_is_fixed_to_the_shell_form_height_in_both_types
    钉着「命令行态 3 行控件」与「两态同一个定高值」。 */
 .modal-box {
@@ -351,10 +375,15 @@ function close(): void { emit('close'); }
    （520px 弹窗里 ≈ 418px），现按「可执行程序」/「Command line」两个标签都能放下定到 140px。
    选择器写成 .row-cell .type-field（特异性 0,2,0 + scoped 属性）以压过 style.css:289 的 width:100%。 */
 .name-cell { min-width: 0; }
+/* 命令 / 可执行程序路径的报错格（2026-10-13 用户直接改）：与 .name-cell 同一手法——
+   纵向容器包住「输入行 + 报错」，报错不占 .flag-grid 的网格列（否则会把下一行的标签挤到报错同一行）。
+   两态下它都是表单最后一格，所以不影响 218px 的定高推导（报错出现时按 min-height 自然长高）。 */
+.field-cell { min-width: 0; }
 /* 名字标签对齐到输入行本身：.flag-grid 是 align-items:center，空名报错出现后 .name-cell 变高，
    默认居中会把标签压到「输入框 + 报错」两行的中间。改为顶对齐 + 8px 内边距
-   = (32px 控件高 − 17px 行高) / 2，有无报错都对齐输入框的中线。 */
-.flag-grid .name-label { align-self: start; padding-top: 8px; }
+   = (32px 控件高 − 17px 行高) / 2，有无报错都对齐输入框的中线。
+   命令 / 路径两格现在也会因报错变高，同一处理（.cmd-label / .exe-label）。 */
+.flag-grid .name-label, .flag-grid .cmd-label, .flag-grid .exe-label { align-self: start; padding-top: 8px; }
 .row-cell .type-label { flex: none; white-space: nowrap; }
 .row-cell .type-field { flex: none; width: 140px; }
 .file-btn {
