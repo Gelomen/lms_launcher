@@ -73,7 +73,7 @@
 - [ ] **步骤 2：加载冒烟（证明 `install` 脚本被拦下不影响可用）**
 
 运行：`node --input-type=module -e "import koffi from 'koffi'; const k=koffi.load('shell32.dll'); console.log(typeof koffi.load, typeof k.func, koffi.sizeof(koffi.struct('T',{a:'uint32',b:'void *'})))"`
-预期：`function function 8`（x64 对齐：`uint32` + 指针 = 8）。任何 `Cannot find module 'koffi'` 或 `dlopen` 类错误 = 本任务不通过。
+预期：`function function 16`（x64 对齐：`uint32` 4 字节 + 4 字节填充 + 8 字节指针 = 16；**实测 2026-10-13 21:12**，索引 K16 —— 原写 `= 8` 是漏算填充）。任何 `Cannot find module 'koffi'` 或 `dlopen` 类错误 = 本任务不通过。
 
 - [ ] **步骤 3：`asarUnpack` 两条**
 

@@ -33,7 +33,7 @@
 | C2 | `asarUnpack` 三条逐字：`"**/node_modules/@lydell/**"`、`"**/node_modules/koffi/**"`、`"**/node_modules/@koromix/**"`；注释五行按 plan 步骤 3 逐字（保留 node-pty 的说明 + 追加 koffi 的说明） | plan 步骤 3 / 规格 §6.8 | ☐ |
 | C3 | 原生件真实路径 = `node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node`（`Test-Path` → `True`） | 规格 E12 / plan 步骤 1 | ☐ |
 | C4 | 不加 `allowScripts` 条目、不 `npm rebuild koffi`（现值只有 `"electron@28.3.3": true`，实测） | 全局约束 / 索引 G7 / 规格 E12 | ☐ |
-| C5 | 加载冒烟输出逐字 `function function 8`（x64 对齐：`uint32` + 指针 = 8） | plan 步骤 2 | ☐ |
+| C5 | 加载冒烟输出逐字 `function function 16`（x64 对齐：`uint32` 4 + 填充 4 + 指针 8 = 16；索引 K16，plan 原写 `= 8` 漏算填充、已同步更正） | plan 步骤 2（已按实测更正） | ☐ |
 | C6 | `pnpm-lock.yaml` 一字不动（停在 `fa8f87e`，实测） | 全局约束 / 索引 G6 / K8 | ☐ |
 
 ## D. 步骤门（本任务没有可写的单测，门 = 安装 → 平台包落盘 → 加载取证 → 声明 → 类型 → 全量）
@@ -42,7 +42,7 @@
 |---|---|---|---|---|
 | D1 | 步骤 1：安装 | `npm install koffi@^3.3.3 --save` | exit 0，输出含 `added 2 packages`（或 `1 added, 1 changed`）；`package.json` 与 `package-lock.json` 出现 koffi 两条 | ☐ |
 | D2 | 步骤 1 后半：平台包落盘 | `Test-Path node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node` | `True`。`False` → 停下报告，不改 `allowScripts`、不 `npm rebuild koffi`（规格 §9-R5） | ☐ |
-| D3 | 步骤 2：加载冒烟（证明 `install` 脚本被拦下不影响可用） | `node --input-type=module -e "import koffi from 'koffi'; const k=koffi.load('shell32.dll'); console.log(typeof koffi.load, typeof k.func, koffi.sizeof(koffi.struct('T',{a:'uint32',b:'void *'})))"` | `function function 8`；任何 `Cannot find module 'koffi'` 或 dlopen 类错误 = 本任务不通过 | ☐ |
+| D3 | 步骤 2：加载冒烟（证明 `install` 脚本被拦下不影响可用） | `node --input-type=module -e "import koffi from 'koffi'; const k=koffi.load('shell32.dll'); console.log(typeof koffi.load, typeof k.func, koffi.sizeof(koffi.struct('T',{a:'uint32',b:'void *'})))"` | `function function 16`（索引 K16）；任何 `Cannot find module 'koffi'` 或 dlopen 类错误 = 本任务不通过 | ☐ |
 | D4 | 步骤 3：`asarUnpack` 两条 | — | 见 C2（只改 :13-17） | ☐ |
 | D5 | 步骤 4：类型门 | `npx tsc -p tsconfig.main.json --noEmit` | 无输出、exit 0（此时还没有代码 import koffi，这条只证明没弄坏既有编译） | ☐ |
 | D6 | 步骤 5：全量回归 | `npm test` | 与基线逐字相同：`Test Files 47 passed (47)` / `Tests 826 passed (826)`（本任务不加用例） | ☐ |

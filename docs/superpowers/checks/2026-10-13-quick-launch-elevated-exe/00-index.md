@@ -27,7 +27,7 @@
 | G4 | Win32 取值逐字：`fMask = 0x40 \| 0x04`、`lpVerb = null`（不是 `"runas"`）、`nShow = 1`、`lpParameters = null`、`lpDirectory = null`、`cbSize = koffi.sizeof(SHELLEXECUTEINFOW)` | 读 `shell-execute.ts` 源码逐字比对规格 §6.3 | T2 C/E |
 | G5 | 错误前缀只用 `PROC:`（索引 G7 of 旧 feature 的五前缀口径）；新键只有 `err.proc.uacCancelled`（zh/en 同时、占位符只有 `{exe}`）；其余失败复用 `err.proc.spawnFail` 带 `win32=<码>`；调用点必须是字面量 `t('…')` | `key-coverage.test.ts` + `no-hardcoded.test.ts` + `dict.test.ts` 定向绿；读调用点 | T3 C/E/G |
 | G6 | 包管理器 = npm（`node_modules/.package-lock.json` 存在、`node_modules/@lydell` 为真实目录、`pnpm-lock.yaml` 停在 `fa8f87e`）；**只改 `package.json` + `package-lock.json`**，`pnpm-lock.yaml` 不进暂存 | `git diff --name-only` 不含 `pnpm-lock.yaml` | T1 B/H |
-| G7 | 不加 `allowScripts` 条目、不 `npm rebuild koffi`；koffi 的 `install` 脚本被拦下仍可用由加载冒烟证明 | 读 `package.json` 的 `allowScripts` 仍只有 electron；`node --input-type=module -e "import koffi …"` 输出 `function function 8` | T1 D/F |
+| G7 | 不加 `allowScripts` 条目、不 `npm rebuild koffi`；koffi 的 `install` 脚本被拦下仍可用由加载冒烟证明 | 读 `package.json` 的 `allowScripts` 仍只有 electron；`node --input-type=module -e "import koffi …"` 输出 `function function 16`（索引 K16） | T1 D/F |
 | G8 | 命令口径：定向 `npx vitest run <路径>`、全量 `npm test`、类型 `npx tsc -p tsconfig.main.json --noEmit`、语法 `npx vite build` | 每张表 D/G 段的命令逐字 | 全部 |
 | G9 | 基线 = 47 files / 826 tests（规格 E18）。**实现者不重跑全量**；每任务末尾跑一次，计数必须 = 基线 + 该任务新增，且不得有任何减少 | 任务 2 后应为 `Tests 834 passed (834)` / `Test Files 48 passed (48)`；任务 3 后计数不变；差额必须在 J 段说明 | T2 G / T3 G |
 | G10 | 提交信息 Conventional Commits + 中文；**由主代理在验收通过后执行**；子代理不 `git add`、不 commit | 各表 H 段 + J 段留 HEAD 证据 | 全部 |
@@ -74,3 +74,4 @@
 | K13 | 索引「工作基线」的 `git status --porcelain` 判据 = **无已跟踪改动**；生成期未跟踪的 `.superpowers/`（普查脚本）与 `docs/superpowers/checks/`（本表目录）属预期产物 | 实测：`git status --porcelain` 恰为 `?? .superpowers/` 与 `?? docs/superpowers/checks/`，`git diff --stat` 空 | T1 A1 |
 | K14 | **本次由主代理内联实现**（用户 2026-10-13 21:04 明确「不使用 SDD，直接实现」）：不派实现子代理，但 check 表仍逐行执行并落勾、J 段填真实命令输出、提交仍按各表 H 段、顺序仍按 plan 任务号 | 用户指令 + AGENTS.md「例外」条款（写明并获明确同意的偏离）；执行载体改为 `executing-plans` | 全部四张表的 H/J 段 |
 | K15 | **词典两条键（`err.proc.uacCancelled` zh/en）随任务 2 的实现同一提交落地**，任务 3 只核对不再改；任务 2 的 H1 暂存范围相应为三个文件、任务 3 的为三个文件 | 任务 2 表 G3 的实测：`key-coverage.test.ts:117-129` 扫 `src-main/**` 的非 `.test.ts` 文件，「有调用点、无键」必红 → plan 原排序（键放任务 3 步骤 2）会让任务 2 末尾的全量必为 1 failed。plan 任务 2 步骤 2b / 任务 3 步骤 2 与两张表的 B/G/H 段已同步（同一提交） | T2 B3/G3/G6/H1、T3 B2/D3/G6/H1 |
+| K16 | 加载冒烟的预期输出是 `function function 16`，不是 `…8`：x64 下 `struct{uint32; void*}` = 4 字节字段 + 4 字节对齐填充 + 8 字节指针。同一程序里 `koffi.sizeof(SHELLEXECUTEINFOW)` 实测 **112**，与规格 E13 一致 | 主代理 2026-10-13 21:12 实测（`SMOKE_EXIT=0` / `SIZEOF_EXIT=0`）；plan 任务 1 步骤 2 与任务 1 表 C5/D3 已同步更正 | T1 C5 / D3、索引 G7 |
