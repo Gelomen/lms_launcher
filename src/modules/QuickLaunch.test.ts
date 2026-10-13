@@ -5,6 +5,8 @@
 // 卡片不订阅 ql-data / ql-exit —— 下面的 mock 只提供 invoke，一旦引入订阅就会 TypeError（C4 的被动守卫）。
 import { describe, it, expect } from 'vitest';
 import { mount, flushPromises as flush } from '@vue/test-utils';
+import fs from 'fs';
+import path from 'path';
 import QuickLaunch from './QuickLaunch.vue';
 import { t, applyLangLocal } from '../i18n';
 import type { QuickLaunchEntry, QuickLaunchList } from '../src-main/quick-launch-config';
@@ -216,5 +218,41 @@ describe('QuickLaunch card', () => {
     expect(btns[1].classes()).toEqual(expect.arrayContaining(['icon-btn', 'icon-btn--sm']));
     expect(btns[2].classes()).toEqual(expect.arrayContaining(['btn', 'btn-danger']));
     w.unmount();
+  });
+
+  // 长名不顶错位（2026-10-13 用户反馈 + 截图）：
+  // 名字较长时 .tpl-row__actions 被 flex 挤压 → 三个按钮从一行折成两行（[复制][编辑] 一行、[启动] 掉到下一行）。
+  // 根因：.tpl-row__actions 无样式（块级 div，min-content = 单个按钮宽 → 可被压到折行），
+  // .tpl-row__id 只 min-width:0 不 grow、也没有 text-overflow → 名字按 JS 预算截断后仍可能超出行的可用像素宽。
+  // CSS 契约（与 TemplateModule.test.ts:154-168 同一手法：注入真实 style.css 后读 computed style）：
+  //   .tpl-row__actions → display:flex + flex-shrink:0（按钮组定宽、自身不换行，贴卡片右缘）
+  //   .tpl-row__id      → flex-grow:1 + text-overflow:ellipsis（吃掉剩余空间并按像素裁剪，
+  //                        与 truncate.ts:20 的 grace 口径一致：超出像素交给 CSS text-overflow）
+  it('row_actions_do_not_shrink_and_label_clips_by_pixel', () => {
+    if (!document.getElementById('__global-css__')) {
+      const st = document.createElement('style');
+      st.id = '__global-css__';
+      st.textContent = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
+      document.head.appendChild(st);
+    }
+    const row = document.createElement('div');
+    row.className = 'tpl-row';
+    const label = document.createElement('span');
+    label.className = 'tpl-row__id';
+    const actions = document.createElement('div');
+    actions.className = 'tpl-row__actions';
+    row.appendChild(label);
+    row.appendChild(actions);
+    document.body.appendChild(row);
+    try {
+      const a = getComputedStyle(actions);
+      expect(a.display).toBe('flex');
+      expect(a.flexShrink).toBe('0');
+      const l = getComputedStyle(label);
+      expect(l.flexGrow).toBe('1');
+      expect(l.textOverflow).toBe('ellipsis');
+    } finally {
+      row.remove();
+    }
   });
 });

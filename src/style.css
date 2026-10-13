@@ -341,8 +341,16 @@ body {
   padding: 8px 10px;
 }
 /* 行名单行（2026-08-26 spec）：JS 已把 >25 字截断为前 25 字+…，CSS 再保证不换行——
-   原 word-break:break-all 让长 desc 换行撑高行卡片（用户嫌丑的根因），现改 nowrap+hidden 双保险 */
-.tpl-row__id { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; }
+   原 word-break:break-all 让长 desc 换行撑高行卡片（用户嫌丑的根因），现改 nowrap+hidden 双保险。
+   2026-10-13（快捷启动长名顶错位）：行名是行内唯一可伸缩项——flex-grow:1 吃掉剩余宽度、
+   text-overflow:ellipsis 按真实像素裁剪。JS 的宽度预算（30）只是第一道，兜不住的部分由这里裁，
+   与 truncate.ts:18-21 的 grace 口径同一套（「超出像素交给 CSS text-overflow 自动省略」）。 */
+.tpl-row__id { font-weight: 600; flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 操作按钮组（[复制][编辑][启动/停止]）：定宽、不参与收缩——与 .btn-noshrink（:295）同一保护。
+   此前本类没有任何规则 = 块级 div，其 min-content 只有「一个按钮」宽，flex 允许把它压到折行：
+   长名下 [启动] 被挤到第二行、行卡片被撑高（用户 2026-10-13 截图）。display:flex 保证三个按钮恒在一行，
+   gap:4px = 原先 HTML 空白符的间距，视觉不变。 */
+.tpl-row__actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 /* 长名 tooltip：与 .icon-btn::after 同视觉语言（深灰底白字/12px/圆角/z-30），
    position:fixed 浮于视口——.template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题） */
 /* .dd-tip：Dropdown（启动控制配置下拉 / TemplateModal）长名 tooltip —— 与 .tpl-tip / .icon-btn::after 同视觉语言
