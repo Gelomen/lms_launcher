@@ -57,6 +57,8 @@ PROC: E:\QiYou\QiYou.exe 启动失败: spawn E:\QiYou\QiYou.exe EACCES
 | E16 | 主进程已有「同步阻塞」先例：终端探测用 `spawnSync`（最坏 3×3s），只包了一层 `setImmediate` | `src-main/main.ts:1034-1036`、`src-main/quick-launch-terminals.ts` |
 | E17 | 现有测试里有两处**直接钉住旧实现**的用例：`src-main/ipc-ql.test.ts:423-468`（改写 `ProcessState.prototype.launch` 观察 `launch(exe, [], configId)` 与 `qlStartContext` 槽）与同文件「exe 启动失败：前缀由 ProcessState 自带（索引 K11(4)），并经既有日志通道反馈（check E4）」 | 读文件 + 基线运行输出 |
 | E18 | 基线（写本规格时实测）：`npm test` → `Test Files 47 passed (47)`、`Tests 826 passed (826)`，exit 0 | `npm test` 2026-10-13 19:25 |
+| E19 | **`SEE_MASK_FLAG_NO_UI` 压不住「文件 / 路径不存在」这一类 Shell 错误框**：`fMask` 取 `0x44`、`0x144`（另加 `SEE_MASK_FLAG_DDEWAIT`）、`0x104` 三种，`C:\no-such-dir\no-such.exe` 与 `Z:\no-such-dir\no-such.exe`（无效驱动器）**都弹**模态框并把调用线程卡死（node 进程 4s 未返回，需人点「确定」）；`SetErrorMode(0x3)` 也压不住。同一次调用里解码回读确认 `fMask_in_mem` 就是写入值、`cbSize=112`、`sizeof(SE)=112` → 不是传参错，是 Shell 在这条错误类上不认这个位。对照组：存在但无关联的 `.xyz` → `ok=true`、`hInstApp=42`、不阻塞（说明不是「所有 UI 都被禁掉」） | `.temp/uac-probe/no-ui-probe.mjs`（日志 `no-ui-A..E.log`）、`.temp/uac-probe/errmode-probe.mjs`（`errmode-G.log`），2026-10-13 21:44 |
+| E20 | 真接缝冒烟可用的**无 UI、无副作用**真实 Win32 调用 = 当前进程伪句柄 `-1`：`GetProcessId(-1) = 本进程 pid`、`WaitForSingleObject(-1, 0) = 258`（WAIT_TIMEOUT）、`GetExitCodeProcess(-1,…) = true / code=259`、`CloseHandle(-1) = true`；koffi 对 JS 数字 `-1` 与 `0xffffffffffffffffn` 都按 `void *` 正确传（传字符串 `'0xffffffffffffffff'` 则退化成 0，不可用） | `.temp/uac-probe/pseudo-handle-probe.mjs`，2026-10-13 21:45 |
 
 ## 4 目标
 
@@ -129,7 +131,7 @@ export class ShellExecProcess {
 | 字段 | 取值 | 理由 |
 |---|---|---|
 | `cbSize` | `koffi.sizeof(SHELLEXECUTEINFOW)` = 112（E13） | API 要求 |
-| `fMask` | `SEE_MASK_NOCLOSEPROCESS (0x40) \| SEE_MASK_FLAG_NO_UI (0x04)` | 前者才返回 `hProcess`（E6/E10）；后者关掉 Shell 自己的错误对话框，否则「文件不存在」会弹系统弹窗、绕过我们的日志通道 |
+| `fMask` | `SEE_MASK_NOCLOSEPROCESS (0x40) \| SEE_MASK_FLAG_NO_UI (0x04)` | 前者才返回 `hProcess`（E6/E10）。后者**保留**（它确实关掉一部分 Shell UI，例如无文件关联的「打开方式」路径，E19 对照组），但**实测它压不住「文件 / 路径不存在」的错误框**（E19）—— 该类仍会弹系统框并阻塞主线程，见 §9-R8（用户 2026-10-13 21:47 决定：接受，不加 `existsSync` 预检、不改设计） |
 | `lpVerb` | `null`（默认动词 `open`） | **不用 `"runas"`**：`runas` 强制提权，对 `asInvoker` 程序反而可能多弹一次 UAC。`open` 下 `requireAdministrator` 仍按 manifest 自动提权（E6 实测弹了 UAC），`asInvoker` 正常启动（E8） |
 | `lpFile` | 配置里的 `exe`（`quick-launch-config.ts:75-77` 已 trim） | — |
 | `lpParameters` | `null` | 本期无参数字段（§5） |
@@ -217,7 +219,7 @@ stopGraceful(timeoutSecs):
 5. `[停止]` 提权进程：`killTree` 返回 false → 断言 `terminate(句柄, 1)` 被调用
 6. `[停止]` 非提权进程：`killTree` 返回 true 且随后 `isAlive()` 为假 → 断言 `terminate` **未**被调用
 7. `stopGraceful` 幂等：第二次调用立即返回
-8. 真接缝冒烟门（无副作用的真实 Win32 调用）：`winShell.shellExecute('Z:\\no-such-dir\\no-such.exe', 1)` → `ok === false`（锁行为不锁具体码，避免 Shell 版本差异）。这条同时证明「打包环境之外 koffi 绑定可用」
+8. 真接缝冒烟门（无 UI、无副作用的真实 Win32 调用）：`winShell.pidOf(-1) === process.pid` 且 `winShell.isAlive(-1) === true`（当前进程伪句柄，E20）。**原写法 `winShell.shellExecute('Z:\\no-such-dir\\no-such.exe', 1)` 作废**：它确实返回 `ok=false`，但会弹 Shell 的系统错误框并把测试线程卡住（实测 vitest worker 卡 383s，直到进程被杀；E19）。真实 `ShellExecuteExW` 调用由 §3 E6/E8 的探针与 §7.2 真机门守，不在单测里跑
 
 改写 `src-main/ipc-ql.test.ts` 的两处（E17）：
 
@@ -234,6 +236,8 @@ stopGraceful(timeoutSecs):
 4. 不需要管理员的条目（例：`C:\Windows\System32\notepad.exe`）→ 照常启动、停止、退出后 `进程退出 code=` 正常
 5. 打包目录里存在 `resources\app.asar.unpacked\node_modules\@koromix\koffi-win32-x64\win32_x64\koffi.node`
 6. 应用退出路径（托盘退出 / `[更新]`）仍不留孤儿进程（`ql.stopAll` 走的是新的 `stopGraceful`）
+
+顺带观察（不判过否，回报现象即可）：把某条目的 exe 改成一个**不存在的路径**再点 `[启动]` —— 按 E19 会弹系统的「找不到文件」错误框，点「确定」后我们的 `PROC: … win32=<码>` 日志才出现。本次接受（§9-R8），只观察现象。
 
 **不得用「自动化已过」代替这一组。**
 
@@ -259,7 +263,7 @@ stopGraceful(timeoutSecs):
 - **K1** 新模块名 `src-main/shell-execute.ts`（用 Win32 API 名，避免与「终端 shell 类型」混）
 - **K2** `err.proc.uacCancelled` 带 `{exe}` 占位符（§6.5 理由）
 - **K3** 判存活用 `WaitForSingleObject`，不用 `STILL_ACTIVE` 比对（E11）
-- **K4** `fMask` 加 `SEE_MASK_FLAG_NO_UI`（§6.3）
+- **K4** `fMask` 加 `SEE_MASK_FLAG_NO_UI`（§6.3）。**实现期更正**：实测它不覆盖「文件 / 路径不存在」那类弹窗（E19），该位仍保留（对其他 Shell UI 有效），该类弹窗作为已知边界接受（§9-R8）
 - **K5** 主线程同步阻塞本次接受，与 `spawnSync` 同口径（§6.9）
 - **K6** `quick-launch.ts:5-6` 文件头注释里「生产侧由任务 6 接 ProcessState 适配器」一句随实现同步改写（**只改注释，可执行代码零改动**）——仓库惯例是注释随其描述的取值一起更新，留着会指错
 
@@ -274,3 +278,4 @@ stopGraceful(timeoutSecs):
 | R5 | pnpm 下 koffi 的安装行为未实测（E12 是 npm 实测）；`optionalDependencies` 平台包在 pnpm 的构建脚本策略下是否照常装 | 计划任务 1 步骤 0 必须先实测并写进 check 表 J 段，不通过就停下报告 |
 | R6 | `ShellExecProcess` 的 100ms 轮询定时器若未在退出时 `clearInterval`，事件循环会一直醒着 | §6.4 钉死「退出即 clear + close」；单测第 2 条断言 `close()` 被调用 |
 | R7 | 旧规格 §7.3 / 索引 K13 的口径已被本规格取代，但旧文档不在工作区（开头「取代关系」） | 代码注释（`main.ts:1039-1052`、`quick-launch.ts:5-6`）随实现改写为新口径，避免注释领先 / 落后 |
+| R8 | 用户配置的 exe **路径不存在**（被移动 / 删除、驱动器不在）时，Shell 会弹自己的系统错误框并阻塞主线程，我们的 `PROC:` 日志要等用户点「确定」才出现（E19：`SEE_MASK_FLAG_NO_UI` 与 `SetErrorMode` 都压不住） | **本次接受**（用户 2026-10-13 21:47 在「预检文件 / 接受弹窗 / 换回 spawn」三选一中选「接受弹窗，只改测试」）：不加 `existsSync` 预检、不改 §6.1 的唯一路径；`PROC:` 分类逻辑不变。真机清单加一条顺带观察（§7.2）。若日后判定不可接受 → 加预检，另立改动 |

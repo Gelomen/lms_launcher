@@ -33,7 +33,7 @@
 | C2 | `export const winShell: WinShellApi` —— 普通对象、方法内惰性 `koffi.load`（首次调用才加载，测试替换属性时不必碰 koffi） | 规格 §6.2 / plan 步骤 3 | ☐ |
 | C3 | `export function launchShellExe(api: WinShellApi, exe: string): ShellExecProcess`：构造即启动，失败抛 `PROC:` | 规格 §6.2 | ☐ |
 | C4 | `class ShellExecProcess { readonly pid: number; onExit(cb); isRunning(); stopGraceful(timeoutSecs): Promise<void>; drainExit(): number \| null }` | 规格 §6.2 | ☐ |
-| C5 | `ShellExecuteExW` 取值逐字：`cbSize = koffi.sizeof(SHELLEXECUTEINFOW)`（x64 = 112）、`fMask = 0x40 \| 0x04`、`lpVerb = null`（**不是 `"runas"`**）、`nShow = 1`、`lpParameters = null`、`lpDirectory = null` | 规格 §6.3 / 索引 G4 / K3 / K4 | ☐ |
+| C5 | `ShellExecuteExW` 取值逐字：`cbSize = koffi.sizeof(SHELLEXECUTEINFOW)`（x64 = 112）、`fMask = 0x40 \| 0x04`、`lpVerb = null`（**不是 `"runas"`**）、`nShow = 1`、`lpParameters = null`、`lpDirectory = null`。**实测更正（规格 E19 / 索引 K17）**：`0x04` 这一位保留，但它压不住「文件 / 路径不存在」的 Shell 错误框（`0x44`/`0x144`/`0x104` 都弹，`SetErrorMode(0x3)` 也压不住）→ 不得据此认为「失败路径不会弹系统框」 | 规格 §6.3 / 索引 G4 / K3 / K4 / K17 | ☐ |
 | C6 | koffi 声明逐字：`koffi.struct('SHELLEXECUTEINFOW', { cbSize:'uint32', fMask:'uint32', hwnd:'void *', lpVerb:'str16', lpFile:'str16', lpParameters:'str16', lpDirectory:'str16', nShow:'int', hInstApp:'void *', lpIDList:'void *', lpClass:'str16', hkeyClass:'void *', dwHotKey:'uint32', hIcon:'void *', hProcess:'void *' })` + `koffi.load('shell32.dll').func('bool ShellExecuteExW(SHELLEXECUTEINFOW *psei)')`；**不能把 `'struct'` 当类型名**（实测 `Unknown or invalid type name 'struct'`） | plan 步骤 3 / 规格 E13 | ☐ |
 | C7 | `koffi.load('kernel32.dll')` 取 `GetProcessId` / `WaitForSingleObject` / `GetExitCodeProcess` / `TerminateProcess` / `CloseHandle` / `GetLastError`；`GetLastError` 必须在 `ShellExecuteExW` 返回 false 后**立刻**取，中间不插别的 Win32 调用 | plan 步骤 3 / 规格 §6.5 | ☐ |
 | C8 | 抛错文案：`win32Error === 1223` → `'PROC: ' + t('err.proc.uacCancelled', { exe })`；其他 `ok === false` → `'PROC: ' + t('err.proc.spawnFail', { exe, err: 'win32=' + GetLastError() })`；调用点必须是**字面量** key | 规格 §6.5 / 索引 G5 | ☐ |
@@ -57,13 +57,13 @@
 | # | 断言 | 出处 | 变异取证（预期） | ✓ |
 |---|---|---|---|---|
 | E1 | 启动成功：`launchShellExe(api, 'E:\\QiYou\\QiYou.exe')` → `pid === 4242`、`isRunning()` 为真、`pidOf` 收到 `shellExecute` 返回的那个句柄 | 规格 §7.1-1 | 变异：把 `pidOf` 的实参换成别的（或把 `pid` 写死 0）→ 预期红因 `expected "spy" to be called with arguments: [ { id: 'h1' } ]` / `expected 0 to be 4242` | ☐ |
-| E2 | 退出只上报一次：`isAlive` 第二次起返回 `false`、`exitCodeOf` 返回 7 → `onExit` 收到 `7` 且**只一次**；`close` 被调用；再等 300ms 不会有第二次回调（定时器已清） | 规格 §7.1-2 / §6.4 / §9-R6 / 索引 R5 | 变异：删掉 `clearInterval` → 预期红因 `expected "spy" to be called 1 times, but got 2 times`；删掉 `api.close(handle)` → 预期红因 `expected "spy" to have been called at least once, but it was never called` | ☐ |
+| E2 | 退出只上报一次：`isAlive` 第二次起返回 `false`、`exitCodeOf` 返回 7 → `onExit` 收到 `7` 且**只一次**；`close` 被调用；再等 300ms 不会有第二次回调（定时器已清） | 规格 §7.1-2 / §6.4 / §9-R6 / 索引 R5 | 变异：删掉 `clearInterval` → 预期红因 `expected "spy" to be called 1 times, but got 2 times`；删掉 `api.close(handle)` → 预期红因 `expected "spy" to have been called at least once, but it was never called`。**实测（J-10 / J-11，索引 K19）**：删 `clearInterval` 的真实红因是 `expected 1 to be +0` —— 用例必须改用 `vi.useFakeTimers()` + `vi.getTimerCount()===0` 才有牙（真定时器下漏掉 `clearInterval` 不会红：`finish()` 的 `exited` 守卫挡住了后续 `isAlive` / `onExit`，原预测的 `called 1 times, but got 2 times` 不成立）；删 `api.close(handle)` 的真实红因是 `expected "spy" to be called with arguments: [ { fakeHandle: 'h1' } ]`，并连带用例 5 的顺序断言红 | ☐ |
 | E3 | UAC 取消：`{ ok: false, handle: null, win32Error: 1223 }` → `expect(() => launchShellExe(api, EXE)).toThrow(/^PROC: /)` 且消息含 `t('err.proc.uacCancelled', { exe })`；`pidOf` / `isAlive` 均未被调用（不进入轮询、无定时器残留） | 规格 §7.1-3 / §6.5 / 索引 R1 | 变异：删掉 1223 分支（统一走 `err.proc.spawnFail`）→ 预期红因 `expected 'PROC: E:\\QiYou\\QiYou.exe 启动失败: win32=1223' to contain 'E:\\QiYou\\QiYou.exe 已取消管理员权限请求'`；去掉 `'PROC: '` 前缀 → 预期红因 `expected '…' to match /^PROC: /` | ☐ |
 | E4 | 其他失败：`win32Error: 2` → 消息含 `t('err.proc.spawnFail', { exe, err: 'win32=2' })` | 规格 §7.1-4 / §6.5 | 变异：把 `err` 写成裸码 `'2'`（漏 `win32=`）→ 预期红因 `expected '… 启动失败: 2' to contain '… 启动失败: win32=2'`；把 key 误写成 `err.proc.uacCancelled` → 含译文断言同样红 | ☐ |
-| E5 | 提权进程停止兜底：`killTree` 返回 `false`（规格 E9）→ `stopGraceful(0)` 后 `terminate` 被调用且**第二参数为 1** | 规格 §7.1-5 / §6.7 第 3 步 / E9 / E10 / 索引 R2 | 变异：写成 `terminate(handle, 0)` → 预期红因 `expected "spy" to be called with arguments: [ { id: 'h1' }, 1 ]`；删掉兜底 → 同一断言以 never called 红 | ☐ |
+| E5 | 提权进程停止兜底：`killTree` 返回 `false`（规格 E9）→ `stopGraceful(0)` 后 `terminate` 被调用且**第二参数为 1** | 规格 §7.1-5 / §6.7 第 3 步 / E9 / E10 / 索引 R2 | 变异：写成 `terminate(handle, 0)` → 预期红因 `expected "spy" to be called with arguments: [ { id: 'h1' }, 1 ]`；删掉兜底 → 同一断言以 never called 红。**实测（J-15）**：`terminate(handle, 0)` → `expected "spy" to be called with arguments: [ { fakeHandle: 'h1' }, 1 ]`（假句柄是 `{ fakeHandle: 'h1' }`，不是本表写的 `{ id: 'h1' }`）。另：本用例的 `calls` 顺序断言补 `'close'` —— terminate 之后退出落地必须关句柄（规格 §6.4），原表未写这条顺序（索引 K19） | ☐ |
 | E6 | 非提权进程不多此一举：`killTree` 返回 `true` 且 `isAlive` 随即 `false` → `terminate` **未**被调用 | 规格 §7.1-6 / 索引 R3 | 变异：无条件 `terminate` → 预期红因 `expected "spy" to not be called at all, but actually been called 1 times`。（真机侧「不多弹一次 UAC」单测抓不到，靠 C5 的 `lpVerb = null` 源码逐字 + 真机清单第 4 步守） | ☐ |
-| E7 | `stopGraceful` 幂等：连调两次 → 第二次立即返回（`killTree` 只被调用一次） | 规格 §7.1-7 / §6.7 第 5 步；先例 `process.ts:74`（实测） | 变异：去掉 `stopping` 标志 → 预期红因 `expected "spy" to be called 1 times, but got 2 times` | ☐ |
-| E8 | 真接缝冒烟：`winShell.shellExecute('Z:\\\\no-such-dir\\\\no-such.exe', 1)` → `ok === false`（不锁具体错误码）；同时证明「打包环境之外 koffi 绑定可用」 | 规格 §7.1-8 / E12 | 这条**不守** `fMask` 取值（去掉 `0x04` 仍返回 `ok=false`）→ 取值的牙在 C5 / C6 的源码逐字核对与真机清单第 3 步（不弹 Shell 自带错误框）；本条只在「真抛异常 vs 返回 ok=false」处有牙：把实现改成 `throw` → 预期红因未捕获异常 / `TypeError`，用例直接红 | ☐ |
+| E7 | `stopGraceful` 幂等：连调两次 → 第二次立即返回（`killTree` 只被调用一次） | 规格 §7.1-7 / §6.7 第 5 步；先例 `process.ts:74`（实测）。**用例已改（索引 K19）**：必须**并发**两次调用才碰得到 `stopping` —— 串行两次时第一次已把 `exited` 置真，走的是「已退出直接返回」 | 变异：去掉 `stopping` 标志 → **实测（J-17）**：串行写法不红（`Tests 8 passed (8)`），改并发后真实红因 `expected "spy" to be called 1 times, but got 2 times` | ☐ |
+| E8 | 真接缝冒烟（**已按规格 §7.1-8 改写**）：`winShell.pidOf(-1) === process.pid` 且 `winShell.isAlive(-1) === true` —— 当前进程伪句柄，真实 koffi 绑定、无 UI、无副作用（规格 E20）。原写法（真 Shell 打一个不存在的目标）作废：它确实返回 `ok=false`，但同时弹 Shell 的系统错误框，把 vitest worker 卡住 383s（规格 E19，用户 21:47 决定「接受弹窗，只改测试」） | 规格 §7.1-8 / E12 / E19 / E20 / 索引 K17 | 这条守的是「真 FFI 绑定可用 + 参数按 `void *` 正确传」：把 `pidOf` 改成直接返回 0 → 预期红因 `expected 0 to be <本进程 pid>`；把 `isAlive` 的比较常量从 `WAIT_TIMEOUT=258` 改错 → 预期红因 `expected false to be true`。**不守** `fMask` 取值（真取值靠 C5 / C6 源码逐字 + 真机清单第 1 / 3 步） | ☐ |
 
 ## F. 本任务相关的硬约束（索引 G 组子集）
 
@@ -76,7 +76,7 @@
 | F5 | 前缀只用 `PROC:`；新键只有 `err.proc.uacCancelled`（占位符只有 `{exe}`）；调用点必须字面量 `t('…')` | G5 | ☐ |
 | F6 | 命令口径：定向 `npx vitest run <路径>`、类型 `npx tsc -p tsconfig.main.json --noEmit`、全量 `npm test` | G8 | ☐ |
 | F7 | 计数 = 基线 + 8（48 / 834），任何既有用例减少都不算过 | G9 / K11 | ☐ |
-| F8 | 不扩范围：不做提权进程的进程树终止、不加参数 / cwd、不加提权额外日志、不做 manifest 检测 | G11 / 规格 §5 | ☐ |
+| F8 | 不扩范围：不做提权进程的进程树终止、不加参数 / cwd、不加提权额外日志、不做 manifest 检测、**不加 `existsSync` 预检**（路径不存在就让它弹系统框，规格 §9-R8 / 索引 K17） | G11 / 规格 §5 / §9-R8 | ☐ |
 | F9 | 源码零中文字面量：`no-hardcoded.test.ts:10` 的白名单只有 `src-main/i18n/dict.ts`（中文注释可以，字符串字面量不行） | G5 / R6 | ☐ |
 | F10 | 子代理不 `git add`、不 commit（H 段归主代理） | G10 | ☐ |
 
@@ -89,7 +89,7 @@
 | G3 | `npx vitest run src-main/i18n/key-coverage.test.ts` —— 调用点与词典键的双向覆盖 | 全绿。**排序已定（索引 K15）**：两条词典键随本任务落地（见 B3 / plan 任务 2 步骤 2b），所以 `t('err.proc.uacCancelled', { exe })` 的调用点与键同一提交出现，不会出现「有调用点、无键」的红 | ☐ |
 | G4 | `npm test` | `Test Files 48 passed (48)` / `Tests 834 passed (834)`，exit 0；「无减少」按索引 K11 的算术判据 | ☐ |
 | G5 | `npx vitest run src-main/i18n/dict.test.ts src-main/i18n/key-coverage.test.ts src-main/i18n/no-hardcoded.test.ts` | 全绿（若 G3 未提前处理，`key-coverage` 第一条必红，红因见 G3） | ☐ |
-| G6 | `git diff --name-only` | 恰为三个文件：`src-main/shell-execute.ts`、`src-main/shell-execute.test.ts`、`src-main/i18n/dict.ts`（索引 K15）；不含 `main.ts` / `quick-launch.ts` / `process.ts` | ☐ |
+| G6 | `git status --porcelain`（**判据更正，索引 K19**：新建文件不出现在 `git diff --name-only` 里，原命令看不到 B1 / B2） | 代码侧恰为三处：`?? src-main/shell-execute.ts`、`?? src-main/shell-execute.test.ts`、`M src-main/i18n/dict.ts`（索引 K15）；不含 `main.ts` / `quick-launch.ts` / `process.ts`。另有 4 份文档（spec / plan / 索引 / 本表）= 本次偏离的同步，AGENTS.md 要求与代码同一提交（索引 K20）；`?? .superpowers/` 属 K13 预期 | ☐ |
 
 ## H. 提交门（**由主代理在验收通过后执行**；子代理不 `git add`、不 commit —— 索引 G10）
 

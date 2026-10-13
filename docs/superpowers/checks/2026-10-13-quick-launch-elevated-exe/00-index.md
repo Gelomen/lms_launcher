@@ -44,6 +44,7 @@
 | R5 | 定时器泄漏 / `onExit` 多次（R6） | 退出只上报一次；`clearInterval` + `close()` 都执行 | T2 E2、E7 |
 | R6 | i18n 三门 | 新键 zh/en 同时、字面量调用点与占位符逐字一致、源码零中文字面量 | T3 G（`dict.test.ts` / `key-coverage.test.ts` / `no-hardcoded.test.ts` 定向） |
 | R7 | UAC 挂起期间主线程同步阻塞（实测 4.1s，规格 R1） | 本次接受（与 `detectTerminals` 的 `spawnSync` 同口径，E16）；真机只观察现象、不判过否 | T4 清单「顺带观察」 |
+| R8 | 配置的 exe 路径不存在 → Shell 弹自己的系统错误框并阻塞主线程，`PROC:` 日志要等用户点「确定」（E19：`SEE_MASK_FLAG_NO_UI` / `SetErrorMode` 都压不住） | 本次接受（用户 2026-10-13 21:47 三选一选定），不加预检、不改 §6.1；单测不得用会弹框的目标（改伪句柄，E20） | T2 C5 / E8 / F8、T4「顺带观察 2」 |
 
 ## V 组：跨任务回归门
 
@@ -75,3 +76,7 @@
 | K14 | **本次由主代理内联实现**（用户 2026-10-13 21:04 明确「不使用 SDD，直接实现」）：不派实现子代理，但 check 表仍逐行执行并落勾、J 段填真实命令输出、提交仍按各表 H 段、顺序仍按 plan 任务号 | 用户指令 + AGENTS.md「例外」条款（写明并获明确同意的偏离）；执行载体改为 `executing-plans` | 全部四张表的 H/J 段 |
 | K15 | **词典两条键（`err.proc.uacCancelled` zh/en）随任务 2 的实现同一提交落地**，任务 3 只核对不再改；任务 2 的 H1 暂存范围相应为三个文件、任务 3 的为三个文件 | 任务 2 表 G3 的实测：`key-coverage.test.ts:117-129` 扫 `src-main/**` 的非 `.test.ts` 文件，「有调用点、无键」必红 → plan 原排序（键放任务 3 步骤 2）会让任务 2 末尾的全量必为 1 failed。plan 任务 2 步骤 2b / 任务 3 步骤 2 与两张表的 B/G/H 段已同步（同一提交） | T2 B3/G3/G6/H1、T3 B2/D3/G6/H1 |
 | K16 | 加载冒烟的预期输出是 `function function 16`，不是 `…8`：x64 下 `struct{uint32; void*}` = 4 字节字段 + 4 字节对齐填充 + 8 字节指针。同一程序里 `koffi.sizeof(SHELLEXECUTEINFOW)` 实测 **112**，与规格 E13 一致 | 主代理 2026-10-13 21:12 实测（`SMOKE_EXIT=0` / `SIZEOF_EXIT=0`）；plan 任务 1 步骤 2 与任务 1 表 C5/D3 已同步更正 | T1 C5 / D3、索引 G7 |
+| K17 | **`SEE_MASK_FLAG_NO_UI` 不覆盖「文件 / 路径不存在」的 Shell 错误框**（`fMask=0x44/0x144/0x104` 都弹、`SetErrorMode(0x3)` 也压不住；解码回读证明 `fMask` 确实写进了结构体）。该位保留，弹窗作为已知边界**接受**：不加 `existsSync` 预检、不改 §6.1 唯一路径。连带：单测第 8 条「真接缝冒烟」不能用会弹框的目标（实测卡住 vitest worker 383s），改为当前进程伪句柄 `pidOf(-1)=本进程 pid` / `isAlive(-1)=true`（E20） | 用户 2026-10-13 21:47 在「预检 / 接受弹窗 / 换回 spawn」中选「接受弹窗，只改测试」；取证 `.temp/uac-probe/no-ui-probe.mjs`（`no-ui-A..E.log`）、`errmode-probe.mjs`（`errmode-G.log`）、`pseudo-handle-probe.mjs`；已同步 spec §3 E19/E20、§6.3、§7.1-8、§7.2、§8-K4、§9-R8 与 plan 任务 2 步骤 1/3、任务 4 步骤 3（同一提交） | T2 C5 / E8 / F8、T4 顺带观察 2、索引 R8 |
+| K18 | `stopGraceful` 第 3 步的「仍存活」必须主动调 `api.isAlive(句柄)`，不能只看 `exited` 标志：`timeoutSecs=0` 时 100ms 轮询一次都没跑，只看标志会对已消失的进程多调一次 `terminate` | 任务 2 表 E6 的用例实测红（`expected "spy" to not be called at all, but actually been called 1 times`）；规格 §6.7 第 3 步原文就是「仍存活 → terminate」 | T2 E6、plan 任务 2 步骤 3 |
+| K19 | **任务 2 三条用例的取证方式更正**（断言本身不变）：① E2 用 `vi.useFakeTimers()` + `vi.getTimerCount()===0` 才能证明 `clearInterval` 真的执行（真定时器下漏掉它不红：`finish()` 的 `exited` 守卫挡住后续 `isAlive` / `onExit`）；② E7 必须**并发**两次 `stopGraceful` 才碰得到 `stopping`（串行时第一次已置 `exited`，走「已退出直接返回」）；③ E5 的 `calls` 顺序断言补 `'close'`（terminate 后退出落地 → 关句柄，规格 §6.4）。另：G6 判据改用 `git status --porcelain`（新建文件不在 `git diff --name-only` 里） | 变异取证实测：`.temp/mut-task02.mjs` / `.temp/mut-task02b.mjs`（E2a → `expected 1 to be +0`；E7 串行写法 `Tests 8 passed (8)` 不红、改并发后 `called 1 times, but got 2 times`）；本表 E2 / E5 / E7 / G6 行已同步 | T2 E2 / E5 / E7 / G6、J-10 / J-11 / J-15 / J-17 / J-23 |
+| K20 | 本次偏离（E19 / R8）的 **spec + plan + 两张 check 表与代码同一提交**，所以任务 2 的 H1 暂存范围在三个代码文件之外另加 4 份文档 | AGENTS.md 工作流第 4 步「偏离 spec：先改 spec / plan / check 表（同一 commit）再改代码」优先于 plan H1 的逐字范围；任务 1（纯依赖、无偏离）不受影响 | T2 H1、J-24 |

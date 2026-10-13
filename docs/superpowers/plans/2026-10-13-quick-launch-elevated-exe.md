@@ -45,7 +45,7 @@
 | `package-lock.json`（`npm install` 写） | 锁 `koffi` 与 `@koromix/koffi-win32-x64` |
 | `electron-builder.yml:16-17`（修改） | `asarUnpack` 增加 koffi 两条 + 注释同步 |
 | `src-main/shell-execute.ts`（新建） | `WinShellApi` 接缝 + `winShell` 真实现 + `launchShellExe` + `ShellExecProcess` 生命周期 |
-| `src-main/shell-execute.test.ts`（新建） | 假 `WinShellApi` 的 7 条行为断言 + 1 条真接缝冒烟门 |
+| `src-main/shell-execute.test.ts`（新建） | 假 `WinShellApi` 的 7 条行为断言 + 1 条真接缝冒烟门（伪句柄，无 UI、无副作用；规格 E20） |
 | `src-main/main.ts:1039-1074`（修改） | `spawnExeProcess` 改用 `launchShellExe(winShell, exe)`；失败先 `emitLog` 再 rethrow；注释同步新口径 |
 | `src-main/i18n/dict.ts:299` 后 / `:641` 后（修改） | 新增 `err.proc.uacCancelled`（zh / en） |
 | `src-main/ipc-ql.test.ts:423-468` 与「exe 启动失败」用例（修改） | 观察点从 `ProcessState.prototype.launch` 换到 `winShell.shellExecute`；失败路径断言改到新路径 |
@@ -159,7 +159,7 @@ function fakeApi(over: Partial<WinShellApi> = {}): WinShellApi & { calls: string
 5. `killTree` 返回 `false`（提权进程，规格 E9）→ `stopGraceful(0)` 后 `terminate` 被调用且第二参数为 `1`
 6. `killTree` 返回 `true` 且 `isAlive` 随即 `false` → `terminate` **未**被调用
 7. `stopGraceful` 连调两次 → 第二次立即返回（`killTree` 只被调用一次）
-8. 真接缝：`winShell.shellExecute('Z:\\no-such-dir\\no-such.exe', 1)` → `ok === false`（不断具体错误码）
+8. 真接缝：`winShell.pidOf(-1) === process.pid` 且 `winShell.isAlive(-1) === true`（当前进程伪句柄，规格 E20）。**不要**再用 `winShell.shellExecute('Z:\\no-such-dir\\no-such.exe', 1)`：它确实返回 `ok=false`，但 Shell 会弹系统错误框把测试线程卡住（实测 worker 卡 383s，规格 E19）
 
 - [ ] **步骤 2：运行测试验证失败**
 
@@ -189,6 +189,8 @@ function fakeApi(over: Partial<WinShellApi> = {}): WinShellApi & { calls: string
 - 轮询 `setInterval(…, 100)`；退出分支必须 `clearInterval` + `api.close(handle)` + 只触发一次 `onExit`（规格 §6.4 / R6）
 - `stopGraceful` 按规格 §6.7 五步；`stopping` 标志保证幂等（先例 `src-main/process.ts:74`）
 - 抛错文案按规格 §6.5，`t()` 用字面量 key
+- **不要加 `existsSync` 预检**：`SEE_MASK_FLAG_NO_UI` 实测压不住「文件 / 路径不存在」的 Shell 错误框（规格 E19），用户 2026-10-13 21:47 决定接受这个弹窗（规格 §9-R8），路径不存在的错误分类仍走 `ShellExecuteExW` 返回 false + `GetLastError()`。在 `winShell.shellExecute` 的注释里写清这一点，否则下一个读代码的人会以为是漏写
+- `stopGraceful` 第 3 步的「仍存活」必须**主动调 `api.isAlive(句柄)`** 判定，不能只看轮询标志：`timeoutSecs=0` 时 100ms 轮询一次都没跑，`exited` 仍为假 → 会对已经消失的进程多调一次 `terminate`（规格 §6.7 第 3 步；单测第 6 条就是守这条）
 
 - [ ] **步骤 4：运行测试验证通过**
 
@@ -331,6 +333,8 @@ git commit -m "fix(main): 快捷启动 exe 改走 ShellExecuteEx 提权路径，
 6. 应用退出路径（托盘退出 / `[更新]`）仍不留孤儿进程
 
 顺带观察（不判过否，回报现象即可）：UAC 挂起那几秒主界面是否只是红「...」、没有「未响应」或崩溃（规格 §9-R1 的接受前提）。
+
+顺带观察 2（规格 §9-R8 / E19）：把某条目的 exe 改成不存在的路径再点 `[启动]` → 预期弹系统的「找不到文件」错误框，点「确定」后日志才出现 `PROC: … win32=<码>`。回报现象即可。
 
 - [ ] **步骤 4：等回报并把结果填进该任务 check 表的 J 段**（逐条：通过 / 不通过 + 现象）。本实现环境起不了 Electron GUI（规格 §7.2 取证），**不得用「自动化已过」代替这一条**。
 
