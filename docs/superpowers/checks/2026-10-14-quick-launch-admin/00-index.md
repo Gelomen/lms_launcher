@@ -84,6 +84,8 @@
 | K26 | 上一 feature 的真机清单（`docs/superpowers/checks/2026-10-13-quick-launch-elevated-exe/task-04-packaged-realmachine.md` 的 E1–E7）至今未勾 → 本 feature 任务 9 的**同一次构建**里一并跑掉并回填那张表 | 实测：该表 E 段仍全 ☐；规格 §3 末段 / §7.2-9 | T9 E6 / C3 |
 
 ## 本索引自身的自检（生成后当场跑过）
+| K30 | 任务 1 的起点 HEAD 是 `b2026e2`（主代理派单前落的预检裁决文档提交：R-01–R-04 + SDD 账本），不是 `aaf5e0f`；A1 的实质判据仍是「porcelain 不含 `src/` / `src-main/` 文件」（索引 K24） | 实测：`git log --oneline -1` = `b2026e2`；该提交 `--name-only` 只有 spec / plan / 索引 / T1 / T3 五份文档 + 账本 | T1 A1 |
+| K31 | 「总是显式落盘」的作用面 = **本次保存的那一条**：`qlSave` 只把 `clean`（经 `validateEntry` 规整，带 `admin`）写进 map，其余条目走 `readRawMap` 原样写回 → 未编辑过的老条目在 yaml 里仍无 `admin` 键，直到它被保存一次。不扩范围成「整份文件补齐」 | 规格 §6.1（实现点 = `validateEntry` + `:138`）+ §4-4（老配置行为逐字节一致）；主代理裁决 R-05（2026-10-14 19:5x） | T1 C3 / T1 报告疑虑 1 |
 | K27 | 类型门命令一律 `npx tsc --noEmit -p tsconfig.main.json`；plan 全局约束 G5 原写 `tsconfig.json` 是笔误（已同 commit 改掉） | 实测：仓库根 glob 只有 `tsconfig.main.json`，`package.json:9-10` 的 dev/build 脚本用的也是它 | plan G5 / 各表 D、G 段 |
 | K28 | `src-main/ipc-ql.test.ts:245` 断言的是 `ql_list` 的**加载结果**（`qlLoad` → `normalizeEntry`），任务 1 加 `admin` 之后必红 → 该行的 `toEqual` 字面量加 `admin: false` 属**任务 1** 的机械夹具修正；渲染端夹具仍归任务 8 | 实测：`grep "toEqual({ name"` 全仓只有 `quick-launch-config.test.ts` 五处 + `ipc-ql.test.ts:245` | T1 B3 / D3 / G2 / H1；plan 任务 1 步骤 4-5 |
 | K29 | `WinShellApi.shellExecute` 的第三参类型取 plan 的 `{ verb?: string \| null; parameters?: string \| null }`（spec §6.4-3 的窄类型接不住 `admin ? 'runas' : null` 这个实参） | 实测：`spawnExeProcess` 要按布尔传 `null`；T3 C1 已逐字写 `\| null` | T3 C1 / C2 |
