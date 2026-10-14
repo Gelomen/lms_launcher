@@ -78,8 +78,8 @@ describe('quick-launch-config.ts', () => {
     const list = qlLoad(p);
     expect(list.invalid).toEqual([]);
     expect(Object.keys(list.items)).toEqual(['qlx1a2b3c4', 'qlp9q8r7s6']);
-    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' });
-    expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe' });
+    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
+    expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: false });
     rm(p);
   });
 
@@ -100,7 +100,7 @@ describe('quick-launch-config.ts', () => {
     ));
     const list = qlLoad(p);
     expect(Object.keys(list.items)).toEqual(['good01']);
-    expect(list.items['good01']).toEqual({ name: '好的', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' });
+    expect(list.items['good01']).toEqual({ name: '好的', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
     expect(list.invalid).toEqual(['bad01']);
     rm(p);
   });
@@ -238,7 +238,7 @@ describe('quick-launch-config.ts', () => {
     const rawShell = readText(p);
     expect(rawShell).toMatch(/^ql[0-9a-z]+:$/m);
     expect(rawShell).not.toMatch(/^\s*exe:/m); // 字节级：exe 键没有落盘
-    expect(qlLoad(p).items[shellId]).toEqual({ name: 'sh', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' });
+    expect(qlLoad(p).items[shellId]).toEqual({ name: 'sh', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
     expect(qlLoad(p).items[shellId]).not.toHaveProperty('exe');
     rm(p);
     const exeId = qlSave(p, null, {
@@ -247,7 +247,7 @@ describe('quick-launch-config.ts', () => {
     const rawExe = readText(p);
     expect(rawExe).not.toMatch(/^\s*shell:/m);
     expect(rawExe).not.toMatch(/^\s*cmd:/m);
-    expect(qlLoad(p).items[exeId]).toEqual({ name: 'ex', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe' });
+    expect(qlLoad(p).items[exeId]).toEqual({ name: 'ex', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: false });
     expect(qlLoad(p).items[exeId]).not.toHaveProperty('shell');
     expect(qlLoad(p).items[exeId]).not.toHaveProperty('cmd');
     rm(p);
@@ -312,6 +312,93 @@ describe('quick-launch-config.ts', () => {
     const list = qlLoad(p);
     expect(list.invalid).toEqual(['bad01']); // 坏条目仍在文件里、仍报 invalid，而不是被保存动作静默删除
     expect(Object.keys(list.items)).toEqual([id]);
+    rm(p);
+  });
+
+  // ── 2026-10-14-quick-launch-admin 任务 1：admin 字段（规格 §6.1 / §4-1 / §4-4 / §8-K4；check E1–E4）──
+
+  // E1（规格 §4-4「老配置里没有这个字段 = 与今天逐字节一致」/ §6.1「缺字段规整为 false」）
+  // 夹具沿用 :81-82（规格 §5.1 的示例形状），断言里多出 admin: false
+  it('entry_without_admin_loads_as_false', () => {
+    const p = tmpPath('ql_admin_absent.yaml');
+    rm(p);
+    writeText(p, lines(
+      'qlx1a2b3c4:',
+      '  name: 启动 webui',
+      '  type: shell',
+      '  shell: pwsh',
+      '  cmd: python -m webui',
+      'qlp9q8r7s6:',
+      '  name: LM Studio',
+      '  type: exe',
+      '  exe: D:\\Tools\\LM Studio.exe',
+    ));
+    const list = qlLoad(p);
+    expect(list.invalid).toEqual([]);
+    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
+    expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: false });
+    rm(p);
+  });
+
+  // E2（规格 §4-1「值随条目持久化」/ §6.1 两个返回字面量都带 admin）：true 经保存→加载往返不变
+  it('admin_true_round_trips_through_save_and_load', () => {
+    const p = tmpPath('ql_admin_round_trip.yaml');
+    rm(p);
+    const shellId = qlSave(p, null, { name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true }, ['cmd']);
+    const exeId = qlSave(p, null, { name: '提权 exe', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: true }, []);
+    const list = qlLoad(p);
+    expect(list.invalid).toEqual([]);
+    expect(list.items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true });
+    expect(list.items[exeId]).toEqual({ name: '提权 exe', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: true });
+    // 编辑回填再保存：validateEntry 的规整不得把 true 丢掉（任务 8 弹窗回填靠的就是这个值）
+    expect(qlSave(p, shellId, list.items[shellId], ['cmd'])).toBe(shellId);
+    expect(qlLoad(p).items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true });
+    rm(p);
+  });
+
+  // E3（规格 §6.1「只有字面量 true 算真，其它任何值规整为 false」）：'yes' / 1 / null 两条路径都规整
+  it('non_boolean_admin_values_normalize_to_false', () => {
+    const p = tmpPath('ql_admin_non_boolean.yaml');
+    rm(p);
+    writeText(p, lines(
+      'str01:',
+      '  name: s',
+      '  type: exe',
+      '  exe: a.exe',
+      '  admin: "yes"',
+      'num01:',
+      '  name: n',
+      '  type: exe',
+      '  exe: b.exe',
+      '  admin: 1',
+      'nul01:',
+      '  name: u',
+      '  type: exe',
+      '  exe: c.exe',
+      '  admin: null',
+    ));
+    const list = qlLoad(p);
+    expect(list.invalid).toEqual([]); // admin 不参与 VALIDATION:（规格 §6.1 末条 / check E5）
+    for (const id of ['str01', 'num01', 'nul01']) expect(list.items[id].admin).toBe(false);
+    // 保存路径同样只认字面量 true
+    const id = qlSave(p, 'bool01', { name: 'b', type: 'shell', shell: 'cmd', cmd: 'x', admin: 'yes' as unknown as boolean }, ['cmd']);
+    expect(id).toBe('bool01');
+    expect(qlLoad(p).items['bool01']).toEqual({ name: 'b', type: 'shell', shell: 'cmd', cmd: 'x', admin: false });
+    rm(p);
+  });
+
+  // E4（规格 §8-K4「yaml 里总是显式 true|false」；实现点 = qlSave:138 整表写回）：字节级断言原文含 admin 键
+  it('saved_yaml_contains_an_explicit_admin_key', () => {
+    const p = tmpPath('ql_admin_explicit.yaml');
+    rm(p);
+    const offId = qlSave(p, null, { name: '不勾', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' }, ['pwsh']);
+    const rawOff = readText(p);
+    expect(rawOff).toMatch(/^ {2}admin: false$/m); // 调用方没写 admin，落盘仍显式写 false
+    expect(qlLoad(p).items[offId].admin).toBe(false);
+    const onId = qlSave(p, null, { name: '勾选', type: 'exe', exe: 'a.exe', admin: true }, []);
+    const rawOn = readText(p);
+    expect(rawOn).toMatch(/^ {2}admin: true$/m);
+    expect(qlLoad(p).items[onId].admin).toBe(true);
     rm(p);
   });
 });

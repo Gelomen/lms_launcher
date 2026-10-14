@@ -11,7 +11,7 @@ import { suggestConfigId, validateConfigId } from './config';
 
 export type TerminalId = 'pwsh' | 'powershell' | 'cmd' | 'wsl';
 export type QuickLaunchKind = 'shell' | 'exe';
-export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string }
+export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string; admin?: boolean }
 export type QuickLaunchMap = Record<string, QuickLaunchEntry>;
 export interface QuickLaunchList { items: QuickLaunchMap; invalid: string[] }
 
@@ -69,12 +69,12 @@ function normalizeEntry(raw: unknown): QuickLaunchEntry | null {
     const shell = e['shell'];
     const cmd = typeof e['cmd'] === 'string' ? (e['cmd'] as string).trim() : '';
     if (!isTerminalId(shell) || cmd.length === 0) return null;
-    return { name, type: 'shell', shell, cmd };
+    return { name, type: 'shell', shell, cmd, admin: e['admin'] === true };
   }
   if (e['type'] === 'exe') {
     const exe = typeof e['exe'] === 'string' ? (e['exe'] as string).trim() : '';
     if (exe.length === 0) return null;
-    return { name, type: 'exe', exe };
+    return { name, type: 'exe', exe, admin: e['admin'] === true };
   }
   return null;
 }
@@ -92,12 +92,12 @@ function validateEntry(entry: QuickLaunchEntry, available: readonly TerminalId[]
     }
     const cmd = typeof e.cmd === 'string' ? e.cmd.trim() : '';
     if (cmd.length === 0) throw new Error('VALIDATION: ' + t('err.ql.cmdRequired'));
-    return { name, type: 'shell', shell: e.shell, cmd };
+    return { name, type: 'shell', shell: e.shell, cmd, admin: e.admin === true };
   }
   if (e.type === 'exe') {
     const exe = typeof e.exe === 'string' ? e.exe.trim() : '';
     if (exe.length === 0) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
-    return { name, type: 'exe', exe };
+    return { name, type: 'exe', exe, admin: e.admin === true };
   }
   throw new Error('VALIDATION: ' + t('err.ql.typeInvalid', { type: String(e.type ?? '') }));
 }

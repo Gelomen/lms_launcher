@@ -242,7 +242,7 @@ describe('C1/C2/C3 · ql_list / ql_save / ql_delete', () => {
     expect(String(id)).toMatch(/^ql[0-9a-z]+$/);
     const list = invoke('ql_list') as { items: Record<string, unknown>; invalid: string[] };
     expect(list.invalid).toEqual([]);
-    expect(list.items[String(id)]).toEqual({ name: '形状门 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI' });
+    expect(list.items[String(id)]).toEqual({ name: '形状门 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: false });
   });
 
   it('ql_save 空名 → VALIDATION:（前缀只用索引 G7 的五种）', async () => {
