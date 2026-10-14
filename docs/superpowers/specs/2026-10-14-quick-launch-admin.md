@@ -149,6 +149,7 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 7. `STOP` → 复用 `PtyProcess.stopGraceful`（`quick-launch.ts:122-142`：`kill()` → 等 `timeoutSecs` → `taskkill /T /F`）。**在提权进程里 `taskkill` 能杀掉整棵提权进程树**（前置规格 E9 的反面：非提权进程杀不动提权进程，提权进程自己杀得动）。
 8. 管道断开（主进程退出 / 崩溃）→ 视同 `STOP{timeoutSecs:3}`，不留孤儿 ConPTY。
 9. 宿主**不 import `electron`**、不含汉字字面量（`src-main/i18n/no-hardcoded.test.ts:26-28` 扫全部 `src-main/*.ts`）；错误只报 `stage` + 原始 message，文案在主进程侧按词典生成。
+10. 管道连不上 / 管道 `error` 事件（含第 1 步的 `connect` 之后立刻失败）→ 发 `ERR{stage:'pipe', message}` 并 `process.exit(1)`，**不带未处理的崩溃栈**（裁决 R-10 / 索引 K43，2026-10-15 00:1x：没有 `error` 监听时宿主会带栈崩掉，主进程收不到任何帧、退出码不可控）。主进程侧按 §6.7 的 `ERR` 帧 / 断管路径处理。
 
 ### 6.7 主进程侧 `ElevatedPtyProcess`（`ql-elevated.ts`）
 

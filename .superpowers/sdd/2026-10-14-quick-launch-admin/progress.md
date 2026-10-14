@@ -69,3 +69,9 @@
 - Task 4: minor (deferred) —— 硬链接身份只按 size 判定（规格 §6.4-1 只给这一条判据）；用户放一个 size 恰好相同的 node.exe 会误判复用。留给最终整分支审查甄别
 
 - 主代理自己的缺陷（已修）：我用脚本往 Markdown 里插行时写了 `\\n`（模板字符串里那是**字面反斜杠 + n**，不是换行），造成 00-index.md 的 K 组 9 行挤成一行、T4 验收块与 T6 的 C5 行各断一处。修复 = 把 `\\n` 后接 `|` 或 `>` 的替换成真换行；列数自检按「未转义 `|`」重算 → 9 张表 + 索引 **0 处破损**（之前那次「列数不一致」的报警是 `\\|` 转义竖线造成的误报，规则要按未转义竖线数）。教训：AGENTS.md 的自检里「代码片段前后不得多出反斜杠」与「列数一致」两条要**在每次脚本插行后**跑，不是只在生成时跑
+- Task 5: complete (验收 2026-10-15 00:1x，主代理独立复跑 G1-G5 = 6 / 27 / tsc 0 / 18 / 51 files 861 tests；quick-launch.ts 与 quick-launch.test.ts 一字未改；无 electron import；spawn 选项与非提权路径逐字一致且无 encoding)
+- Task 5: Ruling R-09（= 索引 K41，并**修正 K22**）—— 以系统 node 作宿主的子进程里真 ConPTY 可用：主代理亲自复跑 `probe20.cjs` 得到 READY→DATA(真 cmd.exe)→WRITE 回显→RESIZE→STOP→EXIT{code:-1073741510}，退出码与子进程退出码同源（C4 成立），退出后 available()→-1（K39）。原 K22「本环境跑不了 ConPTY」按进程身份区分后改写。代价/机会：任务 9 的真机清单可加一条「非提权宿主在 dev 布局下的自动化冒烟」；提权路径（runas + High IL + asar 内解析）仍未自动化覆盖，仍归 §7.2
+- Task 5: Ruling R-10（= 索引 K43）—— 宿主新增 `ERR{stage:'pipe'}` + `exit 1`（管道连不上 / error 事件），已补进规格 §6.6 第 10 条。理由：没有 error 监听时未处理 error 会让宿主带栈崩掉，主进程收不到帧、退出码不可控
+- Task 5: 表自身缺陷（已修）—— T5 的 C2 原写 `connect(name: string)`，plan 逐字是 `unknown`；实现者按 plan 执行并报告（= K42）。这是「表与 plan 不一致」的又一例，处理口径 = 以 plan/spec 为准改表
+- Task 5: 交接任务 6 的三条实测事实（= K44，已写进 T6 的 C6 行）—— READY.shellPid 实测 0（不得依赖）；STOP 必须带数字 timeoutSecs；主进程侧 stopGraceful 必须真走到委托（否则留不退出、进程树已死的宿主）
+- Task 5: minor (deferred) —— `PIPE_GONE_TIMEOUT_SECS = 3` 在宿主里写死（`quick-launch.ts:28` 的 `STOP_TIMEOUT_SECS` 未导出，改它属 B 段之外）；两处同值。留给最终整分支审查甄别是否值得导出
