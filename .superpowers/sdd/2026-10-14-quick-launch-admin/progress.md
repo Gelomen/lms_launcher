@@ -47,9 +47,23 @@
 
 - 已完成并验收提交：任务 1（`d9cf9a7` + `0be4614`）、任务 2（`474bc77` + `dbf4f09`）、任务 3（`b0986fc` + `c15fbdd`）；HEAD = `c15fbdd`，`git status --porcelain` 干净，普查 exit 0（三张已提交表 裸☐=0 / I段 -[ ]=0）
 - 当前全量：`Test Files 49 passed (49)` / `Tests 847 passed (847)`（基线 48/835 → +1 份测试文件、+12 条用例）
+## 恢复后已做（2026-10-14 22:3x）
+- 人类伙伴说「继续」→ 先落裁决 **R-07**（= 索引 K35）：`hostStartError(win32Error, userTarget)` 归任务 4（plan 任务 4 步骤 1 把 `win32_1223_…` 列在任务 4，而 T4 B1 写「不含 i18n 文案」，唯一合并式 = 映射器单独导出、`launch()` 不带文案）；任务 6 用 `opts.logTarget` 调它，不得再写一份。同一提交 `aa8c4a8` 同步了 plan 签名块 + T4 表 C6/E5/I 段 + 索引 K35（AGENTS.md「偏离先改文档，同一 commit」）
+- 任务 4 已派单（子代理 5942ef91，起点 HEAD `aa8c4a8`，基线 49 / 847，收尾应为 50 files）
+
+## 停点（上一轮，人类伙伴 2026-10-14 20:2x 指示：「开始 任务4 之前停下来」）
+
 - 恢复时派**任务 4**（`task-04-pipe-and-launch-host.md`，前置 = 任务 2 + 任务 3，都已交付）。派单必须带：
   - brief `.superpowers/sdd/2026-10-14-quick-launch-admin/task-04-brief.md` + 该表 + 规格 §6.4 / §6.5（管道部分）/ §6.7 / §6.10
   - **K34**：起宿主直接调 `winShell.shellExecute(file, 0, { verb: 'runas', parameters })`，不得给 `launchShellExe` 加形参
   - **K32 交接提醒**：宿主侧发帧不得自己拼 Buffer 字节再 `toString()`
   - 起点 HEAD = `c15fbdd`；基线 49 / 847；本任务新增 1 份测试文件 → 收尾应为 50 files
   - 本表 D3 要求复跑取证探针 `.temp/ql-admin-probe/probe9.mjs`（管道 + 帧往返，P10）
+
+- Task 4: complete (验收 2026-10-14 23:2x，主代理独立复跑 G1-G5 = 8 / 10 / tsc 0 / 18 / 50 files 855 tests；shell-execute 两文件未改；三处签名逐字 = C1/C2/C6；plan 的 5 条用例名逐字在位 + 3 条守 C/F 行；字符串字面量零汉字)
+- Task 4: Ruling R-08（= 索引 K37）—— 建管道失败 → `err.proc.spawnFail` + `err: 'pipe=create'`，已补进规格 §6.10 第四行。代价：不报 win32 码（`WinPipeApi.createServer` 交不回错误码），为近乎不可能的路径换 C1 签名不值
+- Task 4: Ruling（= K38）—— T4 的 E6 归任务 6（同一用例名在 plan 任务 6 步骤 1，读循环在 B1 边界外）→ T4 E6 写成显式未勾并指向 T6 E8
+- Task 4: Ruling（= K39）—— `available()` 的 `-1` = 断管/Peek 失败，与 `0`（无数据）可分；任务 6 的读循环按此写
+- Task 4: Ruling（= K40）—— 额外导出（`PipeKernel` / `startHost` / `winPipe` / `hostLauncher` 等）认可，C1/C2/C6 逐字未动；实测坑：koffi 的 `void *` 失败句柄是 BigInt `0xFFFF…`，只判 `null` 会漏
+- Task 4: 环境事实（= K36）—— 本会话进程树里 electron-as-node 子进程开命名管道一律 EPERM（与代码无关，P10 是真机跑通的）；沙箱内冒烟用 `process.execPath` 作客户端 + `probe18.cjs` 用真实现跑真管道；真机门仍归 §7.2
+- Task 4: minor (deferred) —— 硬链接身份只按 size 判定（规格 §6.4-1 只给这一条判据）；用户放一个 size 恰好相同的 node.exe 会误判复用。留给最终整分支审查甄别

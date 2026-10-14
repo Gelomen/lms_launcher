@@ -178,6 +178,7 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 | `ShellExecuteEx` 失败且 `win32 = 1223`（用户点「否 / 取消」） | `PROC: t('err.proc.uacCancelled', { exe })`，`{exe}` = **用户那一行的目标**：命令行类型取 `shellExe(shell).exe`（与 `quick-launch.ts:244` 的 `err.ql.ptySpawn` 同口径），可执行程序类型取 exe 路径。**绝不传宿主 exe** |
 | `ShellExecuteEx` 其它失败 | `PROC: t('err.proc.spawnFail', { exe, err: 'win32=' + code })` |
 | 硬链接建不出来 / 已存在的 `node.exe` 不是我们的 | `PROC: t('err.proc.spawnFail', { exe, err: 'hostlink=' + reason })` |
+| 建管道失败（`ConvertStringSecurityDescriptor…` 或 `CreateNamedPipeW`） | `PROC: t('err.proc.spawnFail', { exe, err: 'pipe=create' })` —— 裁决 R-08（2026-10-14 23:2x，索引 K37）：`WinPipeApi.createServer` 的返回类型（`unknown`）交不回错误码，且这条路径在 `nMaxInstances=1` + 每次新名字下近乎不可能；只报阶段、不报 win32 码，换掉 C1 的签名不值 |
 | 宿主起来了但握手失败（`ERR` 帧 / 管道断 / 超时） | `PROC: t('err.ql.ptySpawn', { exe, err })` |
 
 日志通道与条数与非提权路径**完全一致**（§8-K10）：不新增「宿主已启动」之类的日志行。
