@@ -29,7 +29,7 @@
 | # | 契约 | 逐字 | ✓ |
 | --- | --- | --- | --- |
 | C1 | argv 契约 | `[node, script, pipeName, token]` —— 规格 §6.4-4 / 任务 4 C4 的 parameters 顺序 | ☑ |
-| C2 | `runHost` 签名 | `runHost(deps: { connect(name: unknown): HostSocket; spawn: typeof pty.spawn }): void` —— plan 任务 5 签名块逐字。**本表原写 `name: string` 是表的错**（`process.argv.slice(2)` 交出 `string | undefined`，`string` 接不住）；已按 plan 改正，口径登记索引 K42 | ☑ |
+| C2 | `runHost` 签名 | `runHost(deps: { connect(name: unknown): HostSocket; spawn: typeof pty.spawn }): void` —— plan 任务 5 签名块逐字。**本表原写 `name: string` 是表的错**（`process.argv.slice(2)` 交出 `string \| undefined`，`string` 接不住）；已按 plan 改正，口径登记索引 K42 | ☑ |
 | C3 | `pty.spawn` 选项 | `{ name: 'xterm-256color', cols, rows, cwd, env: process.env }`，与 `quick-launch.ts:155-161` 逐字一致且**不含** `encoding` | ☑ |
 | C4 | 退出码 | `EXIT` 帧的 `code` 与 `process.exit(code)` 同源 —— 规格 §6.6-5 | ☑ |
 
