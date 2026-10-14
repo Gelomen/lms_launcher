@@ -37,7 +37,7 @@
 - **D1 先写失败测试 → 跑红**：`npx vitest run src-main/ql-host-protocol.test.ts`（19:59:41，exit 1）→ `Error: Failed to load url ./ql-host-protocol (resolved id: ./ql-host-protocol) in D:/Dev/Projects/lms_launcher/src-main/ql-host-protocol.test.ts. Does the file exist?` → `Test Files 1 failed (1)` / `Tests no tests`。正是「模块不存在 → 红」。
 - **D2 实现 → 跑绿**：同命令（20:00:14，exit 0）→ `✓ src-main/ql-host-protocol.test.ts (5 tests) 70ms` → `Test Files 1 passed (1)` / `Tests 5 passed (5)`。把 `HOST_FRAME` 收成一行后再跑一次（20:01:49）→ 仍 `5 passed (5)`。
 - **D3 类型门**：`npx tsc --noEmit -p tsconfig.main.json`（20:00:2x 与 20:01:49 各一次）→ 无任何输出、`TSC_EXIT=0`。
-- **D4 全量**：`npm test` 三次（20:00:46 / 把 `HOST_FRAME` 改成一行之後 / 最终 20:07:26）均 exit 0 → **`Test Files 49 passed (49)` / `Tests 844 passed (844)`**，`Duration 8.85s` / `8.91s` / `8.87s`。49 = 基线 48 + 本任务新增 1 份（与索引 `:7`「任务 2 之后应为 49 份」一致）；844 = 基线 839 + 本任务新增 5；无 failed / skipped。
+- **D4 全量**：`npm test` 三次（20:00:46、把 `HOST_FRAME` 改成一行之后的复跑、最终 20:07:26）均 exit 0 → **`Test Files 49 passed (49)` / `Tests 844 passed (844)`**，`Duration 8.85s` / `8.91s` / `8.87s`。49 = 基线 48 + 本任务新增 1 份（与索引 `:7`「任务 2 之后应为 49 份」一致）；844 = 基线 839 + 本任务新增 5；无 failed / skipped。
 - **G2 i18n 三门**：`npx vitest run src-main/i18n`（20:00:27 与 20:01:19）→ `Test Files 4 passed (4)` / `Tests 18 passed (18)`（`index` / `no-hardcoded` / `dict` / `key-coverage` 全绿）。
 
 ## E 段断言的落点

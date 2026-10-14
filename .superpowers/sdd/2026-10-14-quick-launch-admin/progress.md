@@ -33,3 +33,12 @@
 - Task 2: Ruling R-06（= 索引 K32）—— 帧 payload 一律 string（含 DATA），不改「原始字节」。理由：非提权路径的 onData 已是 JS 字符串并原样进 IPC，提权路径必须逐字一致（规格 §6.3）；改字节要动渲染端 = 规格 §5 非目标。代价：若真机上出现乱码（§7.2-2），要改协议 + 渲染端两处，代价是一个新任务
 - Task 2: Ruling（= 索引 K33）—— 不设帧长上限、半帧缓冲不由协议模块回收：私有管道不可能出现脏字节；YAGNI，登记不做。代价：若宿主崩溃留下半帧，只是解析器实例里的几字节，随实例回收
 - Task 2: minor (deferred) —— 解析器对「未知 type 的半帧」会等满再丢弃（行为正确，只是多等几字节）；留给最终整分支审查甄别
+
+- Task 2: 交接提醒（来自任务 2 实现者，随 K32 生效）—— 宿主发帧处**不要**自己拼 Buffer 字节再 `toString()`：K32 的「UTF-8 往返无损」前提是 node-pty 交出的已是合法 JS 字符串。派任务 5 / 6 时必须带进派单
+- Task 2: 工作区遗留两行未提交的文档更正（task-02-report.md 的 D4 行、task-02 表 J-3 行：「两次全量」→「三次全量，最终 20:07:26」）→ 并入任务 3 的 docs 提交
+- Task 3: dispatched (subagent b022ce7d, 起点 HEAD dbf4f09)
+
+- Task 3: complete (验收 2026-10-14 20:3x，主代理独立复跑 G1-G5 = 34 / 24 / tsc 0 / 18 / 49 files 847 tests；diff 逐行核对 = C1/C2/C3 逐字，既有 exe 用例一字未改)
+- Task 3: Ruling（= 索引 K34）—— `launchShellExe` 的 `verb === undefined` 与显式 `null` 两条写法都保 `lpVerb = null`，但**实参 arity 不同**（既有用例按 `toHaveBeenCalledWith(EXE, 1)` 钉 arity）；起提权宿主传 `parameters` 的那条路必须直接调 `winShell.shellExecute(file, 0, {verb, parameters})`，不借道 `launchShellExe`。派任务 4 / 6 时随派单下发。代价：两条写法并存，读代码时要看注释
+- Task 3: minor (deferred) —— `ipc-ql.test.ts:109-112` 的 `guardOf()` 仍按两字段断言槽（不看 `admin`）：不在 B4 边界内、也不在类型门覆盖范围（`tsconfig.main.json` 排除 `*.test.ts`），不改。留给最终整分支审查甄别
+- Task 3: 真机门未跑（UAC 弹窗、5.7s 同步阻塞、提权后 taskkill 打不到进程树）→ 归任务 9 的 §7.2 同批构建
