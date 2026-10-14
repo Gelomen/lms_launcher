@@ -28,7 +28,8 @@
 | C1 | 类签名 | `new ElevatedPtyProcess(pipe: WinPipeApi, launcher: HostLauncher, opts: { shell; cols; rows; cwd; logTarget })` —— plan 任务 6 签名块 | ☐ |
 | C2 | 六个方法 | `write(string)` / `resize(cols, rows)` / `onData(cb)` / `onExit(code)` / `isRunning()` / `stopGraceful(timeoutSecs): Promise<void>` —— 与 `quick-launch.ts:175-182` 逐字对齐 | ☐ |
 | C3 | 两个新常量 | `POLL_READ_MS = 20`、`HOST_HANDSHAKE_TIMEOUT_MS = 15000` —— 规格 §6.5 / §6.7 | ☐ |
-| C5 | 复用任务 4 的三处契约（**不得重写**） | ① 起宿主 = `startHost(winPipe, hostLauncher)`（已建管道 + 起进程 + 失败关两个句柄，交回 `pipeName`/`token`/`pipeHandle`/`hostHandle`）；② 失败文案 = `hostStartError(r.win32Error, opts.logTarget)`，`hostExePath()` 抛的 `hostlink=…` 原样塞进 `err.proc.spawnFail` 的 `{err}`，`stage='pipe'` → `err: 'pipe=create'`（规格 §6.10 第三、四行，裁决 R-07 / R-08）；③ 读循环只在 `available() >= 0` 时 `read(h, available)`，`-1` = 断管/Peek 失败 → 走 §6.7 的退出路径（索引 K39） | ☐ |\n| C4 | `HELLO` 载荷 | `{ token, shell, cols, rows, cwd }` —— 规格 §6.5 表；argv 里没有这些 | ☐ |
+| C5 | 复用任务 4 的三处契约（**不得重写**） | ① 起宿主 = `startHost(winPipe, hostLauncher)`（已建管道 + 起进程 + 失败关两个句柄，交回 `pipeName`/`token`/`pipeHandle`/`hostHandle`）；② 失败文案 = `hostStartError(r.win32Error, opts.logTarget)`，`hostExePath()` 抛的 `hostlink=…` 原样塞进 `err.proc.spawnFail` 的 `{err}`，`stage='pipe'` → `err: 'pipe=create'`（规格 §6.10 第三、四行，裁决 R-07 / R-08）；③ 读循环只在 `available() >= 0` 时 `read(h, available)`，`-1` = 断管/Peek 失败 → 走 §6.7 的退出路径（索引 K39） | ☐ |
+| C4 | `HELLO` 载荷 | `{ token, shell, cols, rows, cwd }` —— 规格 §6.5 表；argv 里没有这些 | ☐ |
 
 ## D. TDD 步骤门
 
