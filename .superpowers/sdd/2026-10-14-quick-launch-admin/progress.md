@@ -42,3 +42,14 @@
 - Task 3: Ruling（= 索引 K34）—— `launchShellExe` 的 `verb === undefined` 与显式 `null` 两条写法都保 `lpVerb = null`，但**实参 arity 不同**（既有用例按 `toHaveBeenCalledWith(EXE, 1)` 钉 arity）；起提权宿主传 `parameters` 的那条路必须直接调 `winShell.shellExecute(file, 0, {verb, parameters})`，不借道 `launchShellExe`。派任务 4 / 6 时随派单下发。代价：两条写法并存，读代码时要看注释
 - Task 3: minor (deferred) —— `ipc-ql.test.ts:109-112` 的 `guardOf()` 仍按两字段断言槽（不看 `admin`）：不在 B4 边界内、也不在类型门覆盖范围（`tsconfig.main.json` 排除 `*.test.ts`），不改。留给最终整分支审查甄别
 - Task 3: 真机门未跑（UAC 弹窗、5.7s 同步阻塞、提权后 taskkill 打不到进程树）→ 归任务 9 的 §7.2 同批构建
+
+## 停点（人类伙伴 2026-10-14 20:2x 指示：「开始 任务4 之前停下来」）
+
+- 已完成并验收提交：任务 1（`d9cf9a7` + `0be4614`）、任务 2（`474bc77` + `dbf4f09`）、任务 3（`b0986fc` + `c15fbdd`）；HEAD = `c15fbdd`，`git status --porcelain` 干净，普查 exit 0（三张已提交表 裸☐=0 / I段 -[ ]=0）
+- 当前全量：`Test Files 49 passed (49)` / `Tests 847 passed (847)`（基线 48/835 → +1 份测试文件、+12 条用例）
+- 恢复时派**任务 4**（`task-04-pipe-and-launch-host.md`，前置 = 任务 2 + 任务 3，都已交付）。派单必须带：
+  - brief `.superpowers/sdd/2026-10-14-quick-launch-admin/task-04-brief.md` + 该表 + 规格 §6.4 / §6.5（管道部分）/ §6.7 / §6.10
+  - **K34**：起宿主直接调 `winShell.shellExecute(file, 0, { verb: 'runas', parameters })`，不得给 `launchShellExe` 加形参
+  - **K32 交接提醒**：宿主侧发帧不得自己拼 Buffer 字节再 `toString()`
+  - 起点 HEAD = `c15fbdd`；基线 49 / 847；本任务新增 1 份测试文件 → 收尾应为 50 files
+  - 本表 D3 要求复跑取证探针 `.temp/ql-admin-probe/probe9.mjs`（管道 + 帧往返，P10）
