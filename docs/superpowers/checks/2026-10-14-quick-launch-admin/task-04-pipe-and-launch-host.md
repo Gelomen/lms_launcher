@@ -3,7 +3,7 @@
 > 计划：[2026-10-14-quick-launch-admin.md](../../plans/2026-10-14-quick-launch-admin.md) §任务 4 · 规格：[2026-10-14-quick-launch-admin.md](../../specs/2026-10-14-quick-launch-admin.md) §6.4 / §6.5（管道部分） · 关联审查重点 **RF4 / RF7**（索引 R 组）
 > 前置：任务 2（帧协议）；任务 3（`shellExecute` 已能收 `verb`/`parameters`）
 > 现状锚点（本表生成时实测，2026-10-14）：`src-main/shell-execute.ts:12-22`（`WinShellApi` 的「真实现 + 假实现可替换」手法，本表照抄）、`:47-71`（koffi 惰性绑定）、`:85-93`（`SHELLEXECUTEINFOW` 取值）；取证：`.temp/ql-admin-probe/probe9.mjs`（SDDL + duplex + PeekNamedPipe + WriteFile 全通过）、`probe7.mjs`（提权 + 硬链接 node.exe + 连管道）
-> 索引：[00-index.md](00-index.md) 的 G1、G2、G6、G7、K13
+> 索引：[00-index.md](00-index.md) 的 G1、G2、G6、G7、K13、**K34**（起宿主直接调 `winShell.shellExecute(file, 0, {verb,parameters})`，不得给 `launchShellExe` 加形参）、**K35**（`hostStartError` 归本任务，任务 6 复用）
 
 ## A. 起点核对（动手前）
 
@@ -29,7 +29,7 @@
 | C2 | `HostLauncher` | `hostExePath()` / `hostScriptPath()` / `launch(exe, script, pipeName, token)` | ☐ |
 | C3 | SDDL 与管道参数 | `D:(A;;GA;;;WD)`、`dwOpenMode=3`、`nMaxInstances=1`、`64KiB×2`、`nDefaultTimeOut=0` —— 规格 §6.5 | ☐ |
 | C4 | 起宿主的参数 | `shellExecute(hostExe, 0, { verb: 'runas', parameters: '"<脚本>" "<管道名>" "<token>"' })` —— 规格 §6.4-3 | ☐ |
-| C5 | 硬链接解析规则 | `fs.linkSync(process.execPath, <dir>/node.exe)`；已存在则只有 `size` 与 `process.execPath` 相同才用；失败 → `hostlink=<errno>` —— 规格 §6.4-1 / §9-R5 | ☐ |
+| C6 | `hostStartError`（**主代理裁决 R-07**，2026-10-14 22:4x：E5 要能在本任务被证；`launch()` 自身不带文案，B1 边界不变） | `export function hostStartError(win32Error: number, userTarget: string): Error` —— `1223` → `PROC: t('err.proc.uacCancelled', { exe: userTarget })`；其它 → `PROC: t('err.proc.spawnFail', { exe: userTarget, err: 'win32=' + win32Error })`（规格 §6.10 前两行，零新键）。任务 6 用 `opts.logTarget` 作 `userTarget` | ☐ |\n| C5 | 硬链接解析规则 | `fs.linkSync(process.execPath, <dir>/node.exe)`；已存在则只有 `size` 与 `process.execPath` 相同才用；失败 → `hostlink=<errno>` —— 规格 §6.4-1 / §9-R5 | ☐ |
 
 ## D. TDD 步骤门
 
@@ -48,7 +48,7 @@
 | E2 | 起宿主用 `runas` 且三个参数都带引号 | 规格 §6.4-3 / 取证 P8 | `launch_passes_runas_and_three_quoted_arguments` | ☐ |
 | E3 | 已存在的 `node.exe` 只在 size 相符时才用 | 规格 §9-R5 | `host_exe_resolution_reuses_an_existing_link_only_when_size_matches` | ☐ |
 | E4 | 启动失败关闭管道句柄与进程句柄 | 规格 §6.7 / RF4 | `launch_failures_close_both_handles` | ☐ |
-| E5 | `win32=1223` → `err.proc.uacCancelled`，`{exe}` 是用户目标不是宿主名 | 规格 §6.10 / §8-K3 | `win32_1223_maps_to_err_proc_uacCancelled_with_the_user_target` | ☐ |
+| E5 | `win32=1223` → `err.proc.uacCancelled`，`{exe}` 是用户目标不是宿主名 | 规格 §6.10 / §8-K3 | `win32_1223_maps_to_err_proc_uacCancelled_with_the_user_target` —— 守的是 **C6 的映射器**（裁决 R-07），不是 `launch()`；`launch()` 只把 `win32Error` 原样交出去 | ☐ |
 | E6 | 读侧只用 `available()` 判断后才 `read()`（不阻塞主线程） | 规格 §6.5 / §9-R7 | `read_polling_uses_available_not_blocking_read` | ☐ |
 
 ## F. 本任务相关的硬约束
@@ -82,7 +82,7 @@
 
 - [ ] A1-A4 成立
 - [ ] B1-B2 之外没有文件被改
-- [ ] C1-C5 逐字一致
+- [ ] C1-C6 逐字一致
 - [ ] D1→D4 先红后绿 + D3 冒烟输出贴 J 段
 - [ ] E1-E6 有对应测试且绿
 - [ ] G1-G5 全绿

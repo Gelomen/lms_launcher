@@ -133,6 +133,9 @@ export interface HostLauncher {
   launch(exe: string, script: string, pipeName: string, token: string): { ok: boolean; handle: unknown; win32Error: number };
 }
 export function newPipeName(): string;                 // \\.\pipe\lms-ql-<8 位随机>
+// 主代理裁决 R-07（2026-10-14 22:4x，索引 K35）：§6.10 前两行的文案映射单独导出一个纯函数，
+// launch() 自身不带文案（B1 边界「不含 i18n 文案」不变）；任务 6 用 opts.logTarget 作 userTarget 调它
+export function hostStartError(win32Error: number, userTarget: string): Error;
 `@
 
 - [ ] **步骤 1：先写失败测试**（`ql-elevated.test.ts`，假 `WinPipeApi` + 假 `HostLauncher`）：
@@ -140,7 +143,7 @@ export function newPipeName(): string;                 // \\.\pipe\lms-ql-<8 位
   - `launch_passes_runas_and_three_quoted_arguments`
   - `host_exe_resolution_reuses_an_existing_link_only_when_size_matches`（`fs.linkSync` / `fs.statSync` 用临时目录真跑一次）
   - `launch_failures_close_both_handles`（RF4）
-  - `win32_1223_maps_to_err_proc_uacCancelled_with_the_user_target`（§6.10：断言文案里出现的是传进去的 `exe`，不是宿主名）
+  - `win32_1223_maps_to_err_proc_uacCancelled_with_the_user_target`（§6.10：断言 `hostStartError(1223, <用户目标>)` 的文案里出现的是用户那一行的目标，**不是**宿主 exe 名 —— 见上面的 R-07 行）
 - [ ] **步骤 2：跑红**：`npx vitest run src-main/ql-elevated.test.ts`。
 - [ ] **步骤 3：实现**：koffi 绑定（`CreateNamedPipeW` / `ConvertStringSecurityDescriptorToSecurityDescriptorW` / `PeekNamedPipe` / `ReadFile` / `WriteFile` / `ConnectNamedPipe`）；`WriteFile` 形参声明 `uint8 *@（§6.5 的 `lastErr=998` 教训）；起宿主复用 `winShell.shellExecute(file, 0, {verb:'runas', parameters})`。
 - [ ] **步骤 4：跑绿 + G5 + G6**。
