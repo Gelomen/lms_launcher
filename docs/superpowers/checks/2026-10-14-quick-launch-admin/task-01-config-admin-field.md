@@ -10,7 +10,7 @@
 | # | 检查项 | 怎么验 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
 | A1 | 起点 = 文档提交，工作区无代码改动 | `git log --oneline -1`；`git status --porcelain` | HEAD = `aaf5e0f docs: 快捷启动启动项的管理员权限开关 —— spec + plan（代码一行未改）`；porcelain 不含 `src/` / `src-main/` 文件 | ☐ |
-| A2 | 全量基线（索引头部「测试基线」行：由主代理实测，子代理不重跑） | npm test | 起点基线（Test Files / Tests）写在索引头部「测试基线」行 | ☐（原因：本环境跑 vitest 需完全访问沙箱，审批未通过 → spawn EPERM；去处：派单前主代理实测后填索引头部「测试基线」行与本行） |
+| A2 | 全量基线（索引头部「测试基线」行：由主代理实测，子代理不重跑） | `npm test` | `Test Files 48 passed (48)` / `Tests 835 passed (835)`，exit 0；本任务后用例数只增不减 | ☑（主代理实测 2026-10-14 19:07：`Test Files 48 passed (48)` / `Tests 835 passed (835)`、`Duration 9.35s`、exit 0；与本表生成时的静态计数 48 份 `*.test.ts` 一致。跑 `npm test` 需要完全访问沙箱，见索引 K23） |
 | A3 | 锚点行号属实 | 读 `quick-launch-config.ts:14` / `:63-80` / `:84-103` / `:138-139` | 与本表引用一致（当前没有 `admin` 字段；两个函数各返回两处对象字面量） | ☐ |
 | A4 | 旧配置（无 `admin` 键）仍能加载 | `node -e` 读一份手写 yaml 跑 `qlLoad` | 不报错、条目不进 `invalid` | ☐ |
 

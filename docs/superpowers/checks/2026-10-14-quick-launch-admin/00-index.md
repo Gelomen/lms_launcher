@@ -3,7 +3,7 @@
 - 计划：[2026-10-14-quick-launch-admin.md](../../plans/2026-10-14-quick-launch-admin.md) · 规格：[2026-10-14-quick-launch-admin.md](../../specs/2026-10-14-quick-launch-admin.md)
 - 生成时间：2026-10-14 18:5x（主代理；文档提交 `aaf5e0f` 之后、「开始实现」之前）
 - 工作基线：分支 `feat/quick-launch-admin`（自 `feat/quick-launch` @ `b8dbdc0`），HEAD `aaf5e0f docs: 快捷启动启动项的管理员权限开关 —— spec + plan（代码一行未改）`；`git status --porcelain` 只要求**无已跟踪改动**（生成期未跟踪的 `.superpowers/`（普查脚本）与 `docs/superpowers/checks/`（本表目录）属预期产物 —— 索引 K24）
-- 测试基线：☐（原因：本实现环境跑 `npm test` 需要完全访问沙箱 —— vitest 的 esbuild 要 spawn 服务进程，被命名管道限制挡下 `spawn EPERM`；审批未通过 → 索引 K23。去处：**派单前**由主代理实测并把 `Test Files …` / `Tests …` 逐字填进本行与各表 A2）
+- 测试基线（主代理 2026-10-14 19:07 实测）：`npm test` → `Test Files 48 passed (48)` / `Tests 835 passed (835)`，`Duration 9.35s`，exit 0。跑这条命令需要完全访问沙箱（索引 K23）
   - 静态佐证（本表生成时实测）：仓库现有 `*.test.ts` 恰 **48** 份（`(Get-ChildItem -Recurse -Include *.test.ts -File | Measure-Object).Count` = 48）；本 feature 新增 4 份测试文件（`ql-host-protocol.test.ts` / `ql-elevated.test.ts` / `ql-pty-host.test.ts` + 既有文件内新增用例）→ 任务 2 之后应为 49 份、任务 4 之后 50 份、任务 5 之后 51 份
   - 上一 feature 的基线（供参考，不可直接用）：`docs/superpowers/checks/2026-10-13-quick-launch-elevated-exe/00-index.md:6` = 47 files / 826 tests（2026-10-13 19:25 实测）
 - 普查：`node .superpowers/sdd/2026-10-14-quick-launch-admin/tick-census.mjs`（已就位；各表 H3 用它）
@@ -78,7 +78,7 @@
 | K20 | 硬链接的 `node.exe` 必须与 `electron.exe` **同目录**，否则 `0xC0000135 STATUS_DLL_NOT_FOUND` | 实测：`probe4.mjs` B 段在别处建链接失败、改到 `node_modules/electron/dist/` 内即成 | T4 C5 / T9 F2 |
 | K21 | 宿主脚本留在 `app.asar/dist-main/` 内即可（不需要 extraFile） | 实测 P9：`@electron/asar` 打包后硬链接 `node.exe` 执行 asar 内脚本 → `ran:true`、退出码 9 | T5 B1 / T9 B2 |
 | K22 | 本实现环境**跑不了 ConPTY**：`node-pty` 的 `spawn` 必失败（`EPERM: operation not permitted, open '\\\\.\\pipe\\conpty-…-in'`，提权与非提权都一样）→ 任务 5 D3 出现该错误是**预期**，不判失败；PTY 段只在任务 9 真机门判 | 实测（本会话两次）+ 规格 §2-5 | T5 D3 / T9 E1 |
-| K23 | 本实现环境跑 `npm test` 需完全访问沙箱（esbuild `spawn EPERM`）→ 各表 A2 与索引「测试基线」行显式未勾，派单前由主代理实测补齐 | 实测：`npm test` → `failed to load config … spawn EPERM`（`esbuild.ensureServiceIsRunning`） | 索引头部 / 各表 A2 |
+| K23 | 跑 `npm test` 需要**完全访问**沙箱：默认的 `workspace-write` 下 vitest 的 esbuild 报 `spawn EPERM`（`esbuild.ensureServiceIsRunning` 要 spawn 服务进程，被命名管道限制挡下）→ 基线只能在 `danger-full-access` 下取 | 实测两次：默认策略 → `failed to load config … spawn EPERM`；策略改完全访问后同一命令 exit 0、48 / 835 | 索引头部 / 各表 A2 |
 | K24 | 生成期未跟踪的 `.superpowers/`（普查脚本）与 `docs/superpowers/checks/`（本表目录）属预期产物；`git status --porcelain` 的判据是**无已跟踪改动** | 沿用上一 feature 索引 K13；本次实测 porcelain 只有这两处 + 一个先前就存在的未跟踪目录 `unused/`（非本 feature 产物，未动） | 各表 A1 |
 | K25 | 词典两处插入顺序：**先改行号大的 en（`dict.ts:519` 之后），再改 zh（`:176` 之后）**，避免行号漂移导致第二处插错位置 | 实测：两处锚点 `'ql.modal.exe'` 分别在 zh `:176` / en `:519` | T8 D2 |
 | K26 | 上一 feature 的真机清单（`docs/superpowers/checks/2026-10-13-quick-launch-elevated-exe/task-04-packaged-realmachine.md` 的 E1–E7）至今未勾 → 本 feature 任务 9 的**同一次构建**里一并跑掉并回填那张表 | 实测：该表 E 段仍全 ☐；规格 §3 末段 / §7.2-9 | T9 E6 / C3 |

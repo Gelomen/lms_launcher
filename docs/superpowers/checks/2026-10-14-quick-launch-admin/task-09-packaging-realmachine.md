@@ -10,7 +10,7 @@
 | # | 检查项 | 怎么验 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
 | A1 | 起点 = 上一任务已提交、工作区干净 | `git log --oneline -1`；`git status --porcelain` | HEAD = 任务 8 的提交；porcelain 干净；`npm test` 全绿 | ☐ |
-| A2 | 全量基线（索引头部「测试基线」行：由主代理实测，子代理不重跑） | `npm test` | 起点基线写在索引头部「测试基线」行；本任务后用例数只增不减 | ☐（原因：本环境跑 vitest 需完全访问沙箱，审批未通过 → spawn EPERM；去处：派单前主代理实测后填索引头部「测试基线」行与本行） |
+| A2 | 全量基线（索引头部「测试基线」行：由主代理实测，子代理不重跑） | `npm test` | `Test Files 48 passed (48)` / `Tests 835 passed (835)`，exit 0；本任务后用例数只增不减 | ☑（主代理实测 2026-10-14 19:07：`Test Files 48 passed (48)` / `Tests 835 passed (835)`、`Duration 9.35s`、exit 0；与本表生成时的静态计数 48 份 `*.test.ts` 一致。跑 `npm test` 需要完全访问沙箱，见索引 K23） |
 | A3 | 本表引用的锚点行号属实 | 读 `build.bat:100-111`、`electron-builder.yml:1-25` | 与本表引用一致 | ☐ |
 | A4 | 前置任务交付的接口在（签名逐字可用） | 确认 `dist-main/ql-pty-host.js` 会被 `tsc` 产出（`tsconfig.main.json` 的 `outDir`） | 可用；不可用就停下来报告，不要自己补 | ☐ |
 
