@@ -10,7 +10,7 @@
 - **G2 词典**只新增 `ql.modal.admin` 一个键（zh `dict.ts:176` 之后、en `:519` 之后）。其余文案一律复用既有键（§6.10）。
 - **G3 不勾选的路径逐字节不变**：exe 仍 `lpVerb=null`（前置规格 §6.1 / E8）、非 admin 的 shell 仍走 `createShellProcess`（`quick-launch.ts:223-225`）。
 - **G4 不动** `src-main/process.ts`、llama-server 启动路径、`QuickLaunchManager` 的构造签名（`quick-launch.ts:215-217`）。
-- **G5 每个任务的收尾门**：`npx tsc --noEmit -p tsconfig.json` 干净 + 该任务定向测试绿 + `npx vitest run` 全量绿。
+- **G5 每个任务的收尾门**：`npx tsc --noEmit -p tsconfig.main.json` 干净 + 该任务定向测试绿 + `npm test` 全量绿。（仓库根只有 `tsconfig.main.json`，没有 `tsconfig.json`——索引 K27）
 - **G6 i18n 三门**（`key-coverage.test.ts` / `dict.test.ts` / `no-hardcoded.test.ts`）在任何任务后都不得变红；新文件不得含汉字字面量（`no-hardcoded.test.ts:26-28` 扫全部 `src-main/*.ts`）。
 - **G7 不新增依赖**、不改 `package.json` 的依赖段。
 - **G8 子代理不 `git add`、不 commit**；改动留在工作区等验收（AGENTS.md 工作流第 4 步）。
@@ -39,6 +39,7 @@
 | `src-main/shell-execute.ts` | 改（`:14` 签名、`:80-102` 实现、`:191-201`） | 3 |
 | `src-main/shell-execute.test.ts` | 改 | 3 |
 | `src/main.ts` 的 `spawnExeProcess`（`src-main/main.ts:1050-1072`） | 改 | 3 |
+| `src-main/ipc-ql.test.ts` | 改（`:245` 加载结果夹具加 `admin: false`） | 1 |
 | `src-main/ipc-ql.test.ts` | 改（exe 提权形状门） | 3 |
 | `src-main/ql-elevated.ts` | 新建（管道接缝 + 起宿主 + `ElevatedPtyProcess`） | 4、6 |
 | `src-main/ql-elevated.test.ts` | 新建 | 4、6 |
@@ -67,8 +68,8 @@
   - `saved_yaml_contains_an_explicit_admin_key`（读原文断言含 `admin: false`）
 - [ ] **步骤 2：跑红**：`npx vitest run src-main/quick-launch-config.test.ts` → 新用例失败（缺 `admin` 键）。
 - [ ] **步骤 3：实现**：`:14` 加字段；`:72` / `:77` / `:95` / `:100` 加 `admin: ... === true`。
-- [ ] **步骤 4：跑绿** + 修 `quick-launch-config.test.ts:81`、`:82`、`:103`、`:241`、`:250` 的 `toEqual` 字面量（加 `admin: false`）。
-- [ ] **步骤 5：类型门 + 全量回归**（G5）。`src/modules/QuickLaunchModal.test.ts` 与 `src-main/ipc-ql.test.ts` 的 `toEqual` 此时**不应**变红——它们断言的是渲染端发出的 payload 与旧配置加载结果；若变红说明 `admin` 被写进了不该写的地方，停下来报告。
+- [ ] **步骤 4：跑绿** + 修 `quick-launch-config.test.ts:81`、`:82`、`:103`、`:241`、`:250` 与 `ipc-ql.test.ts:245` 的 `toEqual` 字面量（加 `admin: false`）。
+- [ ] **步骤 5：类型门 + 全量回归**（G5）。`src/modules/QuickLaunchModal.test.ts` 的 `toEqual` 此时**不应**变红——它断言的是渲染端发出的 payload，`admin` 要到任务 8 才进 payload。`src-main/ipc-ql.test.ts:245` 断言的是 `ql_list` 的**加载结果**，本任务之后必红：属预期，与其余夹具一样加 `admin: false`（索引 K28）。除这一处之外还有别处变红，说明 `admin` 被写进了不该写的地方，停下来报告。
 - [ ] **步骤 6：Commit（主代理）**：`feat: 快捷启动配置增加 admin 字段（总是显式落盘）`
 
 ---

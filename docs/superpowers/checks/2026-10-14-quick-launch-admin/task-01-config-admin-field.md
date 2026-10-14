@@ -3,7 +3,7 @@
 > 计划：[2026-10-14-quick-launch-admin.md](../../plans/2026-10-14-quick-launch-admin.md) §任务 1 · 规格：[2026-10-14-quick-launch-admin.md](../../specs/2026-10-14-quick-launch-admin.md) §6.1 / §4-1 / §4-4 · 关联审查重点 **RF2**（索引 R 组）
 > 前置：无（本 feature 第一个任务）
 > 现状锚点（本表生成时实测，2026-10-14）：`src-main/quick-launch-config.ts:14`（`QuickLaunchEntry`）、`:63-80`（`normalizeEntry`，返回字面量在 `:72` / `:77`）、`:84-103`（`validateEntry`，返回字面量在 `:95` / `:100`）、`:138-139`（`qlSave` 把 `clean` 整表写回）；既有 `toEqual` 夹具：`src-main/quick-launch-config.test.ts:81`、`:82`、`:103`、`:241`、`:250`
-> 索引：[00-index.md](00-index.md) 的 G1-G9、K4
+> 索引：[00-index.md](00-index.md) 的 G1-G9、K4、**K28**（`ipc-ql.test.ts:245` 属本任务的夹具修正）
 
 ## A. 起点核对（动手前）
 
@@ -19,7 +19,8 @@
 | # | 文件 | 动作 | 边界 | ✓ |
 | --- | --- | --- | --- | --- |
 | B1 | `src-main/quick-launch-config.ts` | 改：`:14` 加 `admin?: boolean`；`:72` / `:77` / `:95` / `:100` 的返回字面量加 `admin` | 只加字段与规整；不新增校验规则、不碰 `VALIDATION:` 文案、不碰 IPC | ☐ |
-| B2 | `src-main/quick-launch-config.test.ts` | 改：新增 4 条用例 + 修 5 处既有 `toEqual` 字面量 | 不动其它测试文件（渲染端与 ipc-ql 的夹具在任务 3 / 8 才改） | ☐ |
+| B2 | `src-main/quick-launch-config.test.ts` | 改：新增 4 条用例 + 修 5 处既有 `toEqual` 字面量 | 不动其它用例的断言文案 | ☐ |
+| B3 | `src-main/ipc-ql.test.ts` | 改：**只**在 `:245` 的 `toEqual` 字面量里加 `admin: false`（`ql_list` 断的是加载结果，本任务之后必红 = 索引 K28） | 该文件其它行一字不动；渲染端夹具（`src/modules/QuickLaunchModal.test.ts`）仍归任务 8 | ☐ |
 
 ## C. 接口契约
 
@@ -35,7 +36,7 @@
 | --- | --- | --- | --- | --- |
 | D1 | 先写失败测试（plan 任务 1 步骤 1 的四条） | `npx vitest run src-main/quick-launch-config.test.ts` | 新用例全红（断言多出 `admin` 键），既有用例仍绿 | ☐ |
 | D2 | 实现 `:14` / `:72` / `:77` / `:95` / `:100` | `npx vitest run src-main/quick-launch-config.test.ts` | 该文件全绿 | ☐ |
-| D3 | 修既有 `toEqual` 夹具（`:81` / `:82` / `:103` / `:241` / `:250` 加 `admin: false`） | `npx vitest run src-main/quick-launch-config.test.ts` | 全绿；改动只在断言字面量里 | ☐ |
+| D3 | 修既有 `toEqual` 夹具（`quick-launch-config.test.ts:81` / `:82` / `:103` / `:241` / `:250` + `ipc-ql.test.ts:245` 加 `admin: false`） | `npx vitest run src-main/quick-launch-config.test.ts src-main/ipc-ql.test.ts` | 全绿；改动只在断言字面量里 | ☐ |
 | D4 | 类型门 | `npx tsc --noEmit -p tsconfig.main.json` | 无输出、exit 0 | ☐ |
 | D5 | 全量回归 | `npm test` | 与索引头部「测试基线」行基线一致（用例数只增不减） | ☐ |
 
@@ -63,7 +64,7 @@
 | # | 门 | 命令 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
 | G1 | 定向 | `npx vitest run src-main/quick-launch-config.test.ts` | 全绿 | ☐ |
-| G2 | 相邻回归（配置层的使用方） | `npx vitest run src-main/ipc-ql.test.ts` | 全绿且**未改**该文件（改了说明越界） | ☐ |
+| G2 | 相邻回归（配置层的使用方） | `npx vitest run src-main/ipc-ql.test.ts` | 全绿；该文件的改动**只有** `:245` 一行（`git diff` 只此一处，索引 K28） | ☐ |
 | G3 | 类型门 | `npx tsc --noEmit -p tsconfig.main.json` | 干净 | ☐ |
 | G4 | i18n 三门 | `npx vitest run src-main/i18n` | 全绿（本任务不碰词典） | ☐ |
 | G5 | 全量 | `npm test` | 全绿 | ☐ |
@@ -72,14 +73,14 @@
 
 | # | 项 | 内容 | ✓ |
 | --- | --- | --- | --- |
-| H1 | 暂存范围 | `src-main/quick-launch-config.ts`、`src-main/quick-launch-config.test.ts` | ☐ |
+| H1 | 暂存范围 | `src-main/quick-launch-config.ts`、`src-main/quick-launch-config.test.ts`、`src-main/ipc-ql.test.ts` | ☐ |
 | H2 | commit message 逐字 | `feat: 快捷启动配置增加 admin 字段（总是显式落盘）` | ☐ |
 | H3 | 勾完整性普查 | `node .superpowers/sdd/2026-10-14-quick-launch-admin/tick-census.mjs` → 本表 `裸☐=0` 且 `I段 -[ ]=0` | ☐ |
 
 ## I. 完成判据
 
 - [ ] A1-A4 成立
-- [ ] B1-B2 之外没有文件被改
+- [ ] B1-B3 之外没有文件被改
 - [ ] C1-C3 逐字一致
 - [ ] D1→D5 顺序执行且先红后绿
 - [ ] E1-E5 有对应测试且绿
@@ -94,3 +95,4 @@
 | J-3 | `npx vitest run src-main/quick-launch-config.test.ts` |  |
 | J-4 | `npx tsc --noEmit -p tsconfig.main.json` |  |
 | J-5 | `node -e "qlLoad 读一份无 admin 键的 yaml"` |  |
+| J-6 | `git diff --stat src-main/ipc-ql.test.ts` |  |

@@ -71,7 +71,7 @@
 | # | 口径 | 依据 | 落在哪 |
 | --- | --- | --- | --- |
 | K1–K15 | 规格 §8 的 15 条 grill-me 口径原样生效（提权 PTY 宿主 / argv 只带管道名与 token / 零新键 / `admin` 总是显式落盘 / `.bool-switch` / 列表不加标记 / 只一个词典键 / 两态各一行的布局 / WSL 与已提权不特判 / 不加日志 / 验收分工 / 纯 Node 宿主 / 硬链接 `node.exe` / 接受 5.7–5.9s 阻塞 / 样式复制）**——不再在表里以「待决」出现 | 规格 §8 逐条 | 各表 F 段与对应 E 段 |
-| K16 | `main.ts` 适配器取 `admin` 的实现二选一（T3 C3）：**(a)** `spawnExeProcess(exe, configId, admin)` 由 `:1082` 接线传；**(b)** 从 `qlStartContextOrThrow` 的槽里取。实现时选定并填 T3 C4，不改规格 | 两处的既有形态都实测过：`main.ts:1050` 的形参已含未使用的 `configId`（前置索引 K9），`:1025` 的槽守卫在 | T3 C3 / C4 |
+| K16 | **已定（2026-10-14 19:2x，主代理裁决 R-03，见 T3 C3）**：取槽 + 显式形参的合并式，不再是二选一。原口径：`main.ts` 适配器取 `admin` 的实现二选一（T3 C3）：**(a)** `spawnExeProcess(exe, configId, admin)` 由 `:1082` 接线传；**(b)** 从 `qlStartContextOrThrow` 的槽里取。实现时选定并填 T3 C4，不改规格 | 两处的既有形态都实测过：`main.ts:1050` 的形参已含未使用的 `configId`（前置索引 K9），`:1025` 的槽守卫在 | T3 C3 / C4 |
 | K17 | `QuickLaunchModal.test.ts:681-683` 的计数器只数 `.flag-grid` 的**直接**子节点（`[...grid.children]`）→ 在控件格内部嵌套 `.dropdown.term-field` **不**增加计数；两态的新控件格都用 `.field-cell`，故计数器过滤器**无需改**，只补「exe 态也数到 3」的断言 | 实测：读 `test.ts:677-683` 与 `QuickLaunchModal.vue:211-261` 现结构（shell 态 3 个：`.name-cell` + `.dropdown` + `.field-cell`；exe 态 2 个） | T8 B2 / C5 / C6 / E6 |
 | K18 | koffi 的 `WriteFile` 形参必须声明为 `uint8 *` 并直接传 Buffer；用 `koffi.encode(b,'uint8',n)` 造缓冲再传 → `ok=false lastErr=998`（`ERROR_NOACCESS`） | 实测：`probe9.mjs` 第一版失败、改后 `written=113 lastErr=0` | T4 F2 |
 | K19 | 提权进程**不继承**调用方环境块 → 放弃「注入 `ELECTRON_RUN_AS_NODE`」；`--ms-enable-electron-run-as-node` 在 Electron 28.3.3 不存在 → 没有命令行等价物 | 实测 P2（`[%LMS_PROBE_ENV%]` 未展开）/ P1（不提权时继承）/ P3（二进制内检索） | T4 C5 / T5 C1 |
@@ -84,6 +84,9 @@
 | K26 | 上一 feature 的真机清单（`docs/superpowers/checks/2026-10-13-quick-launch-elevated-exe/task-04-packaged-realmachine.md` 的 E1–E7）至今未勾 → 本 feature 任务 9 的**同一次构建**里一并跑掉并回填那张表 | 实测：该表 E 段仍全 ☐；规格 §3 末段 / §7.2-9 | T9 E6 / C3 |
 
 ## 本索引自身的自检（生成后当场跑过）
+| K27 | 类型门命令一律 `npx tsc --noEmit -p tsconfig.main.json`；plan 全局约束 G5 原写 `tsconfig.json` 是笔误（已同 commit 改掉） | 实测：仓库根 glob 只有 `tsconfig.main.json`，`package.json:9-10` 的 dev/build 脚本用的也是它 | plan G5 / 各表 D、G 段 |
+| K28 | `src-main/ipc-ql.test.ts:245` 断言的是 `ql_list` 的**加载结果**（`qlLoad` → `normalizeEntry`），任务 1 加 `admin` 之后必红 → 该行的 `toEqual` 字面量加 `admin: false` 属**任务 1** 的机械夹具修正；渲染端夹具仍归任务 8 | 实测：`grep "toEqual({ name"` 全仓只有 `quick-launch-config.test.ts` 五处 + `ipc-ql.test.ts:245` | T1 B3 / D3 / G2 / H1；plan 任务 1 步骤 4-5 |
+| K29 | `WinShellApi.shellExecute` 的第三参类型取 plan 的 `{ verb?: string \| null; parameters?: string \| null }`（spec §6.4-3 的窄类型接不住 `admin ? 'runas' : null` 这个实参） | 实测：`spawnExeProcess` 要按布尔传 `null`；T3 C1 已逐字写 `\| null` | T3 C1 / C2 |
 
 - 9 张表的每张 `|` 行列数与该表表头一致 → 见 J 段前的机械校验输出（`column-count check`）
 - 索引里的相对链接全部可解析（9 个任务文件 + spec + plan + 前置 feature 的表）

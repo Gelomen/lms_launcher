@@ -20,7 +20,7 @@
 | --- | --- | --- | --- | --- |
 | B1 | `src-main/shell-execute.ts` | 改：`:14` 签名加可选第三参；`:87` / `:89` 取 `opts?.verb ?? null` / `opts?.parameters ?? null`；`launchShellExe` 加第三参 `verb` | `fMask` / `nShow` / `lpDirectory` / 句柄轮询 / `killTree` 一字不动 | ☐ |
 | B2 | `src-main/shell-execute.test.ts` | 改：新增 2 条 + 既有 uac 用例保持 | 不改既有断言文案 | ☐ |
-| B3 | `src-main/main.ts` | 改：`spawnExeProcess` 取当前条目的 `admin` 并传 `runas` | `:1082` 的槽守卫接线不删；日志通道与 `[lms_launcher] ` 前缀不变 | ☐ |
+| B3 | `src-main/main.ts` | 改（四处，见 C3）：`qlStartContext` 类型（`:1013`）加 `admin: boolean`；`ql_start`（`:1118`）写入 `admin: entry.admin === true`；`spawnExeProcess`（`:1050`）加显式第三形参 `admin: boolean` 并据此传 `'runas'`；`:1082` 接线取槽并传参 | `:1082` 的 `qlStartContextOrThrow('spawnExe')` 调用不删；日志通道与 `[lms_launcher] ` 前缀不变；`ql_start` 其余逻辑（探测、`hasOwnProperty`、`finally` 清槽）一字不动 | ☐ |
 | B4 | `src-main/ipc-ql.test.ts` | 改：新增 exe 提权形状门 | 不动其它通道用例 | ☐ |
 
 ## C. 接口契约
@@ -29,8 +29,8 @@
 | --- | --- | --- | --- |
 | C1 | `WinShellApi.shellExecute` 新签名 | `shellExecute(file: string, nShow: number, opts?: { verb?: string \| null; parameters?: string \| null })` —— plan 任务 3 签名块 | ☐ |
 | C2 | `launchShellExe` 新签名 | `launchShellExe(api: WinShellApi, exe: string, verb?: string \| null): ShellExecProcess` | ☐ |
-| C3 | `main.ts` 适配器怎么取 `admin` | 两种实现任选其一，选定后写进本表 C4 并在 J 段留证据：(a) `spawnExeProcess(exe, configId, admin)` 由 `:1082` 的接线传；(b) 从 `qlStartContextOrThrow` 的槽里取当前 entry | ☐ |
-| C4 | 选定结果（实现时填） | —— | ☐（实现时填：选定 (a) 还是 (b) + 代码行号） |
+| C3 | `main.ts` 适配器怎么取 `admin`（**已定**：索引 K16 由主代理 2026-10-14 19:2x 裁决 R-03 落定） | 取槽 + 显式形参的合并式：① `qlStartContext`（`main.ts:1013`）类型加 `admin: boolean`；② `ql_start`（`:1118`）写入 `admin: entry.admin === true`；③ `:1082` 的接线改为 `spawnExe: (exe) => { const ctx = qlStartContextOrThrow('spawnExe'); return spawnExeProcess(exe, ctx.configId, ctx.admin); }`。理由：`QlDeps.spawnExe(exe)` 签名里没有条目（`quick-launch.ts:171`），槽是「本次 start 上下文」的唯一来源；显式形参让适配器仍可单测 | ☑（口径已定，代码归实现者） |
+| C4 | 落地行号（实现时填） | 口径 = C3；本行只填真实行号证据 | ☐（实现时填：`spawnExeProcess` 形参行号 + 槽写入行号 + 接线行号，见 J-5） |
 
 ## D. TDD 步骤门
 
@@ -95,3 +95,4 @@
 | J-2 | `npx vitest run src-main/ipc-ql.test.ts` |  |
 | J-3 | `npx tsc --noEmit -p tsconfig.main.json` |  |
 | J-4 | `npm test` |  |
+| J-5 | `git diff src-main/main.ts`（C4 的行号证据） |  |

@@ -105,7 +105,7 @@
    - `linkSync` 失败（非 NTFS、目录只读）→ 按 §6.10 的 `err.proc.spawnFail` 报出，`err='hostlink=<errno>'`。
    - `build.bat` 在打包成功后预建一份（§6.11），运行时缺再补（§8-K13）。
 2. **宿主脚本** = `path.join(__dirname, 'ql-pty-host.js')`：dev 下是 `dist-main/ql-pty-host.js`，打包后是 `resources/app.asar/dist-main/ql-pty-host.js`（P9 证明 asar 内脚本可执行）。
-3. **启动调用** = 复用 `src-main/shell-execute.ts` 的 `WinShellApi.shellExecute`，把它从 `(file, nShow)`（`:14`）扩成 `(file, nShow, opts?: { verb?: string; parameters?: string })`（可选第三参，默认 `null` → 前置规格 §6.3 的取值逐字节不变，它的 G4 门不破）。本次传 `{ verb: 'runas', parameters: '"<脚本>" "<管道名>" "<一次性 token>"' }`，`nShow = 0`（SW_HIDE）。
+3. **启动调用** = 复用 `src-main/shell-execute.ts` 的 `WinShellApi.shellExecute`，把它从 `(file, nShow)`（`:14`）扩成 `(file, nShow, opts?: { verb?: string | null; parameters?: string | null })`（可选第三参，`null` 也在类型内：调用方按布尔传 `admin ? 'runas' : null`，索引 K29；原写法接不住这个实参，默认 `null` → 前置规格 §6.3 的取值逐字节不变，它的 G4 门不破）。本次传 `{ verb: 'runas', parameters: '"<脚本>" "<管道名>" "<一次性 token>"' }`，`nShow = 0`（SW_HIDE）。
    - `parameters` 里三个参数**都加引号**（脚本路径可能含空格）；其余取值（`fMask = 0x40|0x04`、`lpDirectory = null`，`:85-93`）不变。
 4. **argv 只带管道名与 token**，其它参数（终端 id、尺寸、cwd）一律在首帧 `HELLO` 里传（§8-K2）。
 
