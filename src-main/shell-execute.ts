@@ -10,8 +10,12 @@ import { t } from './i18n';
 
 /** Win32 接缝：真实现走 koffi；单测注入假实现（规格 §6.2 / §7.1） */
 export interface WinShellApi {
-  /** ShellExecuteExW。ok=false 时 win32Error = GetLastError() */
-  shellExecute(file: string, nShow: number): { ok: boolean; handle: unknown; win32Error: number };
+  /**
+   * ShellExecuteExW。ok=false 时 win32Error = GetLastError()
+   * 第三参（2026-10-14-quick-launch-admin §6.4-3 / §6.9）：`verb: 'runas'` = 以管理员权限启动。
+   * `null` 必须在类型内（索引 K29）：调用方按布尔传 `admin ? 'runas' : null`；缺省或 null → 取值与今天逐字节相同（索引 G3）。
+   */
+  shellExecute(file: string, nShow: number, opts?: { verb?: string | null; parameters?: string | null }): { ok: boolean; handle: unknown; win32Error: number };
   pidOf(handle: unknown): number;            // GetProcessId
   isAlive(handle: unknown): boolean;         // WaitForSingleObject(h, 0) === WAIT_TIMEOUT(258)（规格 §8-K3 / E11）
   exitCodeOf(handle: unknown): number;       // GetExitCodeProcess
@@ -77,16 +81,17 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * 单测可以逐属性替换（规格 §6.2）。
  */
 export const winShell: WinShellApi = {
-  shellExecute(file, nShow) {
+  shellExecute(file, nShow, opts) {
     const b = bind();
     const psei = koffi.alloc(b.SE as never, 1);
     koffi.encode(psei, b.SE as never, {
       cbSize: koffi.sizeof(b.SE as never), // x64 = 112（规格 E13，实测）
       fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI,
       hwnd: null,
-      lpVerb: null,        // 默认动词 open：requireAdministrator 仍按 manifest 提权（E6），asInvoker 不多弹（E8）
+      lpVerb: opts?.verb ?? null,   // 默认动词 open：requireAdministrator 仍按 manifest 提权（E6），asInvoker 不多弹（E8）
+                               // 'runas' = 本期的「管理员」开关（2026-10-14 §6.9）；缺省 / null 时取值与今天一字不差（索引 G3）
       lpFile: file,
-      lpParameters: null,  // 本期无参数字段（规格 §5）
+      lpParameters: opts?.parameters ?? null, // 本期 exe 条目没有参数字段（规格 §5）；只有提权宿主那条路会传（§6.4-3）
       lpDirectory: null,   // 与现状一致：继承本进程工作目录（main.ts:1059 原本也不传 cwd）
       nShow,
       hInstApp: null, lpIDList: null, lpClass: null, hkeyClass: null, dwHotKey: 0, hIcon: null,
@@ -187,9 +192,15 @@ export class ShellExecProcess {
 /**
  * 生产入口：构造即启动。失败按 §6.5 分类抛 PROC:（前缀只用 PROC:，索引 G7）。
  * 调用方（main.ts 的适配器）负责先写日志通道再抛出。
+ * 第三参 verb（2026-10-14-quick-launch-admin §6.9）：'runas' = 管理员权限；null / 缺省 = 今天的默认动词 open。
  */
-export function launchShellExe(api: WinShellApi, exe: string): ShellExecProcess {
-  const r = api.shellExecute(exe, SW_SHOWNORMAL);
+export function launchShellExe(api: WinShellApi, exe: string, verb?: string | null): ShellExecProcess {
+  // verb 缺省时不构造 opts 对象：接缝收到的实参与今天逐字节相同（索引 G3 / RF2「不勾选 = 行为不变」；
+  // 实测：多一个实参——哪怕是 undefined——都会让既有用例 1 的 toHaveBeenCalledWith(EXE, 1) 红）。
+  // 显式 null 走第三参：调用方按布尔传 admin ? 'runas' : null（索引 K29），到真实现仍是 lpVerb = null。
+  const r = verb === undefined
+    ? api.shellExecute(exe, SW_SHOWNORMAL)
+    : api.shellExecute(exe, SW_SHOWNORMAL, { verb });
   if (!r.ok) {
     if (r.win32Error === ERROR_CANCELLED) {
       // 这条路径上 quick-launch.ts:285 的 log.launcher.start.cmd 不会写 → 文案必须带 exe（§8-K2）

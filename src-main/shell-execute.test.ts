@@ -3,6 +3,8 @@
 // 真 Win32 只在最后一条冒烟门里出现，且只用当前进程的伪句柄（规格 E20）：无 UI、无副作用。
 // 不要用「真 Shell 打一个不存在的路径」当冒烟门 —— 那会弹 Shell 的系统错误框并把 worker 卡死（规格 E19）。
 // 译文断言一律走 t()（索引 K16(2) 口径：测试不写死中文文案）。
+// 2026-10-14-quick-launch-admin §6.9：末尾两条用例守「管理员」开关到 lpVerb 的透传与「不勾选 = 取值不变」，
+// 用例名逐字取 plan 任务 3 步骤 1（check 表 E1 / E2 的守测试）。
 import { describe, expect, it, vi } from 'vitest';
 import { t } from './i18n';
 import { launchShellExe, winShell, type WinShellApi } from './shell-execute';
@@ -24,6 +26,21 @@ function fakeApi(over: Partial<WinShellApi> = {}): { api: WinShellApi; calls: st
     ...over,
   };
   return { api, calls };
+}
+
+/**
+ * 只记录实参的假接缝（2026-10-14-quick-launch-admin §6.9 的两条用例用）：判据是「传给 Shell 的实参」，
+ * 所以 seen 存的是每次调用的完整实参数组，不预判第三参的形状（先红时它是 undefined）。
+ */
+function recordingApi(): { api: WinShellApi; seen: unknown[][] } {
+  const seen: unknown[][] = [];
+  const { api } = fakeApi({
+    shellExecute: vi.fn((...args: unknown[]) => {
+      seen.push(args);
+      return { ok: true, handle: HANDLE, win32Error: 0 };
+    }),
+  });
+  return { api, seen };
 }
 
 describe('shell-execute（ShellExecuteEx 提权启动，规格 §6.2-§6.7 / §7.1）', () => {
@@ -149,5 +166,36 @@ describe('shell-execute（ShellExecuteEx 提权启动，规格 §6.2-§6.7 / §7
   it('8 真 winShell：伪句柄 -1 → pidOf 得到本进程 pid、isAlive 为真（真实 FFI，无 UI）', () => {
     expect(winShell.pidOf(-1)).toBe(process.pid); // GetProcessId(GetCurrentProcess()) = 本进程 pid（E20 实测）
     expect(winShell.isAlive(-1)).toBe(true);      // WaitForSingleObject(-1,0)=258 WAIT_TIMEOUT（E11 / E20）
+  });
+
+  // ---------- 2026-10-14-quick-launch-admin §6.9（plan 任务 3 步骤 1，用例名逐字；check 表 E1 / E2）----------
+  // 提权与否只由 lpVerb 决定：所以判据是「传给 Shell 接缝的实参」，其余取值（nShow / parameters）不许跟着变。
+
+  it('verb_runas_is_passed_through_to_the_shell', () => {
+    const { api, seen } = recordingApi();
+    const proc = launchShellExe(api, EXE, 'runas'); // admin === true → 'runas'（规格 §6.9）
+    expect(seen).toHaveLength(1);
+    expect(seen[0][0]).toBe(EXE);
+    expect(seen[0][1]).toBe(1); // nShow 仍是 SW_SHOWNORMAL（规格 §8-Q11 / 索引 G3）
+    const opts = seen[0][2] as { verb?: string | null; parameters?: string | null } | undefined;
+    expect(opts?.verb).toBe('runas');
+    expect(opts?.parameters ?? null).toBeNull(); // 本期没有参数字段（规格 §5），提权也不带参数
+    proc.stopGraceful(0); // 收尾：别把轮询定时器留给下一个用例（用例 1 同一手法）
+  });
+
+  it('no_opts_keeps_verb_and_parameters_null', () => {
+    const { api, seen } = recordingApi();
+    const p1 = launchShellExe(api, EXE);        // 既有调用形状：根本不传第三参
+    const p2 = launchShellExe(api, EXE, null);  // 未勾选：main.ts 传的是 admin ? 'runas' : null（索引 K29）
+    expect(seen).toHaveLength(2);
+    for (const call of seen) {
+      const opts = call[2] as { verb?: string | null; parameters?: string | null } | undefined;
+      expect(opts?.verb ?? null).toBeNull();       // lpVerb 仍是 null：asInvoker 不多弹 UAC（前置规格 §6.1 / E8）
+      expect(opts?.parameters ?? null).toBeNull(); // lpParameters 仍是 null
+    }
+    // 显式 null 也必须把 opts 交出去：第三参没实现时这一句先红（D1 的红门）
+    expect(seen[1][2]).toBeDefined();
+    p1.stopGraceful(0);
+    p2.stopGraceful(0);
   });
 });

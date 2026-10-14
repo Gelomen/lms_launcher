@@ -371,6 +371,45 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
       winShell.shellExecute = original;
     }
   }, 30000);
+
+  // 2026-10-14-quick-launch-admin 任务 3（plan 步骤 5 / check B4、E1、E2、E3）：
+  // exe 的「管理员」开关 = 到 Shell 接缝的 lpVerb。观察点仍是 winShell.shellExecute（:103-104 的既有做法）。
+  it('exe 提权形状门：admin:true → shellExecute 收到 verb=runas；admin 缺省 → null（规格 §6.9 / 索引 G3、K29）', async () => {
+    await invoke('ql_save', 'qladmin01', { name: '形状门 提权 on', type: 'exe', exe: 'notepad.exe', admin: true });
+    await invoke('ql_save', 'qladmin02', { name: '形状门 提权 off', type: 'exe', exe: 'notepad.exe' });
+
+    const seen: Array<{ file: string; nShow: number; opts: { verb?: string | null; parameters?: string | null } | undefined }> = [];
+    const original = winShell.shellExecute;
+    // 不真起进程：真 runas 会弹 UAC 并把主进程同步阻塞 5.7s（规格 §3-P11），且弹窗压不住（E19 / 索引 R8、K17）。
+    // 返回 1223 = 用户在 UAC 点「否」：ql_start 同步 reject，且 quick-launch.ts:268-287 在 set 之前抛出 → 不残留状态。
+    winShell.shellExecute = (file: string, nShow: number, opts?: { verb?: string | null; parameters?: string | null }) => {
+      seen.push({ file, nShow, opts });
+      return { ok: false, handle: null, win32Error: 1223 };
+    };
+    try {
+      await expect(invoke('ql_start', 'qladmin01')).rejects.toThrow(/^PROC: /);
+      await expect(invoke('ql_start', 'qladmin02')).rejects.toThrow(/^PROC: /);
+
+      expect(seen.map((s) => s.file), '两条都是用户那一行的 exe').toEqual(['notepad.exe', 'notepad.exe']);
+      // 勾选 → 'runas'；未勾选 → null（索引 G3 / RF2：不勾选的路径不多弹 UAC）
+      expect(seen.map((s) => s.opts?.verb ?? null)).toEqual(['runas', null]);
+      // 其余取值不随之变（规格 §6.4-3：parameters 本期不传、nShow 仍是 SW_SHOWNORMAL）
+      expect(seen.map((s) => s.opts?.parameters ?? null)).toEqual([null, null]);
+      expect(seen.map((s) => s.nShow)).toEqual([1, 1]);
+
+      // §6.10：提权路径的 UAC 取消仍映射到 err.proc.uacCancelled，且 {exe} 是用户那一行的目标（不是宿主 exe）
+      await waitFor(
+        () => sendsOf('log-line').some((p) => String((p as { line?: string }).line ?? '')
+          .includes(t('err.proc.uacCancelled', { exe: 'notepad.exe' }))),
+        5000, 'uacCancelled(notepad.exe) 的 sys 日志行',
+      );
+      expect(invoke('ql_states'), '失败不残留状态').toEqual({});
+    } finally {
+      winShell.shellExecute = original;
+      await invoke('ql_stop', 'qladmin01');
+      await invoke('ql_stop', 'qladmin02');
+    }
+  }, 30000);
 });
 
 // ---------- 修复轮 1（任务 6 审查：重要 #1 / 重要 #2 / Minor #2）----------

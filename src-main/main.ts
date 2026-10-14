@@ -1004,13 +1004,16 @@ function qlYamlPath(): string { return join(configDir(), 'quick_launch.yaml'); }
  *     而索引 K13 要求 launch(exe, [], configId)；
  *   • available —— QuickLaunchManager 的 terminalAvailable(id) 是同步回调，而索引 K10-3 要求
  *     终端探测（最坏 3×3s）不在主进程里同步阻塞，所以由 handler 先 await 再把结果交给它。
+ *   • admin —— 同上：QlDeps.spawnExe(exe) 的签名里没有条目（quick-launch.ts:171），而 2026-10-14-quick-launch-admin
+ *     §6.9 要求 exe 的「管理员」开关按**本次启动的那条**决定 lpVerb='runas'。索引 K16（裁决 R-03）定的就是
+ *     「从这里取 + 作为显式形参传给 spawnExeProcess」，不是二选一。
  * QuickLaunchManager.start() 在调用这两个回调之前没有任何 await（quick-launch.ts:236-276），
  * 所以这个槽只覆盖一次 start()，finally 里清空，不跨请求残留状态。
  * 任务 6 审查重要 #2：这条不变量原先只写在注释里，代码不钉它——槽为 null 时两处
  * `?? 默认值` 会**静默降级**（configId 变 null → 污染 get_state 的 runningConfigId 语义；
  * 或让 shell 启动抛误导性的 err.ql.terminalGone）。现在由 qlStartContextOrThrow() 变成显式失败。
  */
-let qlStartContext: { configId: string; available: Set<TerminalId> } | null = null;
+let qlStartContext: { configId: string; available: Set<TerminalId>; admin: boolean } | null = null;
 
 /**
  * 重要 #2 的守卫：上面两个构造期回调只能在 ql_start 设置 qlStartContext 的那个同步窗口里被调用；
@@ -1020,7 +1023,7 @@ let qlStartContext: { configId: string; available: Set<TerminalId> } | null = nu
  * 导出只为让 src-main/ipc-ql.test.ts 能钉住这条守卫（修复轮 1 的反向自检）；生产路径除 ql_start
  * 外没有别的调用方。
  */
-export function qlStartContextOrThrow(seam: string): { configId: string; available: Set<TerminalId> } {
+export function qlStartContextOrThrow(seam: string): { configId: string; available: Set<TerminalId>; admin: boolean } {
   if (!qlStartContext) {
     throw new Error('STATE: ql_start context is missing at ' + seam + ' (called outside ql_start)');
   }
@@ -1046,8 +1049,10 @@ function detectTerminalsAsync(): Promise<TerminalInfo[]> {
  * 渲染端 App.vue:477-478 的 catch 只负责把按钮回落，原因行只由这里负责（旧路径也是这个分工）。
  * configId 形参不再被本函数使用，但 :1080 的接线（本表写的 :1084 因新块比旧块短 5 行、又新增一行 import 而上移）必须保持调用 qlStartContextOrThrow('spawnExe')
  * ——那是「ql_start 在途」的槽守卫（修复轮 1 · 重要 #2），删掉它就退化成静默降级。
+ * admin（2026-10-14-quick-launch-admin §6.9 / 索引 K16）：显式形参，true → lpVerb='runas'（UAC 提权），
+ * false → 传 null，即今天的默认动词 open（索引 G3：不勾选的路径不多弹 UAC）。
  */
-function spawnExeProcess(exe: string, configId: string | null): {
+function spawnExeProcess(exe: string, configId: string | null, admin: boolean): {
   onExit(cb: (code: number) => void): void;
   stopGraceful(s: number): Promise<void>;
   isRunning(): boolean;
@@ -1055,7 +1060,7 @@ function spawnExeProcess(exe: string, configId: string | null): {
   void configId; // 见上：只为保留 :1080 接线的语义，不参与启动
   let proc: ShellExecProcess;
   try {
-    proc = launchShellExe(winShell, exe);
+    proc = launchShellExe(winShell, exe, admin ? 'runas' : null);
   } catch (e) {
     // 取 e.message 而不是 String(e)：String(new Error('PROC: …')) 会得到「Error: PROC: …」，
     // 分类前缀就被吃掉了（索引 G7 的前缀口径；规格 E21 / §8-K7）
@@ -1079,7 +1084,10 @@ const ql = new QuickLaunchManager(
     onExit: (configId, code) => { mainWin()?.webContents.send('ql-exit', { configId, code }); },
     onSysLine: (_configId, line) => emitLog('[lms_launcher] ' + line, 'sys'),
     homedir: () => homedir(),
-    spawnExe: (exe) => spawnExeProcess(exe, qlStartContextOrThrow('spawnExe').configId),
+    spawnExe: (exe) => {
+      const ctx = qlStartContextOrThrow('spawnExe');
+      return spawnExeProcess(exe, ctx.configId, ctx.admin);
+    },
   },
   (id) => qlStartContextOrThrow('terminalAvailable').available.has(id),
 );
@@ -1115,7 +1123,7 @@ ipcMain.handle('ql_start', async (_e, id: string): Promise<{ tabId: string | nul
   const available = entry.type === 'shell'
     ? new Set((await detectTerminalsAsync()).map((info) => info.id))
     : new Set<TerminalId>();
-  qlStartContext = { configId: id, available };
+  qlStartContext = { configId: id, available, admin: entry.admin === true };
   try {
     return await ql.start(id, entry);
   } finally {
