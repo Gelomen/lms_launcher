@@ -75,3 +75,9 @@
 - Task 5: 表自身缺陷（已修）—— T5 的 C2 原写 `connect(name: string)`，plan 逐字是 `unknown`；实现者按 plan 执行并报告（= K42）。这是「表与 plan 不一致」的又一例，处理口径 = 以 plan/spec 为准改表
 - Task 5: 交接任务 6 的三条实测事实（= K44，已写进 T6 的 C6 行）—— READY.shellPid 实测 0（不得依赖）；STOP 必须带数字 timeoutSecs；主进程侧 stopGraceful 必须真走到委托（否则留不退出、进程树已死的宿主）
 - Task 5: minor (deferred) —— `PIPE_GONE_TIMEOUT_SECS = 3` 在宿主里写死（`quick-launch.ts:28` 的 `STOP_TIMEOUT_SECS` 未导出，改它属 B 段之外）；两处同值。留给最终整分支审查甄别是否值得导出
+## 停点 2（人类伙伴 2026-10-15 00:09 指示：「进入 任务6 之前停下来」）
+
+- 已完成并验收提交：任务 1（`d9cf9a7`/`0be4614`）、任务 2（`474bc77`/`dbf4f09`）、任务 3（`b0986fc`/`c15fbdd`）、任务 4（`31e22f3`/`971f5e4`）、任务 5（`0462188`/`5b0a3b2`）；另有文档/账本提交 `b2026e2`、`aa8c4a8`、`7469da0`、`1aea1a0`。HEAD = `1aea1a0`，`git status --porcelain` 干净，普查 exit 0
+- 当前全量：`Test Files 51 passed (51)` / `Tests 861 passed (861)`（基线 48/835 → +3 份测试文件、+26 条用例）
+- 恢复时派**任务 6**（`task-06-elevated-pty-process.md`，前置 = 任务 2 + 4 + 5，都已交付）。派单必须带：brief + 该表 + 规格 §6.7 / §6.5；**K35**（复用 `hostStartError`，不得重写映射）、**K37**（`stage='pipe'` → `err='pipe=create'`）、**K38**（读侧那条用例归本任务的 E8）、**K39**（`available()` 的 `-1` 契约）、**K40**（用 `startHost(winPipe, hostLauncher)`；koffi 失败句柄是 BigInt）、**K44**（`shellPid` 不可依赖 / `STOP` 必带数字 / 必须走到委托那一步）、**K43**（主进程侧要处理 `ERR{stage:'pipe'}`）、**K41**（本会话可用系统 node 作宿主跑真 ConPTY，单测仍 mock）
+- 真机门仍未跑：§7.2 的 9 条 + 前置 feature 的 E1-E7 → 归任务 9 同批构建，交用户执行
