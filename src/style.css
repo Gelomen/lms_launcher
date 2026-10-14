@@ -137,6 +137,28 @@ body {
   border-color: var(--primary); /* 可点击 = 紫底白字「启动」 */
 }
 .btn-launch:hover { background: var(--primary-hover); } /* hover 加深一档（与 .vram-badge:hover 同档，压过 .btn:hover 的浅灰） */
+/* 状态按钮改圆形 + 缩小（2026-10-14 用户要求，仅快捷启动列表行）：24×24 正圆
+   （同日第二轮：28×28 → 24×24，与同行 [复制][编辑] 的 .icon-btn--sm(:457) 同尺寸）。
+   覆盖 .btn 的 height:32px / padding:0 14px —— 定宽定高 + padding:0 + flex 居中放图标；
+   本类只管形状与尺寸：配色仍由 .btn-launch（紫）/ .btn-danger（红）给，:disabled 置灰仍由
+   .btn:disabled（伪类权重更高）给，图标字号在模板里逐字给（play / stop 均 12px）。
+   LaunchBar 的 [启动]/[停止] 仍是 32px 胶囊（用户明确只改快捷启动列表行，本类不加到那里）。 */
+.btn-round {
+  width: 24px; height: 24px; padding: 0;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+/* play 三角的光学居中（2026-10-14 用户截图：图标看着偏左）。
+   flex 居中的是 svg 的 advance box（faPlay viewBox 448×512，12px 字号下 10.5×12px）——
+   取证台（.temp/play-optical-center/measure.mjs <按钮px> <图标px>，10× 放大台，光栅化 faPlay 真实路径逐像素取白色质心）：
+   位移 0 时着墨外接盒中心只偏 +0.35px（几何上本就居中），但着墨质心偏左 0.98px；
+   用户截图（57px = 28px ×1.5）实测质心偏左 1.4px —— 同一现象：右指三角的质心落在自身 bbox 左侧约 1/6 宽处。
+   24px 按钮 / 12px 图标下位移 0 / 0.5 / 0.75 / 1 / 1.25 → 质心 -0.98 / -0.48 / -0.20 / +0.02 / +0.30px。
+   取值由用户定（2026-10-14 第二轮）：0.75px —— 质心 -0.20px（仍略偏左 0.2px），外接盒中心 +1.15px；
+   数学上归零是 1px（质心 +0.02），用户嫌过头，故按人眼定 0.75。改数值前先跑取证台重算。
+   stop 是左右对称图形，不加位移；本选择器只命中 .btn-round 内的 play，LaunchBar 不受影响。 */
+.btn-round svg[data-icon="play"] { transform: translateX(0.75px); }
 .btn:disabled, .btn[disabled='true'] {
   background: var(--disabled-bg);
   color: var(--muted);
@@ -332,8 +354,10 @@ body {
    （2026-09 起 GPU 卡片为模板右侧独立列，模板卡自身高度定稿值不变。）
    2026-10-13（用户反馈 + 截图：快捷启动配置一多卡片就无限长、把整行 grid 撑开）：
    快捷启动卡复用本类（QuickLaunch.vue 的列表容器），不再新造第二份高度——两张卡恒等高、
-   行高由条目数决定的问题一并消除。快捷启动行含 32px 状态按钮（.btn），实测 50px/条，
-   161px 内可见 ≈2.9 行、其余走内部滚动；改高度只改这一处，两卡同步。
+   行高由条目数决定的问题一并消除。快捷启动行的行盒由最高的状态按钮决定：状态按钮 32px 时实测 50px/条；
+   2026-10-14 状态按钮改圆形（.btn-round，:147），28px 时按同一算法 46px/条、缩到 24px 后 42px/条
+   （24 + 上下 padding 16 + border 2，未重新实测），行距 50px（含 .tpl-rows gap:8）——161px 内可见 ≈3 行、其余走内部滚动；
+   改高度只改这一处，两卡同步。
    顺带生效：下方 .template-list .tpl-row .icon-btn::after（:501，行内 tooltip 改挂左侧）与
    :397/:401/:406 的滚动条美化同样覆盖快捷启动行——overflow 容器会裁掉朝上的 tooltip，必须同规则。 */
 .template-list {

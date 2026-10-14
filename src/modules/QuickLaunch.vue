@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
 import { faPenToSquare, faCopy } from '@fortawesome/free-regular-svg-icons';
-import { faFileCirclePlus, faRocket, faStop } from '@fortawesome/free-solid-svg-icons';
+import { faFileCirclePlus, faPlay, faStop } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 import { t } from '../i18n';
@@ -17,11 +17,14 @@ import type { QuickLaunchEntry, QuickLaunchList, QuickLaunchMap } from '../src-m
 // 卡片不订阅 ql-data / ql-exit —— 进程状态的所有权在 App（任务 13），这里只渲染与发 start/stop。
 config.autoGenerateCss = true;
 // 图标复用既有注册：行「复制」regular copy、「编辑」regular pen-to-square（模板卡同款），
-// 「新建」solid file-circle-plus（模板卡同款），启动/停止 solid rocket/stop（LaunchBar 同款）。
-library.add(faPenToSquare, faCopy, faFileCirclePlus, faRocket, faStop);
+// 「新建」solid file-circle-plus（模板卡同款），停止 solid stop（LaunchBar 同款）；
+// 启动用 solid play（2026-10-14 用户要求：列表行 [启动] 图标由 rocket 改 play，配色不动；
+// 状态按钮 24×24 圆形 + 图标 12px，见 style.css .btn-round）。
+// faPlay 只在 free-solid-svg-icons 里有（free-regular 无该图标），按本文件既有约定挂进 fat 键。
+library.add(faPenToSquare, faCopy, faFileCirclePlus, faPlay, faStop);
 const byPrefixAndName = {
-  fat: { copy: faCopy, 'pen-to-square': faPenToSquare },
-  fas: { 'file-circle-plus': faFileCirclePlus, rocket: faRocket, stop: faStop },
+  fat: { copy: faCopy, 'pen-to-square': faPenToSquare, play: faPlay },
+  fas: { 'file-circle-plus': faFileCirclePlus, stop: faStop },
 };
 
 const props = defineProps<{ states: Record<string, { running: boolean; stopping: boolean }> }>();
@@ -180,12 +183,15 @@ onMounted(() => { void reload(); });
             <button class="icon-btn icon-btn--sm" :data-tooltip="t('ql.btn.edit')" :aria-label="t('ql.btn.edit')" @click="openEdit(id)">
               <FontAwesomeIcon :icon="byPrefixAndName.fat['pen-to-square']" />
             </button>
-            <!-- 状态按钮复用 LaunchBar 的 .btn-launch（紫）/.btn-danger（红）与 rocket/stop（check F2）；
+            <!-- 状态按钮复用 LaunchBar 的 .btn-launch（紫）/.btn-danger（红）（check F2 的配色门不变）；
+                 形状/尺寸由 .btn-round 给：24×24 圆形（2026-10-14 用户要求，仅本卡列表行；LaunchBar 仍 32px 胶囊）；
+                 图标：未运行 play / 运行中 stop（2026-10-14 用户要求把本卡 [启动] 的 rocket 换成 play，
+                 LaunchBar 的 [启动] 仍是 rocket，未改）；
                  stopping → 半角三点 ... 并禁用（与 LaunchBar.vue:129 逐字一致，索引 K30） -->
-            <button :class="stateOf(id).running ? 'btn btn-danger' : 'btn btn-launch'"
+            <button :class="['btn', 'btn-round', stateOf(id).running ? 'btn-danger' : 'btn-launch']"
               :data-tooltip="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
               :aria-label="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
-              :disabled="stateOf(id).stopping" @click="onToggle(id)"><template v-if="!stateOf(id).running"><FontAwesomeIcon :icon="byPrefixAndName.fas['rocket']" style="font-size: 16px;" /></template><span v-else-if="stateOf(id).stopping">...</span><FontAwesomeIcon v-else :icon="byPrefixAndName.fas['stop']" style="font-size: 14px;" /></button>
+              :disabled="stateOf(id).stopping" @click="onToggle(id)"><template v-if="!stateOf(id).running"><FontAwesomeIcon :icon="byPrefixAndName.fat['play']" style="font-size: 12px;" /></template><span v-else-if="stateOf(id).stopping">...</span><FontAwesomeIcon v-else :icon="byPrefixAndName.fas['stop']" style="font-size: 12px;" /></button>
           </div>
         </div>
       </div>

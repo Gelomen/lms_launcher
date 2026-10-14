@@ -111,6 +111,16 @@ describe('QuickLaunch card', () => {
     expect(rows.length).toBe(3);
     const stateBtn = (i: number) => rows[i].findAll('.tpl-row__actions button')[2];
 
+    // 形状门（2026-10-14 用户要求：本卡列表行的状态按钮 24×24 圆形，style.css .btn-round）：
+    // 形状类三态恒在，与配色类分开钉 —— 配色仍按状态切换（下面逐行钉），改形状不得动配色。
+    for (const i of [0, 1, 2]) expect(stateBtn(i).classes()).toContain('btn-round');
+
+    // 光学居中那条 CSS 的落点（style.css:160 逐字选择器 .btn-round svg[data-icon="play"]）：
+    // 选择器命不中 = 位移静默失效，所以按 CSS 里的原文钉一遍。未运行 = play、运行中 = stop
+    // （stop 左右对称，不做位移）。
+    expect(w.find('.btn-round svg[data-icon="play"]').exists()).toBe(true);
+    expect(w.find('.btn-round svg[data-icon="stop"]').exists()).toBe(true);
+
     // 未运行（states 里没有该 id 也算未运行）：btn-launch（紫）+ 文案「启动」，可点
     expect(stateBtn(0).classes()).toEqual(expect.arrayContaining(['btn', 'btn-launch']));
     expect(stateBtn(0).classes()).not.toContain('btn-danger');
@@ -253,6 +263,39 @@ describe('QuickLaunch card', () => {
       expect(l.textOverflow).toBe('ellipsis');
     } finally {
       row.remove();
+    }
+  });
+
+  // 状态按钮的形状 + 光学居中（2026-10-14 用户要求：圆形 24×24、play 图标右移做光学位移）：
+  // 同一手法注入真实 style.css 读 computed style —— 上面那条只钉「类挂上了 / 选择器命得中」，
+  // 这里钉 CSS 的真值：形状（24×24 + 50%）与位移（0.75px，取值由用户按人眼定，取证见 style.css:152-159）。
+  it('round_state_button_geometry_and_optical_nudge', async () => {
+    if (!document.getElementById('__global-css__')) {
+      const st = document.createElement('style');
+      st.id = '__global-css__';
+      st.textContent = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
+      document.head.appendChild(st);
+    }
+    mockLms({ items: { idle: entry('idle-item'), busy: entry('busy-item') }, invalid: [] });
+    const w = mount(QuickLaunch, { props: { states: { busy: { running: true, stopping: false } } as States }, attachTo: document.body });
+    await flush();
+    try {
+      const startBtn = w.find('.tpl-row .btn-round').element;
+      const cs = getComputedStyle(startBtn);
+      expect([cs.width, cs.height]).toEqual(['24px', '24px']);
+      expect(cs.borderRadius).toBe('50%');
+      // play：光学位移 0.75px。happy-dom 不做矩阵化，computed transform 原样回显声明值
+      // （真机 Chromium 会算成 matrix(1, 0, 0, 1, 0.75, 0)）—— 这里钉的是「声明值 = 0.75px」。
+      const play = getComputedStyle(w.find('.btn-round svg[data-icon="play"]').element);
+      expect(play.transform).toBe('translateX(0.75px)');
+      expect(play.fontSize).toBe('12px');
+      // stop：左右对称，不做位移。happy-dom 对「未声明的属性」返回空串（真机是 none），
+      // 两者都表示没有位移；关键是不得出现 translate。
+      const stopTf = getComputedStyle(w.find('.btn-round svg[data-icon="stop"]').element).transform;
+      expect(['', 'none']).toContain(stopTf);
+      expect(stopTf).not.toContain('translate');
+    } finally {
+      w.unmount();
     }
   });
 
