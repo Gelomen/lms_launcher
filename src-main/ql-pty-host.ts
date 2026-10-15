@@ -7,7 +7,10 @@
 //   文案在主进程侧按词典生成（§6.10），宿主里不出现任何 t() 调用，也不新增错误前缀。
 // 帧的 payload 一律是 string（索引 K32）：node-pty 的 onData 交出的就是 JS 字符串，直接 encodeFrame(DATA, data)；
 //   自己拼 Buffer 字节再 toString 反而失真（合法字符串的 UTF-8 往返无损）。
+import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as pty from '@lydell/node-pty';
 import { PtyProcess, shellExe } from './quick-launch';
 import type { TerminalId } from './quick-launch-config';
@@ -16,6 +19,36 @@ import { HOST_FRAME, createFrameParser, encodeFrame, type HostFrameType } from '
 // §6.6-8：管道断开 = 视同 STOP{timeoutSecs:3}。3 与 quick-launch.ts:28 的 STOP_TIMEOUT_SECS 同值；
 // 那个常量未导出，为了它去改 quick-launch.ts 属本任务 B 段之外（G9），所以在这里写死并标出处。
 const PIPE_GONE_TIMEOUT_SECS = 3;
+
+// 任务 10 · C7 / §6.6-12 / 裁决 R-18 / 索引 K57：失败留痕文件与上限。
+// 为什么必须有它：ShellExecuteEx 不给子进程 stdio，宿主连不上管道时 ERR 帧也发不出去，
+// 主进程只有这个文件能知道宿主侧发生了什么（2026-10-15 的真机故障正是卡在这里）。
+const HOST_TRACE_FILE = 'lms-ql-host.log';
+const HOST_TRACE_MAX_BYTES = 64 * 1024; // 超过 64KiB 先清空再写（覆盖），避免无限增长
+
+/**
+ * 四类失败（token / spawn / pipe / fatal）各追加一行到 %TEMP%\lms-ql-host.log：
+ * <ISO 时间> pid=<pid> pipe=<管道名> stage=<stage> err=<原始 message>。
+ * message 里的换行压成空格；写之前若文件 > 64KiB 先清空（覆盖写）；纯 ASCII、不含汉字（G6）。
+ * 写失败一律吞掉 —— 留痕绝不能把宿主搞崩。只追加，不由本 feature 清理（§6.6-12）。
+ */
+function writeTrace(pipeName: string, stage: string, message: string): void {
+  try {
+    const file = path.join(os.tmpdir(), HOST_TRACE_FILE);
+    let size = 0;
+    try {
+      size = fs.statSync(file).size;
+    } catch {
+      size = 0;
+    }
+    const line = new Date().toISOString() + ' pid=' + process.pid + ' pipe=' + pipeName
+      + ' stage=' + stage + ' err=' + message.replace(/\r?\n/g, ' ') + '\n';
+    if (size > HOST_TRACE_MAX_BYTES) fs.writeFileSync(file, line, 'utf8');
+    else fs.appendFileSync(file, line, 'utf8');
+  } catch {
+    // 留痕写不进去也不能影响宿主的错误路径
+  }
+}
 
 /** 宿主用到的最小管道面：真实现是 net.Socket，单测里是 EventEmitter + 收集写出的帧（plan 任务 5 步骤 1）。 */
 export interface HostSocket {
@@ -69,6 +102,8 @@ export function runHost(deps: { connect(name: unknown): HostSocket; spawn: typeo
     }
   };
   const fail = (stage: string, message: string, code: number): void => {
+    // 任务 10 · C7 / §6.6-12 / K57：先落留痕再发帧再退出 —— 连不上管道时 ERR 帧发不出去，只有文件能带回现场
+    writeTrace(pipeName, stage, message);
     send(HOST_FRAME.ERR, JSON.stringify({ stage, message }));
     finished = true;
     process.exit(code);
@@ -146,16 +181,27 @@ export function runHost(deps: { connect(name: unknown): HostSocket; spawn: typeo
   // 只有终端还没起来时（连不上管道）才按 §6.6-9 报 ERR{stage:'pipe'}；没有这个监听，未处理的 error 会让宿主直接崩掉。
   socket.on('error', (err: unknown) => {
     if (proc !== null || finished) return;
-    fail('pipe', messageOf(err), 1);
+    // 任务 10 · C6 / R-18 / K57：管道连不上 = 退出码 3（原来与加载期崩溃同为 1，主进程无法判别）
+    fail('pipe', messageOf(err), 3);
   });
 }
 
-/** 生产侧的装配：真命名管道（§6.6-1，P10 证明 net.connect 可用）+ 真 node-pty（§6.6-3） */
-function main(): void {
-  runHost({
-    connect: (name: unknown) => net.connect(String(name)),
-    spawn: pty.spawn,
-  });
+/**
+ * 生产侧的装配：真命名管道（§6.6-1，P10 证明 net.connect 可用）+ 真 node-pty（§6.6-3）。
+ * 任务 10 · C6 / §6.6-12 / R-18 / K57：外层 try/catch 兜住加载期 / 运行期的未预期异常 ——
+ * 记 stage='fatal' 的留痕后 process.exit(4)，不再带未处理的崩溃栈（原来与管道失败同为 1）。
+ * 导出只为一个可注入的测试接缝（ql-pty-host.test.ts 把 net.connect 换成会抛的实现）。
+ */
+export function main(): void {
+  try {
+    runHost({
+      connect: (name: unknown) => net.connect(String(name)),
+      spawn: pty.spawn,
+    });
+  } catch (err) {
+    writeTrace(process.argv.slice(2)[0] ?? '', 'fatal', messageOf(err));
+    process.exit(4);
+  }
 }
 
 // plan 任务 5：只有被 node.exe 直接执行时才自动跑（单测注入假 socket 与假 pty）。

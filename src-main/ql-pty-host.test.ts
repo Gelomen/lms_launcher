@@ -7,10 +7,13 @@
 // 真 pty / 真管道不在这里（check B2）：本会话的 ConPTY 必 EPERM（规格 §2-5 / 索引 K22），真管道只出现在 check D3 的冒烟里。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as pty from '@lydell/node-pty';
 import { shellExe, spawnShell } from './quick-launch';
 import { HOST_FRAME, createFrameParser, encodeFrame, type HostFrameType } from './ql-host-protocol';
-import { runHost, type HostSocket } from './ql-pty-host';
+import { main, runHost, type HostSocket } from './ql-pty-host';
 
 // 停止升级链在 quick-launch.ts:122-142（宿主复用它）：与 quick-launch.test.ts:13-19 同一手法观察 taskkill。
 // quick-launch.ts 里 node:child_process 只用于 taskkill，整文件 mock 不影响其它路径。
@@ -38,6 +41,14 @@ vi.mock('@lydell/node-pty', () => ({
     };
   },
 }));
+
+// 任务 10 · E6 / C6 / K57：宿主顶层 catch 的守测试要能制造一个「装配期未预期异常」——
+// 真实现下 runHost 的 deps.connect 就是 net.connect，把 connect 换成会抛的实现即可。
+// 本文件之外没有别的模块 import node:net（ql-pty-host.ts 是唯一一处）。
+vi.mock('node:net', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:net')>();
+  return { ...actual, connect: () => { throw new Error('socket boom'); } };
+});
 
 const PIPE = '\\\\.\\pipe\\lms-ql-1a2b3c4d';
 const TOKEN = 'tok-1';
@@ -159,10 +170,32 @@ function sendHello(socket: FakeSocket, over: Record<string, unknown> = {}): void
 
 let exitCodes: number[] = [];
 
+// 任务 10 · C7 / K57：留痕文件真写在 os.tmpdir() 下。把 TEMP/TMP/TMPDIR 指到每个用例独占的目录：
+// 既不污染真 TEMP，也不与并行跑的其它测试文件抢同一个 %TEMP%\lms-ql-host.log（否则「最后一行」会串台）。
+const TRACE_FILE_NAME = 'lms-ql-host.log';
+const ENV_KEYS = ['TEMP', 'TMP', 'TMPDIR'] as const;
+let traceDir = '';
+let savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
+
+function tracePath(): string {
+  return path.join(os.tmpdir(), TRACE_FILE_NAME);
+}
+
+function lastTraceLine(): string {
+  const lines = fs.readFileSync(tracePath(), 'utf8').split('\n').filter((l) => l !== '');
+  return lines.length > 0 ? lines[lines.length - 1] : '';
+}
+
 beforeEach(() => {
   exitCodes = [];
   taskkillCalls.length = 0;
   ptySpawnSeen.length = 0;
+  traceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ql-pty-host-trace-'));
+  savedEnv = {};
+  for (const k of ENV_KEYS) {
+    savedEnv[k] = process.env[k];
+    process.env[k] = traceDir;
+  }
   // 真宿主在这里结束进程；单测里只记录退出码，不让 vitest 的 worker 退出（C4 的判据就是这个实参）
   vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
     exitCodes.push(typeof code === 'number' ? code : -1);
@@ -173,6 +206,13 @@ beforeEach(() => {
 afterEach(() => {
   vi.mocked(process.exit).mockRestore();
   vi.useRealTimers();
+  for (const k of ENV_KEYS) {
+    const v = savedEnv[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  fs.rmSync(traceDir, { recursive: true, force: true });
+  traceDir = '';
 });
 
 describe('ql-pty-host：提权 PTY 宿主的装配（规格 §6.6 的 1-9 步）', () => {
@@ -291,5 +331,35 @@ describe('ql-pty-host：提权 PTY 宿主的装配（规格 §6.6 的 1-9 步）
     expect(taskkillCalls).toEqual([]); // §6.6-8 给的是 3s
     await vi.advanceTimersByTimeAsync(200);
     expect(taskkillCalls).toEqual([{ cmd: 'taskkill', args: ['/T', '/F', '-PID', String(PID)] }]);
+  });
+
+  // ---------- 任务 10 · E5 / C6 / C7 / K57：管道连不上 = 退出码 3（原来与加载期崩溃同为 1）+ 留痕一行 ----------
+  it('host_pipe_failure_exits_3_and_writes_the_trace_file', () => {
+    const { socket } = startHost();
+    socket.emit('error', new Error('connect EPERM')); // §6.6-10：管道连不上 / error 事件
+
+    // 退出码 3（R-18 / K57）：主进程据此判「宿主没连上」，不再与加载期崩溃混淆
+    expect(exitCodes).toEqual([3]);
+    // 留痕行逐字：<ISO 时间> pid=<pid> pipe=<管道名> stage=<stage> err=<原始 message>
+    const line = lastTraceLine();
+    expect(line).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z pid=\d+ pipe=/);
+    expect(line.endsWith(' pipe=' + PIPE + ' stage=pipe err=connect EPERM')).toBe(true);
+    expect(line).not.toContain('\r'); // 换行已压成空格（一行一条）
+  });
+
+  // ---------- 任务 10 · E6 / C6 / C7 / K57：宿主顶层未预期异常 = stage='fatal' + 退出码 4 + 留痕 ----------
+  it('host_fatal_error_exits_4_and_writes_the_trace_file', () => {
+    const savedArgv = process.argv;
+    process.argv = [savedArgv[0], 'D:\\Program Files\\lms launcher\\dist-main\\ql-pty-host.js', PIPE, TOKEN];
+    try {
+      main(); // node:net.connect 被 mock 成抛异常 → runHost 装配期抛 → main 的顶层 catch
+    } finally {
+      process.argv = savedArgv;
+    }
+    // 退出码 4（R-18 / K57）：宿主自身的未预期异常，加载期与运行期都归到这一类
+    expect(exitCodes).toEqual([4]);
+    const line = lastTraceLine();
+    expect(line).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z pid=\d+ pipe=/);
+    expect(line.endsWith(' pipe=' + PIPE + ' stage=fatal err=socket boom')).toBe(true);
   });
 });

@@ -332,6 +332,9 @@ function hostLauncherStub(over: Partial<HostLauncher> = {}): { launcher: HostLau
       launched.push([exe, script, pipeName, token]);
       return { ok: true, handle: HOST_HANDLE, win32Error: 0 };
     }),
+    // 任务 10 · C5：每轮连接等待同时判宿主是否已退出 —— 假夹具默认「宿主一直活着」
+    isAlive: vi.fn(() => true),
+    exitCodeOf: vi.fn(() => 0),
     ...over,
   };
   return { launcher, launched };
@@ -362,6 +365,38 @@ async function withShell<T>(patch: Partial<WinShellApi>, run: () => Promise<T>):
     return await run();
   } finally {
     for (const k of keys) winShell[k] = saved[k] as never;
+  }
+}
+
+// ---------- 任务 10（§6.6-12 / §6.10 / K57）：宿主失败留痕文件的真实读写 ----------
+const HOST_TRACE_FILE = 'lms-ql-host.log';
+
+/** 留痕文件路径：宿主与主进程两侧都按 path.join(os.tmpdir(), 'lms-ql-host.log') 取（C7） */
+function tracePath(): string {
+  return path.join(os.tmpdir(), HOST_TRACE_FILE);
+}
+
+/** 真写一行留痕（宿主那侧的格式），供 C8 的合并点读取 */
+function writeTraceLine(pipeName: string, stage: string, err: string): void {
+  fs.writeFileSync(tracePath(), '2026-10-15T10:00:00.000Z pid=4321 pipe=' + pipeName + ' stage=' + stage + ' err=' + err + '\n', 'utf8');
+}
+
+/**
+ * 留痕文件用例的隔离目录：把 TEMP/TMP/TMPDIR 指到本用例独占目录（os.tmpdir() 每次调用都读环境变量），
+ * 跑完还原并删除 —— 既真写文件，也不与并行跑的其它测试文件抢同一个 %TEMP%\lms-ql-host.log。
+ */
+async function withTraceDir<T>(run: () => Promise<T>): Promise<T> {
+  const saved: Array<[string, string | undefined]> = ['TEMP', 'TMP', 'TMPDIR'].map((k) => [k, process.env[k]]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ql-elevated-trace-'));
+  for (const [k] of saved) process.env[k] = dir;
+  try {
+    return await run();
+  } finally {
+    for (const [k, v] of saved) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -593,6 +628,180 @@ describe('ql-elevated 第二段：ElevatedPtyProcess（规格 §6.7 / §6.5 读�
       expect(h.closed).toEqual([PIPE_HANDLE]);
       expect(closed).toEqual([HOST_HANDLE]);
       expect(vi.getTimerCount()).toBe(0); // 读轮询与握手定时器都没留下
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ---------- 任务 10 · E1 / C1 / K56：等待连接期间不得调用阻塞的 connect，只轮询 available ----------
+  it('handshake_polls_without_calling_blocking_connect', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = hostPipe();
+      const { launcher } = hostLauncherStub();
+      let connected = false;
+      const connectCalls: unknown[] = [];
+      const baseAvailable = h.api.available;
+      h.api.available = vi.fn(() => (connected ? baseAvailable(PIPE_HANDLE) : -1));
+      h.api.connect = vi.fn((handle: unknown) => { connectCalls.push(handle); return true; });
+      await withShell(shellStub().patch, async () => {
+        const starting = startElevatedHost(h.api, launcher, HELLO_OPTS);
+        await vi.advanceTimersByTimeAsync(200); // 4 轮等待：客户端还没连上
+        // C1 / K56：等待期间绝不调用阻塞的 connect —— 真机永久卡死的就是那个 ConnectNamedPipe（2026-10-15 18:0x）
+        expect(connectCalls).toEqual([]);
+        connected = true;                        // 客户端连上：PeekNamedPipe 立刻可读（probe 35ms 检出）
+        await vi.advanceTimersByTimeAsync(60);   // 下一轮 available() >= 0 → 补一次 accept 并继续握手
+        expect(connectCalls).toEqual([PIPE_HANDLE]);
+        h.push(encodeFrame(HOST_FRAME.READY, READY_PAYLOAD));
+        await vi.advanceTimersByTimeAsync(20);
+        expect((await starting).isRunning()).toBe(true);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ---------- 任务 10 · E2 / C2 / K56：检出已连后补一次 accept（535 由 winPipe.connect 判成功）----------
+  it('handshake_detects_the_client_through_peek', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = hostPipe();
+      const { launcher } = hostLauncherStub();
+      let connected = false;
+      const connectCalls: unknown[] = [];
+      const baseAvailable = h.api.available;
+      h.api.available = vi.fn(() => (connected ? baseAvailable(PIPE_HANDLE) : -1));
+      h.api.connect = vi.fn((handle: unknown) => { connectCalls.push(handle); return true; });
+      await withShell(shellStub().patch, async () => {
+        const starting = startElevatedHost(h.api, launcher, HELLO_OPTS);
+        await vi.advanceTimersByTimeAsync(50); // 第一轮：还没连上
+        expect(connectCalls).toEqual([]);
+        connected = true;
+        await vi.advanceTimersByTimeAsync(60);
+        // 补的这一次 accept 就发生在检出之后（535 的判定在 winPipe.connect，既有用例 connect_treats_ 守）
+        expect(connectCalls).toEqual([PIPE_HANDLE]);
+        expect(decodeFrames(h.written).map((ff) => ff.type)).toEqual([HOST_FRAME.HELLO]);
+        h.push(encodeFrame(HOST_FRAME.READY, READY_PAYLOAD));
+        await vi.advanceTimersByTimeAsync(20);
+        await starting;
+        expect(connectCalls).toEqual([PIPE_HANDLE]); // 只补一次，不重复 accept
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ---------- 任务 10 · E3 / C3：没人连上 → 到 15s 抛 handshake=connect（不再永久卡住）----------
+  it('handshake_times_out_when_nobody_connects', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = hostPipe();
+      h.api.available = vi.fn(() => -1); // ERROR_PIPE_NOT_CONNECTED(230)：一直没人连
+      const { launcher } = hostLauncherStub();
+      const { patch, closed } = shellStub();
+      let msg = '';
+      await withShell(patch, async () => {
+        const starting = startElevatedHost(h.api, launcher, HELLO_OPTS).then(
+          () => { msg = 'resolved'; },
+          (e: unknown) => { msg = (e as Error).message; },
+        );
+        // 假定时器下 15s 是瞬时的：真机若阻塞在这一段，这个 await 永远回不来（K56 修的就是它）
+        await vi.advanceTimersByTimeAsync(15100);
+        await starting;
+      });
+      expect(msg).toMatch(/^PROC: /);
+      expect(msg).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=connect' }));
+      expect(msg).not.toContain('node.exe');
+      expect(h.closed).toEqual([PIPE_HANDLE]); // 抛出前关掉两个句柄（§6.7 / RF4）
+      expect(closed).toEqual([HOST_HANDLE]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ---------- 任务 10 · E4 / C4 / C5：宿主已退出 → 立刻 handshake=exit(code=N)，不等满 15s ----------
+  it('handshake_fails_fast_when_the_host_died', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = hostPipe();
+      h.api.available = vi.fn(() => -1);   // 管道没连上，宿主已经死了
+      const { launcher } = hostLauncherStub({
+        isAlive: vi.fn(() => false),
+        exitCodeOf: vi.fn(() => 3),
+      });
+      const { patch, closed } = shellStub();
+      let msg = '';
+      await withShell(patch, async () => {
+        const startedAt = Date.now();
+        let settledAt = -1;
+        const starting = startElevatedHost(h.api, launcher, HELLO_OPTS).then(
+          () => { msg = 'resolved'; settledAt = Date.now(); },
+          (e: unknown) => { msg = (e as Error).message; settledAt = Date.now(); },
+        );
+        // 先只冲微任务、不推时间：新实现在首轮就判出宿主已退出（settledAt 仍 = startedAt）。
+        // 旧实现没有这条分支，会一直等到读轮询 / 15s 超时；下面的推进让红以契约失败收场，而不是 60s 挂死。
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(15100);
+        await starting;
+        expect(settledAt).toBe(startedAt); // E4：立刻抛，不等满 15s
+      });
+      expect(msg).toMatch(/^PROC: /);
+      expect(msg).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=exit(code=3)' }));
+      expect(msg).not.toContain('node.exe');
+      expect(h.closed).toEqual([PIPE_HANDLE]);
+      expect(closed).toEqual([HOST_HANDLE]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ---------- 任务 10 · E7 / C8 / K57：留痕只认同管道名的那一行；不匹配 / 无文件 → 只报退出码 ----------
+  it('host_trace_line_is_merged_into_the_exit_fragment', async () => {
+    vi.useFakeTimers();
+    try {
+      await withTraceDir(async () => {
+        // 每个情形起一个实例：available() 永远 -1；首轮 isAlive=true → 睡 50ms，
+        // 测试此时写留痕文件并把 isAlive 翻成 false → 下一轮走 handshake=exit 的合并点。
+        const exitMessage = async (setup: (pipeName: string) => void): Promise<string> => {
+          const h = hostPipe();
+          h.api.available = vi.fn(() => -1);
+          let alive = true;
+          const { launcher, launched } = hostLauncherStub({
+            isAlive: vi.fn(() => alive),
+            exitCodeOf: vi.fn(() => 3),
+          });
+          const { patch } = shellStub();
+          return await withShell(patch, async () => {
+            const starting = startElevatedHost(h.api, launcher, HELLO_OPTS).then(
+              () => 'resolved',
+              (e: unknown) => (e as Error).message,
+            );
+            const pipeName = launched[0][2] as string; // 构造期同步跑完：本次管道名就在 launch 实参里
+            setup(pipeName);
+            alive = false;
+            await vi.advanceTimersByTimeAsync(50);
+            return await starting;
+          });
+        };
+
+        // ① pipe= 匹配 → stage= / err= 并进**同一个** {err}，仍然只有一行日志（R-15 / K53 不变）
+        const merged = await exitMessage((pipeName) => writeTraceLine(pipeName, 'pipe', 'connect EPERM'));
+        expect(merged).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=exit(code=3; stage=pipe err=connect EPERM)' }));
+
+        // ② 最后一行是别的实例（pipe= 不匹配）→ 不采信，只报退出码
+        fs.rmSync(tracePath(), { force: true });
+        const other = await exitMessage(() => writeTraceLine('\\\\.\\pipe\\lms-ql-deadbeef', 'pipe', 'connect EPERM'));
+        expect(other).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=exit(code=3)' }));
+        expect(other).not.toContain('stage=pipe');
+
+        // ③ 文件不存在 → 不采信也不报错，只报退出码
+        fs.rmSync(tracePath(), { force: true });
+        const missing = await exitMessage(() => {});
+        expect(missing).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=exit(code=3)' }));
+        expect(missing).not.toContain('stage=');
+      });
     } finally {
       vi.useRealTimers();
     }

@@ -6,6 +6,7 @@
 // hostStartError() 这一个映射器里（主代理裁决 R-07 / 索引 K35），任务 6 用 opts.logTarget 作 userTarget 调它。
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import koffi from 'koffi';
 import { t } from './i18n';
@@ -46,6 +47,10 @@ export interface HostLauncher {
   hostExePath(): string;                               // 硬链接 node.exe 的解析（§6.4-1）
   hostScriptPath(): string;                            // path.join(__dirname, 'ql-pty-host.js')
   launch(exe: string, script: string, pipeName: string, token: string): { ok: boolean; handle: unknown; win32Error: number };
+  /** 任务 10 · C5 / §6.7：每轮连接等待判宿主是否已退出（进程句柄的生命周期归 launcher，直接转调 WinShellApi） */
+  isAlive(handle: unknown): boolean;
+  /** 任务 10 · C5 / §6.10：宿主早退时把 GetExitCodeProcess 的码并进 handshake=exit(code=N) */
+  exitCodeOf(handle: unknown): number;
 }
 
 /**
@@ -163,6 +168,13 @@ export function createHostLauncher(shell: WinShellApi, paths?: HostPaths): HostL
     },
     hostScriptPath() {
       return path.join(__dirname, HOST_SCRIPT_NAME);
+    },
+    // 任务 10 · C5 / 索引 K57：进程句柄本来就归 launcher 管，直接转调注入的 WinShellApi
+    isAlive(handle) {
+      return shell.isAlive(handle);
+    },
+    exitCodeOf(handle) {
+      return shell.exitCodeOf(handle);
     },
     launch(exe, script, pipeName, token) {
       // 三个参数都加引号：脚本路径可能含空格（§6.4-3）。其余取值由 shell-execute 的真实现保证不变
@@ -376,8 +388,10 @@ export function startHost(pipe: WinPipeApi, launcher: HostLauncher): HostStart {
 // ============================================================================
 
 const POLL_READ_MS = 20;                  // §6.5：读侧轮询。不用阻塞 ReadFile：那会把主线程卡住（§9-R7）
-const HOST_HANDSHAKE_TIMEOUT_MS = 15000;  // §6.7：等 READY 的上限
-const CONNECT_POLL_MS = 50;               // §6.5：ConnectNamedPipe 用 50ms 轮询（P10 实测 61ms 连上）
+const HOST_HANDSHAKE_TIMEOUT_MS = 15000;  // §6.7：等 READY 的上限（连接等待与等 READY 共用这一个上限）
+const CONNECT_POLL_MS = 50;               // §6.5：连接等待用 50ms 轮询 PeekNamedPipe（P10 实测 61ms 连上）
+// 任务 10 · C7 / §6.6-12 / 索引 K57：宿主失败留痕文件（纯 ASCII，宿主四类失败各追加一行）
+const HOST_TRACE_FILE = 'lms-ql-host.log';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -401,8 +415,11 @@ function parseObject(payload: string): Record<string, unknown> {
  */
 export class ElevatedPtyProcess {
   private readonly pipe: WinPipeApi;
+  private readonly launcher: HostLauncher;
   private readonly opts: { shell: TerminalId; cols: number; rows: number; cwd: string; logTarget: string };
   private readonly token: string;
+  /** 本次实例的管道名：C8 的留痕合并只认 pipe=<它> 的那一行（K57） */
+  private readonly pipeName: string;
   private readonly feed: (chunk: Buffer) => void;
   private pipeHandle: unknown = null;
   private hostHandle: unknown = null;
@@ -423,6 +440,7 @@ export class ElevatedPtyProcess {
 
   constructor(pipe: WinPipeApi, launcher: HostLauncher, opts: { shell: TerminalId; cols: number; rows: number; cwd: string; logTarget: string }) {
     this.pipe = pipe;
+    this.launcher = launcher;
     this.opts = opts;
     let started: HostStart;
     try {
@@ -442,6 +460,7 @@ export class ElevatedPtyProcess {
     this.pipeHandle = started.pipeHandle;
     this.hostHandle = started.hostHandle;
     this.token = started.token;
+    this.pipeName = started.pipeName;
     this.feed = createFrameParser((type: number, payload: string): void => this.onFrame(type, payload));
   }
 
@@ -451,8 +470,20 @@ export class ElevatedPtyProcess {
    */
   async handshake(): Promise<void> {
     const deadline = Date.now() + HOST_HANDSHAKE_TIMEOUT_MS;
-    // §6.5：ConnectNamedPipe 50ms 轮询直到成功或超时（ERROR_PIPE_CONNECTED 535 由 winPipe.connect 判成成功，P10）
-    while (!this.pipe.connect(this.pipeHandle)) {
+    // 任务 10 · C1 / §6.5 / 裁决 R-17 / 索引 K56：连接等待必须非阻塞且有界。
+    // 不得用阻塞的 ConnectNamedPipe(h, null) 去等连接：阻塞句柄上它要等到客户端连上才返回，
+    // 写在它外面的超时判定永远不可达 —— 真机表现就是「应用卡死无响应」（2026-10-15 18:0x）。
+    // 50ms 轮询 PeekNamedPipe：available() >= 0 = 客户端已连上（probe 实测 35ms 检出）；
+    // -1 = 还没连上（ERROR_PIPE_NOT_CONNECTED = 230），继续等。
+    for (;;) {
+      if (this.pipe.available(this.pipeHandle) >= 0) {
+        // C2：检出已连后补一次 accept —— 客户端已在，ConnectNamedPipe 立即返回 535，
+        // winPipe.connect 的既有判定已把 535 当成功（probe 实测），这里不再拿它的结果做分支。
+        this.pipe.connect(this.pipeHandle);
+        break;
+      }
+      // C4 / §6.7：每轮同时判宿主是否已退出 —— 已退出立即抛 handshake=exit(code=N)，不等满 15s
+      if (!this.launcher.isAlive(this.hostHandle)) throw this.handshakeError(this.hostExitReason());
       if (Date.now() >= deadline) throw this.handshakeError('handshake=connect');
       await sleep(CONNECT_POLL_MS);
     }
@@ -631,6 +662,39 @@ export class ElevatedPtyProcess {
       this.pipe.write(this.pipeHandle, encodeFrame(type, payload));
     } catch {
       // 管道已断：没有可通知的一方。退出由读侧的断管路径或句柄轮询落地（§6.7）
+    }
+  }
+
+  /**
+   * 任务 10 · C4 / C8 / §6.10 / 裁决 R-18 / 索引 K57：宿主已退出时的 {err}。
+   * 形如 handshake=exit(code=3; stage=pipe err=connect EPERM)：退出码必带，留痕能并上才并。
+   * 取退出码本身失败也绝不因此抛新错误（回落 code=0）。
+   */
+  private hostExitReason(): string {
+    let code = 0;
+    try {
+      code = this.launcher.exitCodeOf(this.hostHandle);
+    } catch {
+      code = 0;
+    }
+    return 'handshake=exit(code=' + code + this.traceFragment() + ')';
+  }
+
+  /**
+   * 任务 10 · C8 / §6.10 / 索引 K57：读 %TEMP%\lms-ql-host.log 的最后一行，仅当其中 pipe= 与本次
+   * 管道名相同才采信，把它的 stage= / err= 并进同一个 {err}（仍然只有一行日志，R-15 / K53 不变）。
+   * 文件不存在 / 读失败 / 无匹配行 → 空串（只报退出码，绝不因此抛新错误）。
+   */
+  private traceFragment(): string {
+    try {
+      const raw = fs.readFileSync(path.join(os.tmpdir(), HOST_TRACE_FILE), 'utf8');
+      const lines = raw.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l)).filter((l) => l !== '');
+      const last = lines.length > 0 ? lines[lines.length - 1] : '';
+      const m = / pipe=(\S+) stage=(\S+) err=(.*)$/.exec(last);
+      if (!m || m[1] !== this.pipeName) return '';
+      return '; stage=' + m[2] + ' err=' + m[3];
+    } catch {
+      return '';
     }
   }
 
