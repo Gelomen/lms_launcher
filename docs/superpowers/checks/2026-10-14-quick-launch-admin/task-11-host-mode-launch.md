@@ -3,7 +3,7 @@
 > 计划：[2026-10-14-quick-launch-admin.md](../../plans/2026-10-14-quick-launch-admin.md) §任务 11 · 规格：[2026-10-14-quick-launch-admin.md](../../specs/2026-10-14-quick-launch-admin.md) §1 / §3-P13 / §6.4 / §6.6-1 / §6.10 / §6.11 / §7.1 / §7.2 / §8-K2、K12、K13 / §9-R5、R6、R10
 > 前置：任务 1–10 全部已提交（任务 9/10 的真机门一路打回本机制）
 > 来源（用户真机，2026-10-15 18:0x-18:4x）：「[命令行] + 管理员 → UAC 点「是」→ 不出页签、应用卡死」（任务 10 修掉卡死后变成 `handshake=exit(code=0)`）；用户手动验证「`.\node.exe "resources\app.asar\dist-main\ql-pty-host.js" …` **把应用启动了**」
-> 现状锚点（本表生成时实测，2026-10-15 18:5x）：`src-main/ql-elevated.ts`：`HOST_EXE_NAME` `:32`、`HostLauncher` `:45-54`、`resolveHostLink` `:127-156`、`createHostLauncher` `:157-179`、`startHost` `:341-370`；`src-main/ql-pty-host.ts`：`main()` `:195-211`；`package.json`：`main = dist-main/main.js`；`build.bat`：硬链接块 `:108-128`；`src-main/ipc-ql.test.ts`：`:446` / `:491-492` / `:523`；`src-main/ql-elevated.test.ts`：`:137-170`（`hostScriptPath` + 4 条 `resolveHostLink`）、`:329-330`（假 launcher）
+> 现状锚点（主代理 2026-10-15 19:2x 在 HEAD `7737129` 上逐处读文件复核；任务 10 的实现让 `ql-elevated.ts` 中段整体 +5/+6 位移，本表生成时的数字已修正）：`src-main/ql-elevated.ts`：`HOST_EXE_NAME` / `HOST_SCRIPT_NAME` `:32-33`、`HostLauncher` `:45-54`、`resolveHostLink` `:126-156`、`createHostLauncher` `:158-188`、`hostLauncher` `:191`、`startHost` `:346-375`（`:360-368` 就是本任务要删的路径解析段）；`src-main/ql-pty-host.ts`：`main()` `:189-205` + `require.main` 自动执行块 `:207-211`；`package.json:5` = `"main": "dist-main/main.js"`；`build.bat`：硬链接块 `:108`（空行）+ `:109-128`；`src-main/ipc-ql.test.ts`：`:446` / `:491-492` / `:523`；`src-main/ql-elevated.test.ts`：`:137-138`（`hostScriptPath` 断言）、`:141-177`（`resolveHostLink` 用例）、`:329-330`（假 launcher 夹具）
 > 测试基线（主代理 2026-10-15 18:4x 实测）：`npm test` → `Test Files 51 passed (51)` / `Tests 895 passed (895)`
 > 索引：[00-index.md](00-index.md) 的 G1、G2、G3、G7、K12（修订）、K13（作废）、K20/K21/K55（作废）、K48（词表变更）、**K59**、**K60**
 
@@ -46,7 +46,7 @@
 
 | # | 步骤 | 命令 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
-| D1 | 先改测试 | `npx vitest run src-main/ql-host-boot.test.ts src-main/ql-elevated.test.ts src-main/ql-pty-host.test.ts` | 新用例红（`parseHostMode` 不存在、`launch` 还是旧签名、`hostMain` 不存在）；删掉 `resolveHostLink` / `hostScriptPath` 那 5 条后总量下降 | ☐ |
+| D1 | 先改测试 | `npx vitest run src-main/ql-host-boot.test.ts src-main/ql-elevated.test.ts src-main/ql-pty-host.test.ts` | 新用例红（`parseHostMode` 不存在、`launch` 还是旧签名、`hostMain` 不存在）；删掉退场机制的用例后**文件级**用例数下降：`ql-elevated.test.ts:137-138` 的 `hostScriptPath` 断言 + `:141-177` 的 `host_exe_resolution_reuses_an_existing_link_only_when_size_matches` 整条（内含 4 段 `resolveHostLink` 取证）= 该文件 −1 条 | ☐ |
 | D2 | 实现 B1-B6 | 同上 | 全绿 | ☐ |
 | D3 | 类型门 | `npx tsc --noEmit -p tsconfig.main.json` | 干净、无输出 | ☐ |
 | D4 | i18n 三门 | `npx vitest run src-main/i18n` | 全绿（本任务零新键） | ☐ |
