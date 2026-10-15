@@ -86,3 +86,4 @@
 - [ ] **步骤 2：把 §7.2 的 9 条清单逐字交给用户**，同时交前置 feature 未收尾的真机项（`docs/superpowers/checks/2026-10-13-quick-launch-elevated-exe/task-04-packaged-realmachine.md` 的 E1-E7、`docs/superpowers/checks/2026-10-14-quick-launch-admin/task-09-packaging-realmachine.md` 的真机门）。**不得用「自动化已过」代替这一条。**
 - [ ] **步骤 3：等回报**，逐条把「通过 / 不通过 + 现象」填进本任务 check 表 J 段。命中 §9-R1（App Paths 裸名，如 `winword.exe`）时按该行回退口径处理并**同一 commit** 同步 spec / plan / check 表。
 - [ ] **步骤 4：Commit（主代理）**：`docs: 快捷启动 exe 预检的真机门清单与回报`
+  - **顺序偏离（人类指令，2026-10-16 00:55）**：本步原排在步骤 3（等回报）之后。用户明确要求「commit」→ 先提交「清单 + 打包产物门证据」，真机回报仍未到；check 表 task-03 的 C1-C9 / D4 / E1-E6 保持 `☐（原因 + 去处：等用户回报）`，回报到达后**再补一次提交**填 J 段与 C / E 段。plan 的步骤勾选不动（本仓 plan 的 `- [ ]` 不落勾，落勾归 check 表）

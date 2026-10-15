@@ -42,7 +42,7 @@
 | # | 步骤 | 命令 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
 | D1 | 改 `build.bat` 并跑一次 | `cmd /c build.bat` | 打包成功；新增步骤打印「Created node.exe hard link…」（**先删后建**，R-16）；`exit /b 0` | ☑ |
-| D2 | 核对产物 | `fsutil hardlink list dist-release\win-unpacked\node.exe`；`npx asar list dist-release\win-unpacked\resources\app.asar \| Select-String ql-pty-host`；`Test-Path dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell` | 两条硬链接名都在；`\dist-main\ql-pty-host.js` 在；unpacked 目录在 | ☑ |
+| D2 | 核对产物 | `fsutil hardlink list dist-release\win-unpacked\node.exe`；`npx asar list dist-release\win-unpacked\resources\app.asar \| Select-String ql-pty-host`；`Test-Path dist-release\win-unpacked\resources\app.asar.unpacked\node_modules\@lydell` | 两条硬链接名都在；`\dist-main\ql-pty-host.js` 在；unpacked 目录在 | ☑（当时的实测。**加注（2026-10-16，另一 feature 的索引 K14）**：`node.exe` 硬链接已被 `8998801 fix: 提权宿主由应用入口按 --ql-host 开关分流启动（R-23）` 删除，`build.bat` 里现在没有任何 `node.exe` / `hardlink` 步骤（实测 `Select-String` 零命中、`Test-Path dist-release\win-unpacked\node.exe` = False）→ 本行的 `fsutil hardlink list …\node.exe` 半边在新构建上不再适用；勾保留为历史证据） |
 | D3 | 把清单交给用户（含前置 feature 的六步） | —— | 不得用「自动化已过」代替这一条（规格 §7.2） | ☑ |
 | D4 | 等回报并填 J 段 | —— | 每条「通过 / 不通过 + 现象」都落到本表 J 段与 E 段 | ☐（**等用户回报**：清单已于 2026-10-15 15:4x 逐字交付 —— 规格 §7.2 九条 + 前置 feature 的 E1-E7 + 本表 E7/E8；回报到达后由主代理填本表 J 段与 E 段，见 J-10） |
 
@@ -51,7 +51,7 @@
 | # | 断言 | 出处 | 由哪条测试守 | ✓ |
 | --- | --- | --- | --- | --- |
 | E1 | 提权终端真的能起（ConPTY 在提权进程里） | 规格 §7.2-1/2 / §9-R2 | 用户回报 + 任务管理器完整性级别截图/描述 | ☐（真机门，用户执行） |
-| E2 | 提权宿主里 node-pty 原生模块解析成功 | 规格 §9-R1 | 用户回报；失败按 R1 回退口径改 `electron-builder.yml` 并同步三份文档 | ☐（真机门，用户执行） |
+| E2 | 提权宿主里 node-pty 原生模块解析成功 | 规格 §9-R1 | 用户回报；失败按 R1 回退口径改 `electron-builder.yml` 并同步三份文档 | ☐（真机门，用户执行。**措辞更新（2026-10-16，索引 K14）**：宿主现由应用入口按 `--ql-host` 分流启动，产物里**没有** `node.exe`，不要再让用户去找它。要验的是提权终端能起、且 `resources\app.asar.unpacked\node_modules\@lydell\node-pty\node_modules\@lydell\node-pty-win32-x64\prebuilds\win32-x64\*.node` 在其中加载成功 —— 本次打包实测这些 `.node` 与 `conpty\OpenConsole.exe` 都在 unpacked 里） |
 | E3 | UAC 点「否」→ 按钮回落 + 日志带终端名 | 规格 §7.2-4/5 | 用户回报 | ☐（真机门，用户执行） |
 | E4 | 不勾选的两条与今天一致（无 UAC、无多余日志） | 规格 §4-4 / 索引 K10 | 用户回报 | ☐（真机门，用户执行） |
 | E5 | 提权终端运行中退出应用不留孤儿进程 | 规格 §6.7 / RF6 | 用户回报 | ☐（真机门，用户执行） |
