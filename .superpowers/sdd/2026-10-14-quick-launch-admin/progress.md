@@ -83,3 +83,7 @@
 - 真机门仍未跑：§7.2 的 9 条 + 前置 feature 的 E1-E7 → 归任务 9 同批构建，交用户执行
 
 - 派任务 6 前的文档准备：任务 6 表 C 段按编号重排（我插行时把 C6/C5 排到了 C4 前面）+ 新增 C7（裁决 **R-11**：握手期 `ERR` 帧 → `err.ql.ptySpawn`，`{err}='host='+stage`，`{exe}` 仍是 `logTarget`）+ 索引行补 K 引用（`fd93f4b`、`a989c5a`）；登记 **R-12 / K45**（`startElevatedHost` 必须是可 await 的工厂，依据 plan 任务 7 步骤 4 + 规格 §6.8/§6.7）。起点 HEAD 变为 `a989c5a`，基线仍是 51 files / 861 tests（本轮只动文档）
+- Task 6: complete（两轮：主体实现子代理 54e52bb4 + 按 R-13 的返工子代理 31a83177；主代理独立复跑 = 定向 19 / 相邻 48 / tsc 0 / i18n 18 / 全量 51 files 872 tests；八个相邻文件一字未改）
+- Task 6: 主代理自己复现了形状取证（自建探针 + `tsc --noEmit` 零诊断），C1/C2/K45 成立；三个常量、`PROC:` 五处、零新词典键、`{exe}` 全是用户目标、`shellPid` 不参与判断 —— 逐条 grep 核对
+- Task 6: 认可 K46（第三常量）/ K47（两个内部方法 + READY 之后才建 `ShellExecProcess`）/ K48（`{err}` 片段词表）；R-13 已改写规格 §6.7 并落 C8（`3c056b0`、`73684c4`）；K51 把阻塞 `ConnectNamedPipe` 的兜不住交任务 9 真机门 E7
+- Task 6: minor (deferred，留给最终整分支审查) —— ① `stopAll` 仍逐个 `await`，N 个提权终端最坏 `N×(timeoutSecs+1s)`（与非提权路径同形，要压总时长得动 `quick-launch.ts`，不在本 feature 边界）；② `pendingData` 无上限（任务 7 在工厂返回后立即注册 `onData`，实际不积压）；③ 真机「`PeekNamedPipe` 说可读但 `ReadFile` 失败」只有假接缝覆盖，真机观察项归任务 9；④ 测试用 `vi.spyOn(ShellExecProcess.prototype, …)` 取证（已 `mockRestore`）
