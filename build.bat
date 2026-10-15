@@ -105,6 +105,27 @@ if exist "dist-release\lms-launcher-*-portable.exe" (
   echo [build] Removing leftover portable exe from an earlier run...
   del /q "dist-release\lms-launcher-*-portable.exe"
 )
+
+rem ---- pre-create the node.exe hard link the elevated PTY host needs (2026-10-14 quick-launch-admin 6.11) ----
+rem The elevated terminal runs a plain Node script through <win-unpacked>\node.exe, a HARD LINK to
+rem lms_launcher.exe - 0 extra bytes; Electron enters Node mode by the executable name, not by an env var.
+rem The link MUST sit next to the exe, otherwise the host dies with 0xC0000135 STATUS_DLL_NOT_FOUND.
+rem A failure is a warning only - no exit, no goto: resolveHostLink re-creates the link at first use, spec 6.4-1.
+rem node.exe in win-unpacked is ALWAYS deleted then re-created, never skipped: electron-builder copies
+rem node_modules\electron\dist\node.exe in there - a plain copy, not a link, not the patched exe (R-16).
+if exist "dist-release\win-unpacked\node.exe" (
+  echo [build] Replacing the copied node.exe with a hard link to lms_launcher.exe...
+  del /q "dist-release\win-unpacked\node.exe"
+)
+pushd "dist-release\win-unpacked"
+mklink /H "node.exe" "lms_launcher.exe" >NUL
+if errorlevel 1 (
+  echo [build] WARNING: could not create the node.exe hard link - the elevated terminal
+  echo         will create it itself the first time it starts.
+) else (
+  echo [build] Created node.exe hard link for the elevated PTY host.
+)
+popd
 echo.
 echo [build] Done. Output folder: dist-release\win-unpacked\
 echo [build] Start it with: dist-release\win-unpacked\lms_launcher.exe
