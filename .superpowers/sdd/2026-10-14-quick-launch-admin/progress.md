@@ -105,3 +105,8 @@
 - Task 9: 返工（子代理 012f9622，只改 build.bat，四场景 harness 真跑）+ 主代理重跑打包：`BUILD_EXIT=0`、`fsutil` 两个名字同 inode、大小同为 177,150,464、asar 含 `ql-pty-host.js`、unpacked 原生件全 True
 - Task 9: 主代理独立复测 build.bat = 纯 ASCII / 全 CRLF / 132 行 / 新块 echo 零右括号 / `git diff` 只有一个 hunk；认可「删掉重复的括号告诫 rem」的取舍（原文仍在 :91-92）
 - Task 9: E1-E8 保持真机门（用户执行），清单已逐字交付；D4 等回报
+- **Task 10（真机缺陷修复）**：用户 2026-10-15 18:0x 真机回报 —— [命令行] + 管理员：UAC 点「是」后不出页签、**应用卡死无响应**。主代理取证 = `ql-elevated.ts:455` 的阻塞 `ConnectNamedPipe` 让超时分支不可达（R-17 / K56）；宿主侧失败无任何通道（R-18 / K57）。**先改文档**（spec §6.5/§6.6-10..12/§6.7/§6.10/§7.2-10/§9-R9 + plan 任务 10 + check 表 + 索引）→ `fa2c6ff`
+- Task 10: 实现（子代理 5c1551b9，四个代码文件；我先红后绿 7 条用例）→ 主代理独立复跑 = 定向 32 / 相邻 61 / tsc 0 / i18n 18 / 全量 51 files **895** tests（基线 888 +7）
+- Task 10: 主代理逐条核对 C1-C8 属实（非阻塞轮询 `available()` → 补一次 `connect()` / `isAlive` 早退 → `handshake=exit(code=N)` / 留痕 `pipe=` 匹配才并 / 退出码 token=2 spawn=1 **pipe=3** **fatal=4**）；认可偏离 1（`main()` 加 `export` 作测试接缝，登记 K58）
+- Task 10: minor (deferred) —— 既有「连上之后、READY 之前宿主死掉」那条路径（`finish()` → `failHandshake('handshake=exit')`）仍不带退出码、也不并留痕，留整分支终审
+- Task 10: 诊断环境结论（供后续参考）—— 打包后的 `node.exe` 能读/`require` asar 内宿主脚本；真宿主脚本在打包态 exit=1 无 stderr（bogus 管道名的正确行为）；管道 DACL 实测 `D:(A;;GA;;;WD)`；本会话里工作区内的 exe 以 **Low 完整性**运行，连 Medium 管道必 EPERM（DSH 沙箱产物，**不是**真机缺陷）
