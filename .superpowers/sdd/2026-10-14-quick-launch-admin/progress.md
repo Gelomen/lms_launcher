@@ -75,7 +75,11 @@
 - Task 5: 表自身缺陷（已修）—— T5 的 C2 原写 `connect(name: string)`，plan 逐字是 `unknown`；实现者按 plan 执行并报告（= K42）。这是「表与 plan 不一致」的又一例，处理口径 = 以 plan/spec 为准改表
 - Task 5: 交接任务 6 的三条实测事实（= K44，已写进 T6 的 C6 行）—— READY.shellPid 实测 0（不得依赖）；STOP 必须带数字 timeoutSecs；主进程侧 stopGraceful 必须真走到委托（否则留不退出、进程树已死的宿主）
 - Task 5: minor (deferred) —— `PIPE_GONE_TIMEOUT_SECS = 3` 在宿主里写死（`quick-launch.ts:28` 的 `STOP_TIMEOUT_SECS` 未导出，改它属 B 段之外）；两处同值。留给最终整分支审查甄别是否值得导出
-## 停点 2（人类伙伴 2026-10-15 00:09 指示：「进入 任务6 之前停下来」）
+## 停点 2（已恢复）
+
+- 人类伙伴 2026-10-15 13:0x 说「继续」→ 已恢复串行执行。派任务 6 前先落裁决 **R-11**（表 C7：握手期 `ERR` 帧 → `err.ql.ptySpawn`，`{err}='host='+stage`）与 **R-12 / K45**（`startElevatedHost` 必须是可 await 工厂），并把任务 6 表 C 段按编号重排（我插行时排错过）
+
+（人类伙伴 2026-10-15 00:09 指示：「进入 任务6 之前停下来」）
 
 - 已完成并验收提交：任务 1（`d9cf9a7`/`0be4614`）、任务 2（`474bc77`/`dbf4f09`）、任务 3（`b0986fc`/`c15fbdd`）、任务 4（`31e22f3`/`971f5e4`）、任务 5（`0462188`/`5b0a3b2`）；另有文档/账本提交 `b2026e2`、`aa8c4a8`、`7469da0`、`1aea1a0`。HEAD = `1aea1a0`，`git status --porcelain` 干净，普查 exit 0
 - 当前全量：`Test Files 51 passed (51)` / `Tests 861 passed (861)`（基线 48/835 → +3 份测试文件、+26 条用例）
@@ -87,3 +91,9 @@
 - Task 6: 主代理自己复现了形状取证（自建探针 + `tsc --noEmit` 零诊断），C1/C2/K45 成立；三个常量、`PROC:` 五处、零新词典键、`{exe}` 全是用户目标、`shellPid` 不参与判断 —— 逐条 grep 核对
 - Task 6: 认可 K46（第三常量）/ K47（两个内部方法 + READY 之后才建 `ShellExecProcess`）/ K48（`{err}` 片段词表）；R-13 已改写规格 §6.7 并落 C8（`3c056b0`、`73684c4`）；K51 把阻塞 `ConnectNamedPipe` 的兜不住交任务 9 真机门 E7
 - Task 6: minor (deferred，留给最终整分支审查) —— ① `stopAll` 仍逐个 `await`，N 个提权终端最坏 `N×(timeoutSecs+1s)`（与非提权路径同形，要压总时长得动 `quick-launch.ts`，不在本 feature 边界）；② `pendingData` 无上限（任务 7 在工厂返回后立即注册 `onData`，实际不积压）；③ 真机「`PeekNamedPipe` 说可读但 `ReadFile` 失败」只有假接缝覆盖，真机观察项归任务 9；④ 测试用 `vi.spyOn(ShellExecProcess.prototype, …)` 取证（已 `mockRestore`）
+
+- 任务 7 派单前：落裁决 **R-14 / K52**（提权路径的失败不得二次包装：`startElevatedHost` 抛出的 message 已是最终文案，`quick-launch.ts:244` 的 catch 若照原样再包一次就会出现 `err=PROC:` 嵌套）→ 任务 7 表新增 C5 行（`fc2871b`）。派单 3c14c70d，起点 HEAD `fc2871b`，基线 51 files / 872 tests
+- Task 7: complete（子代理 3c14c70d；主代理独立复跑 = 定向 61（34+27）/ tsc 0 / i18n 18 / 全量 51 files 882 tests；B 段外零改动）
+- Task 7: 裁决 **R-15 / K53**（提权启动失败**要**写一行 sys 原因日志，与 `main.ts:1069-1071` 的 exe 路径同一分工；K10 与规格 §6.10 末句精确化为「成功路径不得有信息性行」）—— 三份文档同一提交 `85e0b45`
+- Task 7: 认可「直通不按分支门控」（补注进 K52）；A3 的 main.ts 锚点 +2 位移按 K30 处理，不改 A 段文字
+- Task 7: minor (deferred) —— ① 既有缺口：非提权 shell 启动失败今天没有原因行（修它要动非提权行为，受 G3/G4 约束，不在本期）；② `ipc-ql.test.ts` 的 `restore()` 里等 200ms 让假句柄上的 100ms 轮询收尾（测试侧代价，真机无此问题）；③ 端到端用例没走「委托停止」分支（由任务 6 的单测 + 真机 §7.2-7 守）
