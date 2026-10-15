@@ -150,7 +150,7 @@ export class ShellExecProcess {
 
 | 情况 | 抛出 |
 |---|---|
-| `ShellExecuteExW` 返回 false 且 `GetLastError() === 1223`（`ERROR_CANCELLED`：用户在 UAC 点「否 / 取消」） | `PROC: ` + `t('err.proc.uacCancelled', { exe })` |
+| `ShellExecuteExW` 返回 false 且 `GetLastError() === 1223`（`ERROR_CANCELLED`：用户在 UAC 点「否 / 取消」），**且该目标已通过 2026-10-15 规格 §6.1 的启动前预检**（语境收窄：2026-10-15 §3-P1…P5 实测「路径不存在 / 无效驱动器 / ACL 拒读」也全回 1223，所以这条判据只有在预检之后才成立，见 2026-10-15 §6.4） | `PROC: ` + `t('err.proc.uacCancelled', { exe })` |
 | 其他 `ok === false` | `PROC: ` + `t('err.proc.spawnFail', { exe, err: 'win32=' + GetLastError() })` |
 
 新键（`src-main/i18n/dict.ts`：zh 紧跟 `err.proc.spawnFail`（`:299`）、en 紧跟 `:641`）：
@@ -217,7 +217,7 @@ stopGraceful(timeoutSecs):
 1. 启动成功：`pid` 取自 `pidOf`；`isRunning()` 为真
 2. 退出：轮询到 `isAlive() === false` → `onExit` 收到 `exitCodeOf()` 的值，**只一次**，且 `close()` 被调用、定时器被清
 3. `ok=false, win32Error=1223` → 抛错以 `PROC: ` 开头且含 `t('err.proc.uacCancelled', { exe })` 的译文；不进入轮询（无定时器残留）
-4. `ok=false, win32Error=2` → 抛错含 `t('err.proc.spawnFail', { exe, err: 'win32=2' })`
+4. `ok=false, win32Error=2` → 抛错含 `t('err.proc.spawnFail', { exe, err: 'win32=2' })`。**2026-10-15 更正**：本条「不存在的 exe → `win32Error=2`」从未在真机上证过 —— 实测不存在的路径回 `GetLastError=1223` / `hInstApp=2`（2026-10-15 规格 §3-P1），且该场景已被启动前预检挡在 Shell 之前（同规格 §6.1 / §6.2）。本条保留的价值只是「其他失败码 → spawnFail」的假接缝用例：`win32Error=2` 是构造输入，不是真机取值
 5. `[停止]` 提权进程：`killTree` 返回 false → 断言 `terminate(句柄, 1)` 被调用
 6. `[停止]` 非提权进程：`killTree` 返回 true 且随后 `isAlive()` 为假 → 断言 `terminate` **未**被调用
 7. `stopGraceful` 幂等：第二次调用立即返回
@@ -282,4 +282,4 @@ stopGraceful(timeoutSecs):
 | R5 | pnpm 下 koffi 的安装行为未实测（E12 是 npm 实测）；`optionalDependencies` 平台包在 pnpm 的构建脚本策略下是否照常装 | 计划任务 1 步骤 0 必须先实测并写进 check 表 J 段，不通过就停下报告 |
 | R6 | `ShellExecProcess` 的 100ms 轮询定时器若未在退出时 `clearInterval`，事件循环会一直醒着 | §6.4 钉死「退出即 clear + close」；单测第 2 条断言 `close()` 被调用 |
 | R7 | 旧规格 §7.3 / 索引 K13 的口径已被本规格取代，但旧文档不在工作区（开头「取代关系」） | 代码注释（`main.ts:1039-1052`、`quick-launch.ts:5-6`）随实现改写为新口径，避免注释领先 / 落后 |
-| R8 | 用户配置的 exe **路径不存在**（被移动 / 删除、驱动器不在）时，Shell 会弹自己的系统错误框并阻塞主线程，我们的 `PROC:` 日志要等用户点「确定」才出现（E19：`SEE_MASK_FLAG_NO_UI` 与 `SetErrorMode` 都压不住） | **本次接受**（用户 2026-10-13 21:47 在「预检文件 / 接受弹窗 / 换回 spawn」三选一中选「接受弹窗，只改测试」）：不加 `existsSync` 预检、不改 §6.1 的唯一路径；`PROC:` 分类逻辑不变。真机清单加一条顺带观察（§7.2）。若日后判定不可接受 → 加预检，另立改动 |
+| R8 | 用户配置的 exe **路径不存在**（被移动 / 删除、驱动器不在）时，Shell 会弹自己的系统错误框并阻塞主线程，我们的 `PROC:` 日志要等用户点「确定」才出现（E19：`SEE_MASK_FLAG_NO_UI` 与 `SetErrorMode` 都压不住） | **已由 2026-10-15 的启动前预检取代**（`docs/superpowers/specs/2026-10-15-quick-launch-exe-path-precheck.md` §6.1 / §6.2：目标不存在 / 不是普通 `.exe` / 不可访问时**不调 Shell**，直接抛 `PROC: ` + `err.proc.exeNotFound`）。原「本次接受」（用户 2026-10-13 21:47 三选一选「接受弹窗，只改测试」）到此失效：真机实测该类阻塞 6.1–38.9s（2026-10-15 §3-P1/P4），且 `GetLastError=1223` 与真 UAC 点「否」撞码、分类没有料（§3-P2…P5）。exe 类型这条路上该弹窗不再出现；提权宿主那条不经预检（2026-10-15 §5-1） |

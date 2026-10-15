@@ -7,6 +7,9 @@
 import { spawnSync } from 'node:child_process';
 import koffi from 'koffi';
 import { t } from './i18n';
+// 2026-10-15-quick-launch-exe-path-precheck §6.1：启动前预检只用内置 fs / path（索引 G7，不新增依赖、不碰 koffi）
+import { closeSync, lstatSync, openSync } from 'node:fs';
+import { delimiter, extname, isAbsolute, resolve as resolvePath } from 'node:path';
 
 /** Win32 接缝：真实现走 koffi；单测注入假实现（规格 §6.2 / §7.1） */
 export interface WinShellApi {
@@ -27,7 +30,7 @@ export interface WinShellApi {
 
 // 取值逐字见规格 §6.3（E6/E8/E10/E13 实测）
 const SEE_MASK_NOCLOSEPROCESS = 0x00000040; // 不这一位就没有 hProcess（E6）
-const SEE_MASK_FLAG_NO_UI = 0x00000004;     // 关掉一部分 Shell UI（§8-K4）。**实测不覆盖「文件 / 路径不存在」那类**：fMask 取 0x44 / 0x144 / 0x104 都弹系统错误框，SetErrorMode(0x3) 也压不住（规格 E19）。本次接受这个弹窗，不加 existsSync 预检（规格 §9-R8，用户 2026-10-13 21:47 决定）
+const SEE_MASK_FLAG_NO_UI = 0x00000004;     // 关掉一部分 Shell UI（§8-K4）。**实测不覆盖「文件 / 路径不存在」那类**：fMask 取 0x44 / 0x144 / 0x104 都弹系统错误框，SetErrorMode(0x3) 也压不住（规格 E19）。该位**仍保留**（对其他 Shell UI 有效，例如无文件关联的「打开方式」），但它压不住这一类错误框（§3-E19/P1）—— 2026-10-15 §6.1 已加 isLaunchableExe 预检：不可用的目标不再走到 Shell，原前置规格 §9-R8「接受这个弹窗」已被取代
 const SW_SHOWNORMAL = 1;                    // §8-Q11
 const WAIT_TIMEOUT = 258;                   // 判存活只看它；不用 STILL_ACTIVE=259 比对（§8-K3）
 const ERROR_CANCELLED = 1223;               // 用户在 UAC 点「否 / 取消」（§6.5）
@@ -97,8 +100,10 @@ export const winShell: WinShellApi = {
       hInstApp: null, lpIDList: null, lpClass: null, hkeyClass: null, dwHotKey: 0, hIcon: null,
       hProcess: null,
     });
-    // 注意：目标不存在时 Shell 会弹自己的系统错误框并阻塞本线程（规格 E19 / §9-R8，本次接受），
-    // 我们的 PROC: 日志要等用户点「确定」才出现。不要「顺手」加 existsSync 预检去绕开它。
+    // 走到这里，目标已通过 launchShellExe 的 isLaunchableExe 预检（2026-10-15 §6.1 / §6.2）：
+    // 「不存在 / 不是普通 .exe / 不可访问」在调 Shell 之前就被挡下，所以这里不再弹 Shell 的系统错误框、
+    // 不再阻塞本线程（前置规格 §9-R8「接受弹窗」已被取代；§3-E19/P1 的弹窗只在旧路径上成立）。
+    // 仍不要在这里加第二道预检：预检只有一处（§6.2），提权宿主那条不经这里（§5-1）。
     const ok = b.ShellExecuteExW(psei);
     // GetLastError 必须紧跟其后取，中间不插别的 Win32 调用（plan 步骤 3）
     const win32Error = ok ? 0 : b.GetLastError();
@@ -190,11 +195,83 @@ export class ShellExecProcess {
 }
 
 /**
+ * 候选的可见形状（§6.1 判定① 的两支；解析③ 的「存在」口径也用它）。**不导出。**
+ * 必须用 lstatSync：WindowsApps 的 app execution alias 只有 lstat 看得见 —— statSync / openSync /
+ * realpathSync 全抛 EACCES（§3-P14 / 索引 K11）。用 statSync 就是把 Shell 今天起得了的
+ * mspaint.exe / python.exe / code.exe 判成「不存在」（§3-P13 / RF6，2026-10-15 第一版就是这么错的）。
+ * null = 不存在 / 是目录（§3-P6）/ 其它不可启动的形状。
+ */
+function targetShape(p: string): 'file' | 'reparse' | null {
+  try {
+    const st = lstatSync(p);
+    if (st.isFile()) return 'file';
+    // 重解析点：符号链接 / junction / WindowsApps 的 app execution alias（§6.1 判定① 第二支 / §8-Q13）
+    if (st.isSymbolicLink()) return 'reparse';
+    return null;
+  } catch { return null; }
+}
+
+/**
+ * 解析候选路径（§6.1 解析 ①–④）。**不导出**：调用方只问「能不能启动」，不拿解析结果去替换实参（索引 K1）。
+ */
+function resolveLaunchTarget(exe: string): string | null {
+  if (isAbsolute(exe)) return exe;              // ① 含盘符或 UNC → 原样
+  if (/[\\/]/.test(exe)) return resolvePath(exe); // ② 相对路径 → 按主进程 cwd；与 lpDirectory=null（:95）时 Shell 的解析口径一致
+  // ③ 裸名：按 PATH 的目录**顺序**查找 —— Shell 今天也这么解析（ipc-ql.test.ts:331 的 notepad.exe 靠它，§3-P10 / RF2），
+  //    只按 existsSync(原样) 判定会误杀这一类。无扩展名时同一目录内先试原名再试补 .exe（索引 K2）。
+  const dirs = (process.env.PATH ?? '').split(delimiter).filter((d) => d.length > 0);
+  const names = extname(exe) === '' ? [exe, exe + '.exe'] : [exe];
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = resolvePath(dir, name);
+      // 「存在」= lstatSync 看得见（普通文件**或**重解析点）：别名在 PATH 里，普通文件口径找不到它（§6.1 解析③ / P13/P14）
+      if (targetShape(candidate) !== null) return candidate;
+    }
+  }
+  return null;                                  // ④ 无候选 → 预检失败
+}
+
+/**
+ * 启动前预检（2026-10-15-quick-launch-exe-path-precheck §6.1）：目标必须能解析到一个
+ * 「存在、是普通文件**或重解析点**、扩展名 .exe，且（普通文件）可读」的路径。
+ * 返回 false 时调用方不得调 Shell（§6.4）。
+ * 为什么必须有它：Shell 对不可用的目标会弹自己的系统错误框并把主线程卡死（实测 6.1–38.9s，§3-P1/P4），
+ * 而且失败类全回 GetLastError=1223 —— 与真 UAC 点「否」撞码，分类没有料（§3-P2/P3/P4/P5）。
+ * 只用内置 fs / path，不碰 koffi（索引 G7）。
+ */
+export function isLaunchableExe(exe: string): boolean {
+  const candidate = resolveLaunchTarget(exe);
+  if (candidate === null) return false;
+  const shape = targetShape(candidate);
+  if (shape === null) return false;                                    // 判定①：目录（§3-P6）在这里挡下
+  if (extname(candidate).toLowerCase() !== '.exe') return false;       // 判定②：大小写不敏感，.EXE 放行（索引 K2）
+  // 判定① 第二支（§8-Q13 / 索引 K11）：重解析点只做②，**跳过③** —— 别名对 openSync 必然 EACCES（§3-P14），
+  // 在这里做可访问性判定 = 把「Shell 起得了的别名」判成不可启动（§3-P13 / RF6）。断链别名照旧由 Shell 失败兜（§9-R8）。
+  if (shape === 'reparse') return true;
+  // 判定③：可访问性只能用 openSync —— libuv 的 access() 在 Windows 上只看 FILE_ATTRIBUTE_READONLY、
+  // 不读 ACL，对「icacls /deny <用户>:RX」是假阴性（§3-P12 / 索引 K4）；openSync 报 EPERM 才是真信号（§3-P5）。
+  let fd: number;
+  try {
+    fd = openSync(candidate, 'r');
+  } catch {
+    return false;
+  }
+  closeSync(fd);
+  return true;
+}
+
+/**
  * 生产入口：构造即启动。失败按 §6.5 分类抛 PROC:（前缀只用 PROC:，索引 G7）。
  * 调用方（main.ts 的适配器）负责先写日志通道再抛出。
  * 第三参 verb（2026-10-14-quick-launch-admin §6.9）：'runas' = 管理员权限；null / 缺省 = 今天的默认动词 open。
  */
 export function launchShellExe(api: WinShellApi, exe: string, verb?: string | null): ShellExecProcess {
+  // 预检门（2026-10-15-quick-launch-exe-path-precheck §6.2）：不可用的目标**不调 Shell** ——
+  // 调了会弹 Shell 的系统错误框并把主线程卡死 6.1–38.9s（§3-P1/P4），且失败类全回 1223、与真 UAC 点「否」撞码（§3-P2）。
+  // 抛错在 api.shellExecute 之前 = 「不弹系统框、不阻塞」的牙（§7.1-4 / RF1）。放行后交给 Shell 的实参仍是 exe 原样（索引 K1）。
+  if (!isLaunchableExe(exe)) {
+    throw new Error('PROC: ' + t('err.proc.exeNotFound', { exe }));
+  }
   // verb 缺省时不构造 opts 对象：接缝收到的实参与今天逐字节相同（索引 G3 / RF2「不勾选 = 行为不变」；
   // 实测：多一个实参——哪怕是 undefined——都会让既有用例 1 的 toHaveBeenCalledWith(EXE, 1) 红）。
   // 显式 null 走第三参：调用方按布尔传 admin ? 'runas' : null（索引 K29），到真实现仍是 lpVerb = null。

@@ -5,11 +5,15 @@
 // 译文断言一律走 t()（索引 K16(2) 口径：测试不写死中文文案）。
 // 2026-10-14-quick-launch-admin §6.9：末尾两条用例守「管理员」开关到 lpVerb 的透传与「不勾选 = 取值不变」，
 // 用例名逐字取 plan 任务 3 步骤 1（check 表 E1 / E2 的守测试）。
+import { lstatSync } from 'node:fs';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from './i18n';
-import { launchShellExe, winShell, type WinShellApi } from './shell-execute';
+import { isLaunchableExe, launchShellExe, winShell, type WinShellApi } from './shell-execute';
 
-const EXE = 'E:\\QiYou\\QiYou.exe';
+// 夹具必须是**本机必然存在的 .exe**（2026-10-15 预检索引 K6）：原写法 E:\\QiYou\\QiYou.exe 机器相关，
+// 且预检门（§6.1）会把它挡在假接缝之前 → 既有 10 条用例全红。process.execPath 过预检、假接缝不真起进程。
+const EXE = process.execPath;
 const HANDLE = { fakeHandle: 'h1' };
 
 /** 假 Win32 接缝：默认「启动成功且一直存活」，各用例用 over 覆盖需要的行为 */
@@ -166,6 +170,78 @@ describe('shell-execute（ShellExecuteEx 提权启动，规格 §6.2-§6.7 / §7
   it('8 真 winShell：伪句柄 -1 → pidOf 得到本进程 pid、isAlive 为真（真实 FFI，无 UI）', () => {
     expect(winShell.pidOf(-1)).toBe(process.pid); // GetProcessId(GetCurrentProcess()) = 本进程 pid（E20 实测）
     expect(winShell.isAlive(-1)).toBe(true);      // WaitForSingleObject(-1,0)=258 WAIT_TIMEOUT（E11 / E20）
+  });
+
+  // ---------- 2026-10-15-quick-launch-exe-path-precheck §7.1-1..4（plan 任务 1 步骤 1，用例名逐字；check 表 E1–E4）----------
+  // 预检的牙：目标不可用（不存在 / 不是普通 .exe / 不可访问）时**不得**调 Shell ——
+  // Shell 会弹自己的系统错误框并把主线程卡死 6.1–38.9s（规格 §3-P1/P4），我们的日志要等用户点「确定」才出现。
+
+  it('missing_absolute_path_is_not_launchable', () => {
+    expect(isLaunchableExe('Z:\\no-such-dir\\no-such.exe')).toBe(false); // 无效驱动器（规格 §3-P4）
+    const ghost = resolve(`no-such-zzz-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.exe`);
+    expect(isLaunchableExe(ghost)).toBe(false); // 本仓目录下不存在的绝对路径（规格 §3-P1 同型）
+  });
+
+  it('directory_and_non_exe_file_are_not_launchable', () => {
+    // 存在的目录：Shell 今天判「成功」（hInstApp=42、hProcess=null）→ 卡片留下假运行态（规格 §3-P6 / §8-Q4）
+    expect(isLaunchableExe(process.cwd())).toBe(false);
+    // 存在的非 .exe 文件（规格 §8-Q5）：本仓 package.json，路径与 cwd 无关
+    expect(isLaunchableExe(join(__dirname, '..', 'package.json'))).toBe(false);
+  });
+
+  it('existing_exe_and_bare_name_through_PATH_are_launchable', () => {
+    expect(isLaunchableExe(process.execPath)).toBe(true); // 必然存在的 .exe
+    const saved = process.env.PATH;
+    try {
+      // 裸名走 PATH 顺序查找（规格 §6.1 解析③）：ipc-ql.test.ts 的 notepad.exe 用例就靠这条不被误杀（§3-P10 / RF2）
+      process.env.PATH = dirname(process.execPath) + delimiter + (saved ?? '');
+      expect(isLaunchableExe(basename(process.execPath))).toBe(true);
+    } finally {
+      process.env.PATH = saved;
+    }
+  });
+
+  // §7.1-3b（2026-10-15 规格 §6.1 判定① 第二支 / §8-Q13 / 索引 K11；check 表 E8 / RF6）：
+  // WindowsApps 的 app execution alias 是**重解析点**：statSync / openSync / realpathSync 全 EACCES，
+  // 只有 lstatSync 看得见（§3-P14），而 Shell 起得了它 —— 裸名与全路径都能起（§3-P13）。
+  // 夹具只能用机器上真实存在的别名：fs.symlinkSync 造不出（§3-P15：EPERM，无 SeCreateSymbolicLinkPrivilege、未开开发者模式）。
+  // 该别名不在 PATH 时跳过本用例 —— 硬门归真机 §7.2-9（索引 K12 / 规格 §9-R9）。
+  const ALIAS_NAME = 'mspaint.exe';
+  const aliasFixture = (() => {
+    for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+      if (!dir) continue;
+      const p = join(dir, ALIAS_NAME);
+      try {
+        // 只要重解析点这一支：普通 .exe 已由上一条用例守，这里必须是别名才有牙
+        if (lstatSync(p).isSymbolicLink()) return { name: ALIAS_NAME, path: p };
+      } catch { /* 这个 PATH 目录里没有它 */ }
+    }
+    return null;
+  })();
+
+  it.skipIf(aliasFixture === null)('app_execution_alias_in_PATH_is_launchable', () => {
+    const alias = aliasFixture!;
+    // 夹具形状必须是重解析点（§3-P14）：普通文件口径的 statSync 看不见它 —— 这正是上一版实现误杀它的原因
+    expect(lstatSync(alias.path).isSymbolicLink()).toBe(true);
+    expect(isLaunchableExe(alias.name)).toBe(true); // 裸名（§3-P13：Shell 起得了裸名别名）
+    expect(isLaunchableExe(alias.path)).toBe(true); // 全路径（§3-P13：全路径同样起得了）
+  });
+
+  it('precheck_blocks_before_the_shell_is_called', () => {
+    const exe = 'Z:\\no-such-dir\\no-such.exe';
+    const { api } = fakeApi();
+    let msg = '';
+    try {
+      launchShellExe(api, exe);
+    } catch (err) {
+      msg = (err as Error).message;
+    }
+    expect(msg).toMatch(/^PROC: /); // 前缀只用既有的 PROC:（索引 G1）
+    expect(msg).toContain(t('err.proc.exeNotFound', { exe }));
+    // RF1：Shell 一次都不被调用 = 不弹系统框、不阻塞主线程（这条断言就是「不调 Shell」的牙）
+    expect(api.shellExecute).not.toHaveBeenCalled();
+    expect(api.pidOf).not.toHaveBeenCalled();
+    expect(api.isAlive).not.toHaveBeenCalled();
   });
 
   // ---------- 2026-10-14-quick-launch-admin §6.9（plan 任务 3 步骤 1，用例名逐字；check 表 E1 / E2）----------

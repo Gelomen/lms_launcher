@@ -299,6 +299,7 @@ export const dict = {
     'err.proc.alreadyRunning': '已有进程在运行',
     'err.proc.spawnFail': '{exe} 启动失败: {err}',
     'err.proc.uacCancelled': '{exe} 已取消管理员权限请求',
+    'err.proc.exeNotFound': '{exe} 不存在、不是 .exe 文件或不可访问',
     'err.proc.noChild': '无子进程',
     'err.proc.noPipe': 'stdout/stderr 管道未打开',
     // 快捷启动的错误消息（任务 8，check 表 D1-D11 / 规格 §5.3、§7.5）：
@@ -643,6 +644,7 @@ export const dict = {
     'err.proc.alreadyRunning': 'A process is already running',
     'err.proc.spawnFail': '{exe} failed to start: {err}',
     'err.proc.uacCancelled': '{exe}: elevation request cancelled',
+    'err.proc.exeNotFound': '{exe} does not exist, is not an .exe file, or is not accessible',
     'err.proc.noChild': 'No child process',
     'err.proc.noPipe': 'stdout/stderr pipe not open',
     // Quick Launch error messages (task 8, check D1-D11 / spec §5.3, §7.5).

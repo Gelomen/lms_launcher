@@ -350,7 +350,7 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
   }, 30000);
 
   it('exe 启动失败：前缀由 shell-execute 自带（规格 §6.5），经既有日志通道反馈且 `ql_start` 被拒', async () => {
-    await invoke('ql_save', 'qlshape04', { name: '形状门 badexe', type: 'exe', exe: 'no-such-exe-zzz.exe' });
+    await invoke('ql_save', 'qlshape04', { name: '形状门 badexe', type: 'exe', exe: 'notepad.exe' });
     // 观察点 = 真接缝的 shellExecute 属性。这里必须替换它：真 ShellExecuteEx 打一个不存在的 exe
     // 会弹系统错误框并把 vitest worker 卡住（规格 E19 / §9-R8，索引 R8 / K17）；真路径的失败由任务 4
     // 的真机清单守，本用例只钉适配器这一层的分工（同步 reject + 既有日志通道 + 可辨文案）。
@@ -368,7 +368,7 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
       const procLine = logLines.find((l) => l.stream === 'sys' && /^\[lms_launcher\] PROC:/.test(l.line));
       expect(procLine, 'sys 通道里必须有 PROC: 行 —— App.vue:477-478 的 catch 只负责回落按钮，原因行只由这条日志负责').toBeTruthy();
       // 索引 R1 / K2：UAC 取消必须给出可辨文案（带 exe），不再是 spawn 时代的 EACCES
-      expect(procLine!.line).toContain(t('err.proc.uacCancelled', { exe: 'no-such-exe-zzz.exe' }));
+      expect(procLine!.line).toContain(t('err.proc.uacCancelled', { exe: 'notepad.exe' }));
       expect(procLine!.line).not.toContain('EACCES');
       await invoke('ql_stop', 'qlshape04');
     } finally {

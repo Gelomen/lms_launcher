@@ -60,6 +60,9 @@
 | P10 | 现有用例依赖**裸名**写法 | `src-main/ipc-ql.test.ts:331`、`:382-383`、`:397` 用 `exe: 'notepad.exe'`（Shell 按 PATH 解析，今天能起）；`:353` 用 `exe: 'no-such-exe-zzz.exe'`。→ 预检若只按 `existsSync` 原样判定会**误杀**裸名 |
 | P11 | 词典既有键 | `err.proc.spawnFail`（zh `src-main/i18n/dict.ts:300` / en `:644`，占位符 `{exe}{err}`）、`err.proc.uacCancelled`（`:301` / `:645`，`{exe}`）。字面量键与占位符由 `src-main/i18n/key-coverage.test.ts` 双向守护；源码不得出现中文字面量（`no-hardcoded.test.ts`） |
 | P12 | `fs` 侧能不能看出 ACL 拒绝（`.temp/ql-diag/fs-access-probe.cjs`：对 `notepad.exe` 的副本 `icacls /deny "<用户>:RX"`，再 `/reset`） | 拒绝态：`R_OK / W_OK / X_OK / F_OK 全是 ACCESS-OK`（四个全过 = **假阴性**）、`statSync isFile=true`、`openSync(p, 'r') = EPERM`；`/reset` 之后 `openSync = OPEN-OK`。→ libuv 的 `access()` 在 Windows 上只看 `FILE_ATTRIBUTE_READONLY`，**不读 ACL**；可访问性判定只能用 `fs.openSync(候选, 'r')` |
+| P13 | `Shell` 到底起不起得了 **app execution alias**（`.temp/ql-diag/alias-shell-probe.cjs`，与生产同 `fMask=0x44`、`nShow=1`、`lpDirectory=null`） | 裸名 `mspaint.exe` → `ok=true elapsedMs=95 GetLastError=0 hInstApp=42 hProcess=1680 pid=9548`；全路径 `…\WindowsApps\mspaint.exe` → `ok=true hInstApp=42 pid=15972`。→ **今天真能起**；预检若只认普通文件就会误杀 `python.exe` / `code.exe` / `winget.exe` 这一类（`ipc-ql.test.ts:717` 的 `mspaint.exe` 是**真启动**，见 `:731` `return original(file, nShow)`） |
+| P14 | 别名在 `fs` 侧的形状 | `lstatSync` 成功且 `isSymbolicLink=true / isFile=false`；`statSync` / `openSync` / `realpathSync` 全 `EACCES`（`.temp/ql-diag/alias-probe.cjs`）。→ 判据只能用 `lstatSync`，且对这类候选做不了可访问性判定 |
+| P15 | 测试里能不能自造重解析点夹具 | `fs.symlinkSync(target, link, 'file')` → `EPERM`（本机无 `SeCreateSymbolicLinkPrivilege`、未开开发者模式；`.temp/ql-diag/symlink-fixture-probe.cjs`）。→ 这条分支的单测只能用**机器上真实存在的别名**（`mspaint.exe` 在 `PATH` 里实测存在），夹具不在时须跳过；硬门归真机 §7.2-9 |
 
 **结论（P1 vs P2）**：`GetLastError` 在「路径不存在」与「真 UAC 取消」两类里同为 1223，无法区分；`hInstApp` 能区分「文件不存在（2）」与「UAC 点否（5）」，但**不能**区分「UAC 点否（5）」与「无效驱动器 / ACL 拒绝（5）」（P2 vs P4/P5）—— 所以单靠 `hInstApp` 也不够，必须把「目标本身不可用」这一类挡在 Shell 之前。
 
@@ -96,16 +99,18 @@ export function isLaunchableExe(exe: string): boolean;
 
 1. `path.isAbsolute(exe)`（含盘符或 UNC）→ 候选 = `exe` 原样。
 2. 否则若含路径分隔符（相对路径）→ 候选 = `path.resolve(exe)`（按主进程 cwd；与 `lpDirectory=null` 时 Shell 的解析口径一致，`src-main/shell-execute.ts:95`）。
-3. 否则（裸名）→ 按 `process.env.PATH` 的目录**顺序**查找；若 `path.extname(exe) === ''`，同一目录内先试原名再试 `exe + '.exe'`。第一个「存在且是普通文件」的即候选。
+3. 否则（裸名）→ 按 `process.env.PATH` 的目录**顺序**查找；若 `path.extname(exe) === ''`，同一目录内先试原名再试 `exe + '.exe'`。第一个「`fs.lstatSync` 成功且 `isFile() || isSymbolicLink()`」的即候选（含重解析点，见判定① 的第二支；P13/P14）。
 4. 无候选 → 预检失败。
 
 判定（对候选）：
 
-1. `fs.statSync` 成功且 `isFile()`；
+1. `fs.lstatSync` 成功且：
+   - `isFile()`（普通文件）→ 继续 2、3；
+   - 或 `isSymbolicLink()`（重解析点：符号链接 / junction / **WindowsApps 的 app execution alias**）→ 只做 2，**跳过 3**（P14：别名 `statSync` / `openSync` / `realpathSync` 全 `EACCES`，只有 `lstatSync` 看得见；P13：Shell 起得了它，裸名与全路径都能起）。
 2. `path.extname(候选).toLowerCase() === '.exe'`（大小写不敏感，`.EXE` 放行）；
 3. `fs.openSync(候选, 'r')` 成功并随即 `fs.closeSync(fd)`（P5：ACL 拒读时 Shell 也失败、同样回 1223）。**不用** `fs.accessSync(候选, R_OK)` —— P12 实测它对 ACL 拒绝是假阴性。
 
-三项任一不满足 → `false`。**放行时交给 Shell 的实参仍是用户填的原样字符串 `exe`**，不替换成解析后的绝对路径（索引 K1）。
+任一不满足 → `false`（重解析点走 1→2 这条支，不做 3）。**放行时交给 Shell 的实参仍是用户填的原样字符串 `exe`**，不替换成解析后的绝对路径（索引 K1）。
 
 ### 6.2 落点（§8-Q8）
 
@@ -151,12 +156,13 @@ if (!isLaunchableExe(exe)) {
 1. `isLaunchableExe`：不存在的绝对路径（`Z:\no-such-dir\no-such.exe` 与临时目录下的 `no-such-zzz.exe`）→ `false`。
 2. `isLaunchableExe`：存在的目录（P6 同型）→ `false`；存在的非 `.exe` 文件（本仓 `package.json`）→ `false`。
 3. `isLaunchableExe`：`process.execPath`（必然存在的 `.exe`）→ `true`；把它的目录临时前置进 `process.env.PATH` 后用**裸名**（basename）→ `true`（P10 的「裸名不得误杀」）。
+3b. `isLaunchableExe`：`PATH` 里的 **app execution alias**（`mspaint.exe`，P13/P14）→ `true`。夹具只能用机器上真实存在的别名（P15：`symlinkSync` 造不出，`EPERM`）；该别名不在 `PATH` 时 `it.skipIf` 跳过并在注释里指向 §7.2-9。
 4. `launchShellExe` 预检门：不存在的绝对路径 + 假接缝 → 抛错以 `PROC: `开头且含 `t('err.proc.exeNotFound', { exe })`，且 `api.shellExecute` / `pidOf` / `isAlive` **均未被调用**。
 5. 既有用例的 `EXE`（`src-main/shell-execute.test.ts:12` 的 `E:\QiYou\QiYou.exe`，机器相关）改为 `process.execPath`；用例 1-8 与两条 verb 用例的断言不变。
 
 `src-main/ipc-ql.test.ts`：
 
-6. 既有「exe 启动失败」用例（`:352-377`）：条目 exe 从 `no-such-exe-zzz.exe` 改为 `notepad.exe`（真存在，预检放行），假接缝仍返回 1223 → 断言仍是 `err.proc.uacCancelled`（证明 1223 分支未被削弱）。
+6. 既有「exe 启动失败」用例（`:352-377`）：条目 exe 从 `no-such-exe-zzz.exe` 改为 `notepad.exe`（真存在，预检放行）。**同一字面量共两处**：`:353` 的条目值 + `:371` 的 `t('err.proc.uacCancelled', { exe })` 占位值——只改前者会让该用例红在 `:371`（实测 `expected '[lms_launcher] PROC: notepad.exe 已取消…' to contain 'no-such-exe-zzz.exe 已取消…'`）。两处同改，断言形状与所钉行为不变，假接缝仍返回 1223 → 断言仍是 `err.proc.uacCancelled`（证明 1223 分支未被削弱）。**这条改动归任务 1**：它是预检生效的直接后果（不存在的 exe 已到不了假接缝），不是新能力的门；索引 K10。
 7. 新用例：条目 exe = `Z:\no-such-dir\no-such.exe` → `ql_start` reject 以 `PROC: `开头；sys 日志含 `t('err.proc.exeNotFound', { exe })`；替换过的 `winShell.shellExecute` **一次都没被调用**（不弹系统框、不阻塞的端到端牙）；`ql_states` 不残留。
 8. 既有裸名用例（`:330-350`、`:381-416`）不改断言，作为「裸名仍可用」的回归门。
 
@@ -172,6 +178,7 @@ if (!isLaunchableExe(exe)) {
 4. 路径填 `C:\Windows\System32\notepad.exe`（不勾管理员）→ 记事本正常打开，既有日志行为不变。
 5. 路径填裸名 `notepad.exe` → 与第 4 条同样能起（裸名按 PATH 解析）。
 6. 路径填一个 `requireAdministrator` 的 exe 并勾管理员，在 UAC 点「否」→ 日志是 `[lms_launcher] PROC: <exe> 已取消管理员权限请求`（前置规格 §7.2-3 的口径不变）。
+9. 路径填裸名 `mspaint.exe`（或 `python.exe` / `code.exe` 这类 WindowsApps 别名）→ **仍能起**（P13：今天能起，预检不得误杀）。若这里失败，说明 §6.1 判定① 的重解析点那一支没生效。
 7. 命令行类型（终端）启动 / 提权终端 / [停止]：与今天一致，无新增日志行。
 8. 把某个存在的 `.exe`（自己的副本，别动系统文件）`icacls <文件> /deny "<用户>:RX"` 后填进路径 → 点 [启动] 报第 1 条那条「不可访问」文案，**不**是「已取消管理员权限请求」；验完 `icacls <文件> /reset` 还原。（这条只能真机跑：P12 说明 `fs.accessSync` 测不出 ACL，单测里造这个夹具要改 ACL、不稳，见 §9-R7）
 
@@ -191,6 +198,7 @@ if (!isLaunchableExe(exe)) {
 | Q10 | 验收含打包产物真机清单 | 用户选定（这个 1223 撞码当初就是靠真机才发现，单测盖不住） |
 | Q11 | 预检加可访问性检查，机制用 `fs.openSync(候选, 'r')`（**不是** `fs.accessSync` R_OK） | 用户选定「加一道可访问性检查」；P5 实测「存在但 ACL 拒读」同样回 1223、会被误报成 UAC 取消；机制按 P12 实测取 `openSync` |
 | Q12 | 裸名 / 相对路径按 PATH / cwd 解析后再检，不直接拒 | 用户选定；P10 证明裸名今天能用，直接 `existsSync` 会误杀 |
+| Q13 | **重解析点（含 WindowsApps 的 app execution alias）算可启动**：`lstatSync.isSymbolicLink()` 即放行，只查扩展名，不做可访问性判定 | 实现期取证 P13（Shell 起得了裸名与全路径别名）+ P14（只有 `lstatSync` 看得见）。不这么做就是把 `python.exe` / `code.exe` / `winget.exe` 从「能起」改成「不存在」——那是本次要修的缺陷之外的新回归 |
 | K1 | 放行时交给 Shell 的实参仍是用户原样字符串，不改写为解析后的绝对路径 | 由 Q12 推论：改写会让 `toHaveBeenCalledWith(EXE, 1)` 类断言与 Shell 语义跟着变 |
 | K2 | 扩展名比较大小写不敏感；无扩展名的裸名按「补 `.exe`」再找一次 | 由 Q4 / Q12 推论：与「只认 `.exe`」一致，且 Windows 路径不区分大小写 |
 | K3 | 前置规格 §6.5 两行表与 §9-R8 在实现同一提交里同步改写 | AGENTS.md「偏离 spec：先改 spec / plan / check 表（同一 commit）再改代码」 |
@@ -203,6 +211,8 @@ if (!isLaunchableExe(exe)) {
 | R2 | **TOCTOU**：预检通过后文件被删 / 驱动器被拔 → 仍走 Shell → 1223 → 报「已取消管理员权限请求」 | 接受（窗口极窄）。不为此把文案改中性是 Q7 / Q2 的决定 |
 | R3 | **ACL「可读但不可执行」未取证**：`openSync(p, 'r')` 通过、Shell 仍可能失败（P5 只测了「拒读 + 拒执行」） | 未验证项。真机若出现，现象是 1223 → 误报 UAC 取消；届时另立改动 |
 | R7 | 「不可访问」这条分支**没有单测**：夹具要改 ACL（`icacls /deny`），在 CI / 别的机器上不稳；且 P12 证明 `fs.accessSync` 造不出这个红 | 由真机门 §7.2-8 覆盖；check 表里该行写成 `☐（原因 + 去处）`，不留空 |
+| R8 | **断链的重解析点**（别名指向已卸载的应用、符号链接目标已删）：预检放行 → Shell 失败 → 1223 → 仍报「已取消管理员权限请求」 | 与今天同（不改善也不恶化）。不为此去解析 reparse data（`IO_REPARSE_TAG_APPECLINK` 非替换名标签，`realpathSync` 拿不到，P14）。真机若出现再立改动 |
+| R9 | 别名那条分支的单测**依赖机器**：`mspaint.exe` 不在 `PATH` 时用例跳过（P15 造不出夹具） | 硬门归真机 §7.2-9；check 表写成 `☐（原因 + 去处）` |
 | R4 | 手输带引号的路径（`"E:\a.exe"`）→ 预检失败 → 报「不存在」 | 接受：对话框给的是不带引号的绝对路径；引号本就不是合法路径字符 |
 | R5 | 相对路径按主进程 cwd 解析（与 Shell 的 `lpDirectory=null` 一致），不额外提示 | 接受：与今天 Shell 的行为同口径 |
 | R6 | 预检把 `node:fs` / `node:path` 引入 `shell-execute.ts` | 无打包影响（内置模块）；koffi 边界不变 |

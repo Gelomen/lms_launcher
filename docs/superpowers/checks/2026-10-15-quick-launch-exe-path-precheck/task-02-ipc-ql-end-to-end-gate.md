@@ -10,7 +10,7 @@
 | # | 检查项 | 怎么验 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
 | A1 | 起点 = 任务 1 已提交、工作区干净 | `git log --oneline -1`；`git status --porcelain` | HEAD = 任务 1 的提交（`fix(main): 快捷启动 exe 启动前预检目标…`）；porcelain 干净 | ☐ |
-| A2 | 任务 1 之后的全量基线 | `npm test` | `Test Files 52 passed (52)` / `Tests 905 passed (905)`，exit 0 | ☐ |
+| A2 | 任务 1 之后的全量基线 | `npm test` | `Test Files 52 passed (52)` / `Tests 906 passed (906)`，exit 0 | ☐ |
 | A3 | 本表引用的锚点行号属实 | 读 `ipc-ql.test.ts:105`（`import { winShell } from './shell-execute';`）、`:330-350`（裸名 exe 用例）、`:352-377`（既有「exe 启动失败」用例：`:353` 的 `no-such-exe-zzz.exe`、`:357-358` 替换 `winShell.shellExecute`、`:371` 断言 `uacCancelled`）、`:381-416`（提权形状门，`:397` 断言两条都是 `notepad.exe`） | 与本表引用一致（本表生成时实测） | ☐ |
 | A4 | 任务 1 交付的门在位（签名逐字可用） | 读 `shell-execute.ts` 的 `isLaunchableExe` 与 `launchShellExe` 开头 | 可用；不可用就停下来报告，不要自己补 | ☐ |
 
@@ -18,13 +18,13 @@
 
 | # | 文件 | 动作 | 边界 | ✓ |
 | --- | --- | --- | --- | --- |
-| B1 | `src-main/ipc-ql.test.ts` | 改：① `:353` 的 `exe: 'no-such-exe-zzz.exe'` → `exe: 'notepad.exe'`；② 新增一条 `exe_path_not_found_never_reaches_the_shell`（C2） | `:330-350` 与 `:381-416` 一字不改（RF2）；其余通道用例不动；不改任何 `src-main/*.ts` 生产文件 | ☐ |
+| B1 | `src-main/ipc-ql.test.ts` | 改：**只新增一条** `exe_path_not_found_never_reaches_the_shell`（C2）。原 ①（`:353` 的一行）已随任务 1 落地（索引 K10），本任务不得再改它 | `:330-350` 与 `:381-416` 一字不改（RF2）；其余通道用例不动；不改任何 `src-main/*.ts` 生产文件 | ☐ |
 
 ## C. 接口契约
 
 | # | 契约 | 逐字 | ✓ |
 | --- | --- | --- | --- |
-| C1 | 既有「exe 启动失败」用例的改法 | 只把条目 exe 换成 `'notepad.exe'`（真存在 → 预检放行 → 到假接缝）。其余一字不改：假接缝仍返回 `{ ok: false, handle: null, win32Error: 1223 }`，仍断言 `rejects.toThrow(/^PROC: /)`、sys 行含 `t('err.proc.uacCancelled', { exe: 'notepad.exe' })`、不含 `EACCES`（E2 / RF3） | ☐ |
+| C1 | （已随任务 1 落地，K10）既有「exe 启动失败」用例的改法 | 只把条目 exe 换成 `'notepad.exe'`（真存在 → 预检放行 → 到假接缝）。其余一字不改：假接缝仍返回 `{ ok: false, handle: null, win32Error: 1223 }`，仍断言 `rejects.toThrow(/^PROC: /)`、sys 行含 `t('err.proc.uacCancelled', { exe: 'notepad.exe' })`、不含 `EACCES`（E2 / RF3） | ☐ |
 | C2 | 新用例（名字逐字） | `it('exe_path_not_found_never_reaches_the_shell', …)`：`ql_save` 条目 exe = `'Z:\\no-such-dir\\no-such.exe'`；把 `winShell.shellExecute` 换成**计数** spy（照 `:357-358` / `:386-392` 的既有做法，`finally` 里还原）；断言：`ql_start` reject 以 `PROC: `开头、sys 日志行含 `t('err.proc.exeNotFound', { exe: 'Z:\\no-such-dir\\no-such.exe' })`、**spy 调用次数为 0**、`invoke('ql_states')` 为 `{}` | ☐ |
 | C3 | 落地行号（实现时填） | 新用例 = `ipc-ql.test.ts:___`；`:353` 改动后现值 = `:___` | ☐ |
 
@@ -32,10 +32,10 @@
 
 | # | 步骤 | 命令 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
-| D1 | 先改测试（C1 + C2） | `npx vitest run src-main/ipc-ql.test.ts` | 新用例**绿**（任务 1 已实现）→ 不能只凭这条说「有牙」，必须做 D2 | ☐ |
+| D1 | 先写新用例（C2；C1 已随任务 1 落地） | `npx vitest run src-main/ipc-ql.test.ts` | 新用例**绿**（任务 1 已实现）→ 不能只凭这条说「有牙」，必须做 D2 | ☐ |
 | D2 | 变异取证（索引 K8）：临时注释掉 `launchShellExe` 的门，再跑 | `npx vitest run src-main/ipc-ql.test.ts` | 新用例**必红**：走到真 Shell（`shellExecute` 计数 ≥1、弹系统框、worker 被卡）或文案不是 `exeNotFound`。贴出红输出后**恢复门**，并复跑确认 `shell-execute.test.ts` 仍 14 绿 | ☐ |
 | D3 | 定向 + 类型门 + i18n | `npx vitest run src-main/ipc-ql.test.ts`；`npx tsc --noEmit -p tsconfig.main.json`；`npx vitest run src-main/i18n` | 该文件 `Tests 30 passed (30)`（29 + 1）；tsc 无输出；i18n 全绿 | ☐ |
-| D4 | 全量 | `npm test` | `Test Files 52 passed (52)` / `Tests 906 passed (906)`（K9） | ☐ |
+| D4 | 全量 | `npm test` | `Test Files 52 passed (52)` / `Tests 907 passed (907)`（K9） | ☐ |
 
 ## E. 必须钉住的行为断言
 
@@ -62,7 +62,7 @@
 | G1 | 定向 | `npx vitest run src-main/ipc-ql.test.ts` | `Tests 30 passed (30)` | ☐ |
 | G2 | 相邻回归（未改的 exe 门仍绿） | `npx vitest run src-main/shell-execute.test.ts src-main/quick-launch.test.ts` | 14 passed / 全绿；两文件不在 `git diff --name-only` 里 | ☐ |
 | G3 | 类型门 + i18n 三门 | `npx tsc --noEmit -p tsconfig.main.json`；`npx vitest run src-main/i18n` | 无输出 / 全绿 | ☐ |
-| G4 | 全量 | `npm test` | `Tests 906 passed (906)`（K9） | ☐ |
+| G4 | 全量 | `npm test` | `Tests 907 passed (907)`（K9） | ☐ |
 
 ## H. 提交门（主代理验收通过后执行）
 
