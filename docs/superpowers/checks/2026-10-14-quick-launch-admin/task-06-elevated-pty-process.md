@@ -3,7 +3,7 @@
 > 计划：[2026-10-14-quick-launch-admin.md](../../plans/2026-10-14-quick-launch-admin.md) §任务 6 · 规格：[2026-10-14-quick-launch-admin.md](../../specs/2026-10-14-quick-launch-admin.md) §6.7 / §6.5（读侧） · 关联审查重点 **RF4 / RF5 / RF6**（索引 R 组）
 > 前置：任务 4（管道与起宿主接缝）、任务 2（帧）
 > 现状锚点（本表生成时实测，2026-10-14）：`src-main/quick-launch.ts:175-182`（`ShellProcess` 六个方法逐字）、`:108-115`（已退出再注册立即补发的先例）、`:29`（`POLL_MS = 100`）、`:32`（`FORCE_EXIT_WAIT_MS = 1000`）、`:122-142`（`stopGraceful` 的幂等与委托顺序）；`src-main/shell-execute.ts:124-185`（`ShellExecProcess`：100ms 轮询、`isAlive`、`terminate`）
-> 索引：[00-index.md](00-index.md) 的 G1、G2、K3、K14
+> 索引：[00-index.md](00-index.md) 的 G1、G2、K3、K14、**K35**（复用 `hostStartError`，不得重写映射）、**K37**（`stage='pipe'` → `err='pipe=create'`）、**K38**（读侧那条用例归本表 E8）、**K39**（`available()` 的 `-1` 契约）、**K40**（起宿主用 `startHost(winPipe, hostLauncher)`）、**K43**（宿主 `ERR{stage:'pipe'}` + `exit 1`）、**K44**（`shellPid` 不可依赖 / `STOP` 必带数字 / 必须走到委托）、**R-11**（`ERR` 帧 → `err.ql.ptySpawn`，`{err}='host='+stage`，见 C7）
 
 ## A. 起点核对（动手前）
 
@@ -28,9 +28,9 @@
 | C1 | 类签名 | `new ElevatedPtyProcess(pipe: WinPipeApi, launcher: HostLauncher, opts: { shell; cols; rows; cwd; logTarget })` —— plan 任务 6 签名块 | ☐ |
 | C2 | 六个方法 | `write(string)` / `resize(cols, rows)` / `onData(cb)` / `onExit(code)` / `isRunning()` / `stopGraceful(timeoutSecs): Promise<void>` —— 与 `quick-launch.ts:175-182` 逐字对齐 | ☐ |
 | C3 | 两个新常量 | `POLL_READ_MS = 20`、`HOST_HANDSHAKE_TIMEOUT_MS = 15000` —— 规格 §6.5 / §6.7 | ☐ |
-| C6 | 宿主侧的三条实测事实（**不得依赖 / 必须遵守**，索引 K44） | ① `READY` 的 `shellPid` 实测是 `0`（ConPTY innerPid 要等 agent 连上才赋值）→ 不用它做停止或判断，只当日志参考；② `STOP` 帧必须带数字 `timeoutSecs`（宿主对缺失/非数取「不给宽限期」，立即升级 `taskkill`）；③ 宿主的停止收尾可能不落地（`taskkill` 后 exit 事件不落地，`quick-launch.test.ts:103` 记过）→ 主进程侧的 `stopGraceful` **必须真的走到委托 `ShellExecProcess.stopGraceful` 那一步**（规格 §6.7），否则留一个不退出、进程树已死的宿主 | ☐ |
-| C5 | 复用任务 4 的三处契约（**不得重写**） | ① 起宿主 = `startHost(winPipe, hostLauncher)`（已建管道 + 起进程 + 失败关两个句柄，交回 `pipeName`/`token`/`pipeHandle`/`hostHandle`）；② 失败文案 = `hostStartError(r.win32Error, opts.logTarget)`，`hostExePath()` 抛的 `hostlink=…` 原样塞进 `err.proc.spawnFail` 的 `{err}`，`stage='pipe'` → `err: 'pipe=create'`（规格 §6.10 第三、四行，裁决 R-07 / R-08）；③ 读循环只在 `available() >= 0` 时 `read(h, available)`，`-1` = 断管/Peek 失败 → 走 §6.7 的退出路径（索引 K39） | ☐ |
 | C4 | `HELLO` 载荷 | `{ token, shell, cols, rows, cwd }` —— 规格 §6.5 表；argv 里没有这些 | ☐ |
+| C5 | 复用任务 4 的三处契约（**不得重写**） | ① 起宿主 = `startHost(winPipe, hostLauncher)`（已建管道 + 起进程 + 失败关两个句柄，交回 `pipeName`/`token`/`pipeHandle`/`hostHandle`）；② 失败文案 = `hostStartError(r.win32Error, opts.logTarget)`，`hostExePath()` 抛的 `hostlink=…` 原样塞进 `err.proc.spawnFail` 的 `{err}`，`stage='pipe'` → `err: 'pipe=create'`（规格 §6.10 第三、四行，裁决 R-07 / R-08）；③ 读循环只在 `available() >= 0` 时 `read(h, available)`，`-1` = 断管/Peek 失败 → 走 §6.7 的退出路径（索引 K39） | ☐ |
+| C6 | 宿主侧的三条实测事实（**不得依赖 / 必须遵守**，索引 K44） | ① `READY` 的 `shellPid` 实测是 `0`（ConPTY innerPid 要等 agent 连上才赋值）→ 不用它做停止或判断，只当日志参考；② `STOP` 帧必须带数字 `timeoutSecs`（宿主对缺失/非数取「不给宽限期」，立即升级 `taskkill`）；③ 宿主的停止收尾可能不落地（`taskkill` 后 exit 事件不落地，`quick-launch.test.ts:103` 记过）→ 主进程侧的 `stopGraceful` **必须真的走到委托 `ShellExecProcess.stopGraceful` 那一步**（规格 §6.7），否则留一个不退出、进程树已死的宿主 | ☐ |
 
 ## D. TDD 步骤门
 
