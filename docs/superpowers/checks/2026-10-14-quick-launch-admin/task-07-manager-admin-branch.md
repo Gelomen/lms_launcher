@@ -3,7 +3,7 @@
 > 计划：[2026-10-14-quick-launch-admin.md](../../plans/2026-10-14-quick-launch-admin.md) §任务 7 · 规格：[2026-10-14-quick-launch-admin.md](../../specs/2026-10-14-quick-launch-admin.md) §6.8 / §6.10 · 关联审查重点 **RF1 / RF2**（索引 R 组）
 > 前置：任务 1（`e.admin`）、任务 6（`ElevatedPtyProcess`）
 > 现状锚点（本表生成时实测，2026-10-14）：`src-main/quick-launch.ts:166-172`（`QlDeps` 五个成员）、`:223-225`（`protected createShellProcess`）、`:232-266`（`start()` 的 shell 分支：`:238` 读 `available`、`:241` 调接缝、`:242-245` 失败不残留、`:244` 的 `err.ql.ptySpawn` 带 `shellExe(shell).exe`、`:249-253` 先转渲染端再放自动命令、`:264` `scheduleAutoCommand`）、`:322`（`stopAll`）；`src-main/quick-launch.test.ts:151-156`（唯一的 `QlDeps` 夹具，`:156` = `spawnExe:`）；`src-main/main.ts:1076-1085`（`new QuickLaunchManager(` 在 `:1076`、`spawnExe:` 在 `:1082`）、`:1002-1025`（`qlStartContextOrThrow` 槽守卫）、`:1064`（`emitLog('[lms_launcher] ' + msg, 'sys')` 的分工）
-> 索引：[00-index.md](00-index.md) 的 G1、G2、G3、G4、K3、K9、K10
+> 索引：[00-index.md](00-index.md) 的 G1、G2、G3、G4、K3、K9、K10、**K35**（文案只在 `hostStartError` / 工厂里）、**K45**（`startElevatedHost` 是可 await 工厂）、**K47**（不得调 `handshake()` / `abortHandshake()`）、**K48**（`{err}` 片段词表）、**K50**（委托传剩余预算 → `stopGraceful` 总上限 `timeoutSecs+1s`）、**K52**（R-14 不得二次包装，见 C5）
 
 ## A. 起点核对（动手前）
 
@@ -30,7 +30,8 @@
 | C1 | `QlDeps` 新成员（必填） | `spawnElevatedShell(shell: TerminalId, cols: number, rows: number, cwd: string): Promise<ShellProcess>` —— 规格 §6.8 | ☐ |
 | C2 | 新接缝 | `protected async createElevatedShellProcess(shell, cols, rows, cwd): Promise<ShellProcess>` —— 与 `:223-225` 同一手法 | ☐ |
 | C3 | 分流条件 | `e.admin === true`（不是 truthy）—— 规格 §6.8 | ☐ |
-| C4 | 错误文案 | 失败仍走 `PROC: t('err.ql.ptySpawn', { exe: shellExe(shell).exe, err })` —— 规格 §6.10 / `:244` | ☐ |
+| C4 | 错误文案 | 非提权路径逐字不变：`PROC: t('err.ql.ptySpawn', { exe: shellExe(shell).exe, err })` —— 规格 §6.10 / `:244`。提权路径见 **C5**（不得二次包装） | ☐ |
+| C5 | 提权路径的失败**不得二次包装**（**主代理裁决 R-14**，2026-10-15 14:1x，索引 K52） | catch 里先取 `messageOf(err)`：**以 `PROC: ` 开头 → 原样上抛**（`startElevatedHost` / `hostStartError` 交出的就是最终文案）；否则按 C4 的既有形状包一层。要有一条用例断言最终 message 里 **只有一个 `PROC:` 前缀、只渲染一次**（不得出现 `err=PROC:` 嵌套）。`logTarget` 在 `main.ts` 的接线里取 `shellExe(shell).exe`，`QlDeps.spawnElevatedShell` 签名（C1）不带它、逐字不动 | ☐ |
 
 ## D. TDD 步骤门
 
@@ -83,7 +84,7 @@
 
 - [ ] A1-A4 成立
 - [ ] B1-B4 之外没有文件被改
-- [ ] C1-C4 逐字一致
+- [ ] C1-C5 逐字一致
 - [ ] D1→D4 先红后绿
 - [ ] E1-E6 有对应测试且绿
 - [ ] G1-G5 全绿
