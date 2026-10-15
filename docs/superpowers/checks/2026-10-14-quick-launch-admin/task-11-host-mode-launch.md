@@ -1,109 +1,101 @@
-# 任务 11 · 宿主启动机制重做：应用 exe + 「应用入口参数」（R-19 → R-21）— check 表
+# 任务 11 · 宿主启动机制重做：应用 exe + `--ql-host` 开关 + 入口分流（R-19 → R-21 → **R-23**，第三轮）— check 表
 
-> 计划：[2026-10-14-quick-launch-admin.md](../../plans/2026-10-14-quick-launch-admin.md) §任务 11 · 规格：[2026-10-14-quick-launch-admin.md](../../specs/2026-10-14-quick-launch-admin.md) §3-P13、P14 / §6.3 / §6.4 / §6.6-1 / §6.10 / §6.11 / §7.1 / §7.2 / §8-K2、K12、K13 / §9-R1、R10
-> 前置：任务 1–10 全部已提交（任务 9/10 的真机门一路打回本机制）
-> 来源（用户真机，2026-10-15 18:0x-18:4x）：「[命令行] + 管理员 → UAC 点「是」→ 不出页签、应用卡死」（任务 10 修掉卡死后变成 `handshake=exit(code=0)`）；用户手动验证「`.\node.exe "resources\app.asar\dist-main\ql-pty-host.js" …` **把应用启动了**」
-> **本表是第二轮。** 第一轮（R-19：`--ql-pty-host` 开关 + `boot.ts` 转发入口 + 改 `package.json` 的 `main`）已实现、A–I 未落勾，被主代理的 **D6 本地门打回**：打包态下 `lms_launcher.exe --ql-pty-host …` → `bad option: --ql-pty-host`、退出码 9，任何应用代码都不会跑（spec §3-P14）。那一轮的工作区改动已于 2026-10-15 20:2x 全部丢弃（`git restore -- src-main build.bat package.json` + 删 `src-main/boot.ts` / `ql-host-boot.ts` / `ql-host-boot.test.ts`），未提交、无需 revert。它的执行记录保留在本表 J 段 J-1~J-5、J-7（作为「已打回」的历史证据，不作为本轮的勾）。
-> 现状锚点（主代理 2026-10-15 20:2x 在 HEAD `4ffe34e` 上逐处读文件复核；第一轮的改动已丢弃，行号 = 任务 10 提交后的状态）：`src-main/ql-elevated.ts`：`HOST_EXE_NAME` `:32`、`HostPaths` `:82-85`（`hostDir` `:84`）、`errnoOf` `:119-123`、`resolveHostLink` `:125-156`、`createHostLauncher` `:158-188`（`hostDir` `:164`、`hostExePath` `:166-168`、`hostScriptPath` `:169-171`、`launch` `:179-186`）、`hostLauncher` `:191`、`startHost` `:353-375`（`:360-368` 就是本轮要删的 try/catch）、带 `hostlink=` 的注释 `:47` / `:385` / `:449`；`src-main/ql-elevated.test.ts`：import `resolveHostLink` `:24`、`launch_passes_runas_and_three_quoted_arguments` `:125-139`（**本轮不动**）、`host_exe_resolution_reuses_an_existing_link_only_when_size_matches` `:141-177`（删）、`launch_failures_close_both_handles` `:180-204`（场景 2 `:191-203` 改）、`hostLauncherStub` `:326-330`（**签名不变**）、五处 `not.toContain('node.exe')` `:212` / `:627` / `:714` / `:751` / `:912`；`src-main/ipc-ql.test.ts`：`:428` / `:446` / `:491-494` / `:523` / `:547`；`src-main/ql-pty-host.ts`：`main()` `:195-206` + `require.main` 自动执行块 `:208-211`（**本轮一字不改**）；`build.bat`：硬链接块 `:108`（空行）+ `:109-128`
-> 测试基线（主代理 2026-10-15 18:4x 实测，HEAD 状态）：`npm test` → `Test Files 51 passed (51)` / `Tests 895 passed (895)`
-> 索引：[00-index.md](00-index.md) 的 G1、G2、G3、G7、K2（改回）、K12（修订）、K13（现行口径）、K20/K21/K55（作废）、K48（词表变更）、K59/K60（第一轮，作废）、**K61**、**K62**
+> 真相源：spec §6.4（R-23 / 索引 **K65**）、§3-P13/P14/P15、索引 K59-K65；plan 任务 11（第三轮）。
+> 三轮结论一句话：**硬链接**（P13）与**「应用入口参数」**（P15 + K64 的 `default_app.asar` 结构性证据）都被否掉；**开关 + 入口分流**（R-19 的形状）恢复，因为它当初被打回的理由（P14 的 `bad option`）是 Node 模式的现象（K64 ①③）。
+> **本地无 UAC 门取消**（K64 ④：本会话起不了 app 模式，`0x80000003`）→ 机制判据在真机门（spec §7.2）。
 
 ## A. 起点核对（动手前）
 
-| # | 检查项 | 怎么验 | 预期 | ✓ |
-| --- | --- | --- | --- | --- |
-| A1 | 起点 = 任务 10 已提交、第一轮的代码已丢弃 | `git log --oneline -1`；`git status --porcelain` | HEAD = 任务 11 的文档提交；porcelain 里**没有** `src-main/*`、`build.bat`、`package.json` 的改动，也没有 `src-main/boot.ts` / `ql-host-boot.ts` / `ql-host-boot.test.ts` 三个未跟踪文件 | ☐ |
-| A2 | 全量基线（主代理实测，子代理不重跑） | `npm test` | `Test Files 51 passed (51)` / `Tests 895 passed (895)`，exit 0；本任务后只增不减（本轮预期 51 文件 / **896** 用例：删 1 条、加 2 条。原写 897 是文档算术错，见 J-18 / 索引 K63） | ☐ |
-| A3 | 本表引用的锚点行号属实 | 读上表点名的每一处 | 与本表引用一致 | ☐ |
-| A4 | 前置接口在（签名逐字可用） | `shell-execute.ts` 的 `shellExecute(file, nShow, opts?: {verb?, parameters?})`；`HostLauncher` 的四参 `launch(exe, script, pipeName, token)`（HEAD 已是这个形状）；`process.execPath` | 可用；不可用就停下来报告，不要自己补 | ☐ |
+| # | 项 | 取证命令 / 位置 | 勾 |
+|---|---|---|---|
+| A1 | 起点 = **当前工作区**（第二轮 R-21 的改动**保留**，用户 2026-10-15 21:3x 决定） | `git status --porcelain` 只允许：`build.bat`、`src-main/ql-elevated.ts`、`src-main/ql-elevated.test.ts`、`src-main/ipc-ql.test.ts`、`src-main/main.ts`、`src-main/ql-pty-host.ts`；HEAD = `3e9a499` | ☐ |
+| A2 | 既有接缝与取值点（本轮要改的就是它们的**参数拼法**） | `ql-elevated.ts:46-47`（`HostLauncher` 两行注释）、`:124-128`（`hostExePath()` / `hostScriptPath()`）、`:139`（`const parameters = '"' + script + '" "' + pipeName + '" "' + token + '"';`）、`:140`（`shell.shellExecute(exe, SW_HIDE, { verb: 'runas', parameters })`）、`:318-319`（`startHost` 取两值）；`ql-pty-host.ts:86-89`（`runHost` 从 `process.argv.slice(2)` 取 `[管道名, token]`）、`:195`（`export function main()`，K58）、`:202`（留痕取 `process.argv.slice(2)[0]`）、`:209`（`require.main === module` 自动入口） | ☐ |
+| A3 | 测试夹具现状（要同步改的地方） | `ql-pty-host.test.ts:147-150` 与 `:352-355`（喂 `process.argv = [argv0, <脚本>, PIPE, TOKEN]` 后还原）；`ql-elevated.test.ts` 的 `launch_passes_runas_and_three_quoted_arguments` 与 `start_host_passes_the_app_exe_and_script_to_launch`（钉 `parameters` 字符串）；`ipc-ql.test.ts:491` 的假 `hostExePath` | ☐ |
+| A4 | `package.json` 当前 `"main": "dist-main/main.js"`（本轮改成 `dist-main/boot.js`）；它被 `npx asar extract-file` 误覆盖过（该命令无视第三个参数、往 CWD 写）→ 改前先 `git diff -- package.json` 确认干净 | `Select-String package.json '"main"'` | ☐ |
+| A5 | 前置任务 1-10 已提交；第二轮未提交、保留 | `git log --oneline -1` = `3e9a499`；`tick-census.mjs` 对 task-01…10 全 `裸☐=0` | ☐ |
 
 ## B. 改动范围
 
-| # | 文件 | 动作 | 边界 | ✓ |
-| --- | --- | --- | --- | --- |
-| B1 | `src-main/ql-elevated.ts` | 改：删 `HOST_EXE_NAME` `:32`、`errnoOf` `:119-123`、`resolveHostLink` `:125-156`、`HostPaths.hostDir` `:84`、`hostDir` `:164`；`hostExePath()` 换成 `return execPath();`；`startHost` 删 `:360-368` 的 try/catch；三处带 `hostlink=` 的注释 `:47` / `:385` / `:449` 改掉 | `hostScriptPath()` / `launch()` / `isAlive` / `exitCodeOf` / `winPipe` / `pipeKernel` / 握手（R-17/C8）/ 读循环 / `stopGraceful` / `startElevatedHost` 工厂签名一律不动 | ☐ |
-| B2 | `build.bat` | 改：删掉 R-16 的硬链接块（`:108-128`） | 删完必须仍是**纯 ASCII + 全 CRLF + 111 行** | ☐ |
-| B3 | `src-main/ql-elevated.test.ts` | 改：按 D1 清单增删；五处 `not.toContain('node.exe')` 换名 | `launch_passes_runas_and_three_quoted_arguments` `:125-139` 与 `hostLauncherStub` `:326-330` 的签名**不动**；与本次无关的既有断言一字不改 | ☐ |
-| B4 | `src-main/ipc-ql.test.ts` | 改：`:491` 的假 `hostExePath` 返回值 `'node.exe'` → `'lms_launcher.exe'`（假值也要与真机一致）；**R-22 追加** `:424` 注释与 `:637` 的断言字符串（C7 ②） | 接缝与其余断言（`:428` / `:446` / `:493-494` / `:523` / `:547`）一字不动；`:424` / `:637` 只改注释与字符串，行数不变 | ☐ |
-| B5 | `src-main/ql-host-protocol.ts`、`src-main/quick-launch.ts`、`package.json`、词典、渲染端、`electron-builder.yml` | **不改** | 越界即不勾。R-21 的关键收益：`package.json` 的 `main` 保持 `dist-main/main.js`，所有既有行号锚点继续有效 | ☐ |
-| B5′ | `src-main/ql-pty-host.ts`、`src-main/main.ts` | **只允许 C7 ② 那 4 处注释编辑**（R-22 / K63） | 条件：只改注释文字、行数不变、不碰任何代码 token —— 这样「`main.ts` 一字未改（代码）」与「既有行号锚点继续有效」两条仍然成立。除此之外越界即不勾 | ☐ |
-| B6 | `src-main/boot.ts`、`src-main/ql-host-boot.ts`、`src-main/ql-host-boot.test.ts` | **不得存在** | 第一轮的产物；本轮不得新建（R-21 / 索引 K61） | ☐ |
+| # | 文件 | 动作 | 边界 | 勾 |
+|---|---|---|---|---|
+| B1 | `src-main/boot.ts`（**新建**） | 入口分流：`process.argv` 含 `--ql-host` → 调宿主入口的 `main()`；否则 → `require('./main.js')`。导出可测接缝 `bootMain(argv, load)`（`load` 是唯一副作用出口，K58 同一手法），模块顶层只调用它一次 | 不 import `electron`、不读管道、不解析参数内容（参数原样交给宿主）；字符串字面量全 ASCII（`i18n/no-hardcoded.test.ts:15-28`） | ☐ |
+| B2 | `package.json` | 只改 `"main"` → `"dist-main/boot.js"` | 其余字段一字不动（G7 的 R-23 例外，plan 全局约束已登记） | ☐ |
+| B3 | `src-main/ql-pty-host.ts` | `runHost` 的 argv 取值改成 C1 的「先找 `--ql-host`，取其后两个；找不到才用 `slice(2)`」；`:202` 的留痕取管道名同一套取法 | `main()` 导出、`:209` 的 `require.main === module` 块、帧协议、退出码 2/1/3/4（R-18 / K57）**一字不改** | ☐ |
+| B4 | `src-main/ql-elevated.ts` | 只改 `:139` 的 `parameters` 拼法（C2）+ `:46-47` 注释里「应用入口参数」的说法 | `hostExePath()` / `hostScriptPath()` / `startHost()` / `launch()` 其余部分 / `ElevatedPtyProcess` 一字不改（第二轮已定的形状保留） | ☐ |
+| B5 | `src-main/ql-pty-host.test.ts`、`src-main/ql-elevated.test.ts`、`src-main/boot.test.ts`（新建） | 按 D1 改 | 只动 D1 列出的用例与夹具 | ☐ |
+| B6 | `src-main/main.ts`、`quick-launch.ts`、`shell-execute.ts`、`ipc-ql.test.ts`、`build.bat`、词典、渲染端、`electron-builder.yml` | **不改**（`build.bat` 保留第二轮已删的状态；`main.ts` 保留第二轮那 3 行注释改动） | 越界即不勾 | ☐ |
 
 ## C. 接口契约
 
-| # | 契约 | 逐字 | ✓ |
-| --- | --- | --- | --- |
-| C1 | `HostLauncher` 签名 = HEAD 的形状，一字不改 | `hostExePath(): string`、`hostScriptPath(): string`、`launch(exe: string, script: string, pipeName: string, token: string): { ok: boolean; handle: unknown; win32Error: number }`、`isAlive(handle: unknown): boolean`、`exitCodeOf(handle: unknown): number` | ☐ |
-| C2 | `hostExePath()` 的实现 | `hostExePath() { return execPath(); }`，其中 `const execPath = () => paths?.execPath ?? process.execPath;`（`:163` 原样保留，它是本轮唯一的测试接缝）。生产语义：**宿主 exe 恒等应用自己的 exe** | ☐ |
-| C3 | `hostScriptPath()` | `path.join(__dirname, HOST_SCRIPT_NAME)` 一字不改（`HOST_SCRIPT_NAME = 'ql-pty-host.js'` `:33` 保留）——它现在同时是「应用入口参数」的值 | ☐ |
-| C4 | `launch` 的参数串 | `const parameters = '"' + script + '" "' + pipeName + '" "' + token + '"';` → `shell.shellExecute(exe, SW_HIDE, { verb: 'runas', parameters })`；失败时防御性 `shell.close(r.handle)` 保留（`:179-186` 一字不改即满足） | ☐ |
-| C5 | `startHost` 的 stage | 只剩 `'pipe' \| 'launch'`：管道建不出来 → `stage:'pipe'`（`pipe=create`）；`ShellExecuteEx` 失败 → `stage:'launch'`（`win32=1223` = UAC 取消）。**不再有 try/catch**（`hostExePath` / `hostScriptPath` 都不再抛），`hostlink=` 族不存在 | ☐ |
-| C6 | `HostPaths` | 只剩 `{ execPath?: string }`；`hostDir` 删除（它只为硬链接服务） | ☐ |
-| C7 | 词表清理（**裁决 R-22 / 索引 K63 收窄 + 扩围**） | ① `git grep -n "hostlink" -- src-main` 为空；② `git grep -n "node\.exe" -- src-main` 为空。为达 ② 允许 6 处**只改注释 / 断言字符串**的编辑：`ql-pty-host.ts:2`、`ql-pty-host.ts:207`、`main.ts:1093-1094`、`main.ts:1096`、`ipc-ql.test.ts:424`、`ipc-ql.test.ts:637`（最后一条：`not.toContain('node.exe')` → `not.toContain('lms_launcher.exe')`，否则它在新机制下空转）。**硬条件**：不碰任何代码 token、**行数不变**（`git diff --numstat` 每文件增 = 删） | ☐ |
+| # | 契约 | 逐字 | 勾 |
+|---|---|---|---|
+| C1 | `runHost` 的 argv 取法（双形状） | `const i = process.argv.indexOf('--ql-host'); const args = i >= 0 ? process.argv.slice(i + 1, i + 3) : process.argv.slice(2); const pipeName = args[0]; const hostToken = args[1];` —— 有开关走开关形状（app 模式），没有就退回 dev 直接跑的 `slice(2)`（既有单测与 `require.main` 入口不破）。缺参数 → 走 `fail('pipe', …, 3)`，不抛未捕获异常 | ☐ |
+| C2 | `launch()` 交出的参数串 | `const parameters = '--ql-host "' + pipeName + '" "' + token + '"';`（管道名与 token 各带引号，与既有断言同风格；`application` 仍是 `launcher.hostExePath()` = `process.execPath`，`nShow = SW_HIDE`、`verb = 'runas'`） | ☐ |
+| C3 | `boot.ts` 的接缝 | `export function bootMain(argv: string[], load: (name: string) => unknown): void`；`argv.includes('--ql-host')` → `load('./ql-pty-host')` 后调其 `main()`；否则 `load('./main.js')`。模块顶层：`bootMain(process.argv, (name) => require(name))` | ☐ |
+| C4 | 分流必须在取单实例锁之前 | `boot.js` 不加载 `main.js` 时，`main.ts` 里的 `requestSingleInstanceLock` 不会被执行（P15 的 `exit 0` 就是撞锁） | ☐ |
+| C5 | 不改的契约 | 帧协议（`type:u8\|len:u32LE\|payload`、`HELLO=0x01` …）、退出码 token=2 / spawn=1 / pipe=3 / fatal=4、留痕文件 `%TEMP%\\lms-ql-host.log`、`hostExePath()` / `hostScriptPath()` 签名、`main.ts` 的 IPC 接线 | ☐ |
+| C6 | i18n | 无新键；`boot.ts` 的字符串字面量全 ASCII | ☐ |
 
 ## D. TDD 步骤门
 
-| # | 步骤 | 命令 | 预期 | ✓ |
-| --- | --- | --- | --- | --- |
-| D1 | 先改测试 | `npx vitest run src-main/ql-elevated.test.ts src-main/ipc-ql.test.ts` | 新用例红（`hostExePath()` 仍去建硬链接 → `hostlink=ENOENT`；`startHost` 交出的 exe 不是 `process.execPath`）。文件级用例数：`ql-elevated.test.ts` **删** `:141-177` 整条（−1）、**加** 2 条（`host_exe_is_the_app_executable`、`start_host_passes_the_app_exe_and_script_to_launch`）→ 该文件 24 → 25；`launch_failures_close_both_handles` 的场景 2（`:191-203`）改成「`hostExePath()` 走 `paths.execPath` 接缝、`startHost` 不因路径抛」——**不新增用例**；五处 `not.toContain('node.exe')` → `not.toContain('lms_launcher.exe')`；删 `:24` 的 `resolveHostLink` import | ☐ |
-| D2 | 实现 B1-B4 | 同上 | 全绿 | ☐ |
-| D3 | 类型门 | `npx tsc --noEmit -p tsconfig.main.json` | 干净、无输出 | ☐ |
-| D4 | i18n 三门 | `npx vitest run src-main/i18n` | 全绿（本任务零新键） | ☐ |
-| D5 | 全量 | `npm test` | 全绿；文件数仍 **51**，用例 895 → **896**（删 1 加 2），只增不减 | ☐ |
-| D6 | **本地无 UAC 门**（R-21 / §9-R10，**主代理跑，子代理不打包**） | 先 `cmd /c build.bat`，再 `Start-Process dist-release\win-unpacked\lms_launcher.exe -ArgumentList '<…app.asar\dist-main\ql-pty-host.js>','\\.\pipe\x','tok' -PassThru` + `WaitForExit`；**D6′（裁决 R-22 追加）dev 布局同一条式子**：`Start-Process node_modules\electron\dist\electron.exe -ArgumentList '<仓库绝对路径>\dist-main\ql-pty-host.js','<管道名>','tok' -PassThru` | **两种布局都**不出现窗口；`ExitCode = 3`；接真实管道（`.temp/ql-admin-probe/real-pipe-run2.ps1`）时进程**活着等 HELLO**。这是「宿主入口真的被接管」的唯一直接证据，D6′ 同时补上「dev 态没有任何门」这条疑虑（报告 §7 疑虑 ①）。`%TEMP%\lms-ql-host.log` 的 `stage=pipe` 行只能在真机核对（本会话对 TEMP 是 EPERM） | ☐（**原因**：本会话起不了 app 模式，索引 K64 ④；**去处**：真机门规格 §7.2 + 第三轮的 D6 重定义） |
+| # | 步 | 命令 | 预期 | 勾 |
+|---|---|---|---|---|
+| D1 | 先改测试 | 新建 `src-main/boot.test.ts`（**3 条**：含开关只加载宿主、不含开关只加载 `./main.js`、开关后两个参数原样到达宿主）；`ql-pty-host.test.ts` 加 **2 条**（`--ql-host` 在 argv 中间也取对两个参数；只有 `--ql-host` 没有值 → `stage=pipe` 退出码 3）；`ql-elevated.test.ts` 把钉 `parameters` 的两条断言改成 C2 的串（**条数不变**）；`ql-pty-host.test.ts:147-150` / `:352-355` 的夹具保持 dev 形状以证兼容 | 新用例先红 | ☐ |
+| D2 | 跑红 | `npx vitest run src-main/boot.test.ts src-main/ql-pty-host.test.ts src-main/ql-elevated.test.ts` | 失败集中在新增/改动的用例 | ☐ |
+| D3 | 实现 | 按 B1-B4 | 定向转绿 | ☐ |
+| D4 | 定向 + 相邻 | `npx vitest run src-main/boot.test.ts src-main/ql-pty-host.test.ts src-main/ql-elevated.test.ts`；`npx vitest run src-main/quick-launch.test.ts src-main/ipc-ql.test.ts` | 前者全绿；后者 `Tests 61 passed (61)` 不变 | ☐ |
+| D5 | 类型门 + i18n + 全量 | `npx tsc --noEmit -p tsconfig.main.json`；`npx vitest run src-main/i18n`；`npm test` | `TSC_EXIT=0}`；i18n `Tests 18 passed (18)`；全量 **52 文件 / 901 用例**（896 + 3 + 2；实测不同就登记真值并同步 A2/D5/G5 与本行） | ☐ |
+| D6 | ~~本地无 UAC 门~~ → **真机门**（K64 ④） | 主代理：`cmd /c build.bat` + 产物核对（`app.asar\\dist-main\\boot.js` 与 `ql-pty-host.js` 在包里、包内无 `node.exe`、`main = dist-main/boot.js`）。用户：按 spec §7.2 逐条，重点 [命令行] + [管理员权限] **出页签**、UAC 标题「LMS 启动器」 | 产物核对由主代理填 J 段；真机条目由用户回报 | ☐（**原因**：本会话起不了 app 模式，`0x80000003`，K64 ④；**去处**：spec §7.2 真机门） |
 
 ## E. 必须钉住的行为断言
 
-| # | 断言 | 出处 | 由哪条测试 / 取证守 | ✓ |
-| --- | --- | --- | --- | --- |
-| E1 | 宿主 exe = 应用自己的 exe：生产单例 `hostLauncher.hostExePath() === process.execPath`；接缝 `createHostLauncher(shell, {execPath}).hostExePath()` 返回注入值 | 规格 §6.4-1 / C2 | `ql-elevated.test.ts`：`host_exe_is_the_app_executable` | ☐ |
-| E2 | `startHost` 交给 `launch` 的 `exe` / `script` 逐字 = `process.execPath` / `path.join(__dirname,'ql-pty-host.js')` | 规格 §6.4-1 / C2/C3 | `ql-elevated.test.ts`：`start_host_passes_the_app_exe_and_script_to_launch` | ☐ |
-| E3 | 参数串逐字 = `"<script>" "<pipe>" "<token>"`（三个都加引号）、`nShow = SW_HIDE`、`verb='runas'` | 规格 §6.4-1 / C4 | 既有用例 `launch_passes_runas_and_three_quoted_arguments`（`:125-139`，本轮不动即守） | ☐ |
-| E4 | 硬链接族彻底消失：`startHost` 只有 `pipe` / `launch` 两个 stage；`hostlink` / `node.exe` 在 `src-main` 里零命中 | 规格 §6.10 / §6.4-2 | `launch_failures_close_both_handles`（改后的场景 2）+ `git grep` 取证（C7） | ☐ |
-| E5 | 「宿主入口真的被接管、没有又起一遍应用」 | 规格 §9-R10 | **D6 本地无 UAC 门**（无窗口 + 退出码 3 + 接真管道活着等 HELLO）；第一轮打回它的取证在 J-6 | ☐ |
-| E6 | 宿主入口行为不变（帧序 / 退出码 / 留痕与任务 10 一致） | 规格 §6.6 / R-18 | `ql-pty-host.ts` **一字不改**（B5）+ `ql-pty-host.test.ts` 既有 8 条不变即守 | ☐ |
-| E7 | 失败文案不泄漏宿主 exe（用户那一行的目标才是 `{exe}`） | 规格 §6.10 / 裁决 R-07 | 五处 `not.toContain('lms_launcher.exe')`（`:212` / `:627` / `:714` / `:751` / `:912`） | ☐ |
+| # | 断言 | 出处 | 守它的测试 | 勾 |
+|---|---|---|---|---|
+| E1 | argv 里有 `--ql-host` 时**不加载** `./main.js`（不取单实例锁、不建窗口） | spec §6.4-1 / P15 | `boot.test.ts` ① | ☐ |
+| E2 | argv 里没有 `--ql-host` 时行为与今天完全一致（只加载 `./main.js`） | G3「不勾选的路径逐字节不变」 | `boot.test.ts` ② | ☐ |
+| E3 | 宿主拿到的两个参数 = 主进程交出的管道名与 token，顺序不错位、前面有别的参数也不错位 | spec §6.4-2 / K2 | `boot.test.ts` ③ + `ql-pty-host.test.ts` 新增① | ☐ |
+| E4 | 缺参数不崩：只有 `--ql-host` 没有值 → `stage=pipe`、退出码 3 | §6.6-10 / R-18 | `ql-pty-host.test.ts` 新增② | ☐ |
+| E5 | dev 直接跑脚本（无开关）仍可用 | `ql-pty-host.ts:209` 的 `require.main` 入口 | `ql-pty-host.test.ts` 既有夹具不改 | ☐ |
+| E6 | 起宿主的调用仍是 `runas` + `SW_HIDE` + `process.execPath`（UAC 显示应用自己） | spec §6.4-2 / §7.2-1 | `ql-elevated.test.ts` 既有两条（改串） | ☐ |
 
 ## F. 本任务相关的硬约束
 
-| # | 约束 | 出处 | ✓ |
-| --- | --- | --- | --- |
-| F1 | 错误前缀只用 `PROC:`；**零新词典键**（G1 / G2） | 索引 G1 / G2 | ☐ |
-| F2 | 帧协议 / `ql-host-protocol.ts` / `HELLO`→`READY` 流程一行不改 | 索引 G3 | ☐ |
-| F3 | `main.ts` 与 `package.json` 一字不改（既有行号锚点全部继续有效；不改打包入口） | 规格 §6.4-3 | ☐ |
-| F4 | 不新增依赖、不改依赖段 | 索引 G7 | ☐ |
-| F5 | `build.bat` 删块后仍是**纯 ASCII + 全 CRLF**（逐字节复核） | 规格 §6.11 + 任务 9 口径 | ☐ |
-| F6 | 不新增 extraFile、不改 `electron-builder.yml`（宿主脚本仍随 `dist-main/**` 进 asar） | 索引 G7 / 规格 §6.11 | ☐ |
-| F7 | 不新建 `boot.ts` / `ql-host-boot.ts` / `parseHostMode` / `hostMain`；不改 `ql-pty-host.ts` | 规格 §6.4-3 / 索引 K61 | ☐ |
+| # | 约束 | 出处 | 勾 |
+|---|---|---|---|
+| F1 | 不新增依赖、不改 `package.json` 依赖段（`main` 字段是 R-23 唯一例外） | plan G7 | ☐ |
+| F2 | 不并行派单；子代理不 `git add` / 不 commit | AGENTS.md 第 4 步 | ☐ |
+| F3 | 不引入 cmd 包装、不额外打包 exe、不用环境变量 | spec §6.4-7（K12 修订） | ☐ |
+| F4 | 失败路径不新增日志行；`{err}` 词表不变（无 `hostlink=`） | §6.10 / K48 | ☐ |
+| F5 | 本会话不跑 app 模式（起不来，`0x80000003`）；任何「本地验证过 app 模式」的说法都是假的 | K64 ④ | ☐ |
 
 ## G. 回归门
 
-| # | 门 | 命令 | 预期 | ✓ |
-| --- | --- | --- | --- | --- |
-| G1 | 定向 | `npx vitest run src-main/ql-elevated.test.ts src-main/ipc-ql.test.ts` | 全绿（25 + 27） | ☐ |
-| G2 | 相邻回归（提权路径的调用方） | `npx vitest run src-main/quick-launch.test.ts src-main/ipc-ql.test.ts` | 全绿（34 + 27） | ☐ |
-| G3 | 类型门 | `npx tsc --noEmit -p tsconfig.main.json` | 干净 | ☐ |
-| G4 | i18n 三门 | `npx vitest run src-main/i18n` | 全绿 | ☐ |
-| G5 | 全量 | `npm test` | 全绿；51 文件 / 896 用例（只增不减） | ☐ |
-| G6 | **本地无 UAC 门** | 见 D6 | 无窗口 / 退出码 3 / 接真管道活着等 HELLO | ☐ |
+| # | 门 | 命令 | 预期 | 勾 |
+|---|---|---|---|---|
+| G1 | 定向 | `npx vitest run src-main/boot.test.ts src-main/ql-pty-host.test.ts src-main/ql-elevated.test.ts` | 全绿；条数 = 3 + (8+2) + 25 | ☐ |
+| G2 | 相邻 | `npx vitest run src-main/quick-launch.test.ts src-main/ipc-ql.test.ts` | `Tests 61 passed (61)` | ☐ |
+| G3 | 类型门 | `npx tsc --noEmit -p tsconfig.main.json` | 无诊断、`TSC_EXIT=0`（`tsconfig.main.json:15` 的 `exclude` 含测试文件，既有口径） | ☐ |
+| G4 | i18n 三门 | `npx vitest run src-main/i18n` | `Tests 18 passed (18)` | ☐ |
+| G5 | 全量 | `npm test` | 全绿；**52 文件 / 901 用例**（只增不减） | ☐ |
+| G6 | 产物核对（不启动 app） | `cmd /c build.bat` 之后：`npx asar list <win-unpacked>\\resources\\app.asar` 过滤 `boot` / `ql-pty-host` / `main.js`；`Test-Path <win-unpacked>\\node.exe`；在 scratch 目录里解出 `package.json` 看 `main` 字段 | `\\dist-main\\boot.js` 与 `\\dist-main\\ql-pty-host.js` 都在包里；包内**无** `node.exe`；`main = dist-main/boot.js`。**注意**：`npx asar extract-file` 会往 CWD 写 `package.json`，必须在 scratch 目录里跑（索引 K66） | ☐ |
 
 ## H. 提交门（主代理验收通过后执行）
 
-| # | 项 | 内容 | ✓ |
-| --- | --- | --- | --- |
-| H1 | 暂存范围 | `src-main/ql-elevated.ts`、`src-main/ql-elevated.test.ts`、`src-main/ipc-ql.test.ts`、`build.bat` +（R-22）`src-main/ql-pty-host.ts`、`src-main/main.ts`（仅 C7 ② 的注释） | ☐ |
-| H2 | commit message 逐字 | `fix: 提权宿主改用应用 exe 的应用入口参数启动（R-21，硬链接与命令行开关机制退场）` | ☐ |
-| H3 | 勾完整性普查 | `node .superpowers/sdd/2026-10-14-quick-launch-admin/tick-census.mjs` → 本表 `裸☐=0` 且 `I段 -[ ]=0` | ☐ |
+| # | 项 | 内容 | 勾 |
+|---|---|---|---|
+| H1 | 暂存范围 | `src-main/boot.ts`、`src-main/boot.test.ts`、`package.json`、`src-main/ql-pty-host.ts`、`src-main/ql-pty-host.test.ts`、`src-main/ql-elevated.ts`、`src-main/ql-elevated.test.ts` + 第二轮保留的 `build.bat`、`src-main/ipc-ql.test.ts`、`src-main/main.ts` | ☐ |
+| H2 | commit message（逐字） | `fix: 提权宿主由应用入口按 --ql-host 开关分流启动（R-23，入口参数机制退场）` | ☐ |
+| H3 | 勾完整性 | `node .superpowers/sdd/2026-10-14-quick-launch-admin/tick-census.mjs` 退出码 0，本表 `裸☐=0`、`I段 -[ ]=0` | ☐ |
 
 ## I. 完成判据
 
-- [ ] A1-A4 成立
-- [ ] B1-B4 之外没有文件被改（B5 / B6 确认未动 / 不存在）
-- [ ] C1-C7 逐字一致
-- [ ] D1→D6 先红后绿 + D6 本地门通过
-- [ ] E1-E7 有对应测试或取证且绿
-- [ ] G1-G6 全绿
-- [ ] J 段有真实输出
+- [ ] `boot.ts` 的分流被 `boot.test.ts` 三条钉住（E1/E2/E3）
+- [ ] `runHost` 双形状取参被 G1 钉住（C1/E3/E4/E5）
+- [ ] `parameters` 串与 `runas`/`SW_HIDE`/`process.execPath` 被既有两条改串后的用例钉住（C2/E6）
+- [ ] G1-G5 全绿且数字与 D5/G5 登记一致
+- [ ] G6 产物核对由主代理实测填 J 段
+- [ ] 真机门（D6）已把清单交付用户，回报到达后填 J 段
+- [ ] H1-H3 由主代理执行
 
 ## J. 执行记录（实现时填命令与真实输出）
 

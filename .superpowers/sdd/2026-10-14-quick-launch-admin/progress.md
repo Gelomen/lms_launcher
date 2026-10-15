@@ -167,3 +167,12 @@
 
 **待用户裁决的机制（我提议记为 R-23）**：回到第一轮的形状 —— 应用 exe + **argv 里的开关**，由应用自己的入口在最早处判别并接管（`boot.js` 作 `package.json main}`，或直接在 `main.js` 第一行判别），因为 app 模式下未知开关会原样进 `process.argv}`。真机只需 30 秒就能定：`.\\lms_launcher.exe --ql-host-probe "\\.\pipe\x" tok` —— 若应用照常起（托盘图标出现、没有报错框），开关形状成立。
 **第二轮的工作区改动（4 个文件）留在工作区未提交**，等用户选：丢弃 / 保留其中可复用的部分（删硬链接、`hostExePath() = process.execPath`、`build.bat` 删块、测试改名 —— 这些在 R-23 下**仍然要**）。
+
+## 裁决 R-23：机制第三次修正，回到「开关 + 入口分流」（2026-10-15 21:2x-21:4x）
+
+- **用户真机回报（P15）**：第二轮的包，[命令行] + [管理员权限] → UAC 出现、点 [是] → 无页签，日志 `[lms_launcher] PROC: pwsh.exe 终端启动失败: handshake=exit(code=0)`。含义：提权子进程 = 应用 exe（app 模式），**接受**位置参数（无 `bad option`、无报错框）但没人解析它 → 应用又起一遍 → 撞单实例锁 → 退出 0。与硬链接机制的真机现象同形同因。
+- 这条回报同时**正面证明**了 R-23 依赖的性质：app 模式下未知参数不被告拒、原样进 `process.argv`（那条命令一直跑到单实例锁）。外部来源同向（stackoverflow 49552703）。
+- 用户决定（弹窗）：机制「回到第一轮的 argv 开关 + 入口自判别」；第二轮工作区改动**保留**，第三轮在其上继续。
+- 文档先行（本轮已改，未提交）：spec §3 加 **P15** 并给 P14 加更正按语（K64 ①③）；§6.3 模块表加 `boot.ts` 行、改 `ql-pty-host.ts` 行；**§6.4 整节重写为 R-23**（9 条）；plan 任务 11 重写为第三轮（步骤 0-6，含 `boot.test.ts` 3 条 + `ql-pty-host.test.ts` 2 条 + 改串 2 条，预期 52 文件 / 901 用例）、G7 加「`main` 字段是 R-23 唯一例外」；索引加 **K65**（R-23 要点）与 **K66**（`npx asar extract-file` 往 CWD 写，本会话两次覆盖仓库根 `package.json`）、清单表任务 11 行改「第三轮」；任务 11 的 check 表 A-I 段整体重写为第三轮（J 段 J-1…J-19 保留作历史）。顺带修掉 spec §6.10 一行里未转义的 `|`（表格破损）。
+- 三份文档 + 表列数自检：spec / plan / index / T11 全部 `mismatched rows: 0}`；`tick-census.mjs` 见下。
+- 第三轮派单要点（保留第二轮成果，只做增量）：新建 `src-main/boot.ts`（分流 + `bootMain(argv, load)` 接缝）+ `boot.test.ts`；`package.json main -> dist-main/boot.js`；`runHost` 双形状取参；`launch()` 的 `parameters` 改成 `'--ql-host "<pipe>" "<token>"'`。**本地不跑 app 模式**（K64 ④），机制判据在真机门 §7.2。

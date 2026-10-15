@@ -39,7 +39,8 @@
 | P10 | `probe9.mjs` | 本进程建管道服务端（SDDL `D:(A;;GA;;;WD)` + `PIPE_ACCESS_DUPLEX`）→ 子进程用 `net.connect` 连上（61ms）→ 帧往返 `HELLO→READY+DATA`、`WRITE→echo:ls`、`STOP→EXIT{code:0}`，子进程退出码 7；读侧 `PeekNamedPipe` 轮询 + `ReadFile`，写侧 `WriteFile`（`written=113 lastErr=0`）→ **§6.5 的传输设计整体成立** |
 | P11 | `probe6/7 runas` 计时 | `ShellExecuteEx(runas)` 调用本身 **5.7–5.9s**（不提权 44ms）→ 提权启动同步阻塞主进程，与前置规格 §6.9 已接受的口径同量级（§8-K14） |
 | P13 | 主代理 A/B 对照（2026-10-15，`dist-release\win-unpacked\node.exe` + 探针脚本写标记文件） | **带 `ELECTRON_RUN_AS_NODE=1` → 标记文件出现（真 Node 模式）；删掉该变量 → 标记文件不出现、进程 5s 后仍活着（= 应用模式，脚本根本没跑）**。三次独立观测一致：本机 A/B 各两次 + 用户真机 2026-10-15 18:4x（`.\node.exe "resources\app.asar\dist-main\ql-pty-host.js" …` **把应用启动了**，日志里是应用自己的 `get_configs` IPC 报错）。**Electron 28.3.3 只认环境变量，文件名不起作用**；而提权不继承环境块（P2）、`ShellExecuteEx` 无环境块参数、P3 证无命令行等价开关 → 原机制在真机上必然退化成「又起一遍应用」→ 宿主永不连管道 → `handshake=exit(code=0)`。**R-19 / K59/K60 的依据** |
-| P14 | 主代理 D6 本地门（2026-10-15 19:5x-20:1x，打包产物 `dist-release\win-unpacked`，非提权；脚本 `.temp/ql-admin-probe/d6-*.ps1`、`probe-entry.js`、`real-pipe-run2.ps1`） | ① **命令行开关这条路不成立**：`lms_launcher.exe --ql-pty-host …` → `lms_launcher.exe: bad option: --ql-pty-host`、**退出码 9**（Electron 主进程在跑任何应用代码之前先过 Node 的命令行解析器，未知 `--x` 直接拒绝）；`--ql-pty-host=<值>` 同样被拒；`-- --ql-pty-host …` 与裸位置参数 `ql-pty-host …` 都被 Electron 当成**应用入口路径**去 require → `Cannot find module 'D:\Dev\Projects\lms_launcher\ql-pty-host'`、退出码 1。② **成立的是「应用入口参数」**：`lms_launcher.exe "<…\resources\app.asar\dist-main\ql-pty-host.js>" "\\.\pipe\x" tok` → **退出码 3**（= §6.6-10 的管道失败码）、stderr 空；同一形状换成探针入口脚本 → `process.argv = [exe, 入口, 管道名, token]`、`process.defaultApp` 不存在、`versions{node:18.18.2,electron:28.3.3}`。③ **端到端**：真实命名管道（`winPipe` 服务端）+ 打包 exe 当宿主 → 服务端 `serverHandle=true`、客户端**活着等 HELLO**（说明 `@lydell/node-pty` 已加载、`net.connect` 已成功）；管道不存在时同一形状**立刻退 3**。④ 对照：不带任何参数 → 退出码 0、无 stderr（排除「沙箱起不来」）。→ **R-21 / K61 的依据**（`boot.ts` / `parseHostMode` / 改 `package.json` 的 `main` 全部不需要） |
+| P14 | 主代理 D6 本地门（2026-10-15 19:5x-20:1x，打包产物 `dist-release\win-unpacked`，非提权；脚本 `.temp/ql-admin-probe/d6-*.ps1`、`probe-entry.js`、`real-pipe-run2.ps1`） | ① **命令行开关这条路不成立**：`lms_launcher.exe --ql-pty-host …` → `lms_launcher.exe: bad option: --ql-pty-host`、**退出码 9**（Electron 主进程在跑任何应用代码之前先过 Node 的命令行解析器，未知 `--x` 直接拒绝）；`--ql-pty-host=<值>` 同样被拒；`-- --ql-pty-host …` 与裸位置参数 `ql-pty-host …` 都被 Electron 当成**应用入口路径**去 require → `Cannot find module 'D:\Dev\Projects\lms_launcher\ql-pty-host'`、退出码 1。② **成立的是「应用入口参数」**：`lms_launcher.exe "<…\resources\app.asar\dist-main\ql-pty-host.js>" "\\.\pipe\x" tok` → **退出码 3**（= §6.6-10 的管道失败码）、stderr 空；同一形状换成探针入口脚本 → `process.argv = [exe, 入口, 管道名, token]`、`process.defaultApp` 不存在、`versions{node:18.18.2,electron:28.3.3}`。③ **端到端**：真实命名管道（`winPipe` 服务端）+ 打包 exe 当宿主 → 服务端 `serverHandle=true`、客户端**活着等 HELLO**（说明 `@lydell/node-pty` 已加载、`net.connect` 已成功）；管道不存在时同一形状**立刻退 3**。④ 对照：不带任何参数 → 退出码 0、无 stderr（排除「沙箱起不来」）。→ **R-21 / K61 的依据**（`boot.ts` / `parseHostMode` / 改 `package.json` 的 `main` 全部不需要） **已于 2026-10-15 21:1x 更正（索引 K64）：这三条都是在会话预置的 `ELECTRON_RUN_AS_NODE=1` 下跑的 = Node 模式。`bad option:` 是 Node 的未知参数格式（外部两份来源都写明它是「这个二进制在当 Node 跑」的标志），不是 Electron app 模式的行为；② 的 exit 3 是 Node 把第一个位置参数当脚本。app 模式在本会话起不来：删掉该变量后带不带参数都在启动瞬间退出 `0x80000003`** |
+| P15 | **用户真机（2026-10-15 21:2x，打包产物 `dist-release\\win-unpacked`，第二轮 R-21 的代码）**：[快捷启动] 里类型 [命令行] + 勾选 [管理员权限] | UAC 弹窗出现（标题是应用自己）、点 [是] → **日志区没有页签**，日志一行 `[lms_launcher] PROC: pwsh.exe 终端启动失败: handshake=exit(code=0)`。含义链完整：提权子进程 = 应用 exe（app 模式）→ 它**接受**了那个位置参数（没有 `bad option`、没有报错框）→ 但**打包布局里没有解析位置参数的代码**：那段逻辑只在 `default_app.asar/main.js` 里（`for (const arg of argv)` → `option.file` → `loadApplicationPackage()` → `process.defaultApp = true` → `app.setAppPath()` → `import(filePath)`），而实测 `node_modules\\electron\\dist\\resources\\` 有 `default_app.asar`（108901 字节）、`win-unpacked\\resources\\` 只有 `app.asar` / `app.asar.unpacked` / `icon.ico` → 应用又起一遍 → 撞单实例锁 → **退出码 0** → 主进程看到 `handshake=exit(code=0)`。与 P13 硬链接机制的真机现象**同形同因**。同时它也正面证明：**app 模式下未知参数不被告拒、原样进 `process.argv`**（那条命令带位置参数没有任何 CLI 报错，应用一直跑到单实例锁）—— 这就是 §6.4 R-23 开关形状所依赖的性质 |
 | P12 | 非提权对照 | `ConvertSDDL ok=true size=48`、`sizeof(SA)=24`、`sizeof(SE)=112`；管道读到 `lastErr=109`（`ERROR_BROKEN_PIPE`）收尾；`GetExitCodeProcess` 读到子进程 `process.exit(7)` 的 7 |
 
 **仍未验证（只能真机）**：`pty.spawn` 在提权宿主里创建 ConPTY（P7 表明本环境必失败）；提权宿主里 `require('@lydell/node-pty')` 能否解析到 `app.asar.unpacked` 的原生模块（P8 只证到 `require` 成功，且是 dev 布局）；真机上「无黑窗口」。`docs/superpowers/checks/2026-10-13-quick-launch-elevated-exe/task-04-packaged-realmachine.md` 的 E1–E7 六行至今未勾，本文 §7.2 在同一次构建里一并跑掉（§8-K11）。
@@ -97,22 +98,26 @@
 | 文件 | 职责 | 依赖 |
 |---|---|---|
 | `ql-host-protocol.ts` | 帧编解码 + 类型常量，纯函数 | 无 Win32 |
-| `ql-pty-host.ts` | 宿主进程入口（**由应用 exe 的「应用入口参数」直接执行**，R-21） | `net`、`@lydell/node-pty`、`./quick-launch` 的 `shellExe` |
+| `boot.ts` | 应用入口分流：`--ql-host` 在 argv 里 → 宿主分支；否则 → `require('./main.js')`（R-23 / K65） | 无（只 `require` 两个入口） |
+| `ql-pty-host.ts` | 宿主进程入口（**由 `boot.js` 的宿主分支执行**，R-23；dev 下也可被 `require.main === module` 直接跑） | `net`、`@lydell/node-pty`、`./quick-launch` 的 `shellExe` |
 | `ql-elevated.ts` | 主进程侧：管道服务端 + 起宿主 + `ElevatedPtyProcess` | `koffi`、`./shell-execute` 的 `WinShellApi` |
 
-### 6.4 宿主进程怎么起（裁决 **R-21** / 索引 **K61**，2026-10-15 第二次机制修正）
+### 6.4 宿主进程怎么起（裁决 **R-23** / 索引 **K65**，2026-10-15 第三次机制修正：R-19 的形状恢复，R-21 作废）
 
-> **R-19 的「命令行开关 + `boot.ts` 转发入口」已被它自己的本地门证伪**（§3-P14）：打包态下 `lms_launcher.exe --ql-pty-host …` 在任何应用代码跑起来之前就被 Node 的命令行解析器拒绝（`bad option: --ql-pty-host`、退出码 9）；`--ql-pty-host=<值>` 同样被拒；`--` 之后的第一个位置参数又被 Electron 当成**应用入口路径**去 require（`Cannot find module …`、退出码 1）。这条门不需要提权、本机就能跑（§9-R10），所以缺陷在实现前就被拦下。
->
-> **原机制（硬链接 `node.exe`）仍然作废**，见 §3-P13：Electron 28.3.3 **只认 `ELECTRON_RUN_AS_NODE` 环境变量，文件名不起作用**；提权进程不继承调用方环境块（P2），`ShellExecuteEx` 没有环境块参数，P3 又证没有命令行等价开关。于是那个 `node.exe` 在真机上永远是**应用模式**——它把应用又起了一遍、不连管道、随后干净退出（`exit 0`），主进程等到的是「宿主早退」`handshake=exit(code=0)`（用户 2026-10-15 18:0x 真机现象，任务 10 的 R-17/R-18 只把「卡死」变成了「可读的失败」）。
+> **两条已否掉的机制，证据都在 §3**：
+> - **硬链接 `node.exe`（R-16 / K55）作废** —— P13：Electron 28.3.3 只认 `ELECTRON_RUN_AS_NODE` 环境变量，文件名不起作用；提权进程不继承环境块（P2）、`ShellExecuteEx` 无环境块参数、P3 证没有命令行等价开关 → 那个 `node.exe` 在真机永远是 app 模式，把应用又起一遍、退出 0。
+> - **「应用入口参数」（R-21 / K61-K62）作废** —— P15（用户真机）+ K64 的结构性证据：把命令行里的路径当应用入口的代码只在 `default_app.asar/main.js` 里，打包产物的 `resources\\` 里没有 `default_app.asar`。
+> - **R-19 当初被打回的理由不成立** —— P14 的 `bad option: --ql-pty-host`（exit 9）是 **Node 模式**的现象（会话预置 `ELECTRON_RUN_AS_NODE=1`，见 K64 ①③）；app 模式在本会话起不来（`0x80000003`，K64 ④）→ 这条门**本机跑不了**，只能真机跑。
 
-1. **宿主进程 = 本应用自己的 exe**（`process.execPath`），用 **Electron 的「应用入口参数」**启动：`shellExecute(runas, process.execPath, SW_HIDE, parameters)`，其中 `parameters = '"<宿主脚本绝对路径>" "<管道名>" "<token>"'`。宿主脚本路径 = `path.join(__dirname, 'ql-pty-host.js')`——dev 落在 `dist-main\`、打包落在 `resources\app.asar\dist-main\`（P9 已证 asar 内可装载），**两种布局同一条式子、不需要 `process.defaultApp` 特例**（第一个位置参数本来就是 dev 里 `electron .` 用的那个入口参数，绝对路径同样由 `__dirname` 保证，不依赖提权进程的 cwd）。
-2. **不再有硬链接**（R-19 的这一段仍然成立）：`resolveHostLink` / `HOST_EXE_NAME` / `errnoOf` / `HostPaths.hostDir` / `hostlink=` 这一族退场（§6.10 第三行已删；R-16 / K55 的 `build.bat` 预建步骤也一并删除，K60）。`build.bat` 回到「只 `npm run build` + `electron-builder`」。**`hostExePath()` 与 `hostScriptPath()` 两个接缝保留**（R-21）：前者恒等 `process.execPath`（起哪个 exe 是决策点，单测要钉），后者就是任务 4 的 `path.join(__dirname, 'ql-pty-host.js')`——它现在同时是「入口参数」的值。
-3. **不改 `package.json` 的 `main`，不加 `boot.ts` / `ql-host-boot.ts` / `parseHostMode` / `hostMain`**（R-19 的这套机械整体作废，K61/K62）：`main.ts` 与 `package.json` 一字不改，所有既有行号锚点继续有效；`ql-pty-host.ts` 沿用任务 5 的入口形状（`require.main === module` 时 `main()` → `runHost({…})`，`runHost` 读 `process.argv.slice(2)` = `[管道名, token]`）——P14 实测的 argv 正是这个形状，不需要任何 argv 归一化。
-4. **P14 的三条实测**（打包产物、非提权，2026-10-15 20:0x）：① 开关形状 → `bad option` / 退出码 9；② 入口参数形状 + **不存在的管道** → **退出码 3**（= §6.6-10 的管道失败码）、stderr 空；③ 入口参数形状 + **真实命名管道** → 进程**活着等 `HELLO`**（说明 `@lydell/node-pty` 已加载、`net.connect` 已成功；假服务端不发 `HELLO`，宿主不发帧是预期行为）。对照：不带任何参数 → 退出码 0、无 stderr。留痕文件 `%TEMP%\lms-ql-host.log` 在本会话写不进去（DSH 沙箱对 TEMP 是 EPERM，见 `probe-entry-out.json` 的 `tmpWrite`），**不是缺陷**，真机上应有那一行。
-5. **argv 只带管道名与 token**（K2 不变），终端 id / 尺寸 / cwd 一律在首帧 `HELLO` 里传。
-6. **代价（明说，K12 的修订仍成立）**：宿主进程是一个**入口被换成宿主脚本**的 Electron 进程——比纯 Node 大一些，但**不建窗口、不加载渲染进程、不跑任何应用逻辑**。三条硬约束（提权不继承环境块 + Electron 只认环境变量 + 不额外打包 exe）下没有更轻的路；cmd 包装虽能设变量（P4 已证），但会多一层 `cmd.exe` 且有闪黑窗风险（§9-R3 把「不要出现黑色控制台窗口」列为真机审查项），故不采用。
-7. **收益**：UAC 弹窗显示应用自己（「LMS 启动器」）而不是 `node.exe`；进程树少一层；「建链接失败 / size 不匹配 / 用户自己放了 node.exe / 换目录 STATUS_DLL_NOT_FOUND」一整族风险消失。
+1. **入口分流：`package.json` 的 `main` = `dist-main/boot.js`**，`boot.ts` 只做一件事：`process.argv` 里有 `--ql-host` → 走宿主分支（`require('./ql-pty-host.js')` 的 `main()`）；否则 → `require('./main.js')`。分流必须在**取单实例锁之前** —— `main.ts` 不加载就不会撞锁（P15 里第二个实例正是撞锁退出 `0`）。
+2. **宿主进程 = 本应用自己的 exe**（`process.execPath`）：`shellExecute(runas, process.execPath, SW_HIDE, parameters)`，其中 `parameters = '--ql-host "<管道名>" "<token>"'`。P15 正面证明 app 模式不拒绝未知参数（带位置参数没有任何 CLI 报错，一直跑到单实例锁），开关原样进 `process.argv` 由 `boot.js` 读。
+3. **两个接缝保留**（R-21 的这一段仍成立，K60 修订）：`hostExePath()` 恒等 `process.execPath`（dev / 打包同一条式子，**没有** `process.defaultApp` 分支）、`hostScriptPath() = path.join(__dirname, 'ql-pty-host.js')`。**硬链接一族仍退场**：`resolveHostLink` / `HOST_EXE_NAME` / `errnoOf` / `HostPaths.hostDir` / `hostlink=` 全部删除，`build.bat` 不再有预建步骤（R-16 / K55 作废）。
+4. **`ql-pty-host.ts` 的 argv 形状改为 `--ql-host <管道名> <token>`**：`runHost` 从 `process.argv` 里取 `--ql-host` 之后的两个参数；任务 5 的 `require.main === module` 自动入口保留（dev 与单测直接跑脚本时用）。
+5. **`main.ts` 的代码一字不改**（只允许 check 表 C7 ② 那 4 处注释，R-22 / K63）：既有的单实例锁、托盘、窗口逻辑都不动 —— 宿主分支根本不加载它。
+6. **argv 只带管道名与 token**（K2 不变），终端 id / 尺寸 / cwd 一律在首帧 `HELLO` 里传。
+7. **代价（明说，K12 的修订仍成立）**：宿主是一个 **Electron 进程**，入口 `boot.js` 走宿主分支 → 不建窗口、不加载渲染进程、不跑应用逻辑、不取单实例锁。比纯 Node 大一些，但三条硬约束（提权不继承环境块 + Electron 只认环境变量 + 不额外打包 exe、不用 cmd 包装）下没有更轻的路。
+8. **收益**：UAC 弹窗显示应用自己（「LMS 启动器」）；进程树只有一层；「建链接失败 / size 不匹配 / 用户自己放了 `node.exe` / 换目录 `STATUS_DLL_NOT_FOUND`」一族风险消失。
+9. **验收门改到真机**（K64 ④：本会话起不了 app 模式，`0x80000003`）：D6 不再是本地门，改为 §7.2 的真机条目 —— 勾选 [管理员权限] 的 [命令行] 项**出页签**、UAC 标题是「LMS 启动器」、日志里不出现宿主 exe 名。
 
 ### 6.5 命名管道与帧协议
 
@@ -191,7 +196,7 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 | `ShellExecuteEx` 失败且 `win32 = 1223`（用户点「否 / 取消」） | `PROC: t('err.proc.uacCancelled', { exe })`，`{exe}` = **用户那一行的目标**：命令行类型取 `shellExe(shell).exe`（与 `quick-launch.ts:244` 的 `err.ql.ptySpawn` 同口径），可执行程序类型取 exe 路径。**绝不传宿主 exe** |
 | `ShellExecuteEx` 其它失败 | `PROC: t('err.proc.spawnFail', { exe, err: 'win32=' + code })` |
 | 建管道失败（`ConvertStringSecurityDescriptor…` 或 `CreateNamedPipeW`） | `PROC: t('err.proc.spawnFail', { exe, err: 'pipe=create' })` —— 裁决 R-08（2026-10-14 23:2x，索引 K37）：`WinPipeApi.createServer` 的返回类型（`unknown`）交不回错误码，且这条路径在 `nMaxInstances=1` + 每次新名字下近乎不可能；只报阶段、不报 win32 码，换掉 C1 的签名不值 |
-| 宿主起来了但握手失败（`ERR` 帧 / 管道断 / 连接超时 / **宿主早退**） | `PROC: t('err.ql.ptySpawn', { exe, err })`；`{err}` 取既有词表（索引 K48：`host=<stage>` / `handshake=timeout|broken|connect`），**宿主早退时扩成 `handshake=exit(code=N)`**（R-18 / K57） |
+| 宿主起来了但握手失败（`ERR` 帧 / 管道断 / 连接超时 / **宿主早退**） | `PROC: t('err.ql.ptySpawn', { exe, err })`；`{err}` 取既有词表（索引 K48：`host=<stage>` / `handshake=timeout\|broken\|connect`），**宿主早退时扩成 `handshake=exit(code=N)`**（R-18 / K57） |
 | **（R-19 删除）** 原第三行「硬链接建不出来 / 已存在的 `node.exe` 不是我们的 → `hostlink=`」整族**随硬链接机制退场**；索引 K48 的 `{err}` 词表里 `hostlink=` 一并作废 | —— |
 | 宿主早退后的留痕合并（R-18 / K57） | 抛 `handshake=exit` 前读 `%TEMP%\lms-ql-host.log` 的**最后一行**，仅当该行 `pipe=` 与本次管道名相同才采信，把它的 `stage=` / `err=` 并进**同一个 `{err}`**（因此仍然只有一行日志，R-15 / K53 不变）。文件不存在 / 无匹配行 → 只报退出码，不报错。**合并点在 `ElevatedPtyProcess` 内，`main.ts` 零改动**（索引 K57） |
 

@@ -12,7 +12,7 @@
 - **G4 不动** `src-main/process.ts`、llama-server 启动路径、`QuickLaunchManager` 的构造签名（`quick-launch.ts:215-217`）。
 - **G5 每个任务的收尾门**：`npx tsc --noEmit -p tsconfig.main.json` 干净 + 该任务定向测试绿 + `npm test` 全量绿。（仓库根只有 `tsconfig.main.json`，没有 `tsconfig.json`——索引 K27）
 - **G6 i18n 三门**（`key-coverage.test.ts` / `dict.test.ts` / `no-hardcoded.test.ts`）在任何任务后都不得变红；新文件不得含汉字字面量（`no-hardcoded.test.ts:26-28` 扫全部 `src-main/*.ts`）。
-- **G7 不新增依赖**、不改 `package.json` 的依赖段。
+- **G7 不新增依赖**、不改 `package.json` 的依赖段。**R-23 的唯一例外**：任务 11 第三轮把 `"main"` 改成 `dist-main/boot.js`（机制本体，spec §6.4-1 / 索引 K65）；其余字段一字不动。
 - **G8 子代理不 `git add`、不 commit**；改动留在工作区等验收（AGENTS.md 工作流第 4 步）。
 - **G9 只改该任务 B 段列出的文件**，越界即不勾。
 
@@ -281,28 +281,29 @@ export class ElevatedPtyProcess {
 - [ ] **步骤 4：跑绿 + G5 + G6 + 全量**（`npm test` 只增不减）。
 - [ ] **步骤 5：Commit（主代理）**：`fix: 提权终端连接不再阻塞主线程（有界等待 + 宿主早退可见 + 失败留痕）`
 
-### 任务 11：宿主启动机制重做 —— 应用 exe + 「应用入口参数」（R-19 → R-21）
+### 任务 11：宿主启动机制重做 —— 应用 exe + `--ql-host` 开关 + 入口分流（R-19 → R-21 → **R-23**，第三轮）
 
-> 来源：用户真机 2026-10-15 18:0x-18:4x（类型 [命令行] + 管理员：UAC 点「是」后不出页签；任务 10 修掉卡死后日志给出 `handshake=exit(code=0)`）。主代理取证（spec §3-P13）：硬链接 `node.exe` 那条路**根本不进 Node 模式**——Electron 28.3.3 只认 `ELECTRON_RUN_AS_NODE` 环境变量，而提权不继承环境块（P2）、无命令行开关（P3），于是提权子进程其实是**又起了一遍应用**、不连管道、干净退 0。**先改文档再改代码**（本节与 spec §3-P13/§6.4 同一 commit）。
->
-> **第一轮（R-19：`--ql-pty-host` 开关 + `boot.ts` 转发入口）已实现，但被主代理的本地门打回**（spec §3-P14，2026-10-15 19:5x-20:1x）：打包态下 `lms_launcher.exe --ql-pty-host …` → `bad option: --ql-pty-host`、退出码 9 —— Node 的命令行解析器在跑任何应用代码之前就拒绝未知 `--x`；`--ql-pty-host=<值>` 同样被拒；`--` 之后的第一个位置参数又被 Electron 当成**应用入口路径**去 require。成立的形状是「**应用 exe + 入口参数 = 宿主脚本绝对路径**」：管道不存在 → 退 3；接真实管道 → 活着等 `HELLO`（`@lydell/node-pty` 已加载、`net.connect` 已成功）。工作区那一轮改动**整体丢弃**（未提交，无需 revert），本轮文档与代码同一 commit：spec §3-P14/§6.3/§6.4/§6.6-1/§6.11/§7.1/§7.2/§8-K2/K12/K13/§9-R1/R10。
+> 三轮的完整证据链在 spec §3-P13 / P14 / P15 与索引 K59-K65，这里只留结论：
+> - **第一轮（R-19：`--ql-pty-host` 开关 + `boot.ts` 转发入口）已实现，但被主代理的本地门打回 —— 那条门的理由不成立**：它跑在会话预置的 `ELECTRON_RUN_AS_NODE=1` 下（= Node 模式），`bad option:` 是 **Node 的未知参数格式**，不是 Electron app 模式的行为（K64 ①③）。
+> - **第二轮（R-21：「应用入口参数」）已被真机 + 结构性证据否掉**：把命令行里的路径当应用入口的代码只在 `default_app.asar/main.js` 里，打包产物的 `resources\\` 没有 `default_app.asar`（P15、K64 ②）。真机现象与硬链接机制同形同因：UAC 点 [是] → 无页签 → `handshake=exit(code=0)`（第二个实例撞单实例锁）。
+> - **第三轮（R-23）= 恢复第一轮的形状**，并**保留第二轮已经做对的部分**：删硬链接一族、`hostExePath() = process.execPath` + `hostScriptPath()`、`build.bat` 删块、测试改名 —— 第二轮的工作区改动按用户 2026-10-15 21:3x 的决定**保留**，第三轮在其上继续。
+> - **本地无 UAC 门取消**（K64 ④：本会话起不了 app 模式，`0x80000003`）：这条机制的最终判据是规格 §7.2 的真机门（用户执行）。
 
-- [ ] **步骤 0：起点核对**（起点 = HEAD，任务 10 已提交的状态；第一轮的改动先 `git restore` + 删新文件，不 revert）：`ql-elevated.ts` 的 `HOST_EXE_NAME` / `HOST_SCRIPT_NAME` `:32-33`、`HostLauncher` `:45-54`、`resolveHostLink` `:126-156`、`createHostLauncher` `:158-188`、`hostLauncher` `:191`、`startHost` `:346-375`；`ql-pty-host.ts` 的 `main()` `:189-205` + `require.main` 块 `:207-211`（**本轮不改这个文件**）；`build.bat:108-128`；`ipc-ql.test.ts:446/491-492/523`；`ql-elevated.test.ts:137-138`（`hostScriptPath` 断言）+ `:141-177`（`resolveHostLink` 用例）+ `:329-330`（假 launcher 夹具）。**`package.json` 与 `src-main/main.ts` 不在改动范围内**（R-21：不改 `main` 字段、不加转发入口）。
-- [ ] **步骤 1：先改测试**（只动 `src-main/ql-elevated.test.ts` 与 `src-main/ipc-ql.test.ts` 的接缝）：
-  - 删 `resolveHostLink` 那条用例（`:141-177`，机制退场）。
-  - 新增 `host_exe_is_the_app_executable`：`createHostLauncher(假 shell).hostExePath()` 恒等 `process.execPath`（dev / 打包同一条式子，**没有** `process.defaultApp` 分支）。
-  - 新增 `start_host_passes_the_app_exe_and_script_to_launch`：`startHost(假管道, createHostLauncher(假 shell))` 交出的 `exe` 逐字 = `process.execPath`、`script` 逐字 = `path.join(__dirname, 'ql-pty-host.js')`，`parameters` 逐字 = `'"' + <宿主脚本绝对路径> + '" "' + pipe + '" "' + token + '"'`、`nShow = SW_HIDE`、`verb='runas'`；再走一遍注入接缝（`{execPath}`）确认交出去的就是注入的那个 exe。（参数串本身仍由既有用例 `launch_passes_runas_and_three_quoted_arguments` 守，不写重复的第三条。）
-  - 改写 `launch_failures_close_both_handles` 的场景 2（`:191-203`）：旧断言「路径解析抛 `hostlink=ENOENT`、不去起进程」随机制退场，改成「`hostExePath()` 走 `paths.execPath` 接缝、路径不存在也**不抛**、交出去的就是注入的那个 exe」。`startHost` 只剩 `pipe` / `launch` 两个 stage 由 C7 的 `git grep hostlink` 零命中 + 既有场景 1 守。
-  - 假夹具 `hostLauncherStub` 换成 `{ hostExePath, hostScriptPath, launch(exe, script, pipe, token), isAlive, exitCodeOf }`；五条 `not.toContain('node.exe')` 改钉 `not.toContain('lms_launcher.exe')`（宿主就是应用自己的 exe）。
-- [ ] **步骤 2：跑红**：`npx vitest run src-main/ql-elevated.test.ts src-main/ipc-ql.test.ts`。
+- [ ] **步骤 0：起点核对**（起点 = **当前工作区**，第二轮的 6 个文件改动保留、未提交）：`git status --porcelain` 应只有 `build.bat`、`src-main/ql-elevated.ts`、`src-main/ql-elevated.test.ts`、`src-main/ipc-ql.test.ts`、`src-main/main.ts`、`src-main/ql-pty-host.ts`；`package.json` 的 `"main": "dist-main/main.js"` 仍在（它被 `npx asar extract-file` 误覆盖过两次，K66）；`ql-pty-host.ts` 的 `main()` 已导出（K58）且 `require.main === module` 块在 `:209`。
+- [ ] **步骤 1：先改测试**：
+  - 新增 `src-main/boot.test.ts`（**3 条**）：① argv 含 `--ql-host` → 只加载宿主入口、**不加载** `./main.js`；② argv 不含 → 只加载 `./main.js`、不碰宿主；③ 宿主分支把 `--ql-host` 之后的两个参数原样交给宿主（不自己解析、不重排）。用假的 `require` / 模块注册表做接缝，不真起 Electron。
+  - `src-main/ql-pty-host.test.ts` 加 **2 条**：① `runHost` 从 `process.argv` 里取 `--ql-host` **之后**的两个参数（前面还有 `electron.exe`、`boot.js`、别的开关也不错位）；② 缺参数（只有 `--ql-host` 没有管道名）→ 走 `stage=pipe` 的失败路径、退出码 3，不抛未捕获异常。
+  - `src-main/ql-elevated.test.ts`：把 `launch_passes_runas_and_three_quoted_arguments` 与 `start_host_passes_the_app_exe_and_script_to_launch` 里钉的 `parameters` 改成逐字 `'--ql-host "<管道名>" "<token>"'`（**条数不变**，只改断言的字符串）。
+- [ ] **步骤 2：跑红**：`npx vitest run src-main/boot.test.ts src-main/ql-pty-host.test.ts src-main/ql-elevated.test.ts`。
 - [ ] **步骤 3：实现**：
-  - `ql-elevated.ts`：删 `resolveHostLink` / `HOST_EXE_NAME` / `errnoOf` / `HostPaths.hostDir`（`HostPaths` 本身与 `HOST_SCRIPT_NAME` **保留**，它们正是新机制的取值点，C3/C6）；`HostLauncher` = `{ hostExePath(): string; hostScriptPath(): string; launch(exe, script, pipeName, token), isAlive, exitCodeOf }`；`hostExePath()` **恒 `process.execPath`**；`hostScriptPath()` 沿用任务 4 的 `path.join(__dirname, 'ql-pty-host.js')`；`launch` 里 `shellExecute(exe, SW_HIDE, { verb: 'runas', parameters })`，`parameters` 按上面那条逐字拼；`startHost` 去掉路径解析那一步（stage 只剩 `pipe` / `launch`，抛前 `pipe.close(pipeHandle)`）。
-  - `ql-host-protocol.ts` / `quick-launch.ts` / `package.json`：**一字不改**；`ql-pty-host.ts` / `main.ts` 只允许 check 表 C7 ② 那 4 处**注释**编辑（R-22 / K63：那些注释对新机制为假；条件 = 不碰代码 token、行数不变）。
-  - **不新建** `boot.ts` / `ql-host-boot.ts`。
-  - `build.bat`：删掉 R-16 的硬链接块（`:108` 空行 + `:109-128`），恢复 `echo.` 在前；文件回到 111 行、纯 ASCII、全 CRLF。
-- [ ] **步骤 4：跑绿 + G5 + 全量**（`npm test` 只增不减：删 1 条、加 2 条 → 预期 51 文件 / **896** 用例。原写「加 3 条 / 897」是算术错，与 check 表 D1 不自洽，见索引 K63）。**本地无 UAC 门由主代理跑**（步骤 5），子代理不打包。
-- [ ] **步骤 5：本地无 UAC 门（主代理）**：`cmd /c build.bat` → 核对 `app.asar\dist-main\ql-pty-host.js` 在包里、**包内无 `node.exe`**、`package.json` 的 `main` 仍是 `dist-main/main.js`；`lms_launcher.exe "<…app.asar\dist-main\ql-pty-host.js>" "\\.\pipe\x" tok` → 无窗口（**D6′：dev 布局同一条式子也要跑**：`node_modules\electron\dist\electron.exe <仓库绝对路径>\dist-main\ql-pty-host.js "\\.\pipe\x" tok`，同样无窗口 / 退出码 3 —— 补掉「dev 态没有门」，K63）、退出码 **3**；接真实管道 → 活着等 `HELLO`。脚本已在 `.temp/ql-admin-probe/`（`d6-variants4.ps1` / `real-pipe-run2.ps1` / `verify-pack.ps1`），直接复用。
-- [ ] **步骤 6：Commit（主代理）**：`fix: 提权宿主改用应用 exe 的应用入口参数启动（R-21，硬链接与命令行开关机制退场）`
+  - 新增 `src-main/boot.ts`：读 `process.argv`，含 `--ql-host` → `require('./ql-pty-host.js')` 的 `main()`；否则 `require('./main.js')`。**必须在取单实例锁之前分流**（不加载 `main.ts` 就不会撞锁，P15）。
+  - `package.json`：`"main"` 改为 `"dist-main/boot.js"`（**本轮唯一允许改的 `package.json` 字段**，其余字段一字不动）。
+  - `ql-pty-host.ts`：`runHost` 的 argv 解析改成「取 `--ql-host` 之后的两个参数」；`require.main === module` 的自动入口保留。
+  - `ql-elevated.ts`：只改 `launch()` 里 `parameters` 的拼法（`'--ql-host "' + pipe + '" "' + token + '"'`）；`hostExePath()` / `hostScriptPath()` / 硬链接退场后的形状**保持第二轮的样子**。
+  - `main.ts` / `quick-launch.ts` / `shell-execute.ts` / 词典 / 渲染端 / `build.bat`：**不改**（`build.bat` 保留第二轮已删的状态）。
+- [ ] **步骤 4：跑绿 + 全量**：定向 → `npx vitest run src-main/quick-launch.test.ts src-main/ipc-ql.test.ts` → `npx tsc --noEmit -p tsconfig.main.json` → `npx vitest run src-main/i18n` → `npm test`。预期 **52 文件 / 896 + 5 = 901 用例**（新增 `boot.test.ts` 一个文件；条数以 D 段实测为准并同步本行与 check 表 A2/D5/G5）。
+- [ ] **步骤 5：真机门（主代理交付清单、用户执行）**：`cmd /c build.bat` → 核对 `app.asar\\dist-main\\boot.js` 与 `ql-pty-host.js` 都在包里、包内无 `node.exe`、`package.json` 的 `main` = `dist-main/boot.js`；再由用户按规格 §7.2 逐条回报（重点：[命令行] + [管理员权限] **出页签**、UAC 标题「LMS 启动器」、日志不出现宿主 exe 名）。
+- [ ] **步骤 6：Commit（主代理）**：`fix: 提权宿主由应用入口按 --ql-host 开关分流启动（R-23，入口参数机制退场）`
 
 ---
 
