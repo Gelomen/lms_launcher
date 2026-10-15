@@ -101,3 +101,7 @@
 - Task 8: 主代理自己取证 `.bool-switch` 三段样式与 `TemplateModal.vue:567-588` **字节一致**（子串查询 true）；`dict.ts` diff 只有两行；218px 与 BOX_H 不在任何 hunk 里
 - Task 8: 认可四条偏离（`dropdownOf()` 连带、第 6 条守 F4 的用例、三处注释改写、删 `width: auto` 回 C7 逐字）；查清并登记 **K54**（安装的是 Electron 28.3.3，`v18.18.2` 是 `ELECTRON_RUN_AS_NODE=1` 下的内置 Node 版本）；把「两态开关水平位置不同」加进任务 9 真机门 **E8**
 - Task 8: minor (deferred) —— 探针脚本留在 `.temp/ql-admin-probe/ql-t8-*`（gitignore 内）；任务 9 跑无头探针必须先显式处理 `ELECTRON_RUN_AS_NODE`（K54）
+- Task 9: 首版（子代理 6f5ee96c）的 `build.bat` 语义「已存在则跳过」被真实打包**证伪** → 主代理落裁决 **R-16 / 索引 K55**（复制件非硬链接、大小 176,813,568 ≠ 177,150,464），同一提交 `875019b` 改写规格 §6.11 + 本表 B1/D1
+- Task 9: 返工（子代理 012f9622，只改 build.bat，四场景 harness 真跑）+ 主代理重跑打包：`BUILD_EXIT=0`、`fsutil` 两个名字同 inode、大小同为 177,150,464、asar 含 `ql-pty-host.js`、unpacked 原生件全 True
+- Task 9: 主代理独立复测 build.bat = 纯 ASCII / 全 CRLF / 132 行 / 新块 echo 零右括号 / `git diff` 只有一个 hunk；认可「删掉重复的括号告诫 rem」的取舍（原文仍在 :91-92）
+- Task 9: E1-E8 保持真机门（用户执行），清单已逐字交付；D4 等回报
