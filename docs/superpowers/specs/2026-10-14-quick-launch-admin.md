@@ -187,7 +187,7 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 ### 6.11 打包与 `build.bat`
 
 - 依赖不变：`koffi` / `@lydell/node-pty` 已在 `electron-builder.yml:18-21` 的 `asarUnpack` 里；宿主脚本随 `dist-main/**` 进 asar（`:7`），P9 证明可执行。**不新增依赖、不新增 extraFile。**
-- `build.bat` 在 `:102`（`:pack_done`）之后、`:109` 的 Done 之前加一步：在 `win-unpacked` 目录内 `mklink /H "node.exe" "lms_launcher.exe"`，已存在则跳过；失败打警告不中断（运行时会自己补建，§8-K13）。
+- `build.bat` 在 `:102`（`:pack_done`）之后、`:109` 的 Done 之前加一步：在 `win-unpacked` 目录内 `mklink /H "node.exe" "lms_launcher.exe"`；**那里的 `node.exe` 一律先删再建**（裁决 **R-16**，2026-10-15 15:3x，索引 K55 —— 原写「已存在则跳过」，实测在每次全新构建里都空转：electron-builder 会把 `node_modules/electron/dist/node.exe` 复制进 `win-unpacked`，它既不是硬链接、大小也与被 electron-builder 改写过的 `lms_launcher.exe` 不同，于是 §7.2 前置核对「两个名字同 inode」必然不通过，产物里还白多一份 ~176MB 副本）；失败打警告不中断（运行时会自己补建，§8-K13）。删除只影响那一个名字，不动 `lms_launcher.exe` 的 inode。
 
 ## 7 验收
 
