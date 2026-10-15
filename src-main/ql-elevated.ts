@@ -9,7 +9,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import koffi from 'koffi';
 import { t } from './i18n';
-import { winShell, type WinShellApi } from './shell-execute';
+import type { TerminalId } from './quick-launch-config';
+import { HOST_FRAME, createFrameParser, encodeFrame, type HostFrameType } from './ql-host-protocol';
+import { ShellExecProcess, winShell, type WinShellApi } from './shell-execute';
 
 // ---- 取值逐字见规格 §6.5（取证 P10 / P12：不给 SD，提权客户端连不上）----
 const PIPE_SDDL = 'D:(A;;GA;;;WD)';        // 必须显式 SD：默认 DACL 下提权客户端连不上（P10/P12）
@@ -359,3 +361,328 @@ export function startHost(pipe: WinPipeApi, launcher: HostLauncher): HostStart {
   }
   return { ok: true, stage: null, win32Error: 0, pipeName, token, pipeHandle, hostHandle: r.handle };
 }
+
+// ============================================================================
+// 第二段（任务 6，§6.7 / §6.5 读侧 / §6.10 最后一行）：ElevatedPtyProcess ——
+// 把第一段的「建管道 + 起宿主」接缝（startHost）与任务 2 的帧拼成 ShellProcess 形状（quick-launch.ts:175-182 逐字）。
+// 边界（check B1 / F3 / C5③）：不改 ShellProcess 接口本身；宿主进程句柄的生命周期复用 ShellExecProcess
+//   （shell-execute.ts:129-190）的 100ms 轮询判退出，不另写一套。
+// 文案（check C5② / 索引 K35 / 裁决 R-07）：既有三键的映射只在 hostStartError 里，本段不得再写第二份。
+//   本段新增的只有 §6.10 最后一行的 err.ql.ptySpawn：按主代理裁决 R-11，{err} 取 'host=' + 宿主发的 stage
+//   （token / spawn / pipe，索引 K43）；握手自身的失败取 'handshake=' + 形状（connect / timeout / broken / exit），
+//   与 win32= / hostlink= / pipe=create 同一风格，零新词典键（G2）。{exe} 始终是 opts.logTarget（用户那一行的目标）。
+// 工厂 startElevatedHost 是可 await 的（索引 K45 / 裁决 R-12）：构造函数不能 async，所以「等 READY」与
+//   「抛出前关掉管道句柄与进程句柄」都放在工厂里；类的六个方法仍与 ShellProcess 逐字一致。
+// ============================================================================
+
+const POLL_READ_MS = 20;                  // §6.5：读侧轮询。不用阻塞 ReadFile：那会把主线程卡住（§9-R7）
+const HOST_HANDSHAKE_TIMEOUT_MS = 15000;  // §6.7：等 READY 的上限
+const CONNECT_POLL_MS = 50;               // §6.5：ConnectNamedPipe 用 50ms 轮询（P10 实测 61ms 连上）
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** 帧载荷按「对象或空对象」收：坏 JSON 不炸主进程（§6.5 的解析器只保证字节边界，不保证 JSON 合法） */
+function parseObject(payload: string): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(payload);
+    return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 提权宿主的 ShellProcess 形状（规格 §6.7）。构造即启动：建管道 + runas 起宿主（走第一段的 startHost）。
+ * 握手（等连接 → 发 HELLO → 等 READY）在 handshake() 里，由 startElevatedHost 工厂 await（索引 K45）。
+ */
+export class ElevatedPtyProcess {
+  private readonly pipe: WinPipeApi;
+  private readonly opts: { shell: TerminalId; cols: number; rows: number; cwd: string; logTarget: string };
+  private readonly token: string;
+  private readonly feed: (chunk: Buffer) => void;
+  private pipeHandle: unknown = null;
+  private hostHandle: unknown = null;
+  /** READY 之后才建：握手失败时没有轮询在跑，工厂才能安全地自己关进程句柄（不会留一个轮询已关句柄的定时器） */
+  private host: ShellExecProcess | null = null;
+  private readTimer: NodeJS.Timeout | null = null;
+  private handshakeTimer: NodeJS.Timeout | null = null;
+  private settleHandshake: ((err: Error | null) => void) | null = null;
+  private running = true;
+  private stopping = false;
+  private exitCode: number | null = null;
+  /** EXIT 帧里的 code：优先于句柄的 GetExitCodeProcess（审查重点 RF5 / 规格 §6.7） */
+  private exitFrameCode: number | null = null;
+  private exitCbs: Array<(code: number) => void> = [];
+  private dataCb: ((d: string) => void) | null = null;
+  /** READY 与首屏输出可能在同一次读里到达：onData 注册晚于帧到达时不丢首屏（quick-launch.ts:249-253 的注册顺序） */
+  private pendingData: string[] = [];
+
+  constructor(pipe: WinPipeApi, launcher: HostLauncher, opts: { shell: TerminalId; cols: number; rows: number; cwd: string; logTarget: string }) {
+    this.pipe = pipe;
+    this.opts = opts;
+    let started: HostStart;
+    try {
+      started = startHost(pipe, launcher); // 索引 K40 / C5①：起宿主只走这一条（建管道 + runas + 失败时关两个句柄）
+    } catch (e) {
+      // hostExePath() 抛的 'hostlink=…' 原样塞进 {err}（§6.10 第三行 / 裁决 R-07）；管道句柄 startHost 已关
+      throw new Error('PROC: ' + t('err.proc.spawnFail', { exe: opts.logTarget, err: messageOf(e) }));
+    }
+    if (!started.ok) {
+      // C5②：文案只在 hostStartError 里（索引 K35 / 裁决 R-07），这里不得再写第二份映射
+      if (started.stage === 'pipe') {
+        // 索引 K37 / 裁决 R-08：这条路径的 win32Error 固定 0，只报阶段（§6.10 第四行）
+        throw new Error('PROC: ' + t('err.proc.spawnFail', { exe: opts.logTarget, err: 'pipe=create' }));
+      }
+      throw hostStartError(started.win32Error, opts.logTarget);
+    }
+    this.pipeHandle = started.pipeHandle;
+    this.hostHandle = started.hostHandle;
+    this.token = started.token;
+    this.feed = createFrameParser((type: number, payload: string): void => this.onFrame(type, payload));
+  }
+
+  /**
+   * 内部（索引 K45 / 裁决 R-12）：等连接 → 发 HELLO → 等 READY（§6.7 握手的前三段）。
+   * 构造函数不能 async，所以这段等待由 startElevatedHost 工厂 await；失败在这里抛出，两个句柄由工厂关。
+   */
+  async handshake(): Promise<void> {
+    const deadline = Date.now() + HOST_HANDSHAKE_TIMEOUT_MS;
+    // §6.5：ConnectNamedPipe 50ms 轮询直到成功或超时（ERROR_PIPE_CONNECTED 535 由 winPipe.connect 判成成功，P10）
+    while (!this.pipe.connect(this.pipeHandle)) {
+      if (Date.now() >= deadline) throw this.handshakeError('handshake=connect');
+      await sleep(CONNECT_POLL_MS);
+    }
+    // §6.4-4 / §6.5 帧表：终端 id、尺寸、cwd 只在 HELLO 里传（argv 只带管道名与 token）
+    this.sendFrame(HOST_FRAME.HELLO, JSON.stringify({
+      token: this.token, shell: this.opts.shell, cols: this.opts.cols, rows: this.opts.rows, cwd: this.opts.cwd,
+    }));
+    const ready = new Promise<void>((resolve, reject) => {
+      this.settleHandshake = (err: Error | null): void => {
+        this.settleHandshake = null;
+        if (err) reject(err);
+        else resolve();
+      };
+    });
+    // 读侧：PeekNamedPipe 判可读字节数 → ReadFile 只读那些字节（§6.5 / §9-R7：不阻塞主线程）
+    this.readTimer = setInterval(() => this.pollRead(), POLL_READ_MS);
+    this.handshakeTimer = setTimeout(() => this.failHandshake('handshake=timeout'), Math.max(0, deadline - Date.now()));
+    await ready;
+  }
+
+  /**
+   * 内部（§6.7「抛出前关掉管道句柄与进程句柄」/ 审查重点 RF4）：握手失败后由工厂调用，此后实例不得再用。
+   * 此时没有 ShellExecProcess 在轮询（READY 之后才建），所以进程句柄由这里关，不会二次 CloseHandle。
+   * 关管道句柄会让宿主按 §6.6-8 自己走停止路径 → 既不留句柄泄漏，也不留孤儿宿主。
+   */
+  abortHandshake(): void {
+    this.clearReadTimer();
+    this.clearHandshakeTimer();
+    this.closePipe();
+    if (this.hostHandle !== null) {
+      winShell.close(this.hostHandle);
+      this.hostHandle = null;
+    }
+  }
+
+  // ---- ShellProcess 的六个方法（quick-launch.ts:175-182 逐字）----
+
+  write(data: string): void {
+    this.sendFrame(HOST_FRAME.WRITE, data);
+  }
+
+  resize(cols: number, rows: number): void {
+    this.sendFrame(HOST_FRAME.RESIZE, JSON.stringify({ cols, rows }));
+  }
+
+  onData(cb: (d: string) => void): void {
+    this.dataCb = cb;
+    if (this.pendingData.length) {
+      const buffered = this.pendingData.join('');
+      this.pendingData = [];
+      cb(buffered);
+    }
+  }
+
+  onExit(cb: (code: number) => void): void {
+    // 已退出则立即补发：注册晚于退出时不补发就永远等不到（quick-launch.ts:108-115 同口径）
+    if (!this.running) {
+      cb(this.exitCode ?? -1);
+      return;
+    }
+    this.exitCbs.push(cb);
+  }
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  /**
+   * 停止（规格 §6.7）：发 STOP → 等 EXIT / 宿主退出（上限 timeoutSecs）→ 仍活则委托 ShellExecProcess.stopGraceful，
+   * **委托时传剩余预算**（裁决 R-13 / 索引 K50）。幂等（quick-launch.ts:123 同口径）。
+   */
+  async stopGraceful(timeoutSecs: number): Promise<void> {
+    if (!this.running || this.stopping) return;
+    this.stopping = true;
+    const startedAt = Date.now();
+    // 索引 K44②：STOP 必须带数字 timeoutSecs —— 宿主对缺失/非数取「不给宽限期」，立即升级 taskkill
+    this.sendFrame(HOST_FRAME.STOP, JSON.stringify({ timeoutSecs }));
+    const deadline = startedAt + Math.max(0, timeoutSecs) * 1000;
+    while (this.running && Date.now() < deadline) await sleep(POLL_READ_MS);
+    // 索引 K44③ / 审查重点 RF6：宽限期内没等到 EXIT 就必须真的走到委托（taskkill 打宿主 → 失败则 TerminateProcess
+    // → 再等 1000ms 让退出落地）。宿主 taskkill 之后 exit 事件可能不落地（quick-launch.test.ts:103），
+    // 不委托就会留一个不退出、进程树却已死的宿主。
+    if (this.running && this.host) {
+      // 裁决 R-13 / 索引 K50（规格 §6.7 已改写）：交出去的是**剩余预算**，不是同一个 timeoutSecs。
+      // ShellExecProcess.stopGraceful（shell-execute.ts:178-190）自己还要等一个完整的 timeoutSecs 才
+      // TerminateProcess，再等 FORCE_EXIT_WAIT_MS = 1000ms；传同值 → 单实例上限 2×timeoutSecs + 1s，
+      // 而 stopAll 是逐个 await（quick-launch.ts:322-333）、main.ts:382 / :648 传 3 → N 个提权终端最坏 N×7s。
+      // 传剩余预算后总上限与非提权路径同形（timeoutSecs + 1s）。守它的用例：
+      // ql-elevated.test.ts 的 stopGraceful_delegates_after_the_EXIT_frame（check C8 / E6）。
+      const remainingSecs = Math.max(0, timeoutSecs - (Date.now() - startedAt) / 1000);
+      await this.host.stopGraceful(remainingSecs);
+    }
+    this.stopping = false;
+  }
+
+  // ---- 内部 ----
+
+  private onFrame(type: number, payload: string): void {
+    switch (type) {
+      case HOST_FRAME.READY: {
+        // 索引 K44①：READY 的 shellPid 实测是 0（ConPTY 的 innerPid 要等 agent 连上才赋值，quick-launch.ts:71-73）
+        // → 不用它做任何停止或判断，也不为它多写一条日志（§8-K10 / check F2）。
+        this.clearHandshakeTimer();
+        this.adoptHostHandle();
+        const settle = this.settleHandshake;
+        this.settleHandshake = null;
+        if (settle) settle(null);
+        break;
+      }
+      case HOST_FRAME.DATA: {
+        // 索引 K32：payload 是字符串，原样交出去（不转码、不重新拼字节）
+        if (this.dataCb) this.dataCb(payload);
+        else this.pendingData.push(payload);
+        break;
+      }
+      case HOST_FRAME.EXIT: {
+        const code = Number(parseObject(payload).code);
+        this.exitFrameCode = Number.isFinite(code) ? code : -1;
+        this.finish(this.exitFrameCode);
+        break;
+      }
+      case HOST_FRAME.ERR: {
+        // check C7 / 裁决 R-11：握手期的 ERR{stage} → err.ql.ptySpawn + 'host=' + stage（§6.10 最后一行）。
+        // 握手已完成后没有等待方可通知：宿主的 ERR 都在退出前发（§6.6-2/4/9），这里不复制第二套退出路径。
+        this.failHandshake('host=' + String(parseObject(payload).stage ?? 'unknown'));
+        break;
+      }
+      default:
+        break; // 主进程 → 宿主方向的帧不会出现在这条管道上；未知 type 已由任务 2 的解析器丢弃
+    }
+  }
+
+  /** READY 之后才把进程句柄交给 ShellExecProcess：100ms 轮询判退出（§6.7 / C5③，不另写一套） */
+  private adoptHostHandle(): void {
+    if (this.host !== null || this.hostHandle === null) return;
+    this.host = new ShellExecProcess(winShell, this.hostHandle, winShell.pidOf(this.hostHandle));
+    // 退出码优先取 EXIT 帧；宿主没发 EXIT 就死了（崩溃 / 被强杀）→ 回落 GetExitCodeProcess（审查重点 RF5 / 取证 P12）
+    this.host.onExit((code: number): void => this.finish(this.exitFrameCode ?? code));
+  }
+
+  private pollRead(): void {
+    if (!this.running || this.pipeHandle === null) return;
+    const available = this.pipe.available(this.pipeHandle);
+    // 索引 K39：-1 = PeekNamedPipe 失败 / 断管（ERROR_BROKEN_PIPE 109，§6.5）→ §6.7 的退出路径；
+    // 0 = 没有数据：不 read（check E8 / §9-R7 的门）
+    if (available < 0) {
+      this.onPipeGone();
+      return;
+    }
+    if (available > 0) this.feed(this.pipe.read(this.pipeHandle, available));
+  }
+
+  /** 断管：停止轮询。退出由 ShellExecProcess 的句柄轮询落地（C5③：不另写一套）；握手期则让工厂按 §6.10 抛出 */
+  private onPipeGone(): void {
+    this.clearReadTimer();
+    this.failHandshake('handshake=broken');
+  }
+
+  /** 退出落地：只一次。停轮询 + 关管道句柄（进程句柄由 ShellExecProcess 关，§6.4 / §9-R6） */
+  private finish(code: number): void {
+    if (!this.running) return;
+    this.running = false;
+    this.exitCode = code;
+    this.clearReadTimer();
+    this.clearHandshakeTimer();
+    this.failHandshake('handshake=exit'); // 没发 READY 就来的 EXIT：工厂按 §6.10 最后一行抛出
+    this.closePipe();
+    const cbs = this.exitCbs.slice();
+    this.exitCbs = [];
+    for (const cb of cbs) cb(code);
+  }
+
+  private sendFrame(type: HostFrameType, payload: string): void {
+    if (this.pipeHandle === null || !this.running) return; // 句柄已关 / 已退出：不再往关闭的句柄写
+    try {
+      this.pipe.write(this.pipeHandle, encodeFrame(type, payload));
+    } catch {
+      // 管道已断：没有可通知的一方。退出由读侧的断管路径或句柄轮询落地（§6.7）
+    }
+  }
+
+  private handshakeError(reason: string): Error {
+    // §6.10 最后一行：宿主起来了但握手失败（ERR 帧 / 管道断 / 超时）→ err.ql.ptySpawn；
+    // {exe} 仍是用户那一行的目标（check C7 / 裁决 R-11），不是宿主 exe
+    return new Error('PROC: ' + t('err.ql.ptySpawn', { exe: this.opts.logTarget, err: reason }));
+  }
+
+  private failHandshake(reason: string): void {
+    const settle = this.settleHandshake;
+    this.settleHandshake = null;
+    if (settle) settle(this.handshakeError(reason));
+  }
+
+  private clearReadTimer(): void {
+    if (this.readTimer) clearInterval(this.readTimer);
+    this.readTimer = null;
+  }
+
+  private clearHandshakeTimer(): void {
+    if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
+  }
+
+  private closePipe(): void {
+    if (this.pipeHandle === null) return;
+    this.pipe.close(this.pipeHandle);
+    this.pipeHandle = null;
+  }
+}
+
+/**
+ * 起一个提权 PTY 宿主，返回 ShellProcess 形状（规格 §6.7 / §6.8）。
+ * 可 await 的工厂（索引 K45 / 裁决 R-12）：plan 任务 7 步骤 4 逐字
+ * 「spawnElevatedShell: (shell, cols, rows, cwd) => startElevatedHost(...)」，规格 §6.8 把它定成
+ * Promise<ShellProcess>。构造函数不能 async，所以「等 READY」与「失败按 §6.10 抛出、抛出前关掉管道句柄与
+ * 进程句柄」都在这里；构造期（建管道 / 起宿主）的失败由 startHost 自己关句柄，见第一段 :341 起。
+ * 形参不越出 { shell, cols, rows, cwd, logTarget }。
+ */
+export async function startElevatedHost(
+  pipe: WinPipeApi,
+  launcher: HostLauncher,
+  opts: { shell: TerminalId; cols: number; rows: number; cwd: string; logTarget: string },
+): Promise<ElevatedPtyProcess> {
+  const proc = new ElevatedPtyProcess(pipe, launcher, opts);
+  try {
+    await proc.handshake();
+  } catch (err) {
+    proc.abortHandshake();
+    throw err;
+  }
+  return proc;
+}
+
