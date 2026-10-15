@@ -26,7 +26,9 @@ const TERMS: TerminalInfo[] = [
   { id: 'wsl', path: 'C:\\WINDOWS\\System32\\wsl.exe' },
 ];
 
-const SHELL_ENTRY: QuickLaunchEntry = { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' };
+// 任务 8（规格 §6.2）：夹具带 admin: false —— 弹窗的 payload 现在总是显式带这个字段（§8-K4「落盘总是显式写」），
+// :383 的 args 断言用 SHELL_ENTRY 逐字比对，所以夹具与 payload 必须同一取值。
+const SHELL_ENTRY: QuickLaunchEntry = { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false };
 
 interface MockOpts {
   /** 数组 = 直接返回；Promise = 探测中（E3 用它钉「加载中禁用」） */
@@ -87,9 +89,13 @@ const inputOf = (text: string): HTMLInputElement | null => {
   if (!c) return null;
   return (c.tagName === 'INPUT' ? c : c.querySelector('input')) as HTMLInputElement | null;
 };
+// 任务 8（规格 §6.2 / §8-K8）：「终端」那一行的控件格改成 .field-cell（内部 .row-cell 装下拉 + 开关），
+// 标签的相邻兄弟不再是 .dropdown 本身 → 控件格不是下拉时，退一步在控件格里取 .dropdown。
+// 语义不变：返回的仍是那个 .dropdown（trigger / 面板都在它的子树里），既有断言一字不改。
 const dropdownOf = (text: string): Element | null => {
   const c = controlOf(text);
-  return c && c.classList.contains('dropdown') ? c : null;
+  if (!c) return null;
+  return c.classList.contains('dropdown') ? c : c.querySelector('.dropdown');
 };
 const triggerOf = (text: string): Element | null => dropdownOf(text)?.querySelector('.select-trigger') ?? null;
 const triggerText = (text: string): string => (triggerOf(text)?.querySelector('.select-label')?.textContent ?? '').trim();
@@ -404,7 +410,8 @@ describe('QuickLaunchModal', () => {
 
     expect(sent).not.toBeNull();
     expect(sent!.id).toBeNull();
-    expect(sent!.entry).toEqual({ name: '新建项', type: 'shell', shell: 'cmd', cmd: 'ping -n 1 127.0.0.1' });
+    // 未开关 = admin: false（真布尔，不是 'false' / 缺字段：§8-K4 + 任务 7 的 e.admin === true 分流）
+    expect(sent!.entry).toEqual({ name: '新建项', type: 'shell', shell: 'cmd', cmd: 'ping -n 1 127.0.0.1', admin: false });
     expect(w.emitted('saved')).toEqual([[]]);
     w.unmount();
 
@@ -422,7 +429,7 @@ describe('QuickLaunchModal', () => {
     await flush();
     expect(sent).not.toBeNull();
     expect(sent!.id).toBeNull();
-    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: 'D:\\Tools\\notepad.exe' });
+    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: 'D:\\Tools\\notepad.exe', admin: false });
     w2.unmount();
   });
 
@@ -687,6 +694,14 @@ describe('QuickLaunchModal', () => {
     expect(labelByText(t('ql.modal.terminal'))).toBeNull(); // 表单确实已切到 exe 形态
     expect(style().minHeight, '切到可执行程序后定高值变了（弹窗又会变窄）').toBe('218px');
     expect(style().height).not.toMatch(/^\d/);
+
+    // 任务 8（规格 §6.2 / §8-K8 / E6）：可执行程序态也必须是 3 个控件格 —— 新增的「管理员」行
+    // 填掉原本 38px 的留白，两态行数一致，218px 的推导在两态同时成立。
+    // 计数器一字不改（只数网格直接子节点里的 .field-cell / .dropdown / .name-cell）：
+    // 开关所在的控件格用的就是 .field-cell，所以它天然被数到。
+    const exeCells = [...grid.children].filter((el) =>
+      el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
+    expect(exeCells.length, '可执行程序态的表单行数不是 3，218px 的推导要重算').toBe(3);
     w.unmount();
   });
 
@@ -705,6 +720,170 @@ describe('QuickLaunchModal', () => {
     expect(confirm).not.toBeNull();
     expect(confirm!.textContent).toContain(t('ql.modal.delete.message', { name: 'webui' }));
     expect(confirm!.textContent).not.toContain('webui   '); // 未 trim 的原文不出现
+    w.unmount();
+  });
+
+  // ---------- 任务 8（规格 §6.2 / §8-K5 / K7 / K8）：两态的「管理员」开关 ----------
+  // E1（§8-K5）：控件 = role="switch" + aria-checked 的切换开关（不是原生 checkbox），默认关。
+  it('admin_switch_defaults_off_and_is_a_role_switch', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const found = [...document.querySelectorAll('.modal-box .bool-switch')];
+    expect(found.length, '命令行态的开关不止一个').toBe(1);
+    const sw = found[0] as HTMLElement;
+    expect(sw.getAttribute('role'), '开关不是 role=switch（K5：不用原生 checkbox）').toBe('switch');
+    expect(sw.getAttribute('aria-checked'), '默认必须是关').toBe('false');
+    expect(sw.classList.contains('bool-switch--on'), '默认态却带上了开启类').toBe(false);
+    expect(sw.querySelector('.bool-switch__knob'), '开关没有旋钮（样式段没照抄全）').not.toBe(null);
+    // G6：标签与 aria-label 都走 t()，取值来自词典键 ql.modal.admin
+    expect(labelByText(t('ql.modal.admin')), '没有「管理员」标签').not.toBe(null);
+    expect(sw.getAttribute('aria-label')).toBe(t('ql.modal.admin'));
+    w.unmount();
+  });
+
+  // E2（用户澄清原话「[终端] 那一行分为两列，左列是 [终端] 和它的下拉，右边是 [管理员] 开关」/ §8-K8）：
+  // 同一行内下拉在前、开关在后，且**不新增网格行**（网格仍是 3 对「标签 + 控件格」）。
+  it('admin_switch_sits_in_the_right_segment_of_the_terminal_row', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    expect([...grid.children].filter((el) => el.tagName === 'LABEL').length, '命令行态的标签行数变了').toBe(3);
+    expect([...grid.children].some((el) => el.classList.contains('switch-cell')), '开关自己成了网格的一行').toBe(false);
+
+    const cell = controlOf(t('ql.modal.terminal')) as HTMLElement;
+    expect(cell, '终端标签没有相邻控件格').not.toBe(null);
+    expect(cell.classList.contains('field-cell'), '终端那一行的控件格不是 .field-cell').toBe(true);
+    const row = cell.querySelector('.row-cell') as HTMLElement;
+    expect(row, '终端那一行没有 .row-cell 行容器').not.toBe(null);
+    expect(row.parentElement, '.row-cell 不在控件格内部').toBe(cell);
+
+    const dd = row.querySelector('.dropdown') as HTMLElement;
+    const sw = row.querySelector('.switch-cell') as HTMLElement;
+    expect(dd, '终端下拉不在这一行的行容器里').not.toBe(null);
+    expect(sw, '开关不在这一行的行容器里').not.toBe(null);
+    const kids = [...row.children];
+    expect(kids.indexOf(sw), '开关不在下拉之后（= 视觉右侧）').toBeGreaterThan(kids.indexOf(dd));
+    expect(kids.indexOf(sw), '开关不是这一行的最后一段').toBe(kids.length - 1);
+    // 命令那一格不带开关：开关属于终端行，不属于命令行
+    expect((controlOf(t('ql.modal.cmd')) as HTMLElement).querySelector('.switch-cell')).toBe(null);
+    w.unmount();
+  });
+
+  // E3（用户原话「[程序路径] 上方添加 [管理员权限] checkbox」）：exe 态的开关行在「程序路径」那一行之前。
+  it('admin_switch_row_is_above_the_program_path_row_in_exe_type', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
+
+    const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    const kids = [...grid.children];
+    const adminLabel = labelByText(t('ql.modal.admin')) as HTMLElement;
+    const exeLabel = labelByText(t('ql.modal.exe')) as HTMLElement;
+    expect(adminLabel, '可执行程序态没有「管理员」标签').not.toBe(null);
+    expect(kids.indexOf(adminLabel), '「管理员」不是网格的一行（不是标签直接子节点）').toBeGreaterThanOrEqual(0);
+    expect(kids.indexOf(adminLabel), '「管理员」行不在「程序路径」行之前').toBeLessThan(kids.indexOf(exeLabel));
+
+    const cell = adminLabel.nextElementSibling as HTMLElement;
+    expect(cell.classList.contains('field-cell'), '「管理员」的控件格不是 .field-cell').toBe(true);
+    const row = cell.querySelector('.row-cell') as HTMLElement;
+    expect(row, '「管理员」行没有 .row-cell 行容器').not.toBe(null);
+    const sw = row.querySelector('.switch-cell .bool-switch') as HTMLElement;
+    expect(sw, '「管理员」行里没有开关').not.toBe(null);
+    expect(sw.getAttribute('role')).toBe('switch');
+    expect(sw.getAttribute('aria-checked'), 'exe 态的开关默认不是关').toBe('false');
+    // 「程序路径」那一格不带开关（开关只在它上面那一行），且整个弹窗只有一个开关
+    expect((controlOf(t('ql.modal.exe')) as HTMLElement).querySelector('.switch-cell')).toBe(null);
+    expect(document.querySelectorAll('.modal-box .bool-switch').length, '两态的开关同时存在').toBe(1);
+    w.unmount();
+  });
+
+  // E4（规格 §4-1）：编辑态按条目的 admin: true 回填（两态都回填）；缺字段 = 关。
+  it('edit_mode_reflects_admin_true_from_the_entry', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, admin: true } });
+    await flush();
+    let sw = document.querySelector('.modal-box .bool-switch') as HTMLElement;
+    expect(sw.getAttribute('aria-checked'), '命令行态没按条目的 admin:true 回填').toBe('true');
+    expect(sw.classList.contains('bool-switch--on'), '回填 true 却没有开启态样式').toBe(true);
+    w.unmount();
+
+    const w2 = mountModal({ open: true, id: 'qlb2c3d4e5', entry: { name: '记事本', type: 'exe', exe: 'D:\\Tools\\notepad.exe', admin: true } });
+    await flush();
+    sw = document.querySelector('.modal-box .bool-switch') as HTMLElement;
+    expect(sw.getAttribute('aria-checked'), '可执行程序态没按条目的 admin:true 回填').toBe('true');
+    w2.unmount();
+
+    // 缺字段（旧配置 / 旧夹具）= 关：与主进程 normalizeEntry「只有字面量 true 算真」同一口径
+    const w3 = mountModal({ open: true, id: 'qlc3d4e5f6', entry: { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' } });
+    await flush();
+    sw = document.querySelector('.modal-box .bool-switch') as HTMLElement;
+    expect(sw.getAttribute('aria-checked'), '条目没有 admin 字段时开关不是关').toBe('false');
+    w3.unmount();
+  });
+
+  // E5（规格 §4-1 / 任务 1 C4）：开关打开后保存，payload 带**真布尔** admin: true（两态都带）。
+  // 交 'true' / 1 就是缺陷：主进程按 e.admin === true 分流（任务 7 的 admin_falsy_uses_the_plain_local_pty），
+  // 配置层把非布尔规整成 false（任务 1 的 normalizeEntry）。
+  it('save_payload_carries_admin_true_when_toggled', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlnew0001'); } });
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await setInput(inputOf(t('ql.modal.name'))!, '提权项');
+    await setInput(inputOf(t('ql.modal.cmd'))!, 'ping -n 1 127.0.0.1');
+    (document.querySelector('.modal-box .bool-switch') as HTMLButtonElement).click();
+    await flush();
+    const sw = document.querySelector('.modal-box .bool-switch') as HTMLElement;
+    expect(sw.getAttribute('aria-checked'), '点一下之后开关没开').toBe('true');
+    expect(sw.classList.contains('bool-switch--on'), '点一下之后没有开启态样式').toBe(true);
+    saveBtn().click();
+    await flush();
+    expect(sent).not.toBeNull();
+    expect(typeof sent!.entry.admin, 'payload 的 admin 不是真布尔').toBe('boolean');
+    expect(sent!.entry.admin).toBe(true);
+    expect(sent!.entry).toEqual({ name: '提权项', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1', admin: true });
+    w.unmount();
+
+    // 可执行程序态：同一个 formAdmin，payload 同样带 admin: true
+    sent = null;
+    mockLms({ pick: 'D:\\Tools\\notepad.exe', save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlnew0002'); } });
+    const w2 = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
+    await setInput(inputOf(t('ql.modal.name'))!, '记事本');
+    (controlOf(t('ql.modal.exe'))!.querySelector('button') as HTMLButtonElement).click();
+    await flush();
+    (document.querySelector('.modal-box .bool-switch') as HTMLButtonElement).click();
+    await flush();
+    saveBtn().click();
+    await flush();
+    expect(sent!.entry.admin).toBe(true);
+    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: 'D:\\Tools\\notepad.exe', admin: true });
+    w2.unmount();
+  });
+
+  // F4 / 索引 K6 / 规格 §5（非目标）：卡片列表行**不加**提权标记 —— 开关只在弹窗里。
+  it('card_list_row_shows_no_admin_marker', async () => {
+    const store: QuickLaunchList = { items: { a: { ...SHELL_ENTRY, admin: true } }, invalid: [] };
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]): Promise<unknown> => {
+        if (cmd === 'ql_list') return Promise.resolve(JSON.parse(JSON.stringify(store)));
+        return Promise.resolve(null);
+      },
+    };
+    const w = mount(QuickLaunch, { attachTo: document.body, props: { states: {} } });
+    await flush();
+    const rows = w.findAll('.tpl-row');
+    expect(rows.length, '卡片没有渲染出列表行').toBe(1);
+    const html = rows[0].element.outerHTML;
+    expect(html, '列表行里出现了开关').not.toContain('bool-switch');
+    expect(html, '列表行里出现了「管理员」标记').not.toContain(t('ql.modal.admin'));
+    expect(rows[0].text(), '列表行文本里出现了「管理员」').not.toContain(t('ql.modal.admin'));
     w.unmount();
   });
 });

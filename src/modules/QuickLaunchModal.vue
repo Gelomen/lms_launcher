@@ -62,6 +62,9 @@ const formType = ref<QuickLaunchKind>('shell');   // 默认「命令行」（E1�
 const formShell = ref('');
 const formCmd = ref('');
 const formExe = ref('');
+// 任务 8（规格 §6.2 / §4-1）：「管理员」= 条目上的 admin 字段（§6.1，可选布尔）。
+// 只有字面量 true 算真（与主进程 normalizeEntry 同一口径），所以回填写 === true 而不是 ?? false。
+const formAdmin = ref(false);
 const terminals = ref<TerminalInfo[]>([]);
 const terminalsLoading = ref(false);
 const saveError = ref<string | null>(null);
@@ -113,6 +116,7 @@ function fill(): void {
   formShell.value = e?.shell ?? '';
   formCmd.value = e?.cmd ?? '';
   formExe.value = e?.exe ?? '';
+  formAdmin.value = e?.admin === true;
   terminals.value = [];
 }
 
@@ -153,9 +157,11 @@ async function save(): Promise<void> {
   // 三条渲染端即时校验（名字 / 命令 / 路径）先拦下：报错已在各自输入框下方显示，不必再走 IPC
   if (nameError.value !== null || cmdError.value !== null || exeError.value !== null) return;
   const name = formName.value.trim();
+  // admin 交**真布尔**（不是 'true' / 1）：主进程按 e.admin === true 分流（任务 7），
+  // 配置层把非布尔规整成 false（任务 1 / §8-K4「落盘总是显式写」）——两态都带这个字段。
   const entry: QuickLaunchEntry = formType.value === 'exe'
-    ? { name, type: 'exe', exe: formExe.value.trim() }
-    : { name, type: 'shell', shell: formShell.value as TerminalId, cmd: formCmd.value.trim() };
+    ? { name, type: 'exe', exe: formExe.value.trim(), admin: formAdmin.value }
+    : { name, type: 'shell', shell: formShell.value as TerminalId, cmd: formCmd.value.trim(), admin: formAdmin.value };
   saving.value = true;
   try {
     await invoke('ql_save', props.id, entry);
@@ -228,11 +234,29 @@ function close(): void { emit('close'); }
             <!-- 命令行：终端下拉（加载中禁用 + 占位文案，E3）+ 命令输入框 -->
             <template v-if="formType === 'shell'">
               <label class="label flag-label">{{ t('ql.modal.terminal') }}</label>
-              <div class="dropdown">
-                <Dropdown :value="formShell" :options="terminalOptions"
-                  :disabled="terminalsLoading"
-                  :placeholder="terminalsLoading ? t('ql.modal.terminal.loading') : ''"
-                  @update:value="onShellChange" />
+              <!-- 任务 8（规格 §6.2 / §8-K8；用户澄清原话「[终端] 那一行分为两列，左列是 [终端] 和它的下拉，
+                   右边是 [管理员] 开关」）：这一行**不新增网格行** —— 控件格仍用被测试计数器认识的 .field-cell，
+                   内部 .row-cell 两段：终端下拉（.term-field 吃掉行内余下宽度）在前、「管理员」+ 开关在后。
+                   两态因此都是 3 行控件，218px 的定高推导不变（见上方注释与 test.ts 的 controlCells 门）。 -->
+              <div class="field-cell">
+                <div class="row-cell">
+                  <div class="dropdown term-field">
+                    <Dropdown :value="formShell" :options="terminalOptions"
+                      :disabled="terminalsLoading"
+                      :placeholder="terminalsLoading ? t('ql.modal.terminal.loading') : ''"
+                      @update:value="onShellChange" />
+                  </div>
+                  <label class="label admin-label">{{ t('ql.modal.admin') }}</label>
+                  <div class="switch-cell">
+                    <button type="button" role="switch" class="bool-switch"
+                            :class="{ 'bool-switch--on': formAdmin }"
+                            :aria-checked="formAdmin ? 'true' : 'false'"
+                            :aria-label="t('ql.modal.admin')"
+                            @click="formAdmin = !formAdmin">
+                      <span class="bool-switch__knob"></span>
+                    </button>
+                  </div>
+                </div>
               </div>
               <label class="label flag-label cmd-label">{{ t('ql.modal.cmd') }}</label>
               <!-- 命令为空的报错在命令那一格内（.field-cell，与 .name-cell 同一手法），不进弹窗顶部错误区 -->
@@ -246,6 +270,23 @@ function close(): void { emit('close'); }
 
             <!-- 可执行程序：路径 + 选择按钮（规格 §2 非目标：不加启动参数 / 工作目录） -->
             <template v-else>
+              <!-- 任务 8（规格 §6.2；用户原话「[程序路径] 上方添加 [管理员权限] checkbox」）：
+                   新增一行「管理员」，位置在「程序路径」那一行**之前**。行数 2 → 3 = 与命令行态同一个行数，
+                   218px 的定高在两态同时成立（可执行程序态原本 38px 的留白被这一行填掉）。 -->
+              <label class="label flag-label admin-label">{{ t('ql.modal.admin') }}</label>
+              <div class="field-cell">
+                <div class="row-cell">
+                  <div class="switch-cell">
+                    <button type="button" role="switch" class="bool-switch"
+                            :class="{ 'bool-switch--on': formAdmin }"
+                            :aria-checked="formAdmin ? 'true' : 'false'"
+                            :aria-label="t('ql.modal.admin')"
+                            @click="formAdmin = !formAdmin">
+                      <span class="bool-switch__knob"></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
               <label class="label flag-label exe-label">{{ t('ql.modal.exe') }}</label>
               <!-- 路径为空的报错在路径那一格内（同上），选择按钮仍在输入行右侧 -->
               <div class="field-cell">
@@ -287,7 +328,8 @@ function close(): void { emit('close'); }
 
 <style scoped>
 /* 外壳样式照抄 TemplateModal.vue:477-643 的本弹窗所需子集（.modal-overlay 是全局样式，style.css:47，不改它）。
-   本弹窗没有 VRAM 指示 / 开关行 / flag tooltip，故不带那几段。 */
+   本弹窗没有 VRAM 指示 / flag tooltip，故不带那几段；「开关行」是 2026-10-15 任务 8 才加的
+   （.bool-switch 三段从 TemplateModal.vue:567-588 逐字复制，见本文件末尾，§8-K15）。 */
 /* 弹窗高度固定（2026-10-13 用户反馈 + 截图：[类型] 切到「可执行程序」时弹窗变窄）：
    定高以「命令行」态为准 = 218px。取值来自无头 Chromium 实测（真实 style.css + 本组件 scoped 样式 +
    两态静态复刻）：命令行态 .modal-box = 218 / 可执行程序态 = 180，差 38 = 一行控件 32 + 一个行距 6。构成：
@@ -295,12 +337,13 @@ function close(): void { emit('close'); }
    + .modal-head 32
    + .modal-body：padding 16×2 + .flag-grid margin-top 12 + 3 行 × var(--h-control)32 + 2 行距 × 6 = 152
    + .modal-actions 32
-   = 218。可执行程序态因此表单下方留白 38px，切换类型不再长高/变窄。
+   = 218。2026-10-15 任务 8（规格 §6.2 / §8-K8）在可执行程序态的「程序路径」上方加了一行「管理员」，
+   两态都是 3 行控件：原本那 38px 留白被这一行填掉，218 这个数与 min-height 一字未改。
    用 min-height 而不是 height（用户 2026-10-13 决定）：保存失败的主进程文案 / 名字·命令·路径「不能为空」
    的字段级提示出现时，弹窗自然长高（实测报错态 236px，正文区 bodyScroll == bodyClient = 不出滚动条、
    内容不被裁），不把命令输入框顶掉。
    行数变了这个数就要重算——QuickLaunchModal.test.ts 的 modal_height_is_fixed_to_the_shell_form_height_in_both_types
-   钉着「命令行态 3 行控件」与「两态同一个定高值」。 */
+   钉着「两态各 3 行控件」（两态各数一遍 controlCells）与「两态同一个定高值」。 */
 .modal-box {
   width: 90%;
   max-width: 520px;
@@ -439,4 +482,41 @@ function close(): void { emit('close'); }
   color: var(--muted);
   cursor: not-allowed;
 }
+/* 「管理员」切换开关（任务 8 / 规格 §6.2 / §8-K5）：markup 照抄 TemplateModal.vue:398-406，
+   下面三段样式从 TemplateModal.vue:567-588 **逐字复制**（§8-K15：不提到 src/style.css，免得把改动半径
+   扩到 TemplateModal 与它的样式断言；这份重复登记为已接受的技术债）。配色 / 尺寸 / 焦点环一字未改：
+   与 [保存] / [启动] / VRAM 同一主操作色语言（开 = --primary，关 = --switch-off 浅灰轨道）。 */
+.switch-cell { display: flex; align-items: center; }
+.bool-switch {
+  --sw-w: 44px; --sw-h: 24px; --sw-knob: 20px; --sw-inset: 2px;
+  position: relative; flex: none;
+  width: var(--sw-w); height: var(--sw-h);
+  padding: 0; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--switch-off); cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.bool-switch__knob {
+  position: absolute; top: 50%; left: var(--sw-inset);
+  width: var(--sw-knob); height: var(--sw-knob);
+  transform: translateY(-50%);
+  border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  transition: left .15s ease;
+}
+.bool-switch--on { background: var(--primary); border-color: var(--primary); }
+.bool-switch--on:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+/* 100% = 按钮内边距盒宽（不含 1px 边框）→ 与关闭态左右内缩对称 */
+.bool-switch--on .bool-switch__knob { left: calc(100% - var(--sw-knob) - var(--sw-inset)); }
+.bool-switch:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+/* 终端行分两列（§8-K8）：.term-field = 吃掉行内余下宽度的终端下拉（min-width:0 让它能让位）。
+   取证 .temp/ql-admin-probe/ql-t8-measure.html（无头 Chromium，2026-10-15，520px 弹窗）：
+   终端下拉 452.7px → 356.7px（仍 ≥300），最长标签 Command Prompt (cmd) 不截断，
+   「管理员」标签 36px / 开关格 44px 都不被挤窄 —— 不需要 style.css:316 .dropdown--stretch 那条
+   width:auto：flex-basis:auto 虽然取到 style.css:311 的 width:100% 作基准，但收缩只分摊给能收缩的项，
+   开关格与标签的自动最小尺寸（min-content 44px / nowrap 36px）把它们钉住，全部收缩由下拉吸收
+   （复刻对照：加 width:auto 与不加，实测数字一字不差）。 */
+.row-cell .term-field { flex: 1 1 auto; min-width: 0; }
+/* 「管理员」标签不参与收缩（3 个字必须整行显示）。exe 态那一行的同名标签是网格项，
+   flex 属性对网格项无效 → 同一类名在两态共用不产生副作用（white-space:nowrap 与 .flag-label 一致）。 */
+.admin-label { flex: none; white-space: nowrap; }
 </style>
