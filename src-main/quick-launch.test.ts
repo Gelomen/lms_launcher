@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { homedir } from 'node:os';
 import { PtyProcess, QuickLaunchManager, shellExe, type QlDeps } from './quick-launch';
 import type { QuickLaunchEntry } from './quick-launch-config';
+import { t } from './i18n'; // 任务 7 C5（2026-10-14-quick-launch-admin）：错误文案的断言按译文写（照 ipc-ql.test.ts:15 的做法）
 
 // E11：观察 stopGraceful 是否按「终止 → 超时 → taskkill /T /F」的顺序调用外部命令。
 // quick-launch.ts 里 node:child_process 只用于 taskkill；node-pty 自身不 require 它
@@ -146,6 +147,14 @@ function makeDeps() {
   const sysLines: Array<{ configId: string; line: string }> = [];
   const exeHandles: FakeExe[] = [];
   const exeRequests: string[] = [];
+  // 任务 7（2026-10-14-quick-launch-admin §6.8）：提权宿主的**假**接缝。
+  // 单测不真起提权进程、也不真建管道（真工厂 startElevatedHost 由 src-main/ql-elevated.test.ts 守，索引 K45）：
+  // 这里只交一个假的 ShellProcess 形状（quick-launch.ts:175-182），于是「提权 / 非提权在 start() 之后同形」
+  // 全部落在可观察后果上。QlDeps 的新成员是**必填**（F1：不静默降级）—— 缺这一条，夹具连 QlDeps 都赋不了值。
+  const elevatedHandles: FakeShell[] = [];
+  const elevatedRequests: Array<{ shell: string; cols: number; rows: number; cwd: string }> = [];
+  /** 置位后提权启动抛这个错（E3 / C5 的两条文案路径） */
+  const elevatedCtl: { fail: unknown } = { fail: null };
   // 事件时间线：E4 用它断言「deps.onData 先于 pty.write」（审查重点 R1）
   const timeline: string[] = [];
   const deps: QlDeps = {
@@ -160,8 +169,17 @@ function makeDeps() {
       exeHandles.push(h);
       return h;
     },
+    spawnElevatedShell: async (shell, cols, rows, cwd) => {
+      if (elevatedCtl.fail !== null) throw elevatedCtl.fail;
+      // 不往 timeline 里记：那条时间线的判据是「deps.onData 先于 pty.write」（E4 / RF1），
+      // 提权接缝被走到由 elevatedRequests / elevatedHandles 自己钉。
+      elevatedRequests.push({ shell, cols, rows, cwd });
+      const f = new FakeShell(timeline);
+      elevatedHandles.push(f);
+      return f;
+    },
   };
-  return { deps, data, exits, sysLines, exeHandles, exeRequests, timeline };
+  return { deps, data, exits, sysLines, exeHandles, exeRequests, elevatedHandles, elevatedRequests, elevatedCtl, timeline };
 }
 
 const SHELL_ENTRY: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd', cmd: 'echo HI' };
@@ -559,6 +577,138 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
     expect(m.shells[0].resizeArgs).toEqual([[120, 30]]);
     expect(() => m.write('nope', 'x')).toThrow(/^STATE:/);
     expect(() => m.resize('nope', 1, 1)).toThrow(/^STATE:/);
+  });
+});
+
+// ── 任务 7（2026-10-14-quick-launch-admin §6.8 / §6.10）：admin 分流到提权宿主 ──
+// 观察点 = QlDeps.spawnElevatedShell（**假**宿主接缝；真工厂 startElevatedHost 由 src-main/ql-elevated.test.ts 守，索引 K45）。
+// 判据全部落在可观察后果上：走哪条接缝、自动命令的先后、失败是否残留、停止是否与非提权同一条路。
+describe('提权分支（admin:true → 提权宿主；规格 §6.8 / 表 E1-E6 / C5）', () => {
+  // 不带 cmd：不建 5s 兜底计时器（只有 E4 那条需要自动命令）
+  const ADMIN_ENTRY: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd', admin: true };
+  const ADMIN_ENTRY_CMD: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true };
+
+  // E1（表 E1 / 规格 §6.8）：admin === true → 提权宿主；本地 pty 一次都不被起
+  it('admin_true_starts_through_the_elevated_host', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    expect(await m.start('c1', ADMIN_ENTRY)).toEqual({ tabId: 'ql:c1' });
+    // createElevatedShellProcess 的唯一出口就是 deps.spawnElevatedShell —— 它被走到，且拿到本次的参数
+    expect(ctx.elevatedRequests).toEqual([{ shell: 'cmd', cols: 80, rows: 24, cwd: homedir() }]);
+    // 本地路径一次都没走：createShellProcess 没造过任何进程 = pty.spawn 没被调用
+    expect(m.shells).toEqual([]);
+    expect(m.states()).toEqual({ c1: { running: true, stopping: false } });
+  });
+
+  // E2（表 E2 / 规格 §4-4 / RF2）：admin 为假走本地 PTY —— 含缺省与「truthy 但不是 true」（表 C3：分流条件是 === true）
+  it('admin_falsy_uses_the_plain_local_pty', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    const falsy: Array<[string, unknown]> = [['off', false], ['absent', undefined], ['truthy-not-true', 'yes']];
+    for (const [id, admin] of falsy) {
+      expect(await m.start('c-' + id, { ...ADMIN_ENTRY, admin } as QuickLaunchEntry)).toEqual({ tabId: 'ql:c-' + id });
+    }
+    expect(m.shells.length).toBe(3);
+    expect(ctx.elevatedRequests).toEqual([]);
+  });
+
+  // E3（表 E3 / quick-launch.ts:242-245 的「失败不残留」在提权路径同样成立）
+  it('admin_true_failure_leaves_no_instance', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    ctx.elevatedCtl.fail = new Error('host boom');
+    await expect(m.start('c1', ADMIN_ENTRY)).rejects.toThrow(/^PROC:/);
+    expect(m.states()).toEqual({}); // 还没进表就抛出 → 没有残留实例
+    expect(ctx.exits).toEqual([]); // 也没有上报退出（否则页签按钮会闪一下）
+    // 不残留的可观察后果：同一条路可以再启动一次
+    ctx.elevatedCtl.fail = null;
+    expect(await m.start('c1', ADMIN_ENTRY)).toEqual({ tabId: 'ql:c1' });
+    // 失败的那次没留下任何进程实例：表里只有第二次启动的那一个
+    expect(ctx.elevatedHandles.length).toBe(1);
+    expect(m.states()).toEqual({ c1: { running: true, stopping: false } });
+  });
+
+  // C5（表 C5 / 裁决 R-14 / 索引 K52）：提权路径的失败**不得二次包装**
+  it('admin_true_final_message_has_exactly_one_proc_prefix', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    // 工厂交出的 Error.message 已经是最终文案（hostStartError / handshakeError 自带 PROC: 与词典渲染）
+    const final = 'PROC: ' + t('err.proc.uacCancelled', { exe: 'cmd.exe' });
+    ctx.elevatedCtl.fail = new Error(final);
+    let msg = '';
+    try { await m.start('c1', ADMIN_ENTRY); } catch (e) { msg = e instanceof Error ? e.message : String(e); }
+    expect(msg).toBe(final); // 原样上抛
+    expect((msg.match(/PROC:/g) ?? []).length).toBe(1); // 只有一个前缀、只渲染一次
+    expect(msg).not.toContain('err=PROC:'); // 不得出现嵌套
+    expect(msg).not.toContain(t('err.ql.ptySpawn', { exe: 'cmd.exe', err: final })); // 没被包成 ptySpawn
+    // 对照：不带 PROC: 的失败仍按既有形状包一层（表 C4：err.ql.ptySpawn + shellExe(shell).exe）
+    ctx.elevatedCtl.fail = new Error('host boom');
+    let wrapped = '';
+    try { await m.start('c2', ADMIN_ENTRY); } catch (e) { wrapped = e instanceof Error ? e.message : String(e); }
+    expect(wrapped).toBe('PROC: ' + t('err.ql.ptySpawn', { exe: 'cmd.exe', err: 'host boom' }));
+  });
+
+  // E4（表 E4 / RF1 / quick-launch.ts:249-253）：先把输出转给渲染端，再放自动命令
+  it('admin_true_auto_command_released_after_first_output', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', ADMIN_ENTRY_CMD);
+    const host = ctx.elevatedHandles[0];
+    expect(host.writes).toEqual([]); // 首批输出之前一个字都不写
+    expect(ctx.timeline).toEqual([]);
+    host.emit('C:\\> ');
+    // 顺序与非提权路径逐字相同（对照上面「deps.onData 第一次被调用之后才发生 pty.write」那条）
+    expect(ctx.timeline).toEqual(['deps.onData', 'pty.write']);
+    expect(host.writes).toEqual(['echo HI\r']);
+    host.emit('more'); // 后续输出照常转发，自动命令只写一次
+    expect(ctx.timeline).toEqual(['deps.onData', 'pty.write', 'deps.onData']);
+    expect(host.writes).toEqual(['echo HI\r']);
+  });
+
+  // E5（表 E5 / 规格 §6.7 / RF6）：[停止] 与 stopAll 与非提权**完全相同**的调用路径
+  it('admin_true_stop_goes_through_the_same_path', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', ADMIN_ENTRY); // 提权
+    await m.start('c2', { ...ADMIN_ENTRY, admin: false } as QuickLaunchEntry); // 对照：本地 PTY
+    await m.stop('c1');
+    // 同一个入口、同一个默认超时（STOP_TIMEOUT_SECS = 3）：提权实例与非提权拿到同一个数值
+    expect(ctx.elevatedHandles[0].stopArgs).toEqual([3]);
+    expect(ctx.exits).toEqual([{ configId: 'c1', code: 0 }]);
+    await m.stop('c1'); // 幂等：与非提权同样的早退路径
+    expect(ctx.exits.length).toBe(1);
+    expect(ctx.elevatedHandles[0].stopArgs).toEqual([3]);
+    // stopAll 也是同一条路：逐个 await + 透传 timeoutSecs（对照「stopAll 停掉全部并清空 states，并透传 timeoutSecs」）
+    await m.stopAll(7);
+    expect(m.shells[0].stopArgs).toEqual([7]);
+    expect(ctx.elevatedHandles[0].stopArgs).toEqual([3]); // 已停过的不再第二次
+    expect(m.states()).toEqual({});
+  });
+
+  // E6（表 E6 / 规格 §9-R8）：两条提权条目并发 → 各一条私有管道与各自宿主，互不影响
+  it('two_elevated_entries_run_independently', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    const [a, b] = await Promise.all([m.start('c1', ADMIN_ENTRY), m.start('c2', ADMIN_ENTRY)]);
+    expect(a).toEqual({ tabId: 'ql:c1' });
+    expect(b).toEqual({ tabId: 'ql:c2' });
+    // 两次独立的工厂调用 → 两个不同的实例（管道与宿主在真实现里也是每实例一套：ql-elevated.ts 的 nMaxInstances=1）
+    expect(ctx.elevatedRequests.length).toBe(2);
+    expect(ctx.elevatedHandles.length).toBe(2);
+    expect(ctx.elevatedHandles[0]).not.toBe(ctx.elevatedHandles[1]);
+    expect(m.states()).toEqual({
+      c1: { running: true, stopping: false },
+      c2: { running: true, stopping: false },
+    });
+    // 停一条不影响另一条
+    await m.stop('c1');
+    expect(ctx.elevatedHandles[0].stopArgs).toEqual([3]);
+    expect(ctx.elevatedHandles[1].stopArgs).toEqual([]);
+    expect(ctx.exits).toEqual([{ configId: 'c1', code: 0 }]);
+    expect(m.states()).toEqual({ c2: { running: true, stopping: false } });
+    // 输出只进各自的页签
+    ctx.elevatedHandles[1].emit('B-only');
+    expect(ctx.data).toEqual([{ tabId: 'ql:c2', data: 'B-only' }]);
   });
 });
 

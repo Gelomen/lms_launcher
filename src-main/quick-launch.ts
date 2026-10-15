@@ -169,6 +169,13 @@ export interface QlDeps {
   onSysLine(configId: string, line: string): void;
   homedir(): string;
   spawnExe(exe: string): { onExit(cb: (code: number) => void): void; stopGraceful(s: number): Promise<void>; isRunning(): boolean };
+  /**
+   * 起一个**提权**终端（2026-10-14-quick-launch-admin §6.8，接线在 main.ts）：返回 ShellProcess 形状，
+   * 所以 write / resize / stop / stopAll / states 一字不改。可 await 的工厂（索引 K45 / 裁决 R-12）：
+   * 「等 READY」与「失败按 §6.10 抛出且抛出前关掉两个句柄」都在工厂里（ql-elevated.ts 的 startElevatedHost）。
+   * 必填而非可选：可选会让「忘了接线」退化成静默降级（main.ts:1009-1011 的既有批评口径）。
+   */
+  spawnElevatedShell(shell: TerminalId, cols: number, rows: number, cwd: string): Promise<ShellProcess>;
 }
 
 /** QuickLaunchManager 内部用到的 shell 进程面：PtyProcess 与测试里的假实现都满足 */
@@ -224,6 +231,15 @@ export class QuickLaunchManager {
     return spawnShell(shell, cols, rows, cwd);
   }
 
+  /**
+   * 提权路径的测试接缝（规格 §6.8）：与上面 createShellProcess 同一手法（C5 的构造签名逐字不动）。
+   * 与它的唯一区别是 **async** —— 提权宿主是可 await 的工厂（索引 K45 / 裁决 R-12），
+   * 所以 start() 的提权分支必须 await 本方法；生产路径就是 deps.spawnElevatedShell → startElevatedHost。
+   */
+  protected async createElevatedShellProcess(shell: TerminalId, cols: number, rows: number, cwd: string): Promise<ShellProcess> {
+    return this.deps.spawnElevatedShell(shell, cols, rows, cwd);
+  }
+
   /** 启动（规格 §7.5）：shell → { tabId: 'ql:<configId>' }；exe → { tabId: null }。失败不残留状态。 */
   async start(configId: string, entry: QuickLaunchEntry): Promise<{ tabId: string | null }> {
     if (this.instances.has(configId)) throw new Error('STATE: ' + t('err.ql.alreadyRunning'));
@@ -238,10 +254,19 @@ export class QuickLaunchManager {
       let proc: ShellProcess;
       try {
         // 规格 §7.3：cwd 一律用户主目录（deps.homedir，测试可注入）
-        proc = this.createShellProcess(shell, DEFAULT_COLS, DEFAULT_ROWS, this.deps.homedir());
+        // 规格 §6.8：只有 e.admin === true（不是 truthy）走提权宿主；其余全部不变 ——
+        // tabId、onData 先转渲染端再放自动命令、onExit → finalize、scheduleAutoCommand、失败不残留，逐条沿用。
+        proc = e.admin === true
+          ? await this.createElevatedShellProcess(shell, DEFAULT_COLS, DEFAULT_ROWS, this.deps.homedir())
+          : this.createShellProcess(shell, DEFAULT_COLS, DEFAULT_ROWS, this.deps.homedir());
       } catch (err) {
         // §12.4：spawn 失败不残留状态——还没进 Map，直接上抛
-        throw new Error('PROC: ' + t('err.ql.ptySpawn', { exe: shellExe(shell).exe, err: messageOf(err) }));
+        const msg = messageOf(err);
+        // 索引 K52 / 裁决 R-14（表 C5）：提权路径交出的 Error.message 已是最终文案（PROC: + 词典渲染，
+        // 见 ql-elevated.ts 的 hostStartError / handshakeError）。再包一层就是「终端启动失败: PROC: 终端启动失败: …」。
+        // 非提权路径的文案逐字不变（表 C4）：node-pty 的失败不带 PROC: 前缀，仍走下面那条包装。
+        if (msg.startsWith('PROC: ')) throw err;
+        throw new Error('PROC: ' + t('err.ql.ptySpawn', { exe: shellExe(shell).exe, err: msg }));
       }
       const inst: Instance = {
         kind: 'shell', proc, tabId, stopping: false, exited: false, exitCode: null, auto: null,

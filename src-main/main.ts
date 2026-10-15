@@ -18,8 +18,10 @@ import { homedir } from 'node:os';
 // 快捷启动卡片（2026-10-10-quick-launch-card 任务 6）：配置层（任务 3）/ 探测层（任务 4）/ 进程管理层（任务 5）→ IPC
 import { qlLoad, qlSave, qlDelete, type QuickLaunchEntry, type QuickLaunchList, type TerminalId } from './quick-launch-config';
 import { detectTerminals, type TerminalInfo } from './quick-launch-terminals';
-import { QuickLaunchManager } from './quick-launch';
+import { QuickLaunchManager, shellExe } from './quick-launch';
 import { launchShellExe, winShell, type ShellExecProcess } from './shell-execute'; // 2026-10-13-quick-launch-elevated-exe §6.6
+// 提权 PTY 宿主（2026-10-14-quick-launch-admin §6.4 / §6.8）：管道接缝 + 起宿主接缝 + 可 await 的工厂（索引 K45）
+import { hostLauncher, startElevatedHost, winPipe } from './ql-elevated';
 
 // 更新调度任务名（schtasks）：2026-09-05 探针矩阵（.temp/decisive4~11）证明本机 Electron 子进程
 // 无论 detached / 非 detached / cmd 包裹 / windowsHide / 双叉 / VBS 均无法既真正执行脚本又
@@ -1087,6 +1089,20 @@ const ql = new QuickLaunchManager(
     spawnExe: (exe) => {
       const ctx = qlStartContextOrThrow('spawnExe');
       return spawnExeProcess(exe, ctx.configId, ctx.admin);
+    },
+    // 提权终端（2026-10-14-quick-launch-admin §6.8 / 索引 K45）：真工厂 = 建管道 + runas 起宿主（含解析硬链接
+    // node.exe）+ 等 READY，返回 ShellProcess 形状。形参取名 term 是为了不遮蔽 :1 导入的 electron shell（审查 Minor #3 口径）。
+    // logTarget = shellExe(term).exe：§6.10 第一行要求 {exe} 是**用户那一行的目标**（与 quick-launch.ts:244 的
+    // err.ql.ptySpawn 同值），绝不是宿主 node.exe —— §7.2-4 的真机判据就是「日志一行取消原因且带的是终端名不是宿主名」。
+    // 失败先经既有日志通道再原样抛出：与上面 spawnExeProcess（:1069）同一分工（渲染端 App.vue:478 只回落按钮，
+    // 原因行只由主进程负责）。message 已是最终文案（索引 K52），这里不得再包一层前缀；除此之外不新增日志行（索引 K10）。
+    spawnElevatedShell: async (term, cols, rows, cwd) => {
+      try {
+        return await startElevatedHost(winPipe, hostLauncher, { shell: term, cols, rows, cwd, logTarget: shellExe(term).exe });
+      } catch (e) {
+        emitLog('[lms_launcher] ' + (e instanceof Error ? e.message : String(e)), 'sys');
+        throw e;
+      }
     },
   },
   (id) => qlStartContextOrThrow('terminalAvailable').available.has(id),

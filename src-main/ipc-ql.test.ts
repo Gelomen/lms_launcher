@@ -103,6 +103,10 @@ import './preload';
 // 任务 3（规格 §6.6）：exe 类型的观察点从 ProcessState.prototype.launch 换到 winShell.shellExecute。
 // 只替换 shellExecute 一个属性（其余六个方法保持真实现），finally 里还原。
 import { winShell } from './shell-execute';
+// 任务 7（2026-10-14-quick-launch-admin §6.8）：提权 shell 条目的观察点 = main.ts 接线里的两个接缝对象。
+// 同样只替换属性（真工厂 startElevatedHost 与 ElevatedPtyProcess 都跑真实现），finally 里还原。
+import { hostLauncher, winPipe } from './ql-elevated';
+import { encodeFrame, HOST_FRAME } from './ql-host-protocol';
 
 /** main.ts 里强制 qlStartContext 不变量的守卫（重要 #2）；不存在 → undefined */
 const GUARD_EXPORT = 'qlStartContextOrThrow';
@@ -408,6 +412,238 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
       winShell.shellExecute = original;
       await invoke('ql_stop', 'qladmin01');
       await invoke('ql_stop', 'qladmin02');
+    }
+  }, 30000);
+});
+
+// ---------- 任务 7（2026-10-14-quick-launch-admin §6.8 / §6.10 / §9-R8）：提权 shell 条目的端到端形状门 ----------
+// 观察点 = main.ts 的接线：QlDeps.spawnElevatedShell → 真工厂 startElevatedHost(winPipe, hostLauncher, …)。
+// 这里只替换**接缝对象**的属性（winPipe 的六个管道方法 / hostLauncher 的三个方法 / winShell 的句柄方法）：
+// 工厂本身、ElevatedPtyProcess 本身、QuickLaunchManager 本身都跑真代码 —— 于是「提权与非提权在页签事件 /
+// ql_write / ql_resize / [停止] 上同形」这条判据（plan 任务 7 步骤 5）落在 IPC 层。
+// 不真起提权进程、不真建管道、不真解析硬链接 node.exe（那些是规格 §7.2 的打包真机门）。
+function fakeHostSeam(opts: { launchWin32Error?: number } = {}) {
+  const seen = {
+    pipeNames: [] as string[],
+    hostArgs: [] as Array<{ exe: string; script: string; pipeName: string; token: string }>,
+    hostHandles: [] as unknown[],
+    hello: [] as Array<Record<string, unknown>>,
+    frames: [] as Array<{ type: number; payload: string }>,
+  };
+  interface FakeHost { handle: unknown; pipeHandle: unknown; alive: boolean; queued: Buffer[] }
+  const hosts: FakeHost[] = [];
+  const byPipe = new Map<unknown, FakeHost>();
+  const byName = new Map<string, FakeHost>();
+  let seq = 0;
+  // 一次 sendFrame 就是一个完整帧（ql-elevated.ts 的 sendFrame 不拆帧），所以按帧头解即可
+  const decode = (buf: Buffer): { type: number; payload: string } => ({
+    type: buf.readUInt8(0),
+    payload: buf.subarray(5, 5 + buf.readUInt32LE(1)).toString('utf8'),
+  });
+  const original = {
+    createServer: winPipe.createServer, connect: winPipe.connect, available: winPipe.available,
+    read: winPipe.read, write: winPipe.write, close: winPipe.close,
+    hostExePath: hostLauncher.hostExePath, hostScriptPath: hostLauncher.hostScriptPath, launch: hostLauncher.launch,
+    pidOf: winShell.pidOf, isAlive: winShell.isAlive, exitCodeOf: winShell.exitCodeOf,
+    terminate: winShell.terminate, closeHandle: winShell.close, killTree: winShell.killTree,
+  };
+  winPipe.createServer = (pipeName: string): unknown => {
+    seq += 1;
+    const host: FakeHost = { handle: { fakeHost: seq }, pipeHandle: { fakePipe: seq }, alive: true, queued: [] };
+    hosts.push(host);
+    byPipe.set(host.pipeHandle, host);
+    byName.set(pipeName, host);
+    seen.pipeNames.push(pipeName);
+    return host.pipeHandle;
+  };
+  winPipe.connect = (): boolean => true;
+  winPipe.available = (h: unknown): number => (byPipe.get(h)?.queued.reduce((n, b) => n + b.length, 0)) ?? 0;
+  winPipe.read = (h: unknown, n: number): Buffer => {
+    const host = byPipe.get(h);
+    if (!host) return Buffer.alloc(0);
+    const out: Buffer[] = [];
+    let left = n;
+    while (left > 0 && host.queued.length > 0) {
+      const chunk = host.queued.shift() as Buffer;
+      if (chunk.length <= left) { out.push(chunk); left -= chunk.length; }
+      else { out.push(chunk.subarray(0, left)); host.queued.unshift(chunk.subarray(left)); left = 0; }
+    }
+    return Buffer.concat(out);
+  };
+  winPipe.write = (h: unknown, buf: Buffer): boolean => {
+    const host = byPipe.get(h);
+    if (!host) return false;
+    const f = decode(buf);
+    seen.frames.push(f);
+    if (f.type === HOST_FRAME.HELLO) {
+      seen.hello.push(JSON.parse(f.payload) as Record<string, unknown>);
+      // 索引 K44①：真机上 READY 的 shellPid 是 0，本文件不据它做任何判断
+      host.queued.push(encodeFrame(HOST_FRAME.READY, JSON.stringify({ shellPid: 0 })));
+    }
+    if (f.type === HOST_FRAME.STOP) {
+      // 规格 §6.6-7：收到 STOP 的宿主自己杀树并回 EXIT 帧。照做，停止路径就不必等到宽限上限（真机同理）
+      host.alive = false;
+      host.queued.push(encodeFrame(HOST_FRAME.EXIT, JSON.stringify({ code: 0 })));
+    }
+    return true;
+  };
+  winPipe.close = (): void => { /* 假句柄没有要释放的东西 */ };
+  hostLauncher.hostExePath = (): string => 'node.exe'; // 不真解析硬链接（真机门 §7.2-1）
+  hostLauncher.hostScriptPath = (): string => 'ql-pty-host.js';
+  hostLauncher.launch = (exe: string, script: string, pipeName: string, token: string) => {
+    seen.hostArgs.push({ exe, script, pipeName, token });
+    const host = byName.get(pipeName);
+    if (!host) return { ok: false, handle: null, win32Error: 0 };
+    if (opts.launchWin32Error !== undefined) {
+      return { ok: false, handle: null, win32Error: opts.launchWin32Error }; // §6.10 第一行：1223 = UAC 点「否」
+    }
+    seen.hostHandles.push(host.handle);
+    return { ok: true, handle: host.handle, win32Error: 0 };
+  };
+  // 宿主进程句柄的方法（ShellExecProcess 的 100ms 轮询要问它们）：假句柄不能交给真 koffi
+  winShell.pidOf = (): number => 424242;
+  winShell.isAlive = (h: unknown): boolean => hosts.some((x) => x.handle === h && x.alive);
+  winShell.exitCodeOf = (): number => 0;
+  winShell.terminate = (): boolean => true;
+  winShell.close = (): void => { /* 假句柄 */ };
+  winShell.killTree = (): boolean => false; // 不真跑 taskkill：假宿主没有进程树
+  return {
+    seen,
+    /** 让「宿主」吐一行输出（真机上由 ConPTY 的 DATA 帧送达；index = 创建顺序） */
+    emitData(index: number, text: string): void { hosts[index].queued.push(encodeFrame(HOST_FRAME.DATA, text)); },
+    /**
+     * 还原九个接缝属性。**先**让每个假宿主「退出」并给 ShellExecProcess 的 100ms 轮询一次机会
+     * （shell-execute.ts:143 的定时器）：它没轮询到退出就不会 clearInterval，
+     * 还原后就会拿假句柄去问真 koffi（TypeError: Unexpected Object value, expected void *）。
+     */
+    async restore(): Promise<void> {
+      for (const h of hosts) h.alive = false;
+      await new Promise((resolve) => setTimeout(resolve, 200)); // 100ms 轮询 + 余量
+      Object.assign(winPipe, { createServer: original.createServer, connect: original.connect, available: original.available, read: original.read, write: original.write, close: original.close });
+      Object.assign(hostLauncher, { hostExePath: original.hostExePath, hostScriptPath: original.hostScriptPath, launch: original.launch });
+      Object.assign(winShell, { pidOf: original.pidOf, isAlive: original.isAlive, exitCodeOf: original.exitCodeOf, terminate: original.terminate, close: original.closeHandle, killTree: original.killTree });
+    },
+  };
+}
+
+/** 某个事件通道已发出的载荷（本文件里跨用例累积，所以断言一律按 tabId / configId 过滤） */
+function sentPayloads(channel: string): unknown[] {
+  return cap.sends.filter((s) => s.channel === channel).map((s) => s.payload);
+}
+
+describe('任务 7 · 提权 shell 条目的端到端形状门（plan 步骤 5 / 规格 §6.8 / 表 E1-E6 / C5）', () => {
+  const ADMIN_ID = 'qlelevsh01';
+
+  it('admin:true 的 shell 条目走提权宿主：页签事件 / ql_write / ql_resize / [停止] 与非提权用例同一断言集', async () => {
+    const savedId = await invoke('ql_save', ADMIN_ID, { name: '形状门 提权 shell', type: 'shell', shell: 'cmd', cmd: 'echo QLELEV', admin: true });
+    expect(savedId, 'admin 字段不影响保存').toBe(ADMIN_ID);
+    const seam = fakeHostSeam();
+    try {
+      const res = await invoke('ql_start', ADMIN_ID);
+      expect(res, 'C10：返回形状与非提权逐字一致').toEqual({ tabId: 'ql:' + ADMIN_ID });
+      expect(invoke('ql_states'), 'C13：页签状态形状不变').toEqual({ [ADMIN_ID]: { running: true, stopping: false } });
+      // 走的是提权接缝：一条私有管道 + 一次起宿主；argv 只带管道名与 token（规格 §6.4-4），其余在 HELLO 里
+      expect(seam.seen.pipeNames.length).toBe(1);
+      expect(seam.seen.hostArgs.length).toBe(1);
+      expect(seam.seen.hello.length).toBe(1);
+      expect(seam.seen.hello[0].shell).toBe('cmd');
+      expect(seam.seen.hello[0].cols).toBe(80);
+      expect(typeof seam.seen.hello[0].token).toBe('string');
+      // 本地 pty 一次都没起：页签里出现的每个字符都只能来自宿主
+      expect(seam.seen.frames.filter((f) => f.type === HOST_FRAME.WRITE), '首批输出之前不写自动命令（RF1）').toEqual([]);
+      seam.emitData(0, 'QLELEV-PROMPT');
+      await waitFor(
+        () => (sentPayloads('ql-data') as Array<Record<string, unknown>>).some((e) => e.tabId === 'ql:' + ADMIN_ID),
+        5000, '宿主 DATA → ql-data',
+      );
+      const dataEvents = (sentPayloads('ql-data') as Array<Record<string, unknown>>).filter((e) => e.tabId === 'ql:' + ADMIN_ID);
+      for (const e of dataEvents) {
+        expect(Object.keys(e).sort(), 'C12：ql-data 载荷键名逐字').toEqual(['data', 'tabId']);
+        expect(typeof e.data).toBe('string');
+      }
+      // 自动命令在首批输出之后才写（与非提权路径同一时序判据）
+      await waitFor(
+        () => seam.seen.frames.some((f) => f.type === HOST_FRAME.WRITE && f.payload === 'echo QLELEV\r'),
+        5000, '自动命令的 WRITE 帧',
+      );
+      // 输入与尺寸：payload 逐字（规格 §6.5 帧表）
+      expect(invoke('ql_write', ADMIN_ID, 'echo X\r'), 'C10：无返回值').toBeUndefined();
+      expect(invoke('ql_resize', ADMIN_ID, 100, 30), 'C10：无返回值').toBeUndefined();
+      expect(seam.seen.frames.some((f) => f.type === HOST_FRAME.WRITE && f.payload === 'echo X\r'), 'WRITE 帧 payload 逐字').toBe(true);
+      expect(seam.seen.frames.some((f) => f.type === HOST_FRAME.RESIZE && f.payload === JSON.stringify({ cols: 100, rows: 30 })), 'RESIZE 帧带 cols/rows').toBe(true);
+      // [停止]：同一个 ql_stop 通道；STOP 帧带数字 timeoutSecs（索引 K44②）
+      await expect(invoke('ql_stop', ADMIN_ID), 'C10：无返回值').resolves.toBeUndefined();
+      expect(seam.seen.frames.some((f) => f.type === HOST_FRAME.STOP && (JSON.parse(f.payload) as { timeoutSecs?: unknown }).timeoutSecs === 3), 'STOP 帧带 timeoutSecs').toBe(true);
+      expect(invoke('ql_states'), '停止后状态清空（按钮回落）').toEqual({});
+      await expect(invoke('ql_stop', ADMIN_ID), 'C10：幂等').resolves.toBeUndefined();
+      await waitFor(() => (sentPayloads('ql-exit') as Array<Record<string, unknown>>).some((e) => e.configId === ADMIN_ID), 5000, 'ql-exit');
+      for (const e of (sentPayloads('ql-exit') as Array<Record<string, unknown>>).filter((x) => x.configId === ADMIN_ID)) {
+        expect(Object.keys(e).sort(), 'C12：ql-exit 载荷键名逐字').toEqual(['code', 'configId']);
+        expect(typeof e.code, '退出码优先取 EXIT 帧（规格 §6.7 / RF5）').toBe('number');
+      }
+    } finally {
+      await invoke('ql_stop', ADMIN_ID); // 先停（此时假接缝还在），再还原
+      await seam.restore();
+    }
+  }, 30000);
+
+  // 表 E6 / 规格 §9-R8：并发提权条目各一条私有管道（ql-elevated.ts 的 nMaxInstances=1 + 每次新名字）与各自宿主
+  it('two_elevated_entries_run_independently：两条提权条目并发 → 各一条私有管道与各自宿主，停一条不影响另一条', async () => {
+    // id 必须是小写字母开头的字母数字串（quick-launch-config.ts:126 的既有校验），所以用 a01 / b01
+    await invoke('ql_save', 'qleleva01', { name: '形状门 提权 A', type: 'shell', shell: 'cmd', cmd: 'echo QLELEV-A', admin: true });
+    await invoke('ql_save', 'qlelevb01', { name: '形状门 提权 B', type: 'shell', shell: 'cmd', cmd: 'echo QLELEV-B', admin: true });
+    const seam = fakeHostSeam();
+    try {
+      const [a, b] = await Promise.all([invoke('ql_start', 'qleleva01'), invoke('ql_start', 'qlelevb01')]);
+      expect(a).toEqual({ tabId: 'ql:qleleva01' });
+      expect(b).toEqual({ tabId: 'ql:qlelevb01' });
+      expect(seam.seen.pipeNames.length).toBe(2);
+      expect(new Set(seam.seen.pipeNames).size, '管道名必须互不相同（否则第二条连不上自己的管道）').toBe(2);
+      expect(seam.seen.pipeNames.every((n) => n.includes('lms-ql-')), '管道名前缀不变（规格 §6.5）').toBe(true);
+      expect(seam.seen.hostHandles.length).toBe(2);
+      expect(seam.seen.hostHandles[0], '各自一个宿主句柄').not.toBe(seam.seen.hostHandles[1]);
+      expect(seam.seen.hello[0].token, '一次性 token 也各不相同（§6.4-4）').not.toBe(seam.seen.hello[1].token);
+      expect(invoke('ql_states')).toEqual({
+        qleleva01: { running: true, stopping: false },
+        qlelevb01: { running: true, stopping: false },
+      });
+      // 停一条不影响另一条
+      await invoke('ql_stop', 'qleleva01');
+      expect(invoke('ql_states')).toEqual({ qlelevb01: { running: true, stopping: false } });
+      expect(invoke('ql_write', 'qlelevb01', 'still-alive'), '另一条的输入仍可用').toBeUndefined();
+      await invoke('ql_stop', 'qlelevb01');
+      expect(invoke('ql_states')).toEqual({});
+    } finally {
+      await invoke('ql_stop', 'qleleva01'); // 先停（此时假接缝还在），再还原
+      await invoke('ql_stop', 'qlelevb01');
+      await seam.restore();
+    }
+  }, 30000);
+
+  // 表 C5 / 索引 K52 + §6.10 第一行 + §7.2-4 的自动化对应物：文案只包一层，日志一行且带的是终端名
+  it('提权启动失败（UAC 点「否」= 1223）：ql_start 只被包一层 PROC:，sys 日志一行且带终端名不是宿主名', async () => {
+    await invoke('ql_save', 'qlelevfail', { name: '形状门 提权失败', type: 'shell', shell: 'cmd', cmd: 'echo QLELEV-FAIL', admin: true });
+    const seam = fakeHostSeam({ launchWin32Error: 1223 });
+    const before = sentPayloads('log-line').length;
+    let msg = '';
+    try {
+      await invokeRejects('ql_start', 'qlelevfail');
+    } catch (e) {
+      msg = e instanceof Error ? e.message : String(e);
+    }
+    try {
+      expect(msg, '§6.10 第一行：{exe} 是用户那一行的目标（终端 exe），不是宿主').toBe('PROC: ' + t('err.proc.uacCancelled', { exe: 'cmd.exe' }));
+      expect((msg.match(/PROC:/g) ?? []).length, '索引 K52：不得二次包装').toBe(1);
+      expect(msg).not.toContain('node.exe');
+      const lines = (sentPayloads('log-line') as Array<{ line: string; stream: string }>).slice(before)
+        .filter((l) => l.stream === 'sys' && l.line.includes(t('err.proc.uacCancelled', { exe: 'cmd.exe' })));
+      expect(lines.length, '一行、且只有一行（索引 K10：除此之外不新增日志行）').toBe(1);
+      expect(lines[0].line, '与 main.ts:1069 的 spawnExeProcess 同一分工：先写原因行再抛').toBe('[lms_launcher] ' + msg);
+      expect(invoke('ql_states'), '失败不残留状态').toEqual({});
+      expect(seam.seen.frames, '起宿主就失败 → 没有管道读循环，一条帧都不该写').toEqual([]);
+    } finally {
+      await invoke('ql_stop', 'qlelevfail'); // 先停（此时假接缝还在），再还原
+      await seam.restore();
     }
   }, 30000);
 });
