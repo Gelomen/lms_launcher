@@ -81,3 +81,5 @@
 - 当前全量：`Test Files 51 passed (51)` / `Tests 861 passed (861)`（基线 48/835 → +3 份测试文件、+26 条用例）
 - 恢复时派**任务 6**（`task-06-elevated-pty-process.md`，前置 = 任务 2 + 4 + 5，都已交付）。派单必须带：brief + 该表 + 规格 §6.7 / §6.5；**K35**（复用 `hostStartError`，不得重写映射）、**K37**（`stage='pipe'` → `err='pipe=create'`）、**K38**（读侧那条用例归本任务的 E8）、**K39**（`available()` 的 `-1` 契约）、**K40**（用 `startHost(winPipe, hostLauncher)`；koffi 失败句柄是 BigInt）、**K44**（`shellPid` 不可依赖 / `STOP` 必带数字 / 必须走到委托那一步）、**K43**（主进程侧要处理 `ERR{stage:'pipe'}`）、**K41**（本会话可用系统 node 作宿主跑真 ConPTY，单测仍 mock）
 - 真机门仍未跑：§7.2 的 9 条 + 前置 feature 的 E1-E7 → 归任务 9 同批构建，交用户执行
+
+- 派任务 6 前的文档准备：任务 6 表 C 段按编号重排（我插行时把 C6/C5 排到了 C4 前面）+ 新增 C7（裁决 **R-11**：握手期 `ERR` 帧 → `err.ql.ptySpawn`，`{err}='host='+stage`，`{exe}` 仍是 `logTarget`）+ 索引行补 K 引用（`fd93f4b`、`a989c5a`）；登记 **R-12 / K45**（`startElevatedHost` 必须是可 await 的工厂，依据 plan 任务 7 步骤 4 + 规格 §6.8/§6.7）。起点 HEAD 变为 `a989c5a`，基线仍是 51 files / 861 tests（本轮只动文档）
