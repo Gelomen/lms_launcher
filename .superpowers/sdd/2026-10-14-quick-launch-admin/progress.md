@@ -97,3 +97,7 @@
 - Task 7: 裁决 **R-15 / K53**（提权启动失败**要**写一行 sys 原因日志，与 `main.ts:1069-1071` 的 exe 路径同一分工；K10 与规格 §6.10 末句精确化为「成功路径不得有信息性行」）—— 三份文档同一提交 `85e0b45`
 - Task 7: 认可「直通不按分支门控」（补注进 K52）；A3 的 main.ts 锚点 +2 位移按 K30 处理，不改 A 段文字
 - Task 7: minor (deferred) —— ① 既有缺口：非提权 shell 启动失败今天没有原因行（修它要动非提权行为，受 G3/G4 约束，不在本期）；② `ipc-ql.test.ts` 的 `restore()` 里等 200ms 让假句柄上的 100ms 轮询收尾（测试侧代价，真机无此问题）；③ 端到端用例没走「委托停止」分支（由任务 6 的单测 + 真机 §7.2-7 守）
+- Task 8: complete（子代理 3bc3c8ef；主代理独立复跑 = 定向 25 / 相邻 src/modules 13 files 314 / i18n 18 / tsc 0 / 全量 51 files 888 tests；范围恰好三个 B 段文件）
+- Task 8: 主代理自己取证 `.bool-switch` 三段样式与 `TemplateModal.vue:567-588` **字节一致**（子串查询 true）；`dict.ts` diff 只有两行；218px 与 BOX_H 不在任何 hunk 里
+- Task 8: 认可四条偏离（`dropdownOf()` 连带、第 6 条守 F4 的用例、三处注释改写、删 `width: auto` 回 C7 逐字）；查清并登记 **K54**（安装的是 Electron 28.3.3，`v18.18.2` 是 `ELECTRON_RUN_AS_NODE=1` 下的内置 Node 版本）；把「两态开关水平位置不同」加进任务 9 真机门 **E8**
+- Task 8: minor (deferred) —— 探针脚本留在 `.temp/ql-admin-probe/ql-t8-*`（gitignore 内）；任务 9 跑无头探针必须先显式处理 `ELECTRON_RUN_AS_NODE`（K54）
