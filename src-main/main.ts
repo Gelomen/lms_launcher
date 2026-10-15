@@ -1090,10 +1090,10 @@ const ql = new QuickLaunchManager(
       const ctx = qlStartContextOrThrow('spawnExe');
       return spawnExeProcess(exe, ctx.configId, ctx.admin);
     },
-    // 提权终端（2026-10-14-quick-launch-admin §6.8 / 索引 K45）：真工厂 = 建管道 + runas 起宿主（含解析硬链接
-    // node.exe）+ 等 READY，返回 ShellProcess 形状。形参取名 term 是为了不遮蔽 :1 导入的 electron shell（审查 Minor #3 口径）。
+    // 提权终端（2026-10-14-quick-launch-admin §6.8 / 索引 K45）：真工厂 = 建管道 + runas 起宿主（R-23：起的是应用
+    // 自己的 exe，参数是 --ql-host + 管道名 + token，由应用入口按这个开关分流；没有硬链接那一步）+ 等 READY，返回 ShellProcess 形状。形参取名 term 是为了不遮蔽 :1 导入的 electron shell（审查 Minor #3 口径）。
     // logTarget = shellExe(term).exe：§6.10 第一行要求 {exe} 是**用户那一行的目标**（与 quick-launch.ts:244 的
-    // err.ql.ptySpawn 同值），绝不是宿主 node.exe —— §7.2-4 的真机判据就是「日志一行取消原因且带的是终端名不是宿主名」。
+    // err.ql.ptySpawn 同值），绝不是宿主 exe（= 应用自己的 exe）—— §7.2-4 的真机判据就是「日志一行取消原因且带的是终端名不是宿主名」。
     // 失败先经既有日志通道再原样抛出：与上面 spawnExeProcess（:1069）同一分工（渲染端 App.vue:478 只回落按钮，
     // 原因行只由主进程负责）。message 已是最终文案（索引 K52），这里不得再包一层前缀；除此之外不新增日志行（索引 K10）。
     spawnElevatedShell: async (term, cols, rows, cwd) => {

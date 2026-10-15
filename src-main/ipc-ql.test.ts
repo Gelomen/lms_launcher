@@ -421,7 +421,7 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
 // 这里只替换**接缝对象**的属性（winPipe 的六个管道方法 / hostLauncher 的三个方法 / winShell 的句柄方法）：
 // 工厂本身、ElevatedPtyProcess 本身、QuickLaunchManager 本身都跑真代码 —— 于是「提权与非提权在页签事件 /
 // ql_write / ql_resize / [停止] 上同形」这条判据（plan 任务 7 步骤 5）落在 IPC 层。
-// 不真起提权进程、不真建管道、不真解析硬链接 node.exe（那些是规格 §7.2 的打包真机门）。
+// 不真起提权进程、不真建管道（那些是规格 §7.2 的打包真机门）。
 function fakeHostSeam(opts: { launchWin32Error?: number } = {}) {
   const seen = {
     pipeNames: [] as string[],
@@ -488,7 +488,7 @@ function fakeHostSeam(opts: { launchWin32Error?: number } = {}) {
     return true;
   };
   winPipe.close = (): void => { /* 假句柄没有要释放的东西 */ };
-  hostLauncher.hostExePath = (): string => 'node.exe'; // 不真解析硬链接（真机门 §7.2-1）
+  hostLauncher.hostExePath = (): string => 'lms_launcher.exe'; // 不真解析宿主路径（真机门 §7.2-1）
   hostLauncher.hostScriptPath = (): string => 'ql-pty-host.js';
   hostLauncher.launch = (exe: string, script: string, pipeName: string, token: string) => {
     seen.hostArgs.push({ exe, script, pipeName, token });
@@ -634,7 +634,7 @@ describe('任务 7 · 提权 shell 条目的端到端形状门（plan 步骤 5 /
     try {
       expect(msg, '§6.10 第一行：{exe} 是用户那一行的目标（终端 exe），不是宿主').toBe('PROC: ' + t('err.proc.uacCancelled', { exe: 'cmd.exe' }));
       expect((msg.match(/PROC:/g) ?? []).length, '索引 K52：不得二次包装').toBe(1);
-      expect(msg).not.toContain('node.exe');
+      expect(msg).not.toContain('lms_launcher.exe'); // R-21：宿主就是应用自己的 exe，它不得出现在文案里
       const lines = (sentPayloads('log-line') as Array<{ line: string; stream: string }>).slice(before)
         .filter((l) => l.stream === 'sys' && l.line.includes(t('err.proc.uacCancelled', { exe: 'cmd.exe' })));
       expect(lines.length, '一行、且只有一行（索引 K10：除此之外不新增日志行）').toBe(1);

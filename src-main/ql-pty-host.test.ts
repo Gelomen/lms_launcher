@@ -235,6 +235,83 @@ describe('ql-pty-host：提权 PTY 宿主的装配（规格 §6.6 的 1-9 步）
     expect(spawnArgs).toEqual([]);
   });
 
+  // ---------- 任务 11 第三轮 · E3 / C1（规格 §6.4-2 / 索引 K2）：--ql-host 夹在 argv 中间也取对两个参数 ----------
+  it('host_flag_in_the_middle_of_argv_yields_the_two_arguments', () => {
+    const socket = new FakeSocket();
+    const connectArgs: unknown[] = [];
+    const spawnArgs: unknown[][] = [];
+    const savedArgv = process.argv;
+    // 打包布局的真实形状：exe、入口脚本、Chromium 自己的开关、我们的开关 + 两个参数、后面还有 Chromium 开关
+    process.argv = [
+      'C:\\Program Files\\lms launcher\\win-unpacked\\lms_launcher.exe',
+      'C:\\Program Files\\lms launcher\\win-unpacked\\resources\\app.asar\\dist-main\\boot.js',
+      '--disable-gpu',
+      '--ql-host',
+      PIPE,
+      TOKEN,
+      '--user-data-dir=C:\\Users\\me\\AppData\\Roaming\\lms-launcher',
+    ];
+    try {
+      runHost({
+        connect: (name: unknown) => {
+          connectArgs.push(name);
+          return socket;
+        },
+        spawn: ((...args: unknown[]) => {
+          spawnArgs.push(args);
+          return new FakeHandle(PID);
+        }) as unknown as typeof pty.spawn,
+      });
+    } finally {
+      process.argv = savedArgv;
+    }
+
+    // C1：管道名 = 开关之后的第一个；前面的参数与后面的开关都不影响它
+    expect(connectArgs).toEqual([PIPE]);
+    // token = 开关之后的第二个：HELLO 用它比对才通 → 顺序不错位（E3）
+    sendHello(socket);
+    expect(socket.frames.map((f) => f.type)).toEqual([HOST_FRAME.READY]);
+    expect(exitCodes).toEqual([]); // 没走任何失败路径
+    expect(spawnArgs).toHaveLength(1);
+  });
+
+  // ---------- 任务 11 第三轮 · E4 / C1（§6.6-10 / R-18 / 索引 K57）：只有开关没有值 → stage=pipe、退出码 3 ----------
+  it('missing_values_after_the_flag_fail_as_pipe_with_exit_3', () => {
+    const socket = new FakeSocket();
+    const connectArgs: unknown[] = [];
+    const spawnArgs: unknown[][] = [];
+    const savedArgv = process.argv;
+    process.argv = [
+      'C:\\Program Files\\lms launcher\\win-unpacked\\lms_launcher.exe',
+      'C:\\Program Files\\lms launcher\\win-unpacked\\resources\\app.asar\\dist-main\\boot.js',
+      '--ql-host', // 开关后面什么都没有：缺管道名与 token
+    ];
+    try {
+      runHost({
+        connect: (name: unknown) => {
+          connectArgs.push(name);
+          return socket;
+        },
+        spawn: ((...args: unknown[]) => {
+          spawnArgs.push(args);
+          return new FakeHandle(PID);
+        }) as unknown as typeof pty.spawn,
+      });
+    } finally {
+      process.argv = savedArgv;
+    }
+
+    // 没有管道名可连（真实现下 net.connect 交回的是 error 事件，不是抛出）—— 本条同时证「不抛未捕获异常」
+    expect(connectArgs).toEqual([undefined]);
+    socket.emit('error', new Error('connect ENOENT \\\\.\\pipe\\undefined'));
+
+    expect(exitCodes).toEqual([3]); // R-18 / K57：管道连不上 = 退出码 3
+    const err = JSON.parse(socket.payloadOf(HOST_FRAME.ERR)) as { stage: string };
+    expect(err.stage).toBe('pipe'); // §6.6-10：只报 stage + 原始 message
+    expect(spawnArgs).toEqual([]); // 没起终端
+    expect(lastTraceLine().endsWith(' stage=pipe err=connect ENOENT \\\\.\\pipe\\undefined')).toBe(true);
+  });
+
   // ---------- E2（§6.6-3 / C3）+ F3（终端映射只有一份）----------
   it('spawn_options_match_the_non_elevated_path', () => {
     // 对照物：真 spawnShell 在同一进程里把它的选项交给同一个假 spawn

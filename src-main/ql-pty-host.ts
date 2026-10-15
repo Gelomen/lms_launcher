@@ -1,5 +1,6 @@
 // src-main/ql-pty-host.ts
-// 任务 5（2026-10-14-quick-launch-admin §6.6）：提权 PTY 宿主入口 —— 被 §6.4 的硬链接 node.exe 直接执行。
+// 任务 5（2026-10-14-quick-launch-admin §6.6）：提权 PTY 宿主入口 —— 由 boot.js 按 --ql-host 分流执行（§6.4-1 / R-23）；
+//   dev 下也可由下面的 require.main === module 直接跑本脚本（§6.4-4 / 本表 E5）。
 // 边界（本表 B1 / F1-F4）：不 import electron（索引 K12）、不 import main.ts；终端映射只复用 quick-launch.ts:146-150
 //   的 shellExe（F3：不复制第二张映射表）；停止语义只复用 quick-launch.ts:122-142 的 PtyProcess.stopGraceful
 //   （§6.6-7：在提权进程里 taskkill 打得到整棵提权进程树）；不新增依赖（F4）；不含汉字字面量（G6）。
@@ -80,13 +81,23 @@ function finiteOr(value: unknown, fallback: number): number {
 }
 
 /**
+ * 两个位置参数的取法（本表 C1 逐字，规格 §6.4-4）：先在 process.argv 里找 --ql-host，取它后面的两个参数
+ * （app 模式：boot.js 分流过来时前面还有 exe、入口脚本、Chromium 自己的开关，后面也可能还有 —— 按下标取必错）；
+ * 找不到开关才退回 dev 直接跑脚本的 slice(2)（require.main 入口与既有单测的形状，本表 E5）。
+ * 缺参数不猜、不补默认值：交回 undefined，由调用方走 §6.6-10 的 pipe 失败路径（本表 E4）。
+ */
+function hostArgvPair(): [string, string] {
+  const i = process.argv.indexOf('--ql-host');
+  const args = i >= 0 ? process.argv.slice(i + 1, i + 3) : process.argv.slice(2);
+  return [args[0], args[1]];
+}
+
+/**
  * 宿主的装配（§6.6 的 1-9 步）。管道与 pty 都来自 deps：单测注入假 socket 与假 pty（plan 任务 5 的签名块逐字）。
- * argv: [node, script, pipeName, token]（§6.4-4 / 本表 C1）—— 终端 id、尺寸、cwd 一律在 HELLO 帧里传（索引 K2）。
+ * 管道名与 token 由 hostArgvPair() 取（本表 C1 的双形状，§6.4-4）—— 终端 id、尺寸、cwd 一律在 HELLO 帧里传（索引 K2）。
  */
 export function runHost(deps: { connect(name: unknown): HostSocket; spawn: typeof pty.spawn }): void {
-  const argv = process.argv.slice(2);
-  const pipeName = argv[0];
-  const hostToken = argv[1];
+  const [pipeName, hostToken] = hostArgvPair(); // 本表 E3/E4/E5 的取值点
 
   let proc: PtyProcess | null = null; // §6.6-3 之后才有：真 PtyProcess，停止语义与非提权路径同一份
   let stopping = false;              // 停止路径只走一次：STOP 帧与管道断开是同一条路（§6.6-7/8 的幂等）
@@ -199,12 +210,12 @@ export function main(): void {
       spawn: pty.spawn,
     });
   } catch (err) {
-    writeTrace(process.argv.slice(2)[0] ?? '', 'fatal', messageOf(err));
+    writeTrace(hostArgvPair()[0] ?? '', 'fatal', messageOf(err)); // 本表 B3：留痕的管道名与 runHost 同一套取法
     process.exit(4);
   }
 }
 
-// plan 任务 5：只有被 node.exe 直接执行时才自动跑（单测注入假 socket 与假 pty）。
+// plan 任务 5：只有它自己是应用入口时才自动跑（R-23：app 模式由 boot.js 分流调 main()，这里只服务 dev 直跑；单测注入假 socket 与假 pty）。
 // require.main === module 是 CJS 的判据；在没有 require/module 的加载器（测试的 ESM 变换）里短路为 false，不会误跑。
 if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
   main();

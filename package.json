@@ -2,7 +2,7 @@
   "name": "lms-launcher",
   "version": "0.4.0",
   "private": true,
-  "main": "dist-main/main.js",
+  "main": "dist-main/boot.js",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\"",
     "dev:vite": "vite",

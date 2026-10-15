@@ -29,7 +29,6 @@ const ERROR_CANCELLED = 1223;             // 用户在 UAC 点「否 / 取消」
 const PIPE_NAME_PREFIX = '\\\\.\\pipe\\lms-ql-';
 const PIPE_NAME_RANDOM_BYTES = 4;         // 4 字节 → 8 位十六进制（§6.5「<8 位随机>」）
 const TOKEN_RANDOM_BYTES = 12;            // 一次性 token（§6.4-4：argv 只带管道名与 token，其余走 HELLO 帧）
-const HOST_EXE_NAME = 'node.exe';         // §6.4-1：与 electron.exe 同目录的硬链接（索引 K20：换目录 = 0xC0000135）
 const HOST_SCRIPT_NAME = 'ql-pty-host.js'; // §6.4-2：dev = dist-main/，打包 = app.asar/dist-main/（索引 K21 / P9）
 
 /** Win32 管道接缝：真实现走 koffi；单测注入假实现（规格 §7.1「假 Win32 管道接缝」） */
@@ -42,10 +41,10 @@ export interface WinPipeApi {
   close(h: unknown): void;
 }
 
-/** 起提权宿主的接缝（规格 §6.4：硬链接 node.exe + runas + 三个带引号的参数） */
+/** 起提权宿主的接缝（规格 §6.4-1/2 / 裁决 R-23：应用自己的 exe + runas + 「--ql-host 两个带引号的参数」，由 boot.js 分流） */
 export interface HostLauncher {
-  hostExePath(): string;                               // 硬链接 node.exe 的解析（§6.4-1）
-  hostScriptPath(): string;                            // path.join(__dirname, 'ql-pty-host.js')
+  hostExePath(): string;                               // 恒等 process.execPath（§6.4-1：起哪个 exe 是决策点，单测要钉）
+  hostScriptPath(): string;                            // path.join(__dirname, 'ql-pty-host.js')：R-23 起不再进参数串（宿主由 boot.js 分流），只作宿主脚本的位置（dev 直跑 / 产物核对）
   launch(exe: string, script: string, pipeName: string, token: string): { ok: boolean; handle: unknown; win32Error: number };
   /** 任务 10 · C5 / §6.7：每轮连接等待判宿主是否已退出（进程句柄的生命周期归 launcher，直接转调 WinShellApi） */
   isAlive(handle: unknown): boolean;
@@ -78,10 +77,9 @@ export interface PipeKernel {
   lastError(): number;
 }
 
-/** 宿主路径的可替换来源（单测在临时目录真跑硬链接解析；生产侧不传，按 process.execPath） */
+/** 宿主 exe 的可替换来源（单测注入假 exe 路径；生产侧不传，按 process.execPath。R-21：硬链接用的 hostDir 已删） */
 export interface HostPaths {
   execPath?: string;
-  hostDir?: string;
 }
 
 /** 起宿主第一步的结果（§6.7 的前半段：建管道 → runas 起宿主）。失败时两个句柄都已关闭（RF4） */
@@ -116,55 +114,15 @@ export function hostStartError(win32Error: number, userTarget: string): Error {
   return new Error('PROC: ' + t('err.proc.spawnFail', { exe: userTarget, err: 'win32=' + win32Error }));
 }
 
-/** errno / 判定名：§6.10 第三行的 {err} = 'hostlink=' + 这个串 */
-function errnoOf(err: unknown): string {
-  const code = (err as NodeJS.ErrnoException | null)?.code;
-  return typeof code === 'string' && code ? code : String(err);
-}
-
-/**
- * 宿主可执行文件 = 与 process.execPath 同目录的 node.exe，由 fs.linkSync 建的硬链接（0 额外空间，§6.4-1）。
- * - 已存在同名文件：只有 size 与 srcExe 相同才认（同一条硬链接的必然表现）；不同 = 用户自己放的 node.exe
- *   → 明确报错，不覆盖、不删除别人的文件（§6.4-1 / §9-R5）。
- * - linkSync 失败（非 NTFS / 目录只读 / 目录不存在）→ 抛 'hostlink=<errno>'，由调用方按 §6.10 第三行报出。
- * 抛出的 message 就是 §6.10 的 {err}（'hostlink=...'），本模块不带文案（B1 边界）。
- */
-export function resolveHostLink(srcExe: string, dir: string): string {
-  const link = path.join(dir, HOST_EXE_NAME);
-  let existing: fs.Stats | null = null;
-  try {
-    existing = fs.statSync(link);
-  } catch (e) {
-    if (errnoOf(e) !== 'ENOENT') throw new Error('hostlink=' + errnoOf(e));
-  }
-  if (existing) {
-    let srcSize: number;
-    try {
-      srcSize = fs.statSync(srcExe).size;
-    } catch (e) {
-      throw new Error('hostlink=' + errnoOf(e));
-    }
-    if (existing.size !== srcSize) throw new Error('hostlink=size-mismatch');
-    return link;
-  }
-  try {
-    fs.linkSync(srcExe, link);
-  } catch (e) {
-    throw new Error('hostlink=' + errnoOf(e));
-  }
-  return link;
-}
-
 /**
  * 真 HostLauncher（§6.4）。起宿主**直接**调 winShell.shellExecute(file, 0, {verb,parameters})，
  * 不借道 launchShellExe —— 它的边界是 exe 类型，且既有用例按 toHaveBeenCalledWith(EXE, 1) 钉 arity（索引 K34）。
  */
 export function createHostLauncher(shell: WinShellApi, paths?: HostPaths): HostLauncher {
   const execPath = () => paths?.execPath ?? process.execPath;
-  const hostDir = () => paths?.hostDir ?? path.dirname(process.execPath);
   return {
     hostExePath() {
-      return resolveHostLink(execPath(), hostDir());
+      return execPath();
     },
     hostScriptPath() {
       return path.join(__dirname, HOST_SCRIPT_NAME);
@@ -177,8 +135,9 @@ export function createHostLauncher(shell: WinShellApi, paths?: HostPaths): HostL
       return shell.exitCodeOf(handle);
     },
     launch(exe, script, pipeName, token) {
-      // 三个参数都加引号：脚本路径可能含空格（§6.4-3）。其余取值由 shell-execute 的真实现保证不变
-      const parameters = '"' + script + '" "' + pipeName + '" "' + token + '"';
+      // 本表 C2 逐字（§6.4-2 / R-23）：开关 + 管道名与 token 各带引号；script 不再进参数串（app 模式不认「入口参数」，P15 / K64 ②）。
+      // 开关与 boot.ts 的 HOST_FLAG 是同一个串，两处字面量互指；其余取值由 shell-execute 的真实现保证不变
+      const parameters = '--ql-host "' + pipeName + '" "' + token + '"';
       const r = shell.shellExecute(exe, SW_HIDE, { verb: 'runas', parameters });
       // 失败也要把 Shell 交回的进程句柄关掉（§6.7「不留泄漏」/ RF4）：真实现失败时通常是 null，这里防御性处理
       if (!r.ok && r.handle !== null && r.handle !== undefined) shell.close(r.handle);
@@ -357,15 +316,8 @@ export function startHost(pipe: WinPipeApi, launcher: HostLauncher): HostStart {
   if (pipeHandle === null || pipeHandle === undefined) {
     return { ok: false, stage: 'pipe', win32Error: 0, pipeName, token, pipeHandle: null, hostHandle: null };
   }
-  let exe: string;
-  let script: string;
-  try {
-    exe = launcher.hostExePath();
-    script = launcher.hostScriptPath();
-  } catch (e) {
-    pipe.close(pipeHandle); // 路径解析失败也不留管道句柄（§6.10 第三行的 hostlink= 原样向上交）
-    throw e;
-  }
+  const exe = launcher.hostExePath();
+  const script = launcher.hostScriptPath();
   const r = launcher.launch(exe, script, pipeName, token);
   if (!r.ok) {
     pipe.close(pipeHandle);
@@ -382,7 +334,7 @@ export function startHost(pipe: WinPipeApi, launcher: HostLauncher): HostStart {
 // 文案（check C5② / 索引 K35 / 裁决 R-07）：既有三键的映射只在 hostStartError 里，本段不得再写第二份。
 //   本段新增的只有 §6.10 最后一行的 err.ql.ptySpawn：按主代理裁决 R-11，{err} 取 'host=' + 宿主发的 stage
 //   （token / spawn / pipe，索引 K43）；握手自身的失败取 'handshake=' + 形状（connect / timeout / broken / exit），
-//   与 win32= / hostlink= / pipe=create 同一风格，零新词典键（G2）。{exe} 始终是 opts.logTarget（用户那一行的目标）。
+//   与 win32= / pipe=create 同一风格，零新词典键（G2）。{exe} 始终是 opts.logTarget（用户那一行的目标）。
 // 工厂 startElevatedHost 是可 await 的（索引 K45 / 裁决 R-12）：构造函数不能 async，所以「等 READY」与
 //   「抛出前关掉管道句柄与进程句柄」都放在工厂里；类的六个方法仍与 ShellProcess 逐字一致。
 // ============================================================================
@@ -446,7 +398,8 @@ export class ElevatedPtyProcess {
     try {
       started = startHost(pipe, launcher); // 索引 K40 / C5①：起宿主只走这一条（建管道 + runas + 失败时关两个句柄）
     } catch (e) {
-      // hostExePath() 抛的 'hostlink=…' 原样塞进 {err}（§6.10 第三行 / 裁决 R-07）；管道句柄 startHost 已关
+      // 接缝交回的原始 message 原样塞进 {err}（裁决 R-07）。R-21 之后 startHost 没有路径解析这一步，
+      // 这里的 try/catch 只兜「注入的 launcher 自己抛」；管道句柄 startHost 已关。
       throw new Error('PROC: ' + t('err.proc.spawnFail', { exe: opts.logTarget, err: messageOf(e) }));
     }
     if (!started.ok) {

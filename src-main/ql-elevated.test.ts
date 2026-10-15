@@ -5,7 +5,7 @@
 // 判据一律走假接缝（假 WinPipeApi + 假 HostLauncher + 假 WinShellApi）：
 //   - 不真起提权进程：真 runas 会弹 UAC 并把主进程同步阻塞 5.7-5.9s（规格 §3-P11 / E19），自动化门会变成人工门；
 //   - 不真建管道（check B2 的边界）：真管道只在 check D3 的冒烟（.temp/ql-admin-probe/probe9.mjs）里出现。
-// 唯一真跑的是硬链接解析：fs.linkSync / fs.statSync 在临时目录真跑一次（plan 任务 4 步骤 1 第 3 条）。
+// 本轮（R-21）没有任何真跑的路径解析：宿主 exe 恒等 process.execPath，HostPaths 只剩这一个接缝。
 // 译文断言走 t()，不写死中文文案（同 shell-execute.test.ts:5 的口径）。
 import { describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
@@ -21,7 +21,6 @@ import {
   hostStartError,
   newPipeName,
   pipeKernel,
-  resolveHostLink,
   startElevatedHost,
   startHost,
   winPipe,
@@ -33,7 +32,7 @@ const PIPE_HANDLE = { fakePipe: 'p1' };
 const HOST_HANDLE = { fakeHost: 'h1' };
 const SD_STUB = { fakeSecurityDescriptor: 'sd' };
 // 脚本路径含空格是常态（app.asar 的父目录常带空格）：E2 的「三个参数都加引号」只有在这种路径上才有牙
-const HOST_EXE = 'C:\\Program Files\\lms launcher\\win-unpacked\\node.exe';
+const HOST_EXE = 'C:\\Program Files\\lms launcher\\win-unpacked\\lms_launcher.exe'; // R-21：宿主就是应用自己的 exe
 const HOST_SCRIPT = 'C:\\Program Files\\lms launcher\\win-unpacked\\resources\\app.asar\\dist-main\\ql-pty-host.js';
 const PIPE_NAME = '\\\\.\\pipe\\lms-ql-1a2b3c4d';
 const TOKEN = 'tok-1';
@@ -132,48 +131,47 @@ describe('ql-elevated 第一段：命名管道服务端与起宿主（规格 §6
     expect(seen[0][1]).toBe(0); // nShow = SW_HIDE（§6.4-3）
     const opts = seen[0][2] as { verb?: string | null; parameters?: string | null } | undefined;
     expect(opts?.verb).toBe('runas');
-    // 三个参数都带引号（§6.4-3：脚本路径可能含空格）
-    expect(opts?.parameters).toBe('\"' + HOST_SCRIPT + '\" \"' + PIPE_NAME + '\" \"' + TOKEN + '\"');
+    // R-23 / 本表 C2：参数串 = --ql-host 开关 + 两个带引号的参数（管道名、token）；脚本路径不再进参数串
+    expect(opts?.parameters).toBe('--ql-host \"' + PIPE_NAME + '\" \"' + TOKEN + '\"');
     // C2 的 hostScriptPath：与主进程同目录的 ql-pty-host.js（dev = dist-main/，打包 = app.asar/dist-main/）
     expect(launcher.hostScriptPath()).toBe(path.join(__dirname, 'ql-pty-host.js'));
   });
 
-  // ---------- E3 + C5（规格 §6.4-1 / §9-R5：fs.linkSync / fs.statSync 在临时目录真跑一次）----------
-  it('host_exe_resolution_reuses_an_existing_link_only_when_size_matches', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ql-hostlink-'));
-    try {
-      const src = path.join(dir, 'electron.exe');
-      fs.writeFileSync(src, Buffer.alloc(4096, 1));
-      const link = path.join(dir, 'node.exe');
-      // 1) 目录里没有 node.exe → 真跑一次 fs.linkSync：硬链接 = 同 inode、0 额外空间，不是副本
-      expect(resolveHostLink(src, dir)).toBe(link);
-      expect(fs.statSync(link).size).toBe(4096);
-      expect(fs.statSync(link).ino).toBe(fs.statSync(src).ino);
-      // 2) 已存在且 size 相同（就是我们自己建的那条）→ 复用：不重复建、不报错（§8-K13「运行时缺再补」的反面：不缺就不动）
-      expect(resolveHostLink(src, dir)).toBe(link);
-      expect(fs.statSync(link).ino).toBe(fs.statSync(src).ino);
-      // 3) 已存在但 size 不同 = 用户自己放的 node.exe → 明确报错，且不覆盖、不删除别人的文件（§6.4-1 / §9-R5）
-      fs.unlinkSync(link);
-      fs.writeFileSync(link, Buffer.alloc(7, 2));
-      let msg = '';
-      try {
-        resolveHostLink(src, dir);
-      } catch (e) {
-        msg = (e as Error).message;
-      }
-      expect(msg).toBe('hostlink=size-mismatch');
-      expect(fs.statSync(link).size).toBe(7);
-      // 4) linkSync 失败（非 NTFS / 目录只读 / 目录不存在）→ hostlink=<errno>，即 §6.10 第三行的 {err}
-      let msg2 = '';
-      try {
-        resolveHostLink(src, path.join(dir, 'no-such-dir'));
-      } catch (e) {
-        msg2 = (e as Error).message;
-      }
-      expect(msg2).toBe('hostlink=ENOENT');
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+  // ---------- E1 + C2（R-21 / 规格 §6.4-1：宿主 exe = 应用自己的 exe；没有硬链接、没有 defaultApp 分支）----------
+  it('host_exe_is_the_app_executable', () => {
+    const { api, seen } = fakeShell();
+    // 生产侧（不注入 paths）：恒等 process.execPath —— dev 与打包同一条式子（§6.4-1）
+    expect(createHostLauncher(api).hostExePath()).toBe(process.execPath);
+    // 测试接缝（C2：本轮唯一的接缝）：注入什么就交回什么
+    expect(createHostLauncher(api, { execPath: HOST_EXE }).hostExePath()).toBe(HOST_EXE);
+    // 路径不存在也不抛、也不碰文件系统（旧机制在这里要先解析链接而抛；R-21 没有这一步）
+    expect(createHostLauncher(api, { execPath: 'X:\\missing\\lms_launcher.exe' }).hostExePath())
+      .toBe('X:\\missing\\lms_launcher.exe');
+    expect(seen).toHaveLength(0); // hostExePath() 不起进程
+  });
+
+  // ---------- E2 + C2/C3（R-21 / 规格 §6.4-1：startHost 交出的 exe / script 逐字进 launch）----------
+  it('start_host_passes_the_app_exe_and_script_to_launch', () => {
+    // ① 生产侧：exe 逐字 = process.execPath，script 逐字 = path.join(__dirname, 'ql-pty-host.js')
+    //    （R-23：script 仍逐字交进 launch，但不再进参数串 —— 宿主由 boot.js 按 --ql-host 分流，参数串见下一行）
+    const { api: pipe, closed } = fakePipe();
+    const { api: shell, seen } = fakeShell();
+    const r = startHost(pipe, createHostLauncher(shell));
+    expect(r.ok).toBe(true);
+    expect(closed).toEqual([]); // 成功路径不关管道句柄（它交给 ElevatedPtyProcess）
+    expect(seen).toHaveLength(1);
+    expect(seen[0][0]).toBe(process.execPath);
+    expect(seen[0][1]).toBe(0); // nShow = SW_HIDE（§6.4-1）
+    const opts = seen[0][2] as { verb?: string | null; parameters?: string | null };
+    expect(opts.verb).toBe('runas');
+    expect(opts.parameters).toBe('--ql-host \"' + r.pipeName + '\" \"' + r.token + '\"'); // C2 逐字
+    // ② 接缝侧：hostExePath() 交出的值原样进 launch —— 旧机制在这里先去解析硬链接，连 launch 都到不了
+    const { api: pipe2 } = fakePipe();
+    const { api: shell2, seen: seen2 } = fakeShell();
+    const r2 = startHost(pipe2, createHostLauncher(shell2, { execPath: HOST_EXE }));
+    expect(r2.ok).toBe(true);
+    expect(seen2).toHaveLength(1);
+    expect(seen2[0][0]).toBe(HOST_EXE);
   });
 
   // ---------- E4 + RF4（规格 §6.7「抛出前关掉管道句柄与进程句柄」）----------
@@ -188,19 +186,16 @@ describe('ql-elevated 第一段：命名管道服务端与起宿主（规格 §6
     expect(r.win32Error).toBe(5);
     expect(pipeClosed).toEqual([PIPE_HANDLE]);
     expect(shellClosed).toEqual([HOST_HANDLE]);
-    // 场景 2：宿主路径解析失败（硬链接建不出来）→ 管道句柄也要关，异常原样向上交
+    // 场景 2（R-21）：hostExePath() 走 paths.execPath 接缝 —— 路径不存在也**不抛**、不去解析任何东西，
+    // 交出去的就是注入的那个 exe（硬链接族已退场，见 host_exe_is_the_app_executable）
     const { api: pipe2, closed: pipeClosed2 } = fakePipe();
     const { api: shell2, seen: seen2 } = fakeShell();
-    const missing = createHostLauncher(shell2, { execPath: 'X:\\missing\\electron.exe', hostDir: 'X:\\missing' });
-    let msg = '';
-    try {
-      startHost(pipe2, missing);
-    } catch (e) {
-      msg = (e as Error).message;
-    }
-    expect(msg).toBe('hostlink=ENOENT');
-    expect(pipeClosed2).toEqual([PIPE_HANDLE]);
-    expect(seen2).toHaveLength(0); // 路径没解析出来就不该去起进程
+    const injected = createHostLauncher(shell2, { execPath: 'X:\\missing\\lms_launcher.exe' });
+    const r2 = startHost(pipe2, injected);
+    expect(r2.ok).toBe(true);
+    expect(seen2).toHaveLength(1);
+    expect(seen2[0][0]).toBe('X:\\missing\\lms_launcher.exe');
+    expect(pipeClosed2).toEqual([]); // 没失败就不关管道句柄（成功路径的句柄交给调用方）
   });
 
   // ---------- E5 + C6（主代理裁决 R-07 / 索引 K35：守的是映射器，不是 launch()）----------
@@ -209,7 +204,7 @@ describe('ql-elevated 第一段：命名管道服务端与起宿主（规格 §6
     const msg = hostStartError(1223, userTarget).message;
     expect(msg).toMatch(/^PROC: /); // G1：本模块只出 PROC:
     expect(msg).toContain(t('err.proc.uacCancelled', { exe: userTarget }));
-    expect(msg).not.toContain('node.exe'); // §6.10：绝不传宿主 exe
+    expect(msg).not.toContain('lms_launcher.exe'); // §6.10：绝不传宿主 exe
     // 其它码走 err.proc.spawnFail + win32=<code>（§6.10 第二行，零新键）
     expect(hostStartError(2, userTarget).message).toContain(t('err.proc.spawnFail', { exe: userTarget, err: 'win32=2' }));
   });
@@ -624,7 +619,7 @@ describe('ql-elevated 第二段：ElevatedPtyProcess（规格 §6.7 / §6.5 读�
       });
       expect(msg).toMatch(/^PROC: /);
       expect(msg).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=timeout' }));
-      expect(msg).not.toContain('node.exe'); // §6.10：{exe} 绝不是宿主 exe
+      expect(msg).not.toContain('lms_launcher.exe'); // §6.10：{exe} 绝不是宿主 exe
       expect(h.closed).toEqual([PIPE_HANDLE]);
       expect(closed).toEqual([HOST_HANDLE]);
       expect(vi.getTimerCount()).toBe(0); // 读轮询与握手定时器都没留下
@@ -711,7 +706,7 @@ describe('ql-elevated 第二段：ElevatedPtyProcess（规格 §6.7 / §6.5 读�
       });
       expect(msg).toMatch(/^PROC: /);
       expect(msg).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=connect' }));
-      expect(msg).not.toContain('node.exe');
+      expect(msg).not.toContain('lms_launcher.exe');
       expect(h.closed).toEqual([PIPE_HANDLE]); // 抛出前关掉两个句柄（§6.7 / RF4）
       expect(closed).toEqual([HOST_HANDLE]);
       expect(vi.getTimerCount()).toBe(0);
@@ -748,7 +743,7 @@ describe('ql-elevated 第二段：ElevatedPtyProcess（规格 §6.7 / §6.5 读�
       });
       expect(msg).toMatch(/^PROC: /);
       expect(msg).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'handshake=exit(code=3)' }));
-      expect(msg).not.toContain('node.exe');
+      expect(msg).not.toContain('lms_launcher.exe');
       expect(h.closed).toEqual([PIPE_HANDLE]);
       expect(closed).toEqual([HOST_HANDLE]);
       expect(vi.getTimerCount()).toBe(0);
@@ -909,7 +904,7 @@ describe('ql-elevated 第二段：ElevatedPtyProcess（规格 §6.7 / §6.5 读�
       });
       expect(msg).toMatch(/^PROC: /);
       expect(msg).toContain(t('err.ql.ptySpawn', { exe: LOG_TARGET, err: 'host=spawn' }));
-      expect(msg).not.toContain('node.exe');
+      expect(msg).not.toContain('lms_launcher.exe');
       expect(msg).not.toContain('spawn boom'); // 宿主的原始 message 不进文案（文案只在词典里）
       expect(h.closed).toEqual([PIPE_HANDLE]);
       expect(closed).toEqual([HOST_HANDLE]);
