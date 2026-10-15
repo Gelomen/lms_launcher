@@ -115,7 +115,11 @@
 
 - 名字 `\\.\pipe\lms-ql-<8 位随机>`，每实例一条；`CreateNamedPipeW(dwOpenMode = PIPE_ACCESS_DUPLEX(3), dwPipeMode = 0, nMaxInstances = 1, 64KiB × 2, nDefaultTimeOut = 0)`。
 - **必须显式 SDDL**：`ConvertStringSecurityDescriptorToSecurityDescriptorW("D:(A;;GA;;;WD)", 1)` → `SECURITY_ATTRIBUTES{ bInheritHandle = 0 }`。依据 P10/P12：不给 SD，提权客户端连不上（前置规格 E13 已证 `sizeof(SA)=24`、`sizeof(SE)=112`）。
-- 服务端 `ConnectNamedPipe` 用 50ms 轮询直到成功或超时（`ERROR_PIPE_CONNECTED = 535` 也算成功，P10 实测 61ms 连上）。
+- **连接等待必须非阻塞且有界**（裁决 **R-17** / 索引 **K56**，2026-10-15 真机缺陷）。服务端**不得**用阻塞的 `ConnectNamedPipe(h, null)` 去等连接：阻塞句柄上它要等到客户端连上才返回，写在它外面的超时判定**永远不可达**，真机表现为**应用永久卡死无响应**（用户 2026-10-15 18:0x 回报：类型 [命令行] + 管理员，UAC 点「是」后不出页签、应用无响应）。改成 `CONNECT_POLL_MS = 50` 的异步轮询：
+  - `PeekNamedPipe` 成功（`available() >= 0`）= 客户端已连上。主代理 probe 实测：未连时 `available() = -1` 且 `lastError = 230`（`ERROR_PIPE_NOT_CONNECTED`）；客户端一连上立刻拿到可读字节（本机 35ms 检出）；期间**读写都不需要先调 `ConnectNamedPipe`**（probe 里 `ReadFile` 读到客户端发的 `PING`、`WriteFile` 回 `PONG` 成功）。
+  - 连上后**补一次 `ConnectNamedPipe`**：此时客户端已在，立即返回 `ERROR_PIPE_CONNECTED = 535`（probe 实测 535），既有「535 也算成功」的判定不变。
+  - 到 `HOST_HANDSHAKE_TIMEOUT_MS = 15000` 仍未连上 → 抛 `handshake=connect`（§6.7 / §6.10）。
+  - 轮询期间**同时**判宿主进程是否已退出（§6.7）：已退出立即抛 `handshake=exit(code=N)`，不等满 15s、不再盲等。
 - **读**：`PeekNamedPipe` 判可读字节数 → `ReadFile` 读出来喂给帧解析器；定时器 `POLL_READ_MS = 20`。不用阻塞 `ReadFile`：那会把主线程卡住（前置规格 §6.9 的「不卡死」口径）。写侧 `WriteFile` 直接写（形参声明成 `uint8 *` 传 Buffer；P10 里 `lastErr=998` 就是传错缓冲区 marshalling 的现象）。
 - 断开：`ReadFile` 返回 `ERROR_BROKEN_PIPE(109)`（P12）→ 停止轮询、按 §6.7 的退出路径收尾。
 
@@ -149,13 +153,16 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 7. `STOP` → 复用 `PtyProcess.stopGraceful`（`quick-launch.ts:122-142`：`kill()` → 等 `timeoutSecs` → `taskkill /T /F`）。**在提权进程里 `taskkill` 能杀掉整棵提权进程树**（前置规格 E9 的反面：非提权进程杀不动提权进程，提权进程自己杀得动）。
 8. 管道断开（主进程退出 / 崩溃）→ 视同 `STOP{timeoutSecs:3}`，不留孤儿 ConPTY。
 9. 宿主**不 import `electron`**、不含汉字字面量（`src-main/i18n/no-hardcoded.test.ts:26-28` 扫全部 `src-main/*.ts`）；错误只报 `stage` + 原始 message，文案在主进程侧按词典生成。
-10. 管道连不上 / 管道 `error` 事件（含第 1 步的 `connect` 之后立刻失败）→ 发 `ERR{stage:'pipe', message}` 并 `process.exit(1)`，**不带未处理的崩溃栈**（裁决 R-10 / 索引 K43，2026-10-15 00:1x：没有 `error` 监听时宿主会带栈崩掉，主进程收不到任何帧、退出码不可控）。主进程侧按 §6.7 的 `ERR` 帧 / 断管路径处理。
+10. 管道连不上 / 管道 `error` 事件（含第 1 步的 `connect` 之后立刻失败）→ 发 `ERR{stage:'pipe', message}`（发不出去也要试）并 `process.exit(3)`（**退出码 3**：裁决 **R-18** / 索引 **K57**，2026-10-15；原来与下面的「加载期崩溃」同为 1，主进程无法判别），**不带未处理的崩溃栈**（裁决 R-10 / 索引 K43，2026-10-15 00:1x：没有 `error` 监听时宿主会带栈崩掉，主进程收不到任何帧、退出码不可控）
+11. **退出码分类**（R-18 / K57）：`2` = token 不匹配（第 2 条）；`1` = `spawn` 失败（第 4 条）；`3` = 管道连不上（第 10 条）；`4` = 宿主自身的未预期异常（第 12 条）。主进程把退出码并进失败文案（§6.10）——提权子进程能带回主进程的判别信息只有这几样。
+12. **失败留痕**（R-18 / K57）：`main()` 外层 `try/catch` 兜住加载期 / 运行期未预期异常 → 记 `stage='fatal'` 后 `process.exit(4)`；**上述四类失败**都向 `path.join(os.tmpdir(), 'lms-ql-host.log')` **追加一行**（换行压成空格）：`<ISO 时间> pid=<pid> pipe=<管道名> stage=<stage> err=<原始 message>`；文件超过 64KiB 先清空再写。为什么必须有它：`ShellExecuteEx` 不给子进程 stdio，提权宿主**连不上管道时 `ERR` 帧也发不出去**，主进程只有这个文件能知道宿主侧发生了什么（2026-10-15 的真机故障正是卡在这里）。纯 ASCII、不含汉字（G6），只追加、不由本 feature 清理。。主进程侧按 §6.7 的 `ERR` 帧 / 断管路径处理。
 
 ### 6.7 主进程侧 `ElevatedPtyProcess`（`ql-elevated.ts`）
 
 形状 = `ShellProcess`（`quick-launch.ts:175-182`）逐字：`write / resize / onData / onExit / isRunning / stopGraceful`。
 
 - 构造即启动：建管道 → `shellExecute(..., {verb:'runas', ...})` → 等连接 → 发 `HELLO` → 等 `READY`（`HOST_HANDSHAKE_TIMEOUT_MS = 15000`）。失败按 §6.10 抛出，**抛出前关掉管道句柄与进程句柄**（不留泄漏）。
+- **等待连接不得阻塞主线程**（R-17 / K56，§6.5）：50ms 异步轮询 `PeekNamedPipe`（`available() >= 0` = 已连；`-1` = 还没连上，继续等），连上后补一次 `ConnectNamedPipe`（535 算成功）。**每轮同时判宿主是否已退出**：给 `HostLauncher` 加两个成员 `isAlive(handle): boolean` / `exitCodeOf(handle): number`（实现直接转调注入的 `WinShellApi.isAlive/exitCodeOf`——进程句柄的生命周期本来就归 launcher），宿主已退出 → 立刻抛 `handshake=exit(code=N)`；到 15s 仍未连上 → `handshake=connect`。真机回报（2026-10-15 18:0x）：宿主没连上时主线程被阻塞的 `ConnectNamedPipe` 永久卡住，应用「无响应」——这就是本次缺陷的修复口径。
 - 宿主进程句柄的生命周期复用 `ShellExecProcess`（`shell-execute.ts:124-185`）的 100ms 轮询判退出，不另写一套。
 - `onExit`：优先用 `EXIT` 帧里的 `code`；宿主没发 `EXIT` 就死了（崩溃 / 被强杀）→ 用 `GetExitCodeProcess`（P12 实测能读到 `process.exit(7)` 的 7）。已退出再注册 → 立即补发（与 `quick-launch.ts:108-115` 同口径）。
 - `stopGraceful(timeoutSecs)`：发 `STOP` → 等 `EXIT` / 宿主退出（上限 `timeoutSecs`）→ 仍活则委托给 `ShellExecProcess.stopGraceful`（`taskkill` 打宿主 → 失败则 `TerminateProcess` → 再等 1000ms 让退出落地）。**委托时传剩余预算**：`Math.max(0, timeoutSecs - 已等毫秒 / 1000)`（裁决 R-13，2026-10-15 13:5x，索引 K50）。理由：`ShellExecProcess.stopGraceful`（`shell-execute.ts:178-190`）自己也要等一个完整的 `timeoutSecs` 才 `TerminateProcess`，再等 `FORCE_EXIT_WAIT_MS = 1000`；传同值会把单实例上限变成 `2×timeoutSecs + 1s`，而 `stopAll` 是**逐个 `await`**（`quick-launch.ts:322-333`），`main.ts:382` / `:648` 传的是 `3` → N 个提权终端退出时最坏 `N×7s`。传剩余预算后总上限与非提权路径同形（`timeoutSecs + 1s`）。幂等。
@@ -180,7 +187,8 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 | `ShellExecuteEx` 其它失败 | `PROC: t('err.proc.spawnFail', { exe, err: 'win32=' + code })` |
 | 硬链接建不出来 / 已存在的 `node.exe` 不是我们的 | `PROC: t('err.proc.spawnFail', { exe, err: 'hostlink=' + reason })` |
 | 建管道失败（`ConvertStringSecurityDescriptor…` 或 `CreateNamedPipeW`） | `PROC: t('err.proc.spawnFail', { exe, err: 'pipe=create' })` —— 裁决 R-08（2026-10-14 23:2x，索引 K37）：`WinPipeApi.createServer` 的返回类型（`unknown`）交不回错误码，且这条路径在 `nMaxInstances=1` + 每次新名字下近乎不可能；只报阶段、不报 win32 码，换掉 C1 的签名不值 |
-| 宿主起来了但握手失败（`ERR` 帧 / 管道断 / 超时） | `PROC: t('err.ql.ptySpawn', { exe, err })` |
+| 宿主起来了但握手失败（`ERR` 帧 / 管道断 / 连接超时 / **宿主早退**） | `PROC: t('err.ql.ptySpawn', { exe, err })`；`{err}` 取既有词表（索引 K48：`host=<stage>` / `handshake=timeout|broken|connect`），**宿主早退时扩成 `handshake=exit(code=N)`**（R-18 / K57） |
+| 宿主早退后的留痕合并（R-18 / K57） | 抛 `handshake=exit` 前读 `%TEMP%\lms-ql-host.log` 的**最后一行**，仅当该行 `pipe=` 与本次管道名相同才采信，把它的 `stage=` / `err=` 并进**同一个 `{err}`**（因此仍然只有一行日志，R-15 / K53 不变）。文件不存在 / 无匹配行 → 只报退出码，不报错。**合并点在 `ElevatedPtyProcess` 内，`main.ts` 零改动**（索引 K57） |
 
 日志通道与条数与非提权路径**完全一致**（§8-K10）：不新增「宿主已启动」之类的日志行。**精确化（裁决 R-15，2026-10-15 14:4x，索引 K53）**：这句约束的是**成功路径**——不得有「宿主已启动 / 管道已连 / 握手完成」这类信息性行。**失败原因行**按既有分工写一行：`main.ts:1069-1071` 的 exe 路径（前置 feature 2026-10-13 的既有行为）就是「`emitLog('[lms_launcher] ' + msg, 'sys')` 然后原样抛出」，提权 shell 的接线逐字对齐它——这是 §7.2-4 真机判据（「日志一行取消原因且带的是终端名不是宿主名」）的前提，不是新增通道。既有缺口登记为不在本期范围：非提权的 shell 启动失败今天**没有**原因行（`ql_start` handler 不 catch），修它会改动非提权行为（受 G3/G4 约束）。
 
@@ -215,6 +223,7 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 7. 提权终端运行中点应用退出：终端进程树被杀掉，不留孤儿。
 8. 提权终端里输 `exit` 关掉：按钮回落、退出码进日志。
 9. **同一次构建里补跑前置 feature 的六步清单**（`docs/superpowers/checks/2026-10-13-quick-launch-elevated-exe/task-04-packaged-realmachine.md` 的 E1–E7），把那个 feature 收尾。
+10. **宿主起不来时不得卡死**（R-17 / R-18，**先看这一条再看 1-8**）：命令行 + 管理员，若宿主连不上（安全软件拦提权进程访问管道 / 文件缺失 / 原生模块解析失败 / 参数被改写），应用**必须**在 15s 内回落 `[启动]` 并写**一行**原因日志：`handshake=exit(code=N; …)` 或 `handshake=connect`；`%TEMP%\lms-ql-host.log` 里能读到宿主侧的 `stage=` 与原始 message。**不允许再出现「应用无响应」。**
 
 ## 8 已定口径（grill-me 逐项确认，2026-10-14）
 
@@ -248,3 +257,4 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 | R6 | 非 NTFS / 只读目录 → `linkSync` 失败 | §6.10 明确报错；`build.bat` 预建是主路径 |
 | R7 | 20ms 读轮询的输入延迟 | 真机门 §7.2-2 里「输入可用」即算过；明显迟滞再调 |
 | R8 | 提权条目并发多条 → 多条管道与宿主 | 每实例独立管道名；`nMaxInstances = 1`；回归用例覆盖两条并发 |
+| R9 | 提权宿主连不上管道（安全软件拦 IPC / 权限 / 缺文件 / 参数被改写） | **2026-10-15 真机已命中**（应用永久卡死）。已按 R-17（有界非阻塞等待）+ R-18（退出码分类 + 留痕文件）修复；真机门 §7.2-10 |

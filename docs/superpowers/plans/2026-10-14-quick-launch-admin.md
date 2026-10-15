@@ -261,6 +261,26 @@ export class ElevatedPtyProcess {
 - [ ] **步骤 4：等回报**，逐条把「通过 / 不通过 + 现象」填进本任务 check 表的 J 段；R1 命中时按 §9-R1 的回退口径改 `electron-builder.yml` 并**同一 commit** 同步 spec/plan/check 表。
 - [ ] **步骤 5：Commit（主代理）**：`build: 预建提权宿主的 node.exe 硬链接 + 真机门清单`
 
+### 任务 10：真机缺陷修复 —— 连接不阻塞 + 宿主早退可见 + 宿主失败留痕
+
+> 来源：2026-10-15 18:0x 用户真机回报（[命令行] + 管理员：UAC 点「是」后不出页签、**应用卡死无响应**）。主代理取证：阻塞 `ConnectNamedPipe` 让超时分支不可达（§6.5 / R-17）；宿主侧失败一个字节也带不回来（R-18）。**先改文档再改代码**（本节与 spec §6.5 / §6.6-10..12 / §6.7 / §6.10 / §7.2-10 / §9-R9 同一 commit）。
+
+- [ ] **步骤 0：起点核对**：`ql-elevated.ts:449-476`（`handshake()` 的 while 循环）、`:586-605`（`adoptHostHandle` / 进程句柄）、`ql-pty-host.ts:53-151`（`runHost` / `fail` / `main`）、`shell-execute.ts` 的 `WinShellApi.isAlive` / `exitCodeOf`。
+- [ ] **步骤 1：先改测试**（`src-main/ql-elevated.test.ts` / `src-main/ql-pty-host.test.ts`）：
+  - `handshake_polls_without_calling_blocking_connect`（连接未成前**不得**调 `pipe.connect`；只轮询 `available()`）
+  - `handshake_detects_the_client_through_peek`（`available() >= 0` → 已连，随后补一次 `connect()` 并接受 535）
+  - `handshake_times_out_when_nobody_connects`（到点抛 `handshake=connect`，且**主线程没有被阻塞**）
+  - `handshake_fails_fast_when_the_host_died`（`isAlive=false` → `handshake=exit(code=N)`，不再等满 15s）
+  - `host_pipe_failure_exits_3_and_writes_the_trace_file`
+  - `host_fatal_error_exits_4_and_writes_the_trace_file`
+  - `host_trace_line_is_merged_into_the_exit_fragment`（只有 `pipe=` 匹配才采信；不匹配 / 无文件 → 只报退出码）
+- [ ] **步骤 2：跑红**：`npx vitest run src-main/ql-elevated.test.ts src-main/ql-pty-host.test.ts`。
+- [ ] **步骤 3：实现**：
+  - `ql-elevated.ts`：`handshake()` 的连接等待换成 50ms 异步轮询（`available() >= 0` = 已连；`-1` = 继续等），轮次里判宿主退出 + 到点超时，连上后补一次 `connect()`；`HostLauncher` 加 `isAlive` / `exitCodeOf`（转调 `WinShellApi`）；`handshake=exit(code=N)` 前并留痕最后一行（§6.10）。
+  - `ql-pty-host.ts`：`fail()` 分类退出码（pipe → 3）；`main()` 外层 `try/catch` → `stage='fatal'` → 4；四类失败各追加一行到 `%TEMP%\lms-ql-host.log`。
+- [ ] **步骤 4：跑绿 + G5 + G6 + 全量**（`npm test` 只增不减）。
+- [ ] **步骤 5：Commit（主代理）**：`fix: 提权终端连接不再阻塞主线程（有界等待 + 宿主早退可见 + 失败留痕）`
+
 ---
 
 ## 计划自检（写完当场跑过）
@@ -269,3 +289,4 @@ export class ElevatedPtyProcess {
 - 规格 §6.1–§6.11 每节都有任务承载；§9 的 R1–R8 落在任务 9 的真机门与任务 4/6 的用例里。
 - 无占位符 / 无「二选一」遗留（`main.ts` 适配器取 `admin` 的两种方式在任务 3 步骤 4 里明确「选定后写进 C 段」——那是实现选择，不是规格空洞）。
 - 每个任务都有「先红」的步骤与定向命令；每个任务的收尾都带 G5/G6。
+- **任务 10 是任务 9 真机门打回来的缺陷修复**（2026-10-15 18:0x），不是新功能：它只修「有界等待 / 早退可见 / 失败留痕」，不改协议、不改 §5 的任何非目标。
