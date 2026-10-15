@@ -137,3 +137,33 @@
 - 文档已改（与本轮代码同一 commit）：spec（修 P13 行内被换行打断的表格行 + 新增 P14 / §6.3 模块表 / §6.4 标题+引言+条目 1-4、6 / §6.6 标题与 1 / §6.11 / §7.1 / §7.2 / §8-K2,K12,K13 / §9-R1,R10）；plan 任务 11（标题、来历、步骤 0-6、计划自检那行）；check 表 task-11 **全表重写为第二轮**（第一轮的记录留在 J-1~J-5、J-7 并标注「已打回」，打回取证在 J-6，丢弃动作在 J-8，本轮 D6 留 J-9 显式未勾）；索引（清单表行 11、K59 作废标注、K60 修正、新增 K61/K62）。
 - 工作区丢弃（2026-10-15 20:2x）：`git restore -- src-main build.bat package.json docs/superpowers/checks/…/task-11-host-mode-launch.md` + 删 `src-main/boot.ts` / `ql-host-boot.ts` / `ql-host-boot.test.ts`。核对：`package.json` 的 `main` 回到 `dist-main/main.js`、`ql-pty-host.ts:209` 的 `require.main` 块在位、`HostLauncher` 的四参 `launch` 就是本轮要的形状。
 - 派任务 11（**第二轮**）：起点 = 本轮文档提交，基线 51 files / 895 tests；改动范围只剩 `ql-elevated.ts`（删硬链接族 + `hostExePath() → process.execPath` + `startHost` 去 try/catch + 三处注释）、`ql-elevated.test.ts`（删 1 加 2 + 场景 2 改写 + 五处换名）、`ipc-ql.test.ts:491`（假 exe 名）、`build.bat`（删块）。D6 / G6 仍归主代理。
+
+## 任务 11 第二轮（R-21）验收（2026-10-15 20:4x-21:0x）
+
+- 子代理 `5700436a-9eca-4679-99cc-2aac7af5e9c9`（报告 `task-11r2-report.md`）。**我独立复跑，与它的自述逐字一致**：G1+ 定向（`ql-elevated 25 + ipc-ql 27 + ql-pty-host 8`）= **60**；G2 相邻 = **61**；`tsc --noEmit -p tsconfig.main.json` = `TSC_EXIT=0`；G4 i18n = **18**；G5 `npm test` = **51 files / 896 tests**（两次：子代理一次、我在注释编辑后再一次）。改前定向基线（它的额外取证）= 51（24+27），与 A2 一致。
+- 范围核对：`git diff --numstat` 只有 `build.bat 0/21`、`ipc-ql.test.ts 1/1`、`ql-elevated.test.ts 49/55`、`ql-elevated.ts 10/58`。逐行读 diff：`hostExePath(){ return execPath(); }`、`execPath` 接缝原样保留、`startHost` 的 try/catch 删成两行直取、`launch()` 函数体与 `HostLauncher` 签名、`launch_passes_runas_and_three_quoted_arguments`、`hostLauncherStub` 都不在 diff 的任何 hunk 里（= 一字未改）。`fs` 仍被 `:642` 的留痕读取用到，没有悬空 import。
+- 新用例是真的、不是空转：`host_exe_is_the_app_executable` 钉生产单例 `=== process.execPath` + 接缝回原值 + 「路径不存在也不抛、不碰文件系统、不起进程」；`start_host_passes_the_app_exe_and_script_to_launch` 逐字钉 `exe`/`script`/`parameters`/`nShow=0`/`verb='runas'`。
+- 两处文档侧偏离 → 裁决 **R-22 / K63**（同一 commit 改文档）：① **897 是我算错**（本表 D1 自己写「删 1 加 2」→ 896；897 来自 plan 的「加 3 条」）。已改 A2 / D5 / G5 与 plan 步骤 1/4 为 **896**，并把 plan 步骤 1 的第三条用例改成与 D1 一致（覆盖面由既有用例 + 场景 2 承担）。② **C7 与 B4/B5 冲突**：我逐处读了那 6 行 —— `ql-pty-host.ts:2/:207`、`main.ts:1093-1094/:1096`、`ipc-ql.test.ts:424` 的注释在新机制下**为假**，`ipc-ql.test.ts:637` 的 `not.toContain('node.exe')` 会**空转**。裁决：C7 拆两条 + 开 B5′ 例外（**只改注释 / 断言字符串**、不碰代码 token、**行数不变**）。这 6 处由我改（不是实现代码，属验收/提交侧），改后 `git grep hostlink` 与 `git grep node\\.exe` 在 `src-main` 都是**零命中**，numstat = `main.ts 3/3`、`ql-pty-host.ts 2/2`、`ipc-ql.test.ts 3/3`（行数不变）。
+- 顺带修掉两处文档缺陷：索引 V 组「任务 9」那行还写着「`win-unpacked\\node.exe` 与 `lms_launcher.exe` 同 inode」（R-19/R-21 后为假）→ 改成「`app.asar\\dist-main\\ql-pty-host.js` 在 + **包内无 `node.exe`** + `main` 仍是 `dist-main/main.js`」；按 AGENTS.md 自检项把 check 表 / 索引 / spec / plan 里代码片段中**多余的转义反斜杠**核对一遍（任务 11 表 13 处、索引 3 处修掉；`\\\\.\\pipe\\x` 这类**有意**的双反斜杠与 JSON 里的 `D:\\\\Tools` 保留 —— 我第一次用批量折半改错了 4 个文件，已 `git restore` 回退再逐处手改）。
+- 新增 **D6′ dev 布局门**（K63 ③）：`node_modules\\electron\\dist\\electron.exe <仓库>\\dist-main\\ql-pty-host.js <管道名> <token>` —— 补掉子代理疑虑 ①「dev 态没有任何门」。脚本 `.temp/ql-admin-probe/task11r2-d6.ps1`。
+- 删除 `dist-main/boot.js` / `ql-host-boot.js`（第一轮 `tsc` 留下的陈旧产物，`tsc` 不会自己删）→ 新包不再带死文件。
+- minor（deferred，进整分支终审清单）：① `startHost` 去掉 try/catch 后，「注入的 launcher 自己抛」不再关管道句柄（真实实现的两个取值都不抛 → 生产路径无泄漏）；② `ElevatedPtyProcess` 构造函数的 try/catch 按 B1 保留（只改注释）；③ `tsconfig.main.json:15` 的 `exclude` 含 `src-main/**/*.test.ts` → 类型门不覆盖测试文件（既有口径）。
+
+## 任务 11 第二轮的 D6 门：本会话跑不了 app 模式，且 R-21 的机制被结构性证据否定（2026-10-15 21:0x-21:1x）
+
+**先说结论：R-21（应用 exe + 「应用入口参数」）在打包布局里不成立。我上一轮的 K62 证据是环境假象。**
+
+取证（全部本轮实测，脚本 `.temp/ql-admin-probe/task11r2-d6*.ps1` / `appmode-probe.ps1` / `entry-honored.ps1`）：
+
+1. **K62 的「成立形状」是在 Node 模式跑的**：本会话预置 `ELECTRON_RUN_AS_NODE=1`（索引 K54），我那条 `lms_launcher.exe "<…ql-pty-host.js>" <管道> <token>` 的退出码 3 来自 **Node 把第一个位置参数当脚本**。把变量删掉再跑（脚本里 `Remove-Item Env:ELECTRON_RUN_AS_NODE` 并打印 `env present = False`）：
+   - `lms_launcher.exe "<abs entry-probe2.js>" …` → **探针脚本没写出 json**（打包布局与 dev 布局都没有）→ 入口参数**没有被接管**。
+   - 同一条式子换成 `node_modules\\electron\\dist\\electron.exe`（dev 布局）→ 同样没有 json。
+2. **结构性证据（决定性）**：「把命令行里的路径当应用入口」这段逻辑只存在于 **`default_app.asar`** 的 `main.js`（我把它从 `node_modules\\electron\\dist\\resources\\default_app.asar` 解出来，`.temp/ql-admin-probe/default-app/main.js`，9351 字节）：它 `for (const arg of argv)` 里取 `option.file` → `loadApplicationPackage(packagePath)` → `Object.defineProperty(process, 'defaultApp', { value: true })` → `app.setAppPath(...)` → `await import(filePath)`。
+   - `node_modules\\electron\\dist\\resources\\` = `default_app.asar`（108901 字节）
+   - `dist-release\\win-unpacked\\resources\\` = `app.asar` / `app.asar.unpacked` / `icon.ico` —— **没有 `default_app.asar`**
+   → 打包后的应用里没有那段代码，位置参数只是 `process.argv` 里的一项。**这与用户真机的观察逐字吻合**：「`.\\node.exe "resources\\app.asar\\dist-main\\ql-pty-host.js" …` → 然后自动启动了应用」。
+3. **P14 的 `bad option: --ql-pty-host`（exit 9）同样是 Node 模式的现象**，不是 Electron app 模式的现象。外部两份独立来源都写明 `bad option:` 前缀是 **Node 的未知参数格式**、是「这个二进制在当 Node 跑」的标志（stackoverflow 49552703：打包后的应用会把命令行参数交给主进程的 `process.argv`；tranquillabs ADR-0014 / cypress#18224：`bad option` 只在 `ELECTRON_RUN_AS_NODE=1` 下出现）。→ **我打回第一轮的 D6 门，理由本身是错的。**
+4. **本会话跑不了 app 模式**（所以 D6 这类门只能真机跑）：删掉 `ELECTRON_RUN_AS_NODE` 之后，`lms_launcher.exe` 无论带不带参数（含 `--user-data-dir=<工作区内可写目录>`）都在启动瞬间退出，退出码 `-2147483645` = `0x80000003`，无 stderr；带 `ELECTRON_RUN_AS_NODE=1` 时它进 Node 模式所以「正常退出 0」。这与 DSH 沙箱对子进程「打不开命名管道」的既有边界一致（Chromium/Electron 的多进程 IPC 要命名管道）。**登记为环境限制，不是产品缺陷。**
+
+**待用户裁决的机制（我提议记为 R-23）**：回到第一轮的形状 —— 应用 exe + **argv 里的开关**，由应用自己的入口在最早处判别并接管（`boot.js` 作 `package.json main}`，或直接在 `main.js` 第一行判别），因为 app 模式下未知开关会原样进 `process.argv}`。真机只需 30 秒就能定：`.\\lms_launcher.exe --ql-host-probe "\\.\pipe\x" tok` —— 若应用照常起（托盘图标出现、没有报错框），开关形状成立。
+**第二轮的工作区改动（4 个文件）留在工作区未提交**，等用户选：丢弃 / 保留其中可复用的部分（删硬链接、`hostExePath() = process.execPath`、`build.bat` 删块、测试改名 —— 这些在 R-23 下**仍然要**）。

@@ -291,17 +291,17 @@ export class ElevatedPtyProcess {
 - [ ] **步骤 1：先改测试**（只动 `src-main/ql-elevated.test.ts` 与 `src-main/ipc-ql.test.ts` 的接缝）：
   - 删 `resolveHostLink` 那条用例（`:141-177`，机制退场）。
   - 新增 `host_exe_is_the_app_executable`：`createHostLauncher(假 shell).hostExePath()` 恒等 `process.execPath`（dev / 打包同一条式子，**没有** `process.defaultApp` 分支）。
-  - 新增 `host_parameters_are_the_entry_argument_plus_pipe_and_token`：假 `WinShellApi` 收到 `verb='runas'`、`application` = `hostExePath()`、`parameters` 逐字 = `'"' + <宿主脚本绝对路径> + '" "' + pipe + '" "' + token + '"'`（宿主脚本 = `path.join(__dirname, 'ql-pty-host.js')`）。
-  - 新增 `start_host_no_longer_resolves_a_hard_link`：`startHost` 的失败 stage 只剩 `pipe` / `launch`，`hostlink=` 一族文案不再出现；抛出前关掉管道句柄。
+  - 新增 `start_host_passes_the_app_exe_and_script_to_launch`：`startHost(假管道, createHostLauncher(假 shell))` 交出的 `exe` 逐字 = `process.execPath`、`script` 逐字 = `path.join(__dirname, 'ql-pty-host.js')`，`parameters` 逐字 = `'"' + <宿主脚本绝对路径> + '" "' + pipe + '" "' + token + '"'`、`nShow = SW_HIDE`、`verb='runas'`；再走一遍注入接缝（`{execPath}`）确认交出去的就是注入的那个 exe。（参数串本身仍由既有用例 `launch_passes_runas_and_three_quoted_arguments` 守，不写重复的第三条。）
+  - 改写 `launch_failures_close_both_handles` 的场景 2（`:191-203`）：旧断言「路径解析抛 `hostlink=ENOENT`、不去起进程」随机制退场，改成「`hostExePath()` 走 `paths.execPath` 接缝、路径不存在也**不抛**、交出去的就是注入的那个 exe」。`startHost` 只剩 `pipe` / `launch` 两个 stage 由 C7 的 `git grep hostlink` 零命中 + 既有场景 1 守。
   - 假夹具 `hostLauncherStub` 换成 `{ hostExePath, hostScriptPath, launch(exe, script, pipe, token), isAlive, exitCodeOf }`；五条 `not.toContain('node.exe')` 改钉 `not.toContain('lms_launcher.exe')`（宿主就是应用自己的 exe）。
 - [ ] **步骤 2：跑红**：`npx vitest run src-main/ql-elevated.test.ts src-main/ipc-ql.test.ts`。
 - [ ] **步骤 3：实现**：
-  - `ql-elevated.ts`：删 `resolveHostLink` / `HOST_EXE_NAME` / `HOST_SCRIPT_NAME` / `HostPaths`（只为它服务的话）；`HostLauncher` = `{ hostExePath(): string; hostScriptPath(): string; launch(exe, script, pipeName, token), isAlive, exitCodeOf }`；`hostExePath()` **恒 `process.execPath`**；`hostScriptPath()` 沿用任务 4 的 `path.join(__dirname, 'ql-pty-host.js')`；`launch` 里 `shellExecute(exe, SW_HIDE, { verb: 'runas', parameters })`，`parameters` 按上面那条逐字拼；`startHost` 去掉路径解析那一步（stage 只剩 `pipe` / `launch`，抛前 `pipe.close(pipeHandle)`）。
-  - `ql-pty-host.ts` / `ql-host-protocol.ts` / `main.ts` / `quick-launch.ts` / `package.json`：**一字不改**。
+  - `ql-elevated.ts`：删 `resolveHostLink` / `HOST_EXE_NAME` / `errnoOf` / `HostPaths.hostDir`（`HostPaths` 本身与 `HOST_SCRIPT_NAME` **保留**，它们正是新机制的取值点，C3/C6）；`HostLauncher` = `{ hostExePath(): string; hostScriptPath(): string; launch(exe, script, pipeName, token), isAlive, exitCodeOf }`；`hostExePath()` **恒 `process.execPath`**；`hostScriptPath()` 沿用任务 4 的 `path.join(__dirname, 'ql-pty-host.js')`；`launch` 里 `shellExecute(exe, SW_HIDE, { verb: 'runas', parameters })`，`parameters` 按上面那条逐字拼；`startHost` 去掉路径解析那一步（stage 只剩 `pipe` / `launch`，抛前 `pipe.close(pipeHandle)`）。
+  - `ql-host-protocol.ts` / `quick-launch.ts` / `package.json`：**一字不改**；`ql-pty-host.ts` / `main.ts` 只允许 check 表 C7 ② 那 4 处**注释**编辑（R-22 / K63：那些注释对新机制为假；条件 = 不碰代码 token、行数不变）。
   - **不新建** `boot.ts` / `ql-host-boot.ts`。
   - `build.bat`：删掉 R-16 的硬链接块（`:108` 空行 + `:109-128`），恢复 `echo.` 在前；文件回到 111 行、纯 ASCII、全 CRLF。
-- [ ] **步骤 4：跑绿 + G5 + G6 + 全量**（`npm test` 只增不减：删 1 条、加 3 条 → 预期 51 文件 / 897 用例）。**本地无 UAC 门由主代理跑**（步骤 5），子代理不打包。
-- [ ] **步骤 5：本地无 UAC 门（主代理）**：`cmd /c build.bat` → 核对 `app.asar\dist-main\ql-pty-host.js` 在包里、**包内无 `node.exe`**、`package.json` 的 `main` 仍是 `dist-main/main.js`；`lms_launcher.exe "<…app.asar\dist-main\ql-pty-host.js>" "\\.\pipe\x" tok` → 无窗口、退出码 **3**；接真实管道 → 活着等 `HELLO`。脚本已在 `.temp/ql-admin-probe/`（`d6-variants4.ps1` / `real-pipe-run2.ps1` / `verify-pack.ps1`），直接复用。
+- [ ] **步骤 4：跑绿 + G5 + 全量**（`npm test` 只增不减：删 1 条、加 2 条 → 预期 51 文件 / **896** 用例。原写「加 3 条 / 897」是算术错，与 check 表 D1 不自洽，见索引 K63）。**本地无 UAC 门由主代理跑**（步骤 5），子代理不打包。
+- [ ] **步骤 5：本地无 UAC 门（主代理）**：`cmd /c build.bat` → 核对 `app.asar\dist-main\ql-pty-host.js` 在包里、**包内无 `node.exe`**、`package.json` 的 `main` 仍是 `dist-main/main.js`；`lms_launcher.exe "<…app.asar\dist-main\ql-pty-host.js>" "\\.\pipe\x" tok` → 无窗口（**D6′：dev 布局同一条式子也要跑**：`node_modules\electron\dist\electron.exe <仓库绝对路径>\dist-main\ql-pty-host.js "\\.\pipe\x" tok`，同样无窗口 / 退出码 3 —— 补掉「dev 态没有门」，K63）、退出码 **3**；接真实管道 → 活着等 `HELLO`。脚本已在 `.temp/ql-admin-probe/`（`d6-variants4.ps1` / `real-pipe-run2.ps1` / `verify-pack.ps1`），直接复用。
 - [ ] **步骤 6：Commit（主代理）**：`fix: 提权宿主改用应用 exe 的应用入口参数启动（R-21，硬链接与命令行开关机制退场）`
 
 ---
