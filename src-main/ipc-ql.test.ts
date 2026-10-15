@@ -376,6 +376,50 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
     }
   }, 30000);
 
+  // 2026-10-15-quick-launch-exe-path-precheck 任务 2（规格 §6.2 / §7.1-7 / 表 C2、E1、E4 / RF1）：
+  // 预检的全部价值是「**不调 Shell**」——调了会弹 Shell 自己的系统错误框并把主线程卡死（实测 6.1–38.9s，§3-P1/P4）。
+  // 单元层的 precheck_blocks_before_the_shell_is_called 守的是假接缝（api 由测试构造）；这条守**经 IPC 通道那条**：
+  // 条目 exe = 不存在的绝对路径 → ql_start 同步 reject（PROC: 前缀）+ sys 行是 err.proc.exeNotFound +
+  // 替换过的 winShell.shellExecute 一次都没被调用（不弹系统框、不阻塞的端到端牙）+ ql_states 不残留（前置规格 §7.5）。
+  it('exe_path_not_found_never_reaches_the_shell', async () => {
+    const MISSING = 'Z:\\no-such-dir\\no-such.exe'; // 规格 §7.1-1 的同型夹具：含盘符、目录不存在
+    await invoke('ql_save', 'qlshape05', { name: '形状门 路径不存在', type: 'exe', exe: MISSING });
+
+    let shellCalls = 0;
+    const original = winShell.shellExecute;
+    // 计数 spy，夹具形状照 :357-358 / :386-392（表 F2：不新建夹具）：只数次数、不委托真实现——
+    // 真 ShellExecuteEx 打一个不存在的 exe 会弹系统错误框并把 vitest worker 卡住（E19 / 索引 R8、K17）。
+    winShell.shellExecute = (file: string, nShow: number, opts?: { verb?: string | null; parameters?: string | null }) => {
+      shellCalls += 1;
+      return { ok: false, handle: null, win32Error: 1223 };
+    };
+    try {
+      await expect(invoke('ql_start', 'qlshape05')).rejects.toThrow(/^PROC: /);
+      // 日志行行首 [lms_launcher]（sys 通道口径，索引 K23）、PROC: 紧随其后（索引 G1：不新增前缀）
+      await waitFor(
+        () => cap.sends.some((s) => s.channel === 'log-line' && /^\[lms_launcher\] PROC:/.test(String((s.payload as { line?: string }).line ?? ''))),
+        5000, '[lms_launcher] PROC: 日志行',
+      );
+      const logLines = sendsOf('log-line') as Array<{ line: string; stream: string }>;
+      const procLines = logLines.filter((l) => l.stream === 'sys' && /^\[lms_launcher\] PROC:/.test(l.line));
+      // 取**最后**一条：本文件前面的用例也发过 PROC: 行（:368 那条 uacCancelled），find() 会拿到旧行
+      const procLine = procLines[procLines.length - 1];
+      expect(procLine, 'sys 通道里必须有 PROC: 行 —— 原因行只由 main.ts:1071 这条日志负责').toBeTruthy();
+      // 文案必须是预检那条（带用户那一行的 exe；断言走 t()，不写死中文）
+      expect(procLine!.line).toContain(t('err.proc.exeNotFound', { exe: MISSING }));
+      // 不是 Shell 失败兜底的那两条（去掉门就换成它们 —— D2 的变异红）
+      expect(procLine!.line).not.toContain(t('err.proc.uacCancelled', { exe: MISSING }));
+      expect(procLine!.line).not.toContain(t('err.proc.spawnFail', { exe: MISSING, err: 'win32=1223' }));
+      // RF1 的牙：Shell 一次都没被调用 = 不弹系统框、不阻塞主线程
+      expect(shellCalls, '预检失败时不得调 Shell（规格 §6.2 / 表 E1 / RF1）').toBe(0);
+      // 表 E4：失败不残留状态（quick-launch.ts:293-297 在 set 之前抛出）
+      expect(invoke('ql_states'), '失败不残留状态').toEqual({});
+    } finally {
+      winShell.shellExecute = original;
+      await invoke('ql_stop', 'qlshape05');
+    }
+  }, 30000);
+
   // 2026-10-14-quick-launch-admin 任务 3（plan 步骤 5 / check B4、E1、E2、E3）：
   // exe 的「管理员」开关 = 到 Shell 接缝的 lpVerb。观察点仍是 winShell.shellExecute（:103-104 的既有做法）。
   it('exe 提权形状门：admin:true → shellExecute 收到 verb=runas；admin 缺省 → null（规格 §6.9 / 索引 G3、K29）', async () => {

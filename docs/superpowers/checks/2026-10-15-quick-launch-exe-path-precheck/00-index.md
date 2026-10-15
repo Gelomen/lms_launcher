@@ -48,8 +48,8 @@
 | 时机 | 必须跑 | 预期 |
 | --- | --- | --- |
 | 任务 1 末尾 | `npx vitest run src-main/shell-execute.test.ts src-main/ipc-ql.test.ts`；`npx vitest run src-main/ipc-ql.test.ts src-main/quick-launch.test.ts`；`npx tsc --noEmit -p tsconfig.main.json`；`npx vitest run src-main/i18n`；`npm test` | 定向 15 passed；`ipc-ql.test.ts` 只允许 `:353` 一行改动（K10）且仍绿；`quick-launch.test.ts` 未改仍绿；tsc 无输出；i18n 全绿；全量 906 |
-| 任务 2 末尾 | `npx vitest run src-main/ipc-ql.test.ts`；tsc；i18n 三门；`npm test` | 该文件 30 passed；全量 907；`:330-350` / `:381-416` 一字未改且绿 |
-| 任务 3 | `build.bat`；`npx asar list dist-release\\win-unpacked\\resources\\app.asar` | 产物含 `dist-main/shell-execute.js`；`koffi` / `@koromix` 仍在 `app.asar.unpacked`；真机 8 条逐条回报 |
+| 任务 2 末尾 | `npx vitest run src-main/ipc-ql.test.ts`；tsc；i18n 三门；`npm test` | 该文件 **28** passed（27 + 1，索引 K13：按 vitest 报的条数，本行原写 30 是 `it(` 字面计数）；全量 907；`:330-350` / 提权形状门（新用例插入后移到 `:425-460`，见 task-02 表 C3）一字未改且绿 |
+| 任务 3 | `build.bat`；`npx asar list dist-release\\win-unpacked\\resources\\app.asar` | 产物含 `dist-main/shell-execute.js`；`koffi` / `@koromix` 仍在 `app.asar.unpacked`；真机 **9** 条逐条回报（规格 §7.2 现含别名那条，索引 K11 / K12） |
 | 每个任务验收前（主代理） | 独立复跑该表 G 段全部命令 | 与 J 段同值；不接受实现者自述 |
 
 ## K 组：已定口径（本表生成时已定，不再作为待决）
@@ -65,7 +65,7 @@
 | K7 | `shell-execute.ts:30` 与 `:100-101` 的注释现在写着「不加 existsSync 预检（§9-R8）」、「不要顺手加 existsSync 预检」——与新预检**直接矛盾**，必须同步改注释 | 读 `:30` / `:100-101` 现值（本表生成时实测）；留着就是注释与代码互相指认 | T1 B1 / D3 |
 | K8 | 任务 2 的「先红」用**变异取证**：临时注释掉 `launchShellExe` 的门跑一次红，再恢复 | 任务 1 已合并 → 新用例直接绿，TDD 的红只能靠变异复现（AGENTS.md「不接受自述完成」） | T2 D2 |
 | K9 | 用例数预期：任务 1 后全量 **906**、任务 2 后 **907**；对不上要在 J 段说明差在哪 | 基线 901 + 新增条数；条数按 vitest 口径（见 K13） | T1 G5；T2 G4 |
-| K13 | **条数口径 = vitest 报的条数**，不是 `it(` 字面计数 | 实现期偏离 6（任务 1 续做轮 2 提出，主代理复核）：`ipc-ql.test.ts` 的 `it(` 字面 24 条 + `:687-702` 循环生成 3 条 = vitest 报 **27**；本表原写 29 是错的（字面计数与循环都数错）。实测：`npx vitest run src-main/ipc-ql.test.ts src-main/quick-launch.test.ts` → `Tests 61 passed (61)`（27 + 34） | 本表头部；T1 D8 / G2；T2 A2 / D3 |
+| K13 | **条数口径 = vitest 报的条数**，不是 `it(` 字面计数 | 实现期偏离 6（任务 1 续做轮 2 提出，主代理复核）：`ipc-ql.test.ts` 的 `it(` 字面 24 条 + `:687-702` 循环生成 3 条 = vitest 报 **27**；本表原写 29 是错的（字面计数与循环都数错）。实测：`npx vitest run src-main/ipc-ql.test.ts src-main/quick-launch.test.ts` → `Tests 61 passed (61)`（27 + 34）；任务 2 之后该文件 = **28**、全量 = **907**（主代理 00:3x 亲自复跑，含变异取证：注释掉门 → `1 failed \| 27 passed (28)`） | 本表头部 + V 组「任务 2 末尾」行；T1 D8 / G2；T2 D3 / G1 / G2 |
 | K10 | `ipc-ql.test.ts` 的夹具改写（`no-such-exe-zzz.exe` → `notepad.exe`）**共两处**（`:353` 条目值 + `:371` 的 `t('err.proc.uacCancelled', { exe })` 占位值），**归任务 1**，不归任务 2 | 实现期偏离 1（任务 1 子代理提出）：预检生效后，不存在的 exe 到不了假接缝，那条端到端用例必红 → 它是预检的直接后果，不是新能力的门；留在任务 2 会让任务 1 末尾的全量门永远不可能绿 | T1 B5 / D6 / G2 / G5；T2 A2 |
 | K11 | **重解析点算可启动**：`lstatSync` 成功且 `isSymbolicLink()` → 只查扩展名，跳过 `openSync` 可访问性判定 | 实现期偏离 2 + 取证 P13（Shell 起得了裸名与全路径别名：`ok=true hInstApp=42 pid=9548` / `pid=15972`）、P14（别名只有 `lstatSync` 看得见，`statSync`/`openSync`/`realpathSync` 全 `EACCES`）。规格 §8-Q13 / §6.1 判定① 第二支 | T1 C6 / E8；T3 C9 |
 | K12 | 别名那条分支的单测**依赖机器**：夹具用 `PATH` 里真实存在的 `mspaint.exe`，不在时 `it.skipIf` 跳过 | P15：`fs.symlinkSync(target, link, 'file')` → `EPERM`（无 `SeCreateSymbolicLinkPrivilege`、未开开发者模式）→ 造不出夹具；硬门归真机 §7.2-9（规格 §9-R9） | T1 E8（写成 `☐（原因 + 去处）` 的机器条件）；T3 C9 |
