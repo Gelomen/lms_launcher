@@ -176,3 +176,13 @@
 - 文档先行（本轮已改，未提交）：spec §3 加 **P15** 并给 P14 加更正按语（K64 ①③）；§6.3 模块表加 `boot.ts` 行、改 `ql-pty-host.ts` 行；**§6.4 整节重写为 R-23**（9 条）；plan 任务 11 重写为第三轮（步骤 0-6，含 `boot.test.ts` 3 条 + `ql-pty-host.test.ts` 2 条 + 改串 2 条，预期 52 文件 / 901 用例）、G7 加「`main` 字段是 R-23 唯一例外」；索引加 **K65**（R-23 要点）与 **K66**（`npx asar extract-file` 往 CWD 写，本会话两次覆盖仓库根 `package.json`）、清单表任务 11 行改「第三轮」；任务 11 的 check 表 A-I 段整体重写为第三轮（J 段 J-1…J-19 保留作历史）。顺带修掉 spec §6.10 一行里未转义的 `|`（表格破损）。
 - 三份文档 + 表列数自检：spec / plan / index / T11 全部 `mismatched rows: 0}`；`tick-census.mjs` 见下。
 - 第三轮派单要点（保留第二轮成果，只做增量）：新建 `src-main/boot.ts`（分流 + `bootMain(argv, load)` 接缝）+ `boot.test.ts`；`package.json main -> dist-main/boot.js`；`runHost` 双形状取参；`launch()` 的 `parameters` 改成 `'--ql-host "<pipe>" "<token>"'`。**本地不跑 app 模式**（K64 ④），机制判据在真机门 §7.2。
+
+## 任务 11 第三轮（R-23）验收（2026-10-15 22:0x-22:1x，子代理 `401ccb3c…`）
+
+- **独立复跑（不复用子代理输出）**：G1 定向 `Test Files 3 passed (3)` / `Tests 38 passed (38)`；G2 相邻 `Tests 61 passed (61)`；G3 无诊断 + `TSC_EXIT=0`；G4 i18n `Tests 18 passed (18)`；G5 `npm test` = `Test Files 52 passed (52)` / `Tests 901 passed (901)`。与子代理逐字一致。
+- **代码逐行核对**：`hostArgvPair()`（`ql-pty-host.ts:89-93`）= C1 三行逐字；`parameters`（`ql-elevated.ts:140`）= C2 逐字；`bootMain`（`boot.ts:19-25`）= C3；`boot.test.ts` 三条 = E1/E2/E3；`ql-pty-host.test.ts` 两条新用例 = E3/E4，dev 形状夹具未动 = E5。
+- **G6 产物门（主代理实测，J-31）**：`BUILD_EXIT=0`；exe `size=177150464`；**`node.exe in win-unpacked present = False`**；asar 内 `\dist-main\boot.js` / `main.js` / `ql-pty-host.js` / `ql-elevated.js` 都在、无 `ql-host-boot.js` 残留；unpacked = `@koromix` / `@lydell` / `koffi`；**包内 `package.json` 的 `main = dist-main/boot.js`**。踩坑：`Push-Location` 之后用**相对** asar 路径解不出文件（`packaged main` 空），改 `Resolve-Path` 绝对路径才对（K66 的第二种踩法）。
+- **对子代理 7 项的裁决（登记 K67）**：① `boot.ts` 顶层的 `if (process.versions.electron)` 守卫 = **接受**（J-21 取证 + electron/electron#40501），已同步 T11 C3 与 spec §6.4-1；② `launch()` 的 `script` 形参与 `hostScriptPath()` 在 R-23 下交而不使用 = **本轮不清**（签名被 B4/C5 钉着，清它要连 `ipc-ql.test.ts` 的 stub 一起动）→ 终审清理项；③ 缺参数时留痕 `pipe=undefined` = 既有行为、主进程只认 `pipe=` 匹配行（K57）→ 终审清理项；④ 两处错误注释由主代理改（本表新增 B7 行，硬条件：只改注释、行数不变，实测 `main.ts 3 3` / `ipc-ql.test.ts 3 3`）；⑤ spec 落后已同步（§6.6 标题与第 1 条、§6.11、§7.1、§7.2、K2、K13；索引 K62 加否定按语、清单表任务 11 行、V-组 任务 9 行）；⑥ 表内 `@+/` 断行残迹与不成对反引号已修（J-16/J-17）；⑦ A1 的 HEAD 已改为 `6cd1159`。
+- **我自己的两处失误（已修）**：给 J-16 行做替换时用了含 `$` + 反引号 的替换串 → `String.replace` 把「匹配之前的全部文本」插了进去，表从 130 行涨到 372 行；用 `git show HEAD:` 取回该行修好。教训：往 Markdown 表行里替换一律用 `split/join`，不用 `replace`。另：`Set-Content -NoNewline` 会把管道里的行拼成一行，取 `git show` 的整文件要用 `Out-File`。
+- **落勾与普查**：T11 `☑=43 裸☐=0 I段 -[ ]=0`，唯一显式未勾 = D6（原因：本会话起不了 app 模式；去处：spec §7.2 真机门）；`tick-census.mjs` 退出码 0。
+- **新增终审清单项**：注释里的 `R-21` 标签（`ql-elevated.ts:80`、`ql-elevated.test.ts:140`）终审统一改指 R-23；②③ 两条见上。
