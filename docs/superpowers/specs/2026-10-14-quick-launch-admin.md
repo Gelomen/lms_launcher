@@ -158,7 +158,7 @@ type: u8 | len: u32LE | payload: len 字节（JSON 或 UTF-8 文本；DATA 的 p
 - 构造即启动：建管道 → `shellExecute(..., {verb:'runas', ...})` → 等连接 → 发 `HELLO` → 等 `READY`（`HOST_HANDSHAKE_TIMEOUT_MS = 15000`）。失败按 §6.10 抛出，**抛出前关掉管道句柄与进程句柄**（不留泄漏）。
 - 宿主进程句柄的生命周期复用 `ShellExecProcess`（`shell-execute.ts:124-185`）的 100ms 轮询判退出，不另写一套。
 - `onExit`：优先用 `EXIT` 帧里的 `code`；宿主没发 `EXIT` 就死了（崩溃 / 被强杀）→ 用 `GetExitCodeProcess`（P12 实测能读到 `process.exit(7)` 的 7）。已退出再注册 → 立即补发（与 `quick-launch.ts:108-115` 同口径）。
-- `stopGraceful(timeoutSecs)`：发 `STOP` → 等 `EXIT` / 宿主退出（上限 `timeoutSecs`）→ 仍活则委托给 `ShellExecProcess.stopGraceful`（`taskkill` 打宿主 → 失败则 `TerminateProcess` → 再等 1000ms 让退出落地）。幂等。
+- `stopGraceful(timeoutSecs)`：发 `STOP` → 等 `EXIT` / 宿主退出（上限 `timeoutSecs`）→ 仍活则委托给 `ShellExecProcess.stopGraceful`（`taskkill` 打宿主 → 失败则 `TerminateProcess` → 再等 1000ms 让退出落地）。**委托时传剩余预算**：`Math.max(0, timeoutSecs - 已等毫秒 / 1000)`（裁决 R-13，2026-10-15 13:5x，索引 K50）。理由：`ShellExecProcess.stopGraceful`（`shell-execute.ts:178-190`）自己也要等一个完整的 `timeoutSecs` 才 `TerminateProcess`，再等 `FORCE_EXIT_WAIT_MS = 1000`；传同值会把单实例上限变成 `2×timeoutSecs + 1s`，而 `stopAll` 是**逐个 `await`**（`quick-launch.ts:322-333`），`main.ts:382` / `:648` 传的是 `3` → N 个提权终端退出时最坏 `N×7s`。传剩余预算后总上限与非提权路径同形（`timeoutSecs + 1s`）。幂等。
 - `stopAll`（应用退出）走同一条路 → 提权终端不会成为孤儿 ConPTY（前置规格 A2·I-3 的关切由「宿主自己杀树」承担）。
 
 ### 6.8 `QuickLaunchManager` 接线（`src-main/quick-launch.ts`）
