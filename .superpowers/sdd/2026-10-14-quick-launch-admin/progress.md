@@ -114,3 +114,26 @@
 - 裁决 **R-19 / K59 + K60**：宿主进程改用**应用自己的 exe + `--ql-pty-host` 宿主模式**（`ShellExecuteEx(runas, process.execPath, SW_HIDE, params)`），新入口 `dist-main/boot.js`（薄转发器：命中 → `hostMain`，否则 → `require('./main')`）；**`main.ts` 一字不改**、帧协议/`runHost`/握手/停止语义全部不动。连带：K13/K20/K21/K55 与 P5/P6/P8 作废、R-16 的 `build.bat` 硬链接块退场、`hostlink=` 词表退场、K12 修订（宿主不再是「纯 Node 进程」而是「被接管的 Electron 进程」，仍不建窗/不用 cmd 包装/不额外打包 exe）、UAC 弹窗改显示「LMS 启动器」
 - 文档已改并提交：spec §1/§3-P13/§6.4/§6.6-1/§6.10/§6.11/§7.1/§7.2/§8-K2,K12,K13/§9-R5,R6,R10 + plan 任务 11 + check 表 task-11 + 索引（清单表行 11、K59/K60、K48 词表变更、K20/K21/K55 作废）
 - 新增本地无 UAC 门（§9-R10 / task-11 D6）：`lms_launcher.exe --ql-pty-host "\\.\pipe\x" tok` 必须**不出现窗口**、退出码 **3**、`%TEMP%\lms-ql-host.log` 多一行 `stage=pipe` —— 这是「宿主模式真的被接管」的唯一直接证据，**不需要 UAC**
+
+## 任务 11 派单前的计划扫描（2026-10-15 19:2x，逐对/逐任务取证）
+
+- T11 × T4/T6（共用 `HostLauncher`）：签名从 `launch(exe, script, pipe, token)` 改成 `launch(pipe, token)` + 新增 `hostParameters`。消费方三处：`startHost`（`ql-elevated.ts:360-368` 的路径解析段要删）、`ElevatedPtyProcess` 构造（只调 `startHost`，不直接调 `launch` → 工厂签名不动）、假夹具 `ql-elevated.test.ts:326-341` 与 `ipc-ql.test.ts:446/491-492/523`。发现：表 B4 只写「换成新签名」，没写夹具三处 → 已在 B7/D1 里点名真实行号。裁决：不改 `startElevatedHost` 对外签名（K45 仍成立）。
+- T11 × T5（共用 `ql-pty-host.ts`）：`main()` → `hostMain(argv)`，`require.main === module` 自跑块保留。取证：`boot.ts` 用 `require()` 加载它时该块不会自跑（`require.main !== module`），K58 的 `export` 接缝继续有效。风险：`hostMain` 内部若还读 `process.argv` 就会在宿主模式下取错值 → C8 逐字要求 `argv[0]/argv[1]` 只用入参（现 `:202` 的 `process.argv.slice(2)[0]` 是留痕用的管道名，必须换成入参）。
+- T11 × T7/T10（错误词表）：`hostStartError` 的 `hostlink=` 分支与 `ql-elevated.ts:385` / `:449` 的注释都含 `hostlink=` → E5 的 `git grep hostlink` 为空要求把**注释**一并清掉（派单里显式写了「含注释」）。`main.ts:1099-1106` 的 `spawnElevatedShell` 接线不动（F3）。
+- T11 × T9（打包）：`build.bat:108-128` 的硬链接块删除 = R-16/K55 作废；打包核对口径已改成 `app.asar\dist-main\boot.js`（spec §7.2 已改，任务 9 表的 D 段不再要求 `fsutil` 同 inode）。
+- 逐任务自洽核对：D5 要求测试文件 51 → 52（新增 `ql-host-boot.test.ts`）与「用例只增不减」并存 —— 不矛盾：删 1 条退场用例、新增 ≥4 条，净增为正。`boot.ts` / `ql-host-boot.ts` 落在 i18n no-hardcoded 的扫描集内（`src-main/**/*.ts` 非 test，`no-hardcoded.test.ts:15-28`），注释不受限、字符串字面量必须 ASCII → 已在派单里写明。
+- 入口引用的事实核对（不取证就是猜）：`grep "dist-main/main.js"` 全仓只有 `package.json:5` 一处 → 改 `main` 一行不会漏改别处；`tsconfig.main.json:4` `module: CommonJS` + `:14` include `src-main/**/*.ts` → `boot.js` 必然随 `tsc` 产出并进 asar（`electron-builder.yml:7` 的 `dist-main/**` 未变）。
+- 锚点修正：本表与 plan 步骤 0 的 `ql-elevated.ts` 行号是任务 10 之前读的（+5/+6 位移），已在 HEAD 上逐处复核并改正（`4ffe34e`）。
+
+- 派任务 11：子代理 `de03cf16-53f8-4c52-b326-5c031eddfa7e`，起点 HEAD `4ffe34e`，基线 51 files / 895 tests；派单输入 = spec + plan 任务 11 + task-11 表 + `task-11-brief.md`；D6/G6（`build.bat` + 本地无 UAC 门）明确归主代理，不在子代理范围。
+
+## 任务 11 第一轮（R-19）验收：被主代理的 D6 本地门打回（2026-10-15 19:5x-20:2x）
+
+- 子代理 `de03cf16-53f8-4c52-b326-5c031eddfa7e` 返回 DONE_WITH_CONCERNS（报告 `task-11-report.md`）。我独立复跑五道门，与它的自述逐字一致：定向 3 files / **37** tests、相邻 **61**、`tsc --noEmit` 退出码 0、i18n 4 files / **18**、全量 52 files / **900** tests（基线 51/895）。A–I 因此**未落勾**。
+- 我跑 D6 / G6（`cmd /c build.bat` → exit 0，产物核对 + 本地无 UAC 门，脚本 `.temp/ql-admin-probe/d6-*.ps1`、`probe-entry-run.ps1`、`real-pipe-run2.ps1`、`verify-pack.ps1`）：**门的形状本身失败** —— `lms_launcher.exe --ql-pty-host "\\.\pipe\x" tok` → `bad option: --ql-pty-host`、退出码 **9**；`--ql-pty-host=…` 同样退 9；`-- --ql-pty-host …` 与裸位置参数 `ql-pty-host …` → `Cannot find module …`、退 **1**。→ **R-19 的「开关 + `boot.ts` 转发入口」在打包态物理上不成立**（Node 的命令行解析器在跑任何应用代码之前拒绝未知 `--x`），与提权无关、本机非提权即可复现。
+- 成立的形状（同一批探针，P14）：`lms_launcher.exe "<…app.asar\\dist-main\\ql-pty-host.js>" "\\.\pipe\x" tok` → 退出码 **3**、stderr 空；换成探针入口 → `argv=[exe, 入口, 管道名, token]`、`defaultApp:"absent"`、`versions{node:18.18.2,electron:28.3.3}`；接**真实命名管道** → 客户端**活着等 HELLO**（`@lydell/node-pty` 已加载、`net.connect` 成功）。对照：无参数 → 退 0、无 stderr。全文 `.temp/ql-admin-probe/task11-round1-d6-evidence.md`。
+- 顺带两条环境事实：① 本会话对 `%TEMP%` 是 **EPERM**（`probe-entry-out.json` 的 `tmpWrite`）→ 留痕文件 `stage=pipe` 那一行只能在真机核对；② `node_modules\\electron\\dist\\node.exe` 是早期探针留下的硬链接名（`fsutil hardlink list` 三条名共享同一 inode，176,813,568 字节），已删该名字并重建包 → 产物里不再有 169MB 的死 `node.exe`（`node.exe in win-unpacked present = False`）。
+- 裁决 **R-21 / K61 + K62**：宿主 = 应用 exe + **Electron 的「应用入口参数」**（= HEAD 上 `hostScriptPath()` 与 `launch()` 的既有形状，只把 `hostExePath()` 从「建硬链接」换成 `process.execPath`）；`boot.ts` / `ql-host-boot.ts` / `parseHostMode` / `hostMain` / 改 `package.json` 的 `main` 整套作废。第一轮那 6 条偏离（含 `process.argv.splice` 归一化）随丢弃一并作废，不再裁决。
+- 文档已改（与本轮代码同一 commit）：spec（修 P13 行内被换行打断的表格行 + 新增 P14 / §6.3 模块表 / §6.4 标题+引言+条目 1-4、6 / §6.6 标题与 1 / §6.11 / §7.1 / §7.2 / §8-K2,K12,K13 / §9-R1,R10）；plan 任务 11（标题、来历、步骤 0-6、计划自检那行）；check 表 task-11 **全表重写为第二轮**（第一轮的记录留在 J-1~J-5、J-7 并标注「已打回」，打回取证在 J-6，丢弃动作在 J-8，本轮 D6 留 J-9 显式未勾）；索引（清单表行 11、K59 作废标注、K60 修正、新增 K61/K62）。
+- 工作区丢弃（2026-10-15 20:2x）：`git restore -- src-main build.bat package.json docs/superpowers/checks/…/task-11-host-mode-launch.md` + 删 `src-main/boot.ts` / `ql-host-boot.ts` / `ql-host-boot.test.ts`。核对：`package.json` 的 `main` 回到 `dist-main/main.js`、`ql-pty-host.ts:209` 的 `require.main` 块在位、`HostLauncher` 的四参 `launch` 就是本轮要的形状。
+- 派任务 11（**第二轮**）：起点 = 本轮文档提交，基线 51 files / 895 tests；改动范围只剩 `ql-elevated.ts`（删硬链接族 + `hostExePath() → process.execPath` + `startHost` 去 try/catch + 三处注释）、`ql-elevated.test.ts`（删 1 加 2 + 场景 2 改写 + 五处换名）、`ipc-ql.test.ts:491`（假 exe 名）、`build.bat`（删块）。D6 / G6 仍归主代理。
