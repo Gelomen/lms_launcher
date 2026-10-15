@@ -31,6 +31,7 @@
 | C4 | `HELLO` 载荷 | `{ token, shell, cols, rows, cwd }` —— 规格 §6.5 表；argv 里没有这些 | ☐ |
 | C5 | 复用任务 4 的三处契约（**不得重写**） | ① 起宿主 = `startHost(winPipe, hostLauncher)`（已建管道 + 起进程 + 失败关两个句柄，交回 `pipeName`/`token`/`pipeHandle`/`hostHandle`）；② 失败文案 = `hostStartError(r.win32Error, opts.logTarget)`，`hostExePath()` 抛的 `hostlink=…` 原样塞进 `err.proc.spawnFail` 的 `{err}`，`stage='pipe'` → `err: 'pipe=create'`（规格 §6.10 第三、四行，裁决 R-07 / R-08）；③ 读循环只在 `available() >= 0` 时 `read(h, available)`，`-1` = 断管/Peek 失败 → 走 §6.7 的退出路径（索引 K39） | ☐ |
 | C6 | 宿主侧的三条实测事实（**不得依赖 / 必须遵守**，索引 K44） | ① `READY` 的 `shellPid` 实测是 `0`（ConPTY innerPid 要等 agent 连上才赋值）→ 不用它做停止或判断，只当日志参考；② `STOP` 帧必须带数字 `timeoutSecs`（宿主对缺失/非数取「不给宽限期」，立即升级 `taskkill`）；③ 宿主的停止收尾可能不落地（`taskkill` 后 exit 事件不落地，`quick-launch.test.ts:103` 记过）→ 主进程侧的 `stopGraceful` **必须真的走到委托 `ShellExecProcess.stopGraceful` 那一步**（规格 §6.7），否则留一个不退出、进程树已死的宿主 | ☐ |
+| C7 | 握手期收到宿主的 `ERR` 帧时怎么落到文案（**主代理裁决 R-11**，2026-10-15 13:1x） | 规格 §6.10 最后一行已定：「宿主起来了但握手失败（`ERR` 帧 / 管道断 / 超时）」→ `PROC: t('err.ql.ptySpawn', { exe, err })`。`{err}` 取 **`'host=' + stage`**（`stage` 是宿主发的机器可读片段：`token` / `spawn` / `pipe`），与 `win32=` / `hostlink=` / `pipe=create` 同一风格；零新词典键（G2）。`{exe}` 仍是 `opts.logTarget`（用户那一行的目标），**不是**宿主 exe | ☐ |
 
 ## D. TDD 步骤门
 
