@@ -291,9 +291,14 @@ describe('QuickLaunch card', () => {
       expect(play.fontSize).toBe('12px');
       // stop：左右对称，不做位移。happy-dom 对「未声明的属性」返回空串（真机是 none），
       // 两者都表示没有位移；关键是不得出现 translate。
-      const stopTf = getComputedStyle(w.find('.btn-round svg[data-icon="stop"]').element).transform;
+      const stopEl = w.find('.btn-round svg[data-icon="stop"]').element;
+      const stopTf = getComputedStyle(stopEl).transform;
       expect(['', 'none']).toContain(stopTf);
       expect(stopTf).not.toContain('translate');
+      // stop 字号 10px（2026-10-15 用户要求：本卡 [停止] 的白色方框调小，12px → 10px；
+      // 着墨 10.4×10.4px → 8.6×8.6px，量化见 .temp/ql-stop-icon-size/measure.mjs）。
+      // play 仍 12px（上面那条 fontSize 断言不变）；LaunchBar 的 [停止] 仍 14px，不在本卡范围内。
+      expect(getComputedStyle(stopEl).fontSize).toBe('10px');
     } finally {
       w.unmount();
     }

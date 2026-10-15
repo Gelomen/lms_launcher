@@ -141,7 +141,8 @@ body {
    （同日第二轮：28×28 → 24×24，与同行 [复制][编辑] 的 .icon-btn--sm(:457) 同尺寸）。
    覆盖 .btn 的 height:32px / padding:0 14px —— 定宽定高 + padding:0 + flex 居中放图标；
    本类只管形状与尺寸：配色仍由 .btn-launch（紫）/ .btn-danger（红）给，:disabled 置灰仍由
-   .btn:disabled（伪类权重更高）给，图标字号在模板里逐字给（play / stop 均 12px）。
+   .btn:disabled（伪类权重更高）给，图标字号在模板里逐字给（play 12px / stop 10px ——
+   stop 是 2026-10-15 用户要求把白色方框调小：12px → 10px，量化见 .temp/ql-stop-icon-size/measure.mjs）。
    LaunchBar 的 [启动]/[停止] 仍是 32px 胶囊（用户明确只改快捷启动列表行，本类不加到那里）。 */
 .btn-round {
   width: 24px; height: 24px; padding: 0;

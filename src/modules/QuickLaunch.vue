@@ -19,7 +19,9 @@ config.autoGenerateCss = true;
 // 图标复用既有注册：行「复制」regular copy、「编辑」regular pen-to-square（模板卡同款），
 // 「新建」solid file-circle-plus（模板卡同款），停止 solid stop（LaunchBar 同款）；
 // 启动用 solid play（2026-10-14 用户要求：列表行 [启动] 图标由 rocket 改 play，配色不动；
-// 状态按钮 24×24 圆形 + 图标 12px，见 style.css .btn-round）。
+// 状态按钮 24×24 圆形，见 style.css .btn-round；图标字号 play 12px / stop 10px
+// （2026-10-15 用户要求把本卡 [停止] 的白色方框调小：12px → 10px，取证台 .temp/ql-stop-icon-size/measure.mjs
+//  —— 着墨 10.4×10.4px → 8.6×8.6px，占 24px 按钮 43% → 36%。LaunchBar 的 [停止] 仍 14px，未改）。
 // faPlay 只在 free-solid-svg-icons 里有（free-regular 无该图标），按本文件既有约定挂进 fat 键。
 library.add(faPenToSquare, faCopy, faFileCirclePlus, faPlay, faStop);
 const byPrefixAndName = {
@@ -191,7 +193,7 @@ onMounted(() => { void reload(); });
             <button :class="['btn', 'btn-round', stateOf(id).running ? 'btn-danger' : 'btn-launch']"
               :data-tooltip="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
               :aria-label="stateOf(id).running ? t('ql.btn.stop') : t('ql.btn.start')"
-              :disabled="stateOf(id).stopping" @click="onToggle(id)"><template v-if="!stateOf(id).running"><FontAwesomeIcon :icon="byPrefixAndName.fat['play']" style="font-size: 12px;" /></template><span v-else-if="stateOf(id).stopping">...</span><FontAwesomeIcon v-else :icon="byPrefixAndName.fas['stop']" style="font-size: 12px;" /></button>
+              :disabled="stateOf(id).stopping" @click="onToggle(id)"><template v-if="!stateOf(id).running"><FontAwesomeIcon :icon="byPrefixAndName.fat['play']" style="font-size: 12px;" /></template><span v-else-if="stateOf(id).stopping">...</span><FontAwesomeIcon v-else :icon="byPrefixAndName.fas['stop']" style="font-size: 10px;" /></button>
           </div>
         </div>
       </div>
