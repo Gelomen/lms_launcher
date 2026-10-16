@@ -110,6 +110,9 @@ const typeOptions = computed(() => [
 const terminalOptions = computed(() => terminals.value.map((info) => ({
   value: info.id,
   label: TERM_LABEL[info.id](),
+  // 真实图标（2026-10-16-quick-launch-terminal-icons 规格 §6.4 / §8-Q5）：主进程不带 icon 的项 = undefined
+  // → Vue 不写 src、不渲染 img，那一项退回纯文字。
+  imageUrl: info.icon,
 })));
 
 function fill(): void {

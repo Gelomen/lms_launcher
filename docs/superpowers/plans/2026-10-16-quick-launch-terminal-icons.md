@@ -127,16 +127,16 @@
 - 修改：`src/modules/QuickLaunchModal.vue:110-113`
 - 测试：`src/modules/QuickLaunchModal.test.ts:22-27`（夹具）、`:726-737`（改写）、新增 2 条
 
-- [ ] **步骤 0：起点核对**：`QuickLaunchModal.vue:110-113`（`terminalOptions`）、`:56-61`（`TERM_LABEL`，不动）、`:250-253`（[终端] 的 `Dropdown` 用法，不动）；`QuickLaunchModal.test.ts:22-27`（`TERMS` 夹具）、`:669-700`（[类型] 图标用例，作为写法样板）、`:711-721`（`.type-field` 180px 门，不动）、`:726-737`（要改写的那条）。
-- [ ] **步骤 1：先写失败测试**（§7.1 的 11–13）：
+- [x] **步骤 0：起点核对**：`QuickLaunchModal.vue:110-113`（`terminalOptions`）、`:56-61`（`TERM_LABEL`，不动）、`:250-253`（[终端] 的 `Dropdown` 用法，不动）；`QuickLaunchModal.test.ts:22-27`（`TERMS` 夹具）、`:669-700`（[类型] 图标用例，作为写法样板）、`:711-721`（`.type-field` 180px 门，不动）、`:726-737`（要改写的那条）。
+- [x] **步骤 1：先写失败测试**（§7.1 的 11–13）：
   - 夹具：`TERMS` 每项加 `icon: 'data:image/png;base64,<短串>'`（四项各一个可区分的串，便于断言 `src` 的对应关系）。
   - `terminal_options_and_trigger_carry_the_real_terminal_icons` —— 打开 [终端] 面板：四项 `li` 的 `textContent` 与 `t('ql.term.*')` 逐字相同（RF2）、`firstElementChild` 是 `img.option-image`、`src` 与该项夹具逐字相同；trigger 第一个子节点是 `img.select-image` 且 `src` = 当前选中项（默认第一项 = powershell，索引 K31(3)）；点第二项（`cmd`）→ trigger 的 `src` 换成 `cmd` 的（RF5）。
   - `terminal_option_without_icon_renders_no_img` —— 夹具里 `cmd` 不带 `icon` → 那一项没有 `img`，其余三项有（RF1）。
   - 改写 `:726-737`：用例名改成 `trigger_labels_after_an_icon_absorb_the_free_space`，两个下拉（[类型] 与 [终端]）的 `.select-label` 都断言 `flexGrow === '1'`；注释指向 `Dropdown.test.ts` 里承接「不传图标不受影响」的那条（§6.6-2）。
-- [ ] **步骤 2：跑红**：`npx vitest run src/modules/QuickLaunchModal.test.ts` → 2 条新用例红；改写那条红在 [终端] 的 `flexGrow`（此时还没接上图标）。输出贴 J 段。
-- [ ] **步骤 3：实现**：`terminalOptions` 的 map 里加 `imageUrl: info.icon`（`QuickLaunchModal.vue:110-113`，一行）。`.term-field` 与 `.type-field` 的样式一字不动（G7）。
-- [ ] **步骤 4：跑绿 + G8**：`npx vitest run src/modules/QuickLaunchModal.test.ts` 全绿（既有用例一字不改，含 `:669-700` 的 [类型] 图标门与 `:711-721` 的宽度门）；`npm test` → `Tests 923 passed (923)`（921 + 2）。
-- [ ] **步骤 5：Commit（主代理）**：`feat(ui): 快捷启动 [终端] 下拉每一项显示真实图标`
+- [x] **步骤 2：跑红**：`npx vitest run src/modules/QuickLaunchModal.test.ts` → 2 条新用例红；改写那条红在 [终端] 的 `flexGrow`（此时还没接上图标）。输出贴 J 段。
+- [x] **步骤 3：实现**：`terminalOptions` 的 map 里加 `imageUrl: info.icon`（`QuickLaunchModal.vue:110-113`，一行）。`.term-field` 与 `.type-field` 的样式一字不动（G7）。
+- [x] **步骤 4：跑绿 + G8**：`npx vitest run src/modules/QuickLaunchModal.test.ts` 全绿（既有用例一字不改，含 `:669-700` 的 [类型] 图标门与 `:711-721` 的宽度门）；`npm test` → `Tests 923 passed (923)`（921 + 2）。
+- [x] **步骤 5：Commit（主代理）**：`feat(ui): 快捷启动 [终端] 下拉每一项显示真实图标`
 
 ---
 

@@ -19,11 +19,15 @@ let calls: Calls = [];
 
 // 主进程返回序 = quick-launch-terminals.ts:107-113 的探测顺序（powershell → cmd → pwsh → wsl）。
 // 用例按这个顺序断言「不重排」（索引 K31(3) / 关闭 M1）：pwsh 不在第一项。
+// 2026-10-16（2026-10-16-quick-launch-terminal-icons 规格 §6.3 / §7.1-11）：每项带一个**可区分**的 icon
+// （PNG data URL 的形状 = 主进程 ql-terminal-icons.ts 补的那个字段）。四个串互不相同，
+// 才钉得住「第 n 项的 <img src> = 第 n 项的 icon」这层对应关系（不是「渲染出了某个图标」就算过）。
+// 既有用例断的是 li 的 textContent 与 .select-label 的文本，图标不混进文本，所以不受影响。
 const TERMS: TerminalInfo[] = [
-  { id: 'powershell', path: 'C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' },
-  { id: 'cmd', path: 'C:\\WINDOWS\\System32\\cmd.exe' },
-  { id: 'pwsh', path: 'C:\\Program Files\\WindowsApps\\pwsh.exe' },
-  { id: 'wsl', path: 'C:\\WINDOWS\\System32\\wsl.exe' },
+  { id: 'powershell', path: 'C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', icon: 'data:image/png;base64,AAAA' },
+  { id: 'cmd', path: 'C:\\WINDOWS\\System32\\cmd.exe', icon: 'data:image/png;base64,BBBB' },
+  { id: 'pwsh', path: 'C:\\Program Files\\WindowsApps\\pwsh.exe', icon: 'data:image/png;base64,CCCC' },
+  { id: 'wsl', path: 'C:\\WINDOWS\\System32\\wsl.exe', icon: 'data:image/png;base64,DDDD' },
 ];
 
 // 任务 8（规格 §6.2）：夹具带 admin: false —— 弹窗的 payload 现在总是显式带这个字段（§8-K4「落盘总是显式写」），
@@ -699,6 +703,84 @@ it('type_options_and_trigger_carry_the_type_icons', async () => {
   w.unmount();
 });
 
+// 2026-10-16（2026-10-16-quick-launch-terminal-icons 规格 §7.1-11 / 索引 K3 / RF2 RF5）：
+// [终端] 的每一项与收起态 trigger 带**取自本机 exe 的真实图标** —— 主进程 ql-terminal-icons.ts 补的
+// TerminalInfo.icon（PNG data URL）经 QuickLaunchModal 的 terminalOptions.imageUrl 进 Dropdown（规格 §6.4）。
+// 这里只钉「接线」这一环，四件事：
+//   1) 列表形状不变：四项的文字与 t('ql.term.*') 逐字相同（不重排、不加字；图标不混进 textContent）；
+//   2) 每一项的第一个元素是 <img class="option-image">，src = 该项夹具的 icon（图标在文字之前，且逐项对得上）；
+//   3) trigger 的第一个子节点是 <img class="select-image">，src = 当前选中项（默认第一项 = powershell，索引 K31(3)）；
+//   4) 点第二项（cmd）→ trigger 的 src 换成 cmd 的（图标随选中项走，不写死第一项）。
+// 图标盒子的尺寸 / alt="" 口径在 src/components/Dropdown.test.ts 与 src/style.css（索引 K9 / K22），本用例不重复钉。
+it('terminal_options_and_trigger_carry_the_real_terminal_icons', async () => {
+  mockLms();
+  const w = mountModal({ open: true, id: null, entry: null });
+  await flush();
+
+  const termLabel = t('ql.modal.terminal');
+  const dd = dropdownOf(termLabel) as HTMLElement;
+  // 面板只点一次：openOptionLabels / pickOption 各自都会点 trigger，连着用第二次点的是「关闭」
+  (dd.querySelector('.select-trigger') as HTMLButtonElement).click();
+  await flush();
+  const items = [...dd.querySelectorAll('ul.dropdown-panel li')];
+  // 文字一字不改、顺序 = 主进程返回序（RF2：图标只是装饰，不动列表形状）
+  expect(items.map((li) => (li.textContent ?? '').trim()), '面板选项的文案或顺序变了')
+    .toEqual([t('ql.term.powershell'), t('ql.term.cmd'), t('ql.term.pwsh'), t('ql.term.wsl')]);
+  // 逐项对应：第 n 项的 img src = 第 n 项的 icon（不是「渲染出了某个图标」就算过）
+  for (let i = 0; i < items.length; i++) {
+    const first = items[i].firstElementChild;
+    expect((first?.tagName ?? '').toLowerCase(), '选项 ' + i + ' 的图标不在文字之前').toBe('img');
+    expect(String(first?.className), '选项 ' + i + ' 的 img 类名不对').toBe('option-image');
+    expect(first?.getAttribute('src'), '选项 ' + i + ' 的 img src 与该项夹具不一致').toBe(TERMS[i].icon);
+  }
+
+  // 收起态：trigger 的第一个子节点 = 当前选中项（默认第一项 = powershell）的 img，.select-label / .select-caret 顺序不变
+  const trig = triggerOf(termLabel) as HTMLElement;
+  const kids = [...trig.children].map((el) => el.tagName.toLowerCase() === 'img'
+    ? 'img:' + String(el.className) : String(el.className));
+  expect(kids, 'trigger 子节点顺序不对：' + JSON.stringify(kids)).toEqual(['img:select-image', 'select-label', 'select-caret']);
+  expect(trig.querySelector('img')?.getAttribute('src'), 'trigger 的 img 不是当前选中项的图标').toBe(TERMS[0].icon);
+
+  // 面板此刻是开着的：直接点第二项（cmd），不再点 trigger（那是一次「关闭」）
+  (items[1] as HTMLLIElement).click();
+  await flush();
+  expect(triggerOf(termLabel)!.querySelector('img')?.getAttribute('src'), '换选后 trigger 的图标没跟着换')
+    .toBe(TERMS[1].icon);
+  expect(triggerText(termLabel), '换选后 trigger 的文字变了').toBe(t('ql.term.cmd'));
+  w.unmount();
+});
+
+// 2026-10-16（规格 §7.1-12 / §8-Q5 / 索引 K5 / RF1）：某一项取不到图标（主进程不带 icon 字段）
+// → 那一项退回今天的样子：没有 <img>、文字照常；其余三项照常带图标。不报错、不把整个下拉空掉。
+// 选中项没有图标时 trigger 也不带 img（同一口径的另一半：图标随选中项有则有、无则无）。
+it('terminal_option_without_icon_renders_no_img', async () => {
+  const TERMS_CMD_HAS_NO_ICON: TerminalInfo[] = TERMS.map((info) =>
+    info.id === 'cmd' ? { id: info.id, path: info.path } : info);
+  mockLms({ terminals: TERMS_CMD_HAS_NO_ICON });
+  const w = mountModal({ open: true, id: null, entry: null });
+  await flush();
+
+  const termLabel = t('ql.modal.terminal');
+  const dd = dropdownOf(termLabel) as HTMLElement;
+  (dd.querySelector('.select-trigger') as HTMLButtonElement).click();
+  await flush();
+  const items = [...dd.querySelectorAll('ul.dropdown-panel li')];
+  expect(items.length, '少一个图标就把选项条数带变了').toBe(4);
+  expect(items.map((li) => (li.textContent ?? '').trim()), '不带图标的那一项文字变了')
+    .toEqual([t('ql.term.powershell'), t('ql.term.cmd'), t('ql.term.pwsh'), t('ql.term.wsl')]);
+  const srcs = items.map((li) => li.querySelector('img')?.getAttribute('src') ?? null);
+  expect(srcs, '不带 icon 的那一项不该渲染 img，其余三项照常').toEqual([TERMS[0].icon, null, TERMS[2].icon, TERMS[3].icon]);
+
+  // 当前选中项（第一项）有图标 → trigger 照常带；换选到不带图标的那一项 → trigger 退回纯文字（Q5）
+  expect(triggerOf(termLabel)!.querySelector('img')?.getAttribute('src'), '第一项有图标时 trigger 该带上它').toBe(TERMS[0].icon);
+  (items[1] as HTMLLIElement).click();
+  await flush();
+  const trig = triggerOf(termLabel) as HTMLElement;
+  expect(trig.querySelector('img'), '选中项没有图标却渲染了 img').toBeNull();
+  expect(triggerText(termLabel), '缺图标的那一项文字不照常').toBe(t('ql.term.cmd'));
+  w.unmount();
+});
+
 // 2026-10-16（用户直接改）：[名字] 输入框缩短、[类型] 下拉加宽 —— 定宽 140px → 180px。
 // 取值依据（无头 Chromium 实测，取证台 .temp/ql-type-icon-probe/；markup 取真实组件导出的 outerHTML）：
 //   520px 弹窗里 trigger 可用内容区 = clientWidth − .btn 的 padding 0 14px（28px）；
@@ -721,9 +803,13 @@ it('type_field_is_widened_to_180px', async () => {
 });
 // 2026-10-16：图标是 trigger 的第三个 flex 子节点，而 .select-trigger 是 space-between（style.css:319）——
 // 不处理的话短标签被推到中间（zh「命令行」实测：图标贴左、文字居中）。style.css 的
-// 「.select-trigger .select-icon + .select-label { flex: 1 1 auto }」把剩余宽度只给**紧跟图标**的标签。
-// 这里钉的是这条 CSS 契约：有图标时标签 flex-grow=1；[终端] 下拉（不传 icon）不受影响。
-it('trigger_label_after_an_icon_absorbs_the_free_space_others_do_not', async () => {
+// 「.select-trigger .select-icon + .select-label, .select-trigger .select-image + .select-label { flex: 1 1 auto }」
+// 把剩余宽度只给**紧跟图标**的标签（min-width:0 仍在 → 吸收宽度后照样能收缩 + ellipsis）。
+// 这里钉的是这条 CSS 契约：[类型]（FontAwesome icon）与 [终端]（真实图标 imageUrl）两个带图标的下拉，
+// 图标后的 .select-label 都 flexGrow=1。[终端] 现在也带图标（2026-10-16-quick-launch-terminal-icons 规格 §6.4）；
+// 不传图标的下拉由 src/components/Dropdown.test.ts 的 options_without_icon_render_no_icon_and_the_trigger_keeps_only_the_caret
+// 钉住（规格 §6.6-2 / 索引 K12：那一半在任务 3 已搬过去，且按索引 K21 注入了真实 CSS 才有牙）。
+it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
   injectRealCss();
   mockLms();
   const w = mountModal({ open: true, id: null, entry: null });
@@ -732,7 +818,7 @@ it('trigger_label_after_an_icon_absorbs_the_free_space_others_do_not', async () 
   const typeLabel = (triggerOf(t('ql.modal.type')) as HTMLElement).querySelector('.select-label') as HTMLElement;
   expect(getComputedStyle(typeLabel).flexGrow, '图标后的 .select-label 没有吸收剩余宽度').toBe('1');
   const termLabel = (triggerOf(t('ql.modal.terminal')) as HTMLElement).querySelector('.select-label') as HTMLElement;
-  expect(getComputedStyle(termLabel).flexGrow, '不传 icon 的 [终端] 下拉被这条规则带偏了').not.toBe('1');
+  expect(getComputedStyle(termLabel).flexGrow, '[终端] 现在带真实图标，它的 .select-label 也该吸收剩余宽度').toBe('1');
   w.unmount();
 });
 
