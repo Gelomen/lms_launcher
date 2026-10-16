@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faXmark } from '@fortawesome/free-solid-svg-icons';
-import { faFloppyDisk, faFolderOpen, faTrashCan } from '@fortawesome/free-regular-svg-icons';
+import { faXmark, faTerminal } from '@fortawesome/free-solid-svg-icons';
+import { faFloppyDisk, faFolderOpen, faTrashCan, faFileCode } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 import { t } from '../i18n';
@@ -18,11 +18,15 @@ import type { TerminalInfo } from '../src-main/quick-launch-terminals';
 // modal-save / btn-delete），不新造样式；弹窗由卡片持有（索引 K29），本组件不持有列表数据。
 config.autoGenerateCss = true;
 // 图标按需注册：regular 款 floppy-disk（保存）/ folder-open（选择文件）/ trash-can（删除）；
-// xmark（关闭 ×）无 regular 款，保留 free-solid（与 TemplateModal.vue:15-20 同一口径）
-library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen);
+// xmark（关闭 ×）无 regular 款，保留 free-solid（与 TemplateModal.vue:15-20 同一口径）。
+// 2026-10-16（用户要求 [类型] 前加图标，口径由用户选定「按真实款式分前缀」）：
+//   terminal 只在 free-solid 里（free-regular 无该图标，实测 node_modules/@fortawesome/free-regular-svg-icons
+//   的 index.d.ts 不含 faTerminal）→ 挂 fas 键；file-code 两款都有，取 free-regular（细线款）→ 挂 fat 键。
+//   代价（用户知情选定）：两个图标一实心一细线，粗细不一致。
+library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen, faTerminal, faFileCode);
 const byPrefixAndName = {
-  fat: { 'floppy-disk': faFloppyDisk, 'trash-can': faTrashCan, 'folder-open': faFolderOpen },
-  fas: { xmark: faXmark },
+  fat: { 'floppy-disk': faFloppyDisk, 'trash-can': faTrashCan, 'folder-open': faFolderOpen, 'file-code': faFileCode },
+  fas: { xmark: faXmark, terminal: faTerminal },
 };
 
 // 接口（check C1 / 索引 K31(1)）：id = null → 新建，新 id 由主进程生成（规格 §5.4）；
@@ -91,9 +95,11 @@ const exeError = computed((): string | null =>
 
 // 类型与终端都走共享 Dropdown（F1，不手写 select）。类型两项固定；终端来自探测结果，
 // 顺序照主进程返回序不重排（索引 K31(3)：规格与计划都没要求 pwsh 优先）。
+// 2026-10-16（用户要求）：两项各带一个图标 —— 「命令行」前 terminal、「可执行程序」前 file-code。
+// icon 是 Dropdown 的可选字段（Dropdown.vue:19-25），面板选项与收起态 trigger 共用这一份来源（随选中项变）。
 const typeOptions = computed(() => [
-  { value: 'shell', label: t('ql.modal.type.shell') },
-  { value: 'exe', label: t('ql.modal.type.exe') },
+  { value: 'shell', label: t('ql.modal.type.shell'), icon: byPrefixAndName.fas['terminal'] },
+  { value: 'exe', label: t('ql.modal.type.exe'), icon: byPrefixAndName.fat['file-code'] },
 ]);
 // 终端标签一律传全名，不做宽度预算截断（2026-10-13 用户直接改：这一格足够宽，选中项却被截断了）。
 // 原 M19 口径（预算 16 = 规格 §11-1 的下拉/页签预算，完整名走 option.tip）在这里属于「宽度够却截断」：
@@ -412,8 +418,18 @@ function close(): void { emit('close'); }
 /* 名字 + 类型同行（2026-10-13 直接改）：
    .name-cell = 网格第二列里的纵向容器（输入行 + 空名报错），min-width:0 让里面的 flex 行能收缩；
    .type-field = 类型下拉定宽。原来它跟着 style.css:289 的 .dropdown { width: 100% } 占满控件列
-   （520px 弹窗里 ≈ 418px），现按「可执行程序」/「Command line」两个标签都能放下定到 140px。
-   选择器写成 .row-cell .type-field（特异性 0,2,0 + scoped 属性）以压过 style.css:289 的 width:100%。 */
+   （520px 弹窗里 ≈ 418px），2026-10-13 按「可执行程序」/「Command line」两个标签都能放下定到 140px。
+   2026-10-16（用户直接改：缩短 [名字] 输入框、增大 [类型] 下拉 + 两项前加图标）→ 140px 增到 180px。
+   取值取证台 .temp/ql-type-icon-probe/（无头 Chromium；灌真实 style.css + 本段 scoped 原文 + fontawesome
+   自己生成的 CSS；trigger / 面板 markup 不是手写复刻，是 dump.test.ts 从真实组件导出的 outerHTML）：
+     trigger 可用内容区 = clientWidth − style.css:118 .btn 的 padding 0 14px（28px）；
+     最大需求（en「Command line」）= 图标 17.5（= 1.25em @14px，见 style.css:343-359）+ gap 8 + 文本 90.1
+                + gap 8 + ▼ 15.8（.select-caret 11px 字号 + padding-right 2）= 139.3px
+     140px → 可用只有 111px：实测 trigger 标签被截（61.4 / 90.1），面板选项「Command line」也被截（131 / 132）；
+     180px → 可用 151px：两处都不截（标签实测 90.3），trigger 余量 11.7px、选项余量 32px。
+   同一次实测的另一侧：名字输入框 248.7px → 208.7px（缩短 40px），.row-cell 总宽不变（428.7px）。
+   选择器写成 .row-cell .type-field（特异性 0,2,0 + scoped 属性）以压过 style.css:289 的 width:100%；
+   定宽值由 QuickLaunchModal.test.ts 的 type_field_is_widened_to_180px 钉住。 */
 .name-cell { min-width: 0; }
 /* 命令 / 可执行程序路径的报错格（2026-10-13 用户直接改）：与 .name-cell 同一手法——
    纵向容器包住「输入行 + 报错」，报错不占 .flag-grid 的网格列（否则会把下一行的标签挤到报错同一行）。
@@ -425,7 +441,7 @@ function close(): void { emit('close'); }
    命令 / 路径两格现在也会因报错变高，同一处理（.cmd-label / .exe-label）。 */
 .flag-grid .name-label, .flag-grid .cmd-label, .flag-grid .exe-label { align-self: start; padding-top: 8px; }
 .row-cell .type-label { flex: none; white-space: nowrap; }
-.row-cell .type-field { flex: none; width: 140px; }
+.row-cell .type-field { flex: none; width: 180px; }
 .file-btn {
   flex-shrink: 0; height: var(--h-control); display: inline-flex; align-items: center; justify-content: center;
   padding: 0 14px; font-size: var(--fs-label);

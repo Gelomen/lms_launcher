@@ -99,6 +99,11 @@ const dropdownOf = (text: string): Element | null => {
 };
 const triggerOf = (text: string): Element | null => dropdownOf(text)?.querySelector('.select-trigger') ?? null;
 const triggerText = (text: string): string => (triggerOf(text)?.querySelector('.select-label')?.textContent ?? '').trim();
+// 2026-10-16（[类型] 前加图标）：元素内所有 svg 的「前缀:图标名」清单——vue-fontawesome 把
+// IconDefinition 的 prefix / iconName 写进 data-prefix / data-icon，据此钉「挂的是哪个图标」。
+function iconTags(el: Element): string[] {
+  return [...el.querySelectorAll('svg')].map((s) => s.getAttribute('data-prefix') + ':' + s.getAttribute('data-icon'));
+}
 function setInput(el: HTMLInputElement, v: string): Promise<void> {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   setter.call(el, v);
@@ -656,6 +661,80 @@ describe('QuickLaunchModal', () => {
     expect(inputOf(t('ql.modal.cmd'))).not.toBe(null);
     w.unmount();
   });
+
+// 2026-10-16（用户直接改）：[类型] 的两项前加图标——「命令行」前 terminal、「可执行程序」前 file-code，
+// 面板选项与收起态的 trigger 都要有（用户选定「面板选项 + trigger 都加」）。
+// 图标来源按真实款式分前缀（用户选定）：terminal 只在 free-solid → fas；file-code 取 free-regular → far。
+// 这里钉的是 DOM：选项文字一字不改（图标不混进 textContent）、图标在文字之前、trigger 随选中项换图标。
+it('type_options_and_trigger_carry_the_type_icons', async () => {
+  mockLms();
+  const w = mountModal({ open: true, id: null, entry: null });
+  await flush();
+
+  const dd = dropdownOf(t('ql.modal.type')) as HTMLElement;
+  // 面板只点一次：openOptionLabels / pickOption 各自都会点 trigger，连着用第二次点的是「关闭」
+  (dd.querySelector('.select-trigger') as HTMLButtonElement).click();
+  await flush();
+  const items = [...dd.querySelectorAll('ul.dropdown-panel li')];
+  expect(items.map((li) => (li.textContent ?? '').trim()), '面板选项文案变了').toEqual([t('ql.modal.type.shell'), t('ql.modal.type.exe')]);
+  expect(items.map((li) => iconTags(li)), '面板选项的图标不对：' + JSON.stringify(items.map((li) => iconTags(li)))).toEqual([['fas:terminal'], ['far:file-code']]);
+  for (const li of items) {
+    expect((li.firstElementChild?.tagName ?? '').toLowerCase(), '选项里图标不在文字之前').toBe('svg');
+  }
+
+  // 收起态：trigger 带当前选中项（默认「命令行」= E1）的图标，且排在 .select-label 之前
+  const trig = triggerOf(t('ql.modal.type')) as HTMLElement;
+  const kids = [...trig.children].map((el) => el.tagName === 'svg'
+    ? 'icon:' + (el.getAttribute('data-prefix') ?? '') + ':' + (el.getAttribute('data-icon') ?? '')
+    : String(el.className));
+  expect(kids, 'trigger 子节点顺序不对：' + JSON.stringify(kids)).toEqual(['icon:fas:terminal', 'select-label', 'select-caret']);
+
+  // 切到「可执行程序」→ trigger 的图标跟着换成 file-code（图标随选中项，不是写死第一项）。
+  // 面板此刻是开着的：直接点第二项，不再点 trigger（那是一次「关闭」）。
+  (items[1] as HTMLLIElement).click();
+  await flush();
+  const after = iconTags(triggerOf(t('ql.modal.type')) as HTMLElement);
+  expect(after, '切换类型后 trigger 的图标没跟着换：' + JSON.stringify(after)).toEqual(['far:file-code', 'fas:list']);
+  expect(triggerText(t('ql.modal.type'))).toBe(t('ql.modal.type.exe'));
+  w.unmount();
+});
+
+// 2026-10-16（用户直接改）：[名字] 输入框缩短、[类型] 下拉加宽 —— 定宽 140px → 180px。
+// 取值依据（无头 Chromium 实测，取证台 .temp/ql-type-icon-probe/；markup 取真实组件导出的 outerHTML）：
+//   520px 弹窗里 trigger 可用内容区 = clientWidth − .btn 的 padding 0 14px（28px）；
+//   最大需求（en「Command line」）= 图标 17.5（FA v7 的 .svg-inline--fa width:1.25em @14px）+ gap 8
+//              + 文本 90.1 + gap 8 + ▼ 15.8 = 139.3px
+//   140px → 可用 111px：trigger 标签与面板选项「Command line」都被省略号截断（实测 61.4/90.1、131/132）；
+//   180px → 可用 151px：都不截（trigger 余量 11.7px、选项余量 32px）。
+//   同一次实测：名字输入框 248.7px → 208.7px（缩短 40px）。
+// 钉的是 CSS 契约（注入真实 style.css + 本组件 scoped 原文，同 :68 的 injectRealCss 手法）。
+it('type_field_is_widened_to_180px', async () => {
+  injectRealCss();
+  mockLms();
+  const w = mountModal({ open: true, id: null, entry: null });
+  await flush();
+
+  const typeField = dropdownOf(t('ql.modal.type')) as HTMLElement;
+  expect(typeField.classList.contains('type-field')).toBe(true);
+  expect(getComputedStyle(typeField).width, '[类型] 定宽不是 180px').toBe('180px');
+  w.unmount();
+});
+// 2026-10-16：图标是 trigger 的第三个 flex 子节点，而 .select-trigger 是 space-between（style.css:319）——
+// 不处理的话短标签被推到中间（zh「命令行」实测：图标贴左、文字居中）。style.css 的
+// 「.select-trigger .select-icon + .select-label { flex: 1 1 auto }」把剩余宽度只给**紧跟图标**的标签。
+// 这里钉的是这条 CSS 契约：有图标时标签 flex-grow=1；[终端] 下拉（不传 icon）不受影响。
+it('trigger_label_after_an_icon_absorbs_the_free_space_others_do_not', async () => {
+  injectRealCss();
+  mockLms();
+  const w = mountModal({ open: true, id: null, entry: null });
+  await flush();
+
+  const typeLabel = (triggerOf(t('ql.modal.type')) as HTMLElement).querySelector('.select-label') as HTMLElement;
+  expect(getComputedStyle(typeLabel).flexGrow, '图标后的 .select-label 没有吸收剩余宽度').toBe('1');
+  const termLabel = (triggerOf(t('ql.modal.terminal')) as HTMLElement).querySelector('.select-label') as HTMLElement;
+  expect(getComputedStyle(termLabel).flexGrow, '不传 icon 的 [终端] 下拉被这条规则带偏了').not.toBe('1');
+  w.unmount();
+});
 
   // 2026-10-13（用户反馈：[类型] 切到「可执行程序」时弹窗变窄）：弹窗高度固定，以「命令行」态为准。
   // 218px 的构成（无头 Chromium 实测取证：真实 style.css + 本组件 scoped 样式 + 两态静态复刻；

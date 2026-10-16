@@ -340,6 +340,23 @@ body {
 .dropdown-panel .option { padding: 5px 8px; border-radius: 4px; cursor: pointer; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* JS 仅超预算+2 才手动 +…；余量交给 CSS 自动省略，nowrap 防换行撑高（任务 19 根因不回退） */
 .dropdown-panel .option:hover { background: #F6F7F8; }   /* 与 btn:hover 一致 */
 .dropdown-panel .option.selected { color: var(--primary); font-weight: 600; }   /* 选中项文字紫，与重要操作色统一（2026-08-29） */
+/* 选项 / 触发按钮里的「类型图标」（2026-10-16 用户要求：快捷启动弹窗 [类型] 的「命令行」/「可执行程序」前加图标）：
+   图标由 Dropdown.vue 的 option.icon 挂载（可选字段，见该文件 :19-25）——不传就不渲染这两个类，
+   TemplateModal / LaunchBar / [终端] 下拉一字不变，所以这里只加规则、不动既有选择器。
+   .select-trigger 本身是 flex + gap:8px，图标只需禁止收缩。图标占位 = 1.25em × 1em（FA v7 生成的 CSS 里
+   .svg-inline--fa { width: var(--fa-width, 1.25em); height: 1em }，与 viewBox 比例无关）→ 14px 字号下实测
+   17.5×14px，两个图标同宽（无头 Chromium 取证台 .temp/ql-type-icon-probe/，180-zh / 180-en 两组）；
+   面板选项 li 不是 flex，间距用 margin-right:6px。
+   垂直对齐不自己写：vue-fontawesome 自带的 .svg-inline--fa { vertical-align:-0.125em }（config.autoGenerateCss=true）。 */
+.select-trigger .select-icon { flex: none; }
+.dropdown-panel .option .option-icon { margin-right: 6px; }
+/* 图标是 trigger 的第三个 flex 子节点，而 .select-trigger 是 justify-content:space-between（:319）——
+   不处理的话短标签会被推到中间（zh「命令行」实测：图标贴左、文字居中、▼ 贴右）。
+   用相邻兄弟选择器把「吸收剩余宽度」只挂给**紧跟图标**的那个 .select-label：
+   没有图标就没有这条匹配，TemplateModal / LaunchBar / [终端] 下拉的排布一字不变
+   （两子节点 + space-between 本来就是标签贴左、▼ 贴右，flex:1 取到的是同一段宽度）。
+   min-width:0（:320）仍在 → 吸收宽度后照样能收缩 + ellipsis。 */
+.select-trigger .select-icon + .select-label { flex: 1 1 auto; }
 
 /* ---- 「llama.cpp 安装目录」卡片下方恒定槽位：预留校验结果 1 行（与「保存中…」共用），
      避免校验前后卡片高度抖动 —— 校验后卡片不再把下方「启动控制」往下挤 ---- */

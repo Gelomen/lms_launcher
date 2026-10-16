@@ -5,8 +5,9 @@
      长名 tooltip（.dd-tip 悬浮层,与「编辑」按钮 tooltip 同风格）：选项 li.tip / trigger.tip 存在时 hover 显示完整名；
      label 截断（LaunchBar >10 字 + …）由父级负责。 -->
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faList } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 
@@ -15,9 +16,13 @@ config.autoGenerateCss = true;
 library.add(faList);
 // byPrefixAndName：按「前缀 → { iconName: IconDefinition }」组织，模板侧直接取图标定义
 const byPrefixAndName = { fat: { list: faList } };
+// 2026-10-16（用户要求：快捷启动弹窗 [类型] 的「命令行」/「可执行程序」前加图标）：
+// options 扩出**可选** icon（IconDefinition，调用方自己注册图标）。不传 = 渲染一字不变，
+// TemplateModal / LaunchBar / [终端] 下拉因此完全不受影响；传了则面板选项在文字前渲染该图标，
+// 收起态的 trigger 渲染**当前选中项**的图标（两处同一份来源，见下面的 currentOption）。
 const props = withDefaults(defineProps<{
   value: string;
-  options: Array<{ value: string; label: string; tip?: string }>;
+  options: Array<{ value: string; label: string; tip?: string; icon?: IconDefinition }>;
   /** 触发按钮完整名（长名才有）——hover trigger 弹 tooltip。LaunchBar 传入选中项的 tip。 */
   tip?: string;
   /** 为 true 时禁用（不响应点击）；默认 false。用于 LaunchBar running 锁定。 */
@@ -72,6 +77,13 @@ function toggle(): void { setOpen(!open.value); }
 
 function pick(v: string): void { if (props.disabled) return; emit('update:value', v); setOpen(false); tip.value = null; }
 
+// 选中项 = value 命中的 option，否则退回第一项（原 trigger 里内联的那串表达式，语义一字未改），
+// 只是拆出来给 label 与 icon 共用 —— 图标必须跟着选中项走，不能写死第一项。
+const currentOption = computed(() =>
+  props.options.find((o) => o.value === props.value) ?? (props.options.length > 0 ? props.options[0] : null));
+const triggerLabel = computed(() => currentOption.value?.label ?? props.placeholder);
+const triggerIcon = computed(() => currentOption.value?.icon);
+
 // 长名 tooltip（2026-08-26 spec + 当日挪位）：trigger / li 的 tip 存在时 hover 弹 .dd-tip
 // （position:fixed 浮于视口——.dropdown-panel max-height+overflow:auto 会裁剪行内 absolute 浮层，
 // fixed 不受裁剪且跟随视口）。触发按钮与面板选项共用同一悬浮层；移出 / 关面板即清。
@@ -112,7 +124,9 @@ onBeforeUnmount(() => {
             @mouseenter="(e) => showTip(e, props.tip)"
             @mouseleave="hideTip"
             @click.stop="toggle()">
-      <span class="select-label">{{ props.options.find((o) => o.value === props.value)?.label ?? (props.options.length > 0 ? props.options[0].label : props.placeholder) }}</span>
+      <!-- 选中项的图标（option.icon 才有）排在 .select-label 之前：与面板选项同一位置口径 -->
+      <FontAwesomeIcon v-if="triggerIcon" :icon="triggerIcon" class="select-icon" />
+      <span class="select-label">{{ triggerLabel }}</span>
       <span class="select-caret"><FontAwesomeIcon :icon="byPrefixAndName.fat['list']" /></span>
     </button>
     <!-- 坐标来自 place() 的内联 style（left/top/width）；position 与外观仍在全局 .dropdown-panel 里 -->
@@ -123,7 +137,7 @@ onBeforeUnmount(() => {
           :class="{ option: true, selected: o.value === props.value }"
           @mouseenter="(e) => showTip(e, o.tip)"
           @mouseleave="hideTip"
-          @click="pick(o.value)">{{ o.label }}</li>
+          @click="pick(o.value)"><FontAwesomeIcon v-if="o.icon" :icon="o.icon" class="option-icon" />{{ o.label }}</li>
     </ul>
     <!-- 长名 tooltip：position:fixed 悬浮层（样式同「编辑」按钮 tooltip / .tpl-tip），显示完整名；
          默认挂元素右侧垂直居中，右侧放不下时 flip 到左缘内侧（.dd-tip--flip） -->

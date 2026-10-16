@@ -6,6 +6,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { mount, flushPromises as flush } from '@vue/test-utils';
+import { faTerminal } from '@fortawesome/free-solid-svg-icons';
+import { faFileCode } from '@fortawesome/free-regular-svg-icons';
 import Dropdown from './Dropdown.vue';
 
 describe('Dropdown option tooltip float', () => {
@@ -172,3 +174,66 @@ describe('Dropdown panel is a viewport float', () => {
     w.unmount();
   });
 });
+// ---- 2026-10-16（用户要求：[类型] 下拉的「命令行」/「可执行程序」前加图标）
+// options 扩出**可选** icon 字段（IconDefinition）。钉三件事：
+//   1) 传了 icon：面板选项在文字**之前**渲染该图标，trigger 渲染**当前选中项**的图标（同样在 .select-label 之前）；
+//   2) 没传 icon：选项里一个图标都没有，trigger 只剩既有的 ▼（TemplateModal / LaunchBar / [终端] 下拉一字不变）；
+//   3) 图标身份 = 传入的 IconDefinition 本身（data-prefix / data-icon 取自它，不是组件里写死的）。
+describe('Dropdown option icons are opt-in per option', () => {
+  const WITH_ICONS = [
+    { value: 'shell', label: '命令行', icon: faTerminal },
+    { value: 'exe', label: '可执行程序', icon: faFileCode },
+  ];
+  const NO_ICONS = [
+    { value: 'shell', label: '命令行' },
+    { value: 'exe', label: '可执行程序' },
+  ];
+  /** 元素内所有 svg 的「前缀:图标名」清单（vue-fontawesome 把 IconDefinition 的 prefix/iconName 写进 data-*） */
+  function iconTags(el: Element): string[] {
+    return [...el.querySelectorAll('svg')].map((s) => s.getAttribute('data-prefix') + ':' + s.getAttribute('data-icon'));
+  }
+
+  it('options_with_icon_render_the_icon_before_the_label_in_trigger_and_panel', async () => {
+    const w = mount(Dropdown, { props: { value: 'shell', options: WITH_ICONS }, attachTo: document.body });
+    await flush();
+
+    // trigger：图标在最前，.select-label / .select-caret 顺序不变
+    const trigger = w.find('.select-trigger').element as HTMLElement;
+    const kids = [...trigger.children].map((el) => el.tagName === 'svg'
+      ? 'icon:' + (el.getAttribute('data-prefix') ?? '') + ':' + (el.getAttribute('data-icon') ?? '')
+      : String(el.className));
+    expect(kids, 'trigger 子节点顺序不对：' + JSON.stringify(kids)).toEqual(['icon:fas:terminal', 'select-label', 'select-caret']);
+
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+    const lis = w.findAll('.dropdown-panel li');
+    expect(lis.map((li) => (li.element.textContent ?? '').trim())).toEqual(['命令行', '可执行程序']);
+    expect(lis.map((li) => iconTags(li.element))).toEqual([['fas:terminal'], ['far:file-code']]);
+    // 图标在文字之前（不是后面补一个）
+    for (const li of lis) {
+      expect((li.element.firstElementChild?.tagName ?? '').toLowerCase(), '选项里图标不在文字之前').toBe('svg');
+    }
+
+    // 选中项换了 → trigger 的图标跟着换（图标属于选项，不是写死第一项）
+    await w.setProps({ value: 'exe' });
+    await flush();
+    const after = iconTags(w.find('.select-trigger').element as HTMLElement);
+    expect(after, '切换选中项后 trigger 的图标没跟着换：' + JSON.stringify(after)).toEqual(['far:file-code', 'fas:list']);
+    w.unmount();
+  });
+
+  it('options_without_icon_render_no_icon_and_the_trigger_keeps_only_the_caret', async () => {
+    const w = mount(Dropdown, { props: { value: 'shell', options: NO_ICONS }, attachTo: document.body });
+    await flush();
+
+    // 既有 ▼ 指示符（faList）之外没有第二个图标
+    expect(iconTags(w.find('.select-trigger').element as HTMLElement)).toEqual(['fas:list']);
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+    const lis = w.findAll('.dropdown-panel li');
+    expect(lis.map((li) => iconTags(li.element))).toEqual([[], []]);
+    expect(lis.map((li) => (li.element.textContent ?? '').trim())).toEqual(['命令行', '可执行程序']);
+    w.unmount();
+  });
+});
+
