@@ -68,3 +68,9 @@
 | K10 | 不改 [终端] 宽度：356.7px 可用区，最长项需求 ~196px | 实测 P8 + 索引 K6；本轮不重测 → 真机门兜（R6） | task-03 F、task-05 真机门 1/2 |
 | K11 | `.gitignore` 加一行 `cache/`（dev 态 `dataDir()` = cwd，跑应用会在仓库根生成缓存目录）；测试不产生它（`ipc-ql.test.ts:168-175` 把 `process.cwd` 换成临时目录） | 本轮实测：`.gitignore` 现有规则不含 `cache/`；`ipc-ql.test.ts:175` 的 `process.cwd = () => workDir` | task-02 B/F |
 | K12 | 既有两条断言的改法：`ipc-ql.test.ts:279` 放宽到「必含 id/path、可选 icon、不得有别的键」；`QuickLaunchModal.test.ts:726-737` 改成两个下拉都断 `flexGrow === '1'`，「不传图标不受影响」那一半搬到 `Dropdown.test.ts` | 规格 §6.6（本次要求，不是回归失败） | task-02 C/D、task-03 D、task-04 D |
+| K13 | `powershellExtract` 用 `execFile` 的**内联 Promise 包装**（不 import `node:util` 的 `promisify`），并补本地类型 `ExecFileOptionsWithStdio` 承载 `stdio`（@types/node 的 `ExecFileOptionsWithStringEncoding` 不声明它）；五个取值一字未改 | 实测：首版按 plan 步骤 3 写 `promisify` 会撞 F2 的 import 白名单；直接写 `stdio` → tsc TS2353（task-01 J-7）。探针 `.temp/ql-term-icon-probe/encoded-batch.cjs:31` 带同一 stdio 实测可用 | task-01 C2/F2、plan 任务 1 步骤 3 |
+| K14 | 「缓存目录不可写」= **本次不缓存、图标照常**（不是「该项无图标」）；两者都不抛、不写日志 | spec §6.2 比 plan G5 的概括更具体，spec 是真相源 | plan G5、task-01 C5 |
+| K15 | D2 的「跑红」以 vitest 2.1 的实际措辞为准：`Failed to load url ./ql-terminal-icons … Does the file exist?` + `Tests no tests`（0 条被收集）——判据是「模块解析不到、不是断言写错」 | 实测 task-01 J-5；原预期写的是 Node CJS 的 `Cannot find module` | task-01 D2 |
+| K16 | 「夹具不在则跳过 + 注释指向真机门」的先例 = `src-main/shell-execute.test.ts:204-222`（不是索引 K11，K11 是 `.gitignore` 口径）；测试文件按 plan 步骤 1 需要 `node:os`/`node:fs`/`node:path` 夹具 import，F2 白名单只约束 B1 实现文件 | 实测两处文件原文；plan 任务 1 步骤 1 明确要求 `os.tmpdir()` 夹具 | task-01 E6/F2 |
+| K17 | 实现起点与「文档 commit」= 当前 HEAD（`50c9e77`）；plan:6 的 `b3604be` 与 task-01 A1/F6 的 `5c4313d` 是文档生成时的旧值，不改写历史 hash | 实测 `git log --oneline -1` | task-01 A1/F6 |
+| K18 | 任务 1 的 H1 暂存范围除两份 `src-main/` 新文件外，另加受影响的三份文档（plan 的 G5/步骤 3、索引 K13–K17、本表受裁决影响的行） | AGENTS.md「偏离 spec：先改 spec / plan / check 表（同一 commit）」优先于 H1 的窄范围 | task-01 H1 |

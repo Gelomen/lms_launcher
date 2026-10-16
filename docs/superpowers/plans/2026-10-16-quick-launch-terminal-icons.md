@@ -18,7 +18,7 @@
 - **G2 不新增 i18n 键**：`ql.term.*` 四个标签一字不动；`key-coverage` / `dict` / `no-hardcoded` 三门任何任务后都不得变红，新代码字面量里不得有汉字。
 - **G3 不新增依赖**：`package.json` / lockfile 一字不动；不用 koffi、不用 PE 解析（§5-6）。
 - **G4 不阻塞主线程**：提取走 `execFile`（异步），**不用** `spawnSync`（索引 K2）。
-- **G5 任何失败都不抛出、不写日志、不弹提示**：`execFile` 报错 / 超时 / 非 0 / JSON 解析失败 / 单项 `null` / 缓存目录不可写 → 一律「该项无图标」（§6.1 / Q5）。
+- **G5 任何失败都不抛出、不写日志、不弹提示**：`execFile` 报错 / 超时 / 非 0 / JSON 解析失败 / 单项 `null` → 一律「该项无图标」；**缓存目录不可写** = 本次不缓存、图标照常（以 spec §6.2 的更具体口径为准，索引 K14）（§6.1 / Q5）。
 - **G6 不传 `imageUrl` 的调用方一字不变**：`TemplateModal`、`LaunchBar`、[类型] 下拉（`QuickLaunchModal.vue:100-103`）的渲染结果与既有断言不得改动（`Dropdown.test.ts:225-234` 是这条的既有牙）。
 - **G7 不改宽度**：`QuickLaunchModal.vue:534`（`.row-cell .term-field { flex: 1 1 auto; min-width: 0 }`）与 `.type-field` 的 180px（`:444`）一字不动（§6.5 / 索引 K6）。
 - **G8 每个任务的收尾门**：`npx tsc --noEmit -p tsconfig.main.json` 干净 + 该任务定向测试绿 + `npm test` 全量绿。（仓库根只有 `tsconfig.main.json`，没有 `tsconfig.json`）
@@ -61,8 +61,8 @@
 - 创建：`src-main/ql-terminal-icons.ts`
 - 创建：`src-main/ql-terminal-icons.test.ts`
 
-- [ ] **步骤 0：起点核对**：`src-main/quick-launch-terminals.ts:17-20`（`TerminalInfo`，本任务**不改**，只 import 类型）、`:31-34`（powershell 固定路径的写法，照抄口径）、`src-main/shell-execute.ts:14`（接缝形态：真实现是普通导出、单测替换）、`src-main/main.ts:105-109`（`mkdirSync` 失败不阻断的写法）。
-- [ ] **步骤 1：先写失败测试**（`src-main/ql-terminal-icons.test.ts`），用例名与断言逐字照 §7.1 的 1–6：
+- [x] **步骤 0：起点核对**：`src-main/quick-launch-terminals.ts:17-20`（`TerminalInfo`，本任务**不改**，只 import 类型）、`:31-34`（powershell 固定路径的写法，照抄口径）、`src-main/shell-execute.ts:14`（接缝形态：真实现是普通导出、单测替换）、`src-main/main.ts:105-109`（`mkdirSync` 失败不阻断的写法）。
+- [x] **步骤 1：先写失败测试**（`src-main/ql-terminal-icons.test.ts`），用例名与断言逐字照 §7.1 的 1–6：
   - `cache_file_name_is_stable_and_case_insensitive`
   - `cache_hit_skips_the_extraction_process`
   - `misses_are_extracted_in_a_single_call_and_written_to_cache`
@@ -70,14 +70,14 @@
   - `order_ids_and_paths_are_untouched`
   - `real_powershell_seam_extracts_a_png_for_a_known_exe`（不 mock；夹具 = `%SystemRoot%\\System32\\cmd.exe`，不存在时 `it.skipIf` 跳过并注释指向真机门）
   - 缓存目录夹具用 `fs.mkdtempSync(path.join(os.tmpdir(), 'ql-icons-'))`，`afterEach` 删除。
-- [ ] **步骤 2：跑红**：`npx vitest run src-main/ql-terminal-icons.test.ts` → 6 条全部失败（`Cannot find module './ql-terminal-icons'`）。输出贴 check 表 J 段。
-- [ ] **步骤 3：实现**（§6.1 的三个签名，逐字）：
+- [x] **步骤 2：跑红**：`npx vitest run src-main/ql-terminal-icons.test.ts` → 6 条全部失败（`Cannot find module './ql-terminal-icons'`）。输出贴 check 表 J 段。
+- [x] **步骤 3：实现**（§6.1 的三个签名，逐字）：
   - `cacheFileName(exePath: string): string` = `createHash('sha1').update(path.win32.resolve(exePath).toLowerCase()).digest('hex') + '.png'`。纯函数，不碰 fs。
-  - `powershellExtract: ExtractIcons` = `execFile`（`promisify`）+ §6.1 那段脚本常量 + `-EncodedCommand`（`Buffer.from(script,'utf16le').toString('base64')`）+ `{ windowsHide: true, timeout: 8000, maxBuffer: 1 << 20, encoding: 'utf-8', stdio: ['ignore','pipe','pipe'] }`；stdout 剥 BOM 后 `JSON.parse`；任何异常 → `null`。
+  - `powershellExtract: ExtractIcons` = `execFile`（异步；Promise 包装内联，**不 import `node:util`**，索引 K13）+ §6.1 那段脚本常量 + `-EncodedCommand`（`Buffer.from(script,'utf16le').toString('base64')`）+ `{ windowsHide: true, timeout: 8000, maxBuffer: 1 << 20, encoding: 'utf-8', stdio: ['ignore','pipe','pipe'] }`；stdout 剥 BOM 后 `JSON.parse`；任何异常 → `null`。
   - `withTerminalIcons(cacheDir, infos, extract = powershellExtract)`：`mkdirSync(cacheDir,{recursive:true})`（try/catch 吞）→ 逐项查缓存文件 → 未命中项去重后**一次** `extract` → 成功项写缓存文件（写失败吞）→ 返回新数组（浅拷贝每一项，只有拿到图标的项才加 `icon` 键）。
-- [ ] **步骤 4：跑绿 + G8**：`npx vitest run src-main/ql-terminal-icons.test.ts` → `Tests 6 passed (6)`；`npx tsc --noEmit -p tsconfig.main.json` exit 0；`npm test` → `Tests 918 passed (918)`（912 + 6）。数字对不上就在 check 表 J 段说明差在哪，不许默默过。
-- [ ] **步骤 5：真机冒烟取证**：`node .temp/ql-term-icon-probe/latency2.cjs <四个 exe 路径>` 复跑一次，把 `batch-4` 的真实毫秒数贴进 check 表 J 段（对照 §3-P4，验证「冷启动双峰」不是猜的）。
-- [ ] **步骤 6：Commit（主代理）**：`feat(main): 终端图标提取层（PowerShell System.Drawing + 应用目录磁盘缓存）`
+- [x] **步骤 4：跑绿 + G8**：`npx vitest run src-main/ql-terminal-icons.test.ts` → `Tests 6 passed (6)`；`npx tsc --noEmit -p tsconfig.main.json` exit 0；`npm test` → `Tests 918 passed (918)`（912 + 6）。数字对不上就在 check 表 J 段说明差在哪，不许默默过。
+- [x] **步骤 5：真机冒烟取证**：`node .temp/ql-term-icon-probe/latency2.cjs <四个 exe 路径>` 复跑一次，把 `batch-4` 的真实毫秒数贴进 check 表 J 段（对照 §3-P4，验证「冷启动双峰」不是猜的）。
+- [x] **步骤 6：Commit（主代理）**：`feat(main): 终端图标提取层（PowerShell System.Drawing + 应用目录磁盘缓存）`
 
 ---
 
