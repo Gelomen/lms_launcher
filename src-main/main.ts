@@ -110,13 +110,12 @@ function updateZipDir(): string {
   return d;
 }
 // 终端图标缓存目录（2026-10-16-quick-launch-terminal-icons §6.2 / 索引 K6）：<dataDir>/cache/terminal-icons/，
-// 与 updateZipDir() 同一手法（P10）。不放 configs/：那里是用户配置，会被更新/迁移逻辑当用户数据对待。
-// mkdirSync 失败不阻断：§9-R4（装在只读目录）= 本次不缓存、图标照常（索引 K14），不报错、不写日志。
-// 缓存不失效、也不清理（Q7 用户明确选定，代价登记为 §9-R3）。
+// 与 updateZipDir() 同一目录手法（P10）。不放 configs/：那里是用户配置，会被更新/迁移逻辑当用户数据对待。
+// **只算路径、不建目录**（§6.2 / 最终审查 I-2⑥ / 索引 K24）：建目录只在提取层做一次
+// （ql-terminal-icons.ts:151-155 的 mkdirSync，失败不阻断 = 本次不缓存、图标照常，§9-R4 / 索引 K14）；
+// 这里再建一遍就是重复实现。缓存不失效、也不清理（Q7 用户明确选定，代价登记为 §9-R3）。
 function terminalIconCacheDir(): string {
-  const d = join(dataDir(), 'cache', 'terminal-icons');
-  try { mkdirSync(d, { recursive: true }); } catch { /* 不可写：本次不缓存，图标照常 */ }
-  return d;
+  return join(dataDir(), 'cache', 'terminal-icons');
 }
 // 更新包路径：downloads/lms-launcher-update.zip（download_update 与 run_update 共用同一约定）
 function updateZipPath(): string {
@@ -1047,13 +1046,17 @@ export function qlStartContextOrThrow(seam: string): { configId: string; availab
  * 终端探测的异步包装（索引 K10-3）：先让出一拍再跑探测，使排队中的窗口/托盘事件先被处理。
  * 探测本身是同步的（quick-launch-terminals.ts 用 spawnSync，规格 §6.1 钉死），最坏 3×3s ≈ 9s；
  * 规格 §6.1 明确「不跨调用缓存」，所以每次调用都实测。
- * 2026-10-16-quick-launch-terminal-icons §6.3 / 索引 K1：探测层不填 icon，补字段的是 withTerminalIcons
- * （图标走磁盘缓存，命中不起进程；任何失败 = 该项不带 icon）。**图标缓存 ≠ 探测缓存**：
- * 每次调用仍实测终端可用性（RF3：用户装好 WSL，下次调用就要出现）。
+ * 2026-10-16-quick-launch-terminal-icons §6.3 / 索引 K24（最终审查 I-1）：**本函数只探测、不补图标**。
+ * 补字段的 withTerminalIcons 只有一个调用点 = ql_terminals 的 handler（:1147）。原因：本函数另有
+ * 两个消费方（ql_save:1136、ql_start:1160-1161 的 shell 分支），两处只取 .map(info => info.id) —— 在那里补
+ * 图标 = 保存 / 启动一个 shell 条目白付一次提取（冷缓存 0.9–1.7s，最坏 8s；装在只读目录则每次都付，§9-R4）。
+ * 与这两个消费方上头已钉的「exe 条目不付终端探测代价」（ipc-ql.test.ts 修复轮 1 的两条）同一口径：
+ * 不为用不上的东西付代价。
+ * **图标缓存 ≠ 探测缓存**：每次调用仍实测终端可用性（RF3：用户装好 WSL，下次调用就要出现）。
  */
 function detectTerminalsAsync(): Promise<TerminalInfo[]> {
   return new Promise((resolve) => {
-    setImmediate(() => resolve(withTerminalIcons(terminalIconCacheDir(), detectTerminals())));
+    setImmediate(() => resolve(detectTerminals()));
   });
 }
 
@@ -1139,7 +1142,10 @@ ipcMain.handle('ql_delete', (_e, id: string): void => {
   qlDelete(qlYamlPath(), id);
 });
 // 规格 §6.1：每次调用实时探测、不跨调用缓存；handler 必须异步（索引 K10-3，最坏 ≈9s）
-ipcMain.handle('ql_terminals', async (): Promise<TerminalInfo[]> => await detectTerminalsAsync());
+// 规格 §6.3 / §8-K1 / 索引 K24（最终审查 I-1）：**补图标只在这一处** —— 探测 → withTerminalIcons
+// （图标走磁盘缓存，命中不起进程；任何失败 = 该项不带 icon，§6.1 的降级口径）。探测仍走 detectTerminalsAsync
+// 以保持「先让出一拍」的索引 K10-3 行为；载荷仍是 { id, path } + 可选 icon（§6.6-1 的形状门在 ipc-ql.test.ts）。
+ipcMain.handle('ql_terminals', async (): Promise<TerminalInfo[]> => withTerminalIcons(terminalIconCacheDir(), await detectTerminalsAsync()));
 // 规格 §7.5 的「配置存在」这一层不在进程管理层（任务 5 的 start 只拿到 entry），所以在这里查。
 // 审查 Minor #2：items 是普通对象（quick-launch-config.ts:122），items['constructor'] / 'toString' /
 // '__proto__' 走原型链会取到真值 → 通过「配置存在」这层后在 quick-launch.ts:293 抛 typeInvalid

@@ -9,7 +9,7 @@
 // 范围：不改 src-main/process.ts（索引 G4），不新增通道（check F4）。
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process'; // M23：tasklist / taskkill，只清测试自己造出来的记事本窗口
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { t } from './i18n'; // 任务 8 E7（索引 K16(2)）：词典已落地，断言必须按译文写
@@ -33,6 +33,8 @@ const cap = vi.hoisted(() => ({
   exposed: {} as Record<string, unknown>,
   /** detectTerminals 的**真实调用次数**：修复轮 1 · 重要 #1（索引 K15(2)）的证据计数器 */
   termProbes: 0,
+  /** withTerminalIcons 的**真实调用次数**：任务 6（最终审查 I-1 / 索引 K24）的证据计数器 */
+  iconEnrichments: 0,
 }));
 
 vi.mock('electron', () => ({
@@ -95,6 +97,20 @@ vi.mock('./quick-launch-terminals', async (importOriginal) => {
   };
 });
 
+// 任务 6（2026-10-16-quick-launch-terminal-icons 修复轮 · 最终审查 I-1 / 索引 K24）：
+// 给 withTerminalIcons 包一层**只计数**的壳，实现仍走原模块（语义不变：读缓存 / 未命中才起提取）。
+// 用它钉「保存 / 启动一个 shell 条目不付图标提取的代价」，与上面 detectTerminals 的计数器同一做法（规格 §7.1-14）。
+vi.mock('./ql-terminal-icons', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./ql-terminal-icons')>();
+  return {
+    ...actual,
+    withTerminalIcons: (cacheDir: string, infos: Parameters<typeof actual.withTerminalIcons>[1]) => {
+      cap.iconEnrichments += 1;
+      return actual.withTerminalIcons(cacheDir, infos);
+    },
+  };
+});
+
 // 两个被测模块：main.ts 注册 12 个通道，preload.ts 注册 2 个事件订阅。
 // main 用命名空间导入：修复轮 1 · 重要 #2 的守卫（qlStartContextOrThrow）从模块上取——
 // 取不到（= 守卫退回 `?? 默认值` 的静默降级）时相关用例必须红，而不是整文件报错。
@@ -107,6 +123,9 @@ import { winShell } from './shell-execute';
 // 同样只替换属性（真工厂 startElevatedHost 与 ElevatedPtyProcess 都跑真实现），finally 里还原。
 import { hostLauncher, winPipe } from './ql-elevated';
 import { encodeFrame, HOST_FRAME } from './ql-host-protocol';
+// 任务 6（规格 §7.1-15 / 索引 K25）：哨兵字节要按提取层自己的键算出缓存文件名，所以直接用真 cacheFileName
+// （上面的 vi.mock 只包 withTerminalIcons 计数，其余导出原样透传）。
+import { cacheFileName } from './ql-terminal-icons';
 
 /** main.ts 里强制 qlStartContext 不变量的守卫（重要 #2）；不存在 → undefined */
 const GUARD_EXPORT = 'qlStartContextOrThrow';
@@ -219,6 +238,8 @@ afterAll(async () => {
   }
   // 证据：本文件对 detectTerminals 的真实调用次数（修复轮 1 · 重要 #1 的前后对比靠它）
   console.log('[ipc-ql] detectTerminals 真实调用次数 =', cap.termProbes);
+  // 任务 6（索引 K24）：补图标的真实调用次数 —— 修复后它只随 ql_terminals 增长，不随保存/启动增长
+  console.log('[ipc-ql] withTerminalIcons 真实调用次数 =', cap.iconEnrichments);
   process.cwd = () => realCwd;
   cap.windows.length = 0;
   rmSync(workDir, { recursive: true, force: true });
@@ -302,6 +323,9 @@ describe('C4 · ql_terminals（索引 K10-3：异步、不缓存）', () => {
   // 「第二次不再起提取进程」已由任务 1 的假接缝计数钉住（ql-terminal-icons.test.ts 的 calls=0）；
   // IPC 层能观察到的只有：两次 icon 逐字相等 + 缓存目录里的 .png 不因第二次调用而增加。
   // 不用计时 / 睡眠这类不稳定断言（plan 全局约束之外的自加断言一律要能稳定复现）。
+  // 任务 6（最终审查 I-3 / 索引 K25）把这条的口径**降级**为「写入生效 + 键稳定」：缓存键只由 exe 路径决定、
+  // 真接缝对同一 exe 的输出又是确定的，所以这两条合起来钉不住「读缓存」那条路径（把读路径整个删掉也全绿）。
+  // 读路径本身由下面那条哨兵字节用例钉（规格 §7.1-15）。用例名按索引 K19 一字不改。
   it('terminal_icons_are_stable_across_calls_and_come_from_the_disk_cache', async () => {
     const cacheDir = join(workDir, 'cache', 'terminal-icons');
     const pngCount = (): number => readdirSync(cacheDir).filter((n) => n.endsWith('.png')).length;
@@ -311,7 +335,7 @@ describe('C4 · ql_terminals（索引 K10-3：异步、不缓存）', () => {
     expect(afterFirst, '第一次调用后缓存目录里必须出现 .png（规格 §6.2 的写入）').toBeGreaterThanOrEqual(1);
 
     const second = (await invoke('ql_terminals')) as Array<Record<string, unknown>>;
-    // 命中 = 不重新提取、也就不再写文件（规格 §6.2：命中不起进程）
+    // 写入只发生在未命中那一次（规格 §6.2）→ 第二次不新增文件；这条证的是**写入 + 键稳定**，不是读路径（索引 K25）
     expect(pngCount(), '第二次不得再往缓存目录写新文件').toBe(afterFirst);
 
     for (const list of [first, second]) {
@@ -321,7 +345,29 @@ describe('C4 · ql_terminals（索引 K10-3：异步、不缓存）', () => {
     const cmdSecond = second.find((info) => info.id === 'cmd') as Record<string, unknown>;
     expect(typeof cmdFirst.icon, '第一次就必须带 icon（本机 PowerShell 可用，规格 §3-P1）').toBe('string');
     expect((cmdFirst.icon as string).startsWith('data:image/png;base64,')).toBe(true);
-    expect(cmdSecond.icon, '第二次的 icon 与第一次逐字相等 = 磁盘缓存生效（RF3）').toBe(cmdFirst.icon);
+    // 逐字相等 = 同一个 exe 键稳定（索引 K25 的「键稳定」那一半；不叫「磁盘缓存生效」——那需要读路径有牙，见下一条）
+    expect(cmdSecond.icon, '第二次的 icon 与第一次逐字相等 = 键稳定（RF3）').toBe(cmdFirst.icon);
+  });
+
+  // 任务 6（规格 §7.1-15 / 索引 K25 / 最终审查 I-3）：上一条只证「写入发生 + 键稳定」，读路径整个坏掉它照样绿。
+  // 这条钉读路径**本身**：按提取层自己的键（cacheFileName）算出缓存文件名，往那个路径写一段**不是 PNG** 的哨兵字节，
+  // 再调 ql_terminals → 返回的 icon 必须正是那段哨兵的 base64。读路径坏掉 = 重新起进程提取真 PNG → 这条必红。
+  // 前提：命中判据只看非空字节、不校验 PNG magic（规格 §6.2 / §9-R9）——所以非 PNG 的字节照样命中，能当哨兵。
+  it('ql_terminals 的 icon 来自缓存文件本身：哨兵字节原样返回，不是重新提取的 PNG', async () => {
+    const first = (await invoke('ql_terminals')) as Array<Record<string, unknown>>;
+    const cmdPath = String(first.find((info) => info.id === 'cmd')?.path ?? '');
+    // 本机基线（规格 §6.3）：cmd 必然可用，拿得到它的 exe 路径
+    expect(cmdPath.length, '拿不到 cmd 的 exe 路径，哨兵无从写起').toBeGreaterThan(0);
+
+    // 不是 PNG：前 8 字节不是 89504e470d0a1a0a（规格 §3-P3 的 magic），真提取出来的 PNG 不可能等于它
+    const SENTINEL = Buffer.from('ql-terminal-icons-sentinel-bytes-not-a-png');
+    writeFileSync(join(workDir, 'cache', 'terminal-icons', cacheFileName(cmdPath)), SENTINEL);
+
+    const second = (await invoke('ql_terminals')) as Array<Record<string, unknown>>;
+    const icon = (second.find((info) => info.id === 'cmd') as Record<string, unknown>).icon as string;
+    expect(icon, '返回的不是哨兵字节 = 没有读缓存文件（或缓存键与 cacheFileName 不一致）').toBe(
+      'data:image/png;base64,' + SENTINEL.toString('base64'),
+    );
   });
 });
 
@@ -759,6 +805,34 @@ describe('修复轮 1 · 重要 #1（索引 K15(2)）：exe 分支不付终端�
     // 对照组：shell 启动前的「终端仍可用」（规格 §7.5）仍要实测
     expect(cap.termProbes, '启动 shell 配置仍必须实测').toBe(beforeShell + 1);
     await invoke('ql_stop', 'qlfixsh01');
+  }, 30000);
+});
+
+// ---------- 任务 6（2026-10-16-quick-launch-terminal-icons 修复轮：最终审查 I-1 / 索引 K24）----------
+// 补图标的调用点只有一处 = ql_terminals 的 handler（规格 §6.3 / §8-K1）。detectTerminalsAsync 还有两个消费方 ——
+// ql_save 的 shell 分支与 ql_start 的 shell 分支，两处只取 .map(info => info.id)：在那里补图标 = 保存 / 启动一个
+// shell 条目白付一次提取（冷缓存 0.9–1.7s，最坏 8s；装在只读目录则每次都付，规格 §9-R4）。
+// 与上面「exe 条目不付终端探测代价」同一口径：不为用不上的东西付代价。计数器 = 只计数不改行为的透传壳。
+describe('任务 6 · 修复轮 I-1（规格 §7.1-14 / 索引 K24）：保存与启动 shell 条目不付图标提取的代价', () => {
+  // 一条用例走完「保存 → 启动 → 对照」三段：前两段是同一个契约（这两个消费方不付代价）的两条路径，
+  // 第三段是防「把补图标整个删掉也全绿」的对照。断言形状照上面 :736-760 那两条（计数器 + 对照组）。
+  it('ql_save / ql_start 的 shell 分支不调 withTerminalIcons；ql_terminals 仍补图标（对照）', async () => {
+    // 保存：ql_save 的 shell 分支只取 .map(info => info.id) → 一次补图标都不该有
+    const beforeSave = cap.iconEnrichments;
+    const sid = String(await invoke('ql_save', 'qliconcost01', { name: '修复 图标代价 save', type: 'shell', shell: 'cmd', cmd: 'echo ICONCOST' }));
+    expect(sid).toBe('qliconcost01');
+    expect(cap.iconEnrichments, '保存 shell 配置不得补图标（只取 info.id，规格 §6.3）').toBe(beforeSave);
+
+    // 启动：ql_start 的 shell 分支同样只取 info.id 建 available 集合
+    const beforeStart = cap.iconEnrichments;
+    expect(await invoke('ql_start', 'qliconcost01')).toEqual({ tabId: 'ql:qliconcost01' });
+    expect(cap.iconEnrichments, '启动 shell 配置不得补图标（只取 info.id，规格 §6.3）').toBe(beforeStart);
+    await invoke('ql_stop', 'qliconcost01');
+
+    // 对照组：补图标本身没有被删掉 —— ql_terminals 必须仍然补一次（规格 §6.3 唯一的那个调用点）
+    const beforeTerminals = cap.iconEnrichments;
+    await invoke('ql_terminals');
+    expect(cap.iconEnrichments, 'ql_terminals 仍必须补图标（否则上面两段「不变」是删掉补图标蒙对的）').toBe(beforeTerminals + 1);
   }, 30000);
 });
 

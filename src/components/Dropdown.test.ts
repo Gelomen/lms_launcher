@@ -319,5 +319,44 @@ describe('Dropdown option icons are opt-in per option', () => {
     expect(iconTags(lis[1].element)).toEqual(['far:file-code']);
     w.unmount();
   });
+
+  // ---- 任务 6（规格 §7.1-16 / 索引 K26 / 最终审查 M-1）：图标盒尺寸的**声明门**。
+  // 分工写清（索引 K26 / 规格 §6.5）：这条只钉「style.css 里确实写了这条规则」——注入真实 CSS 后用
+  // getComputedStyle 读声明值（先例 = QuickLaunchModal.test.ts:793-803 的 type_field_is_widened_to_180px）。
+  // happy-dom 不做布局：1em 实际渲染成几 px、文字会不会被省略号截断，**都不是**这条能证的 —— 那归真机门 §7.2-1
+  // （规格 §6.5 的那段算术也不兜，R6）。它防的是「样式被删掉/改窄了而没人知道」这一类回归。
+  // 索引 K21：不注入真实 src/style.css，happy-dom 里根本没有这两条规则 → 断言恒真 = 假勾，所以先注入（同一个 id 去重）。
+  it('icon_image_boxes_are_declared_as_1em_contained_with_6px_gap', async () => {
+    if (!document.getElementById('__real-css__')) {
+      const st = document.createElement('style');
+      st.id = '__real-css__';
+      st.textContent = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
+      document.head.appendChild(st);
+    }
+    const IMAGES = [
+      { value: 'pwsh', label: 'PowerShell 7 (pwsh)', imageUrl: 'data:image/png;base64,DDDD' },
+    ];
+    const w = mount(Dropdown, { props: { value: 'pwsh', options: IMAGES }, attachTo: document.body });
+    await flush();
+
+    // trigger 里的图标盒（src/style.css:360）
+    // 期望值写成 px 而不是字面 '1em'：happy-dom 的 getComputedStyle 会把 em 按**继承来的字号**解析成 px
+    // （实测：.select-trigger 的 font-size = var(--fs-body) = 14px，img 上 width:1em → 计算值 '14px'）。
+    // 也就是说这里读到的是「1em 在 14px 字号下的解析结果」= 规格 §6.4 / 索引 K9 / §3-P9 的 14×14。
+    const triggerBox = getComputedStyle(w.find('.select-trigger .select-image').element as HTMLElement);
+    expect(triggerBox.width, '.select-image 的 width 不是 1em（=14px，规格 §6.4 / 索引 K9：与 FA 图标同高）').toBe('14px');
+    expect(triggerBox.height, '.select-image 的 height 不是 1em（=14px）').toBe('14px');
+    expect(triggerBox.objectFit, '.select-image 的 object-fit 不是 contain（方形图标不裁切）').toBe('contain');
+
+    // 面板选项里的图标盒（src/style.css:361）：面板只在展开时渲染，所以先点开
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+    const optionBox = getComputedStyle(w.find('.dropdown-panel .option .option-image').element as HTMLElement);
+    expect(optionBox.width, '.option-image 的 width 不是 1em（=14px）').toBe('14px');
+    expect(optionBox.height, '.option-image 的 height 不是 1em（=14px）').toBe('14px');
+    expect(optionBox.objectFit, '.option-image 的 object-fit 不是 contain').toBe('contain');
+    expect(optionBox.marginRight, '.option-image 的 margin-right 不是 6px（与 .option-icon 同值，src/style.css:352）').toBe('6px');
+    w.unmount();
+  });
 });
 

@@ -142,7 +142,30 @@
 
 ### 任务 5：打包 + 真机清单（用户执行，§7.2）
 
-- [ ] **步骤 1：跑 `build.bat`**（主代理），核对产物：`dist-release\\win-unpacked\\lms_launcher.exe` 存在；`npx asar list resources\\app.asar | Select-String ql-terminal-icons` 能看到 `dist-main\\ql-terminal-icons.js`；`koffi` 仍在 `app.asar.unpacked`。
-- [ ] **步骤 2：把 §7.2 的 7 条清单逐字交给用户**，同时交前置 feature 未收尾的真机项（`docs/superpowers/checks/2026-10-15-quick-launch-exe-path-precheck/task-03-packaging-realmachine.md` 的真机回报）。**不得用「自动化已过」代替这一条。**
+- [x] **步骤 1：跑 `build.bat`**（主代理），核对产物：`dist-release\\win-unpacked\\lms_launcher.exe` 存在；`npx asar list resources\\app.asar | Select-String ql-terminal-icons` 能看到 `dist-main\\ql-terminal-icons.js`；`koffi` 仍在 `app.asar.unpacked`。
+- [x] **步骤 2：把 §7.2 的清单逐字交给用户**（原 7 条已交付；最终审查后 §7.2 扩到 15 条 → **任务 6 修完、重新打包后重发一次**），同时交前置 feature 未收尾的真机项（`docs/superpowers/checks/2026-10-15-quick-launch-exe-path-precheck/task-03-packaging-realmachine.md` 的真机回报）。**不得用「自动化已过」代替这一条。**
 - [ ] **步骤 3：等回报**，逐条把「通过 / 不通过 + 现象」填进本任务 check 表 J 段。命中 §9-R1（约束语言模式）或 §9-R4（目录不可写）时按 Q5 的降级口径核对现象，并**同一 commit** 同步 spec / plan / check 表。
-- [ ] **步骤 4：Commit（主代理）**：`docs: 快捷启动 [终端] 真实图标的真机门清单与回报`
+- [x] **步骤 4：Commit（主代理）**：`docs: 快捷启动 [终端] 真实图标的真机门清单与回报`（= `c99df0d`）
+- **步骤 3（未完成，等用户回报）**：逐条把「通过 / 不通过 + 现象」填进本任务 check 表 J 段。命中 §9-R1 / §9-R4 时按 Q5 的降级口径核对现象，并**同一 commit** 同步 spec / plan / check 表。真机回报到达前本 feature 不闭环（task-05 表把这些行写成 `☐（原因 + 去处）`）。
+
+### 任务 6：修复轮 —— 图标只补给 `ql_terminals`（最终整分支审查 I-1 / I-3 / M-1，2026-10-16）
+
+**为什么有这一节**：任务 1–5 全部提交后，最终整分支审查（只读）发现一处 Important 与两处测试网问题：
+- **I-1**：`detectTerminalsAsync`（`main.ts:1054-1058`）无条件跑 `withTerminalIcons`，而它还有两个消费方 —— `ql_save:1134`、`ql_start:1155-1157`，两处只取 `.map(info => info.id)`。后果：保存 / 启动一个 shell 条目白付一次图标提取（冷缓存 0.9–1.7s，最坏 8s；装在只读目录则每次都付）。项目已有同口径的先例：`ipc-ql.test.ts:736-760` 专门钉「exe 条目不付终端探测代价」。
+- **I-3**：`ipc-ql.test.ts:315` + `:324` 合起来钉不住「读缓存」这条路径（缓存键只由路径决定 + 真接缝对同一 exe 输出确定 → 读路径全坏也全绿）。
+- **M-1**：图标盒尺寸契约（`1em` / `object-fit` / `margin-right`）没有任何自动化门，只有 grep 行 + 真机门。
+
+**顺序（AGENTS.md：偏离先改文档，同一 commit）**：spec 已先改（§6.1 降级完整口径与空输入不起进程、§6.2 建目录归属与去重与不校验 magic、§6.3 调用点只有 `ql_terminals`、§6.4 `alt=""`、§7.1 新增 14–16、§7.2 扩到 15 条、§8-K1 改写、§9 新增 R9/R10/R11）；本任务只改代码与测试，**与上述 spec 改动同一个 commit**（索引 K24）。
+
+**文件**（G10：只改这三份）：
+- `src-main/main.ts` —— 两处：① `detectTerminalsAsync`（`:1046-1058`）去掉 `withTerminalIcons`，恢复「只探测」；② `ql_terminals` handler（`:1142`）改为 `resolve(withTerminalIcons(terminalIconCacheDir(), await detectTerminals()))` 的等价写法（保持 `AsyncFunction`，`ipc-ql.test.ts` 有这条形状断言）；③ `terminalIconCacheDir()`（`:112-120`）删掉重复的 `mkdirSync`（建目录归提取层，spec §6.2）。
+- `src-main/ipc-ql.test.ts` —— 新增 spec §7.1-14（`ql_save` / `ql_start` 的 shell 分支不付提取代价，照 `:87-92` 的透传计数器做法）与 §7.1-15（哨兵字节钉读缓存路径）；把原用例里「磁盘缓存生效」的措辞改成「写入生效 + 键稳定」（I-3 的诚实描述），**不改用例名**（索引 K19 口径）。
+- `src/components/Dropdown.test.ts` —— 新增 spec §7.1-16 的尺寸声明门（照 `QuickLaunchModal.test.ts:793-803` 的 `injectRealCss` + `getComputedStyle` 先例）。
+
+**步骤**：
+- [x] **步骤 1（先红）**：写 §7.1-14 与 §7.1-15 两条测试 → 跑红（14 现在必然红：`ql_save`/`ql_start` 也在补图标；15 现在也红：返回的是真提取的 PNG，不是哨兵）。真实输出进 J 段。
+- [x] **步骤 2（实现）**：改 `main.ts` 三处 → 定向跑绿。
+- [x] **步骤 3（尺寸声明门）**：写 §7.1-16 → 先确认它**有牙**（临时把 `style.css` 的 `width: 1em` 改掉 → 该用例红 → 还原，`git diff` 回到只有既有两条规则）。
+- [x] **步骤 4（回归门）**：`npx tsc --noEmit -p tsconfig.main.json` exit 0；`npx vitest run src-main/ipc-ql.test.ts src-main/ql-terminal-icons.test.ts src-main/quick-launch-terminals.test.ts` 全绿；`npm test` = `Tests 926 passed (926)`（923 + 3）。数字对不上要在 J 段说明。
+- [x] **步骤 5（Commit，主代理）**：`fix(main): 图标只补给 ql_terminals，保存与启动不再付提取代价`（同一 commit 含 spec / plan / 两张 check 表的同步）。
+- [x] **步骤 6（重新打包）**：`cmd /c build.bat` exit 0；`dist-release\win-unpacked\lms_launcher.exe` 在位；`npx asar list …app.asar` 里 `dist-mainql-terminal-icons.js` 与 `dist-mainmain.js` 都在；`koffi.node` 仍在 `app.asar.unpacked`；产物树里没有游离的 `terminal-icons` 目录（旧证据作废，这是新证据）。真机清单按 §7.2 的 15 条重发（已重发，见 task-05 C 段）。

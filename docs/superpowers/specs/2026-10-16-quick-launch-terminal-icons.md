@@ -101,16 +101,19 @@ ConvertTo-Json -Compress -InputObject $out
 
 - **超时 8000ms**、`windowsHide: true`、`maxBuffer: 1<<20`、`stdio: ['ignore','pipe','pipe']`。取值依据：P4 —— 提取本身只加 ~90ms，但 `powershell.exe` 冷启动实测到 1.7s；8s 是「冷启动 + 慢机器」的余量，不是提取的预算。
 - **降级**（Q5）：`execFile` 抛错（ENOENT / 超时 / 非 0）、stdout 解析不出 JSON、某项为 `null` → 一律「该项无图标」。不写日志、不弹提示、不影响 `ql_terminals` 返回列表。
+- **降级的完整口径**（2026-10-16 最终审查 I-2①②③：代码已实现、当时只落在 check 表 → 现补进 spec）：`execFile` 用 `encoding: "utf-8"`，stdout 带 BOM 时**先剥 BOM** 再 `JSON.parse`；解析结果不是普通对象（数组 / `null` / 标量）→ **整批**按 null 处理；某项的值不是非空字符串（含空串）→ **该项**无图标。
+- **空输入不起进程**：`powershellExtract([])` 直接返回 `{}`，不启动 `powershell.exe`（取证：task-01 表 J-16）。
 - **输出**：`icon = 'data:image/png;base64,' + b64`（P7：渲染端可直接吃）。
 
 ### 6.2 磁盘缓存（Q6 / Q7）
 
 - 目录：`<dataDir>/cache/terminal-icons/`（`dataDir()` = `src-main/main.ts:83-86`；与 `updateZipDir()` 的 `<dataDir>/downloads/` 同一手法，P10）。**不放 `configs/`**：那里是用户配置，会被更新/迁移逻辑当用户数据对待。
-- 建目录：`mkdirSync(dir, { recursive: true })`，失败不阻断（同 `main.ts:107` 的口径）→ 后续读写失败按「该项无图标」降级。
+- 建目录：**只在提取层内部做一次** —— `withTerminalIcons` 开头 `mkdirSync(cacheDir, { recursive: true })`（`ql-terminal-icons.ts:151-155`），失败不阻断（同 `main.ts:107` 的口径）→ 后续读写失败按「该项无图标」降级。`main.ts` 的 `terminalIconCacheDir()` **只算路径、不建目录**（2026-10-16 最终审查 I-2⑥：两处各建一遍 = 重复实现，统一归提取层）。
 - **dev 态落点**：`dataDir()` 在非打包态 = `process.cwd()`（`main.ts:85`）→ 开发时跑应用会在仓库根生成 `cache/terminal-icons/`。因此 `.gitignore` 加一行 `cache/`（与既有 `dist-*/` / `logs/` 同一类：可丢弃的运行时产物）。**测试不受影响**：`src-main/ipc-ql.test.ts:168-175` 在 `beforeAll` 里把 `process.cwd` 换成临时目录，缓存落在临时目录里。
 - 文件名：`cacheFileName(exePath) = sha1(path.win32.resolve(exePath).toLowerCase()) + '.png'`。规范化 + 小写：Windows 路径不区分大小写，同一 exe 换个写法要命中同一份。
 - **不失效、不清理**（Q7 用户明确选定）：键里**不含**大小 / mtime，也不删旧文件。代价登记为 R3。
-- 命中 = 文件存在且能读出非空字节 → 直接用，**不起进程**；未命中才把这批路径交给 §6.1。同一次调用里多项未命中 = **一次**进程调用。
+- 命中 = 文件存在且能读出非空字节 → 直接用，**不起进程**；未命中才把这批路径交给 §6.1。同一次调用里多项未命中 = **一次**进程调用；**同一次调用里同一路径只处理一次**（先去重再分批，`ql-terminal-icons.ts:160`）。
+- 命中判据**不校验 PNG magic**（只看非空字节）→ 上次写到一半被打断 / 文件被截断 = 永久命中，用户看到破图，只能手删目录。这是 Q7「不失效不清理」的直接后果，代价登记为 R9。
 - 写入：提取成功后 `writeFileSync`。写失败（只读目录等）不影响本次返回的 data URL。
 
 ### 6.3 IPC 载荷（修订前置规格 §6.1）
@@ -126,7 +129,8 @@ export interface TerminalInfo {
 }
 ```
 
-- 探测层**不填**这个字段（`detectTerminals` 一字不改）；补字段的是 `withTerminalIcons`，调用点在 `src-main/main.ts:1040-1042` 的 `detectTerminalsAsync` 里：`resolve(withTerminalIcons(terminalIconCacheDir(), detectTerminals()))`。
+- 探测层**不填**这个字段（`detectTerminals` 一字不改）；补字段的是 `withTerminalIcons`，**调用点只有一处 = `ql_terminals` 的 handler**（`main.ts:1142`）：`resolve(withTerminalIcons(terminalIconCacheDir(), await detectTerminals()))`。`detectTerminalsAsync()` 本身**不补图标**（它只探测）。
+- **为什么不在 `detectTerminalsAsync` 里补**（2026-10-16 最终审查 I-1）：那个函数还有两个消费方 —— `ql_save:1134` 与 `ql_start:1155-1157`，两处都只取 `.map(info => info.id)`。在那里补 = 保存 / 启动一个 shell 条目也付一次提取（冷缓存 0.9–1.7s，最坏 8s；装在只读目录则每次都付）。与 `ipc-ql.test.ts:736-760` 已钉的「exe 条目不付探测代价」同一口径：**不为用不上的东西付代价**。
 - 前置规格 §6.1 那行（P12）改写为：「主进程下发 `{ id, path }`，**可选**带 `icon`（PNG data URL，由 `ql-terminal-icons.ts` 补，§6.1 of 2026-10-16-quick-launch-terminal-icons）；**标签文案仍由渲染端 `t()` 决定**」。同时改 `quick-launch-terminals.ts:9` 的注释。
 - 通道不变：还是 `ql_terminals` 一条，不新增 IPC。
 
@@ -138,7 +142,7 @@ export interface TerminalInfo {
 options: Array<{ value: string; label: string; tip?: string; icon?: IconDefinition; imageUrl?: string }>
 ```
 
-- 面板选项（`:140`）与 trigger（`:128`）：`imageUrl` 优先 → `<img class="option-image">` / `<img class="select-image">`；否则 `icon` → 既有的 `<FontAwesomeIcon>`；两者都没有 → 一字不变。
+- 面板选项（`:150`）与 trigger（`:137-138`）：`imageUrl` 优先 → `<img class="option-image">` / `<img class="select-image">`；否则 `icon` → 既有的 `<FontAwesomeIcon>`；两者都没有 → 一字不变。两个 `<img>` 都带 `alt=""`（装饰图，与 `App.vue:539` 的既有写法一致；索引 K22 已裁：**不钉测试**，代价 = 日后删掉 `alt` 不会红）——最终审查 I-2⑤：这条此前只在 K22，现补进 spec。
 - `triggerIcon`（`:85`）旁边加 `triggerImageUrl`，同一条 `currentOption` 来源（图标随选中项走）。
 - 不传 `imageUrl` 的调用方（`TemplateModal` / `LaunchBar` / [类型] 下拉）渲染结果一字不变。
 
@@ -196,6 +200,12 @@ options: Array<{ value: string; label: string; tip?: string; icon?: IconDefiniti
 12. `terminal_option_without_icon_renders_no_img` —— 夹具里 `cmd` 不带 `icon` → 那一项没有 `<img>`，其余三项有（Q5 的渲染端那一半）。
 13. 按 §6.6-2 改写 `:726-737`。
 
+**任务 6（最终审查 I-1 / I-3 / M-1 的修复轮，2026-10-16）**：
+
+14. `src-main/ipc-ql.test.ts`：`ql_save` / `ql_start` 的 shell 分支**不付图标提取代价** —— 照 `:87-92` 的既有做法把 `./ql-terminal-icons` 包一层**透传计数器**（不改行为，只计数），断：保存 / 启动一个 shell 条目 → 计数器**不变**；对照 = 调 `ql_terminals` → 计数器 +1。与 `:736-760` 那两条同形。
+15. `src-main/ipc-ql.test.ts`：**读缓存路径本身**有牙（I-3）—— 先按 `cacheFileName` 算出某 exe 的缓存文件名、往那个路径写一段**哨兵字节**（不是真 PNG），再调 `ql_terminals` → 断言返回的 `icon` 正是那段哨兵的 base64。原 `:315`（第二次不新增 `.png`）+ `:324`（两次 icon 相同）合起来钉不住读路径（键只由路径决定 + 真接缝对同一 exe 输出确定 → 读缓存全坏也全绿），保留它们但**不再称其为「磁盘缓存生效」**。
+16. `src/components/Dropdown.test.ts`：图标盒尺寸契约的**声明检查**（M-1）—— 照 `QuickLaunchModal.test.ts:793-803` 的 `injectRealCss` + `getComputedStyle` 先例，断 `.option-image` / `.select-image` 的 `width`/`height` = **`14px`**（`getComputedStyle` 会把 `1em` 按继承字号解析成 px；`--fs-body` = 14px，见 §3-P9 / §8-K5 —— 契约要钉的是**渲染尺寸**，不是写法）、`object-fit: contain`、`.option-image` 的 `margin-right: 6px`。这条**不能**区分 `1em` 与写死的 `14px`（渲染等价，索引 K31）。这只是「CSS 里写了这条规则」的契约门（happy-dom 不做布局），**宽度不被截断仍归真机门 §7.2-1**（§6.5）。
+
 **回归门**：`npm test` 全量绿（基线 P11 = 52 files / 912 tests，新增后只增不减）；`npx tsc --noEmit -p tsconfig.main.json` exit 0；`key-coverage` / `dict` / `no-hardcoded` 三道 i18n 硬门绿（本次不加键，必须一字不动）。
 
 ### 7.2 打包真机硬门（用户执行）
@@ -209,6 +219,16 @@ options: Array<{ value: string; label: string; tip?: string; icon?: IconDefiniti
 5. [类型] 切到「可执行程序」再切回来：图标仍在，弹窗高度不变（218px 定高门不回归）。
 6. [类型] 下拉的两个 FontAwesome 图标、`TemplateModal` 的配置下拉、`LaunchBar` 的启动项下拉：**没有任何变化**（不传 `imageUrl` 的调用方一字不变）。
 7. 快捷启动条目实际启动（终端页签、提权终端、[停止]）与今天一致。
+8. 降级路径拆成两条，现象**不同**（最终审查：原来并成一条会误判）：
+   - 8a **约束语言模式 / WDAC**（R1）或 `powershell.exe` 缺失 / 被 AppLocker 直接拦掉：图标**缺席**，列表与启动照常，无报错弹窗、无卡顿。
+   - 8b **应用目录不可写**（R4，如装在 `Program Files`）：图标**照常出现**，但每次打开都重新提取（1.3–1.7s），`cache\terminal-icons\` 不存在或为空（索引 K14）。
+9. 保存 / 启动一个 **shell** 条目：冷缓存下也不该感到变慢（任务 6 之后这两条路径不起提取进程；对照 §6.3）。**这是任务 6 的回归点，必须在修复后的构建上验。**
+10. 第二次打开弹窗 / 第二次启动：**不出现新的 `powershell.exe` 进程**（任务管理器或 `Get-Process powershell` 计数），下拉即时。
+11. 手动把某个 `.png` 截断（R9）→ 该项破图且不自动修（确认可接受；要修就删 `cache\terminal-icons\`）。
+12. 装在**含空格 / 中文**的路径（portable 目录改名）→ 图标与缓存写入仍正常（非 ASCII 路径未取证）。
+13. **150% / 200% 显示缩放**下看图标观感（R5：源图只有 32×32，显示 14×14）。
+14. 图标**身份映射**可证伪：`pwsh`（亮蓝）与 Windows PowerShell（深蓝）底色**必须不同**；`cmd` 黑底、`wsl` 企鹅。只报「每项都有图标」不算过 —— 那证明不了图标来自各自的 exe（§8-Q4 说的是「相似」，不是「同一张」）。
+15. §7.2-3 的「`.png` 数量 = 本机可用终端数」加限定：某项取不到图标时数量**少于**终端数；目录不可写时为 **0**。
 
 ## 8 已定口径（grill-me 逐项确认，2026-10-16）
 
@@ -222,7 +242,7 @@ options: Array<{ value: string; label: string; tip?: string; icon?: IconDefiniti
 | Q6 | 图标缓存写磁盘到应用目录 | 用户选定（原话「缓存写磁盘到应用目录」） |
 | Q7 | 缓存目录 = `<dataDir>/cache/terminal-icons/`；**不自动失效、也不清理** | 用户选定（原话「`<dataDir>/cache/terminal-icons/`, 不自动失效, 也不清理」）→ 键里不含大小/mtime，见 R3 |
 | Q8 | 载荷 = 扩 `TerminalInfo` 加可选 `icon`，不新增 IPC 通道 | 用户选定（一次到位、无「后补闪烁」）；代价是同步改前置规格那句「只下发 {id,path}」（§6.3） |
-| K1 | 探测层不填 `icon`，补字段的是新模块，调用点在 `detectTerminalsAsync` | 由 Q8 推论：`detectTerminals` 的四行判定与「不缓存」一字不动（§5-2） |
+| K1 | 探测层不填 `icon`，补字段的是新模块，**调用点只有 `ql_terminals` 的 handler**（`detectTerminalsAsync` 不补图标；见 §6.3 与 R9 之外的 I-1 说明） | 由 Q8 推论：`detectTerminals` 的四行判定与「不缓存」一字不动（§5-2） |
 | K2 | 提取用 `execFile`（异步），不用 `spawnSync` | 由 P4 推论：冷启动可到 1.7s，同步会把主线程卡住 —— 那是 `2026-10-14-quick-launch-admin` 任务 10 刚治过的病 |
 | K3 | 可执行文件取 `%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` 固定路径 | 由 P1 推论：与 `quick-launch-terminals.ts:31-34` 同一固定路径口径；pwsh 7 的 `System.Drawing` 依赖 .NET 桌面运行时，不赌 |
 | K4 | 超时 8000ms | 由 P4 推论：提取本身 ~90ms，冷启动实测到 1.7s；8s 是慢机器的余量 |
@@ -240,4 +260,7 @@ options: Array<{ value: string; label: string; tip?: string; icon?: IconDefiniti
 | R5 | **`ExtractAssociatedIcon` 只给 32×32**，不含高 DPI 变体 | 接受：显示尺寸 14×14（K5），32→14 缩小不糊 |
 | R6 | **宽度数字来自 2026-10-15 的取证**（P8），本轮未重测 | 由真机门 §7.2-1/2 覆盖；check 表里该行写成 `☐（原因 + 去处）` |
 | R7 | **`icon` 让 `ql_terminals` 的载荷变大**（4 项 ≈ 7KB base64，P3） | 接受：只在打开弹窗时一次，量级与一条日志行相当 |
+| R9 | **半写 / 损坏的缓存文件永久命中**（§6.2 的命中判据只看非空字节）→ 破图，只能手删目录 | 接受（Q7「不失效不清理」的直接后果）。真机门 §7.2-11 就是这条：手动截断一个 `.png` 看现象 |
+| R10 | **无在途合并**：并发调 `ql_terminals`（如快速连点两次弹窗）会并发起多个 `powershell.exe` | 接受：§6.2 只保证「单次调用内一次进程」。真机门 §7.2-10 观察进程数；要治就在下一份 spec |
+| R11 | **`systemRoot()` 两处各一份**（`ql-terminal-icons.ts:24-26` 与 `quick-launch-terminals.ts:29-31`）| 已知债：本次 G1 明令不改探测层，重复是被约束逼出来的。合并成共享 helper 留给下一份 spec |
 | R8 | **真机冒烟门依赖机器**：`cmd.exe` 固定路径不在（极罕见的精简系统）时用例跳过 | 与 `quick-launch-terminals.test.ts` 既有做法一致（夹具不在时跳过 + 注释指向真机门） |
