@@ -25,12 +25,13 @@
 **顺序（每道都是硬门，未做完不得进入下一步）**
 
 1. `grill-me`：用选择题弹窗逐项确认
-2. `brainstorming` → `writing-plans`：产出两份文档并 commit，此时代码一行都不改：
+2. **停下**: 询问我「先产出 spec + plan 文档」还是「直接实现/修改」，不要自己往下走。
+3. `brainstorming` → `writing-plans`：产出两份文档并 commit，此时代码一行都不改：
    - `docs/superpowers/specs/YYYY-MM-DD-<feature-slug>.md`
    - `docs/superpowers/plans/YYYY-MM-DD-<feature-slug>.md`
-3. **停下**：文档 commit 后等我说「开始实现」，不要自己往下走。
+4. **停下**：文档 commit 后等我说「开始实现」，不要自己往下走。
    - 停下的这段时间里，按下文「check 表」一节给这份 plan 生成逐任务核对表（我要求时必做，没要求时你可以主动提议）；生成 check 表**不算**进入实现。
-4. 实现走 **SDD（Specification-Driven Development）**，执行载体是 `subagent-driven-development`（子代理驱动）：
+5. 实现走 **SDD（Specification-Driven Development）**，执行载体是 `subagent-driven-development`（子代理驱动）：
    - **派单粒度**：plan 的一个任务 = 一个子代理；主代理只做编排、验收、提交，不亲自写实现代码
    - **派单输入**：spec + plan + 该任务的 check 表，三份都交给子代理（不让它自己找上下文）
    - **任务内部**：TDD——先写失败测试 → 实现 → 定向与回归测试 → 把命令与真实输出填进该任务 check 表的 J 段。**子代理不 `git add`、不 commit**，改动留在工作区等验收
