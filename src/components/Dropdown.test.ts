@@ -233,6 +233,90 @@ describe('Dropdown option icons are opt-in per option', () => {
     const lis = w.findAll('.dropdown-panel li');
     expect(lis.map((li) => iconTags(li.element))).toEqual([[], []]);
     expect(lis.map((li) => (li.element.textContent ?? '').trim())).toEqual(['命令行', '可执行程序']);
+
+    // 规格 §6.6-2 / 索引 K12 / RF4：从 QuickLaunchModal.test.ts:735 搬来的牙 —— 不传图标的下拉，
+    // .select-label 不该吸收剩余宽度（style.css 的相邻兄弟规则只给紧跟图标的标签）。
+    // 索引 K21：这条断言必须先注入真实 src/style.css（同上面 injectRealCss 的手法，同一个 id 去重）——
+    // 不注入则 happy-dom 里根本没有 .select-icon + .select-label 这条规则，「不是 1」恒真 = 假勾。
+    if (!document.getElementById('__real-css__')) {
+      const st = document.createElement('style');
+      st.id = '__real-css__';
+      st.textContent = fs.readFileSync(path.join(process.cwd(), 'src', 'style.css'), 'utf8');
+      document.head.appendChild(st);
+    }
+    const labelFlexGrow = getComputedStyle(w.find('.select-label').element as HTMLElement).flexGrow;
+    expect(labelFlexGrow, '不传图标时 .select-label 不该吸收剩余宽度（flexGrow 不该是 1）').not.toBe('1');
+    w.unmount();
+  });
+
+  // ---- 任务 3（规格 §6.4 / §7.1-8..9，索引 K3 / RF5）：options 再扩一个**可选** imageUrl（PNG 的 data URL）。
+  // 钉两件事：
+  //   1) 有 imageUrl：面板每一项的第一个元素是 <img class="option-image">、trigger 的第一个子节点是
+  //      <img class="select-image">，src 逐字等于传入值；换选中项 → trigger 的 src 跟着换（不写死第一项）；
+  //   2) imageUrl 优先于 icon：两者同时给只渲染 img；只给 icon 时既有 FontAwesome 通道一字不回归。
+  it('options_with_imageurl_render_an_img_before_the_label_in_trigger_and_panel', async () => {
+    const IMAGES = [
+      { value: 'pwsh', label: 'PowerShell 7 (pwsh)', imageUrl: 'data:image/png;base64,AAAA' },
+      { value: 'cmd', label: 'Command Prompt (cmd)', imageUrl: 'data:image/png;base64,BBBB' },
+    ];
+    /** trigger 子节点序列：img 写成 img:<class>，其余写 class（上面 FA 用例同一口径，只是多认 img） */
+    const kidsOf = (el: Element): string[] => [...el.children].map((c) =>
+      c.tagName.toLowerCase() === 'img' ? 'img:' + String(c.className) : String(c.className));
+    const imgSrc = (el: Element): string | null => el.querySelector('img')?.getAttribute('src') ?? null;
+
+    const w = mount(Dropdown, { props: { value: 'pwsh', options: IMAGES }, attachTo: document.body });
+    await flush();
+
+    // trigger：img 排在最前，.select-label / .select-caret 的顺序不变
+    const trigger = w.find('.select-trigger').element as HTMLElement;
+    const kids = kidsOf(trigger);
+    expect(kids, 'trigger 子节点顺序不对：' + JSON.stringify(kids)).toEqual(['img:select-image', 'select-label', 'select-caret']);
+    expect(imgSrc(trigger), 'trigger 的 img src 与传入值不一致').toBe(IMAGES[0].imageUrl);
+
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+    const lis = w.findAll('.dropdown-panel li');
+    expect(lis.map((li) => (li.element.textContent ?? '').trim())).toEqual(['PowerShell 7 (pwsh)', 'Command Prompt (cmd)']);
+    // 每一项：firstElementChild 是 img.option-image，src 与该项夹具逐字相同（图标在文字之前）
+    for (let i = 0; i < lis.length; i++) {
+      const first = lis[i].element.firstElementChild;
+      expect((first?.tagName ?? '').toLowerCase(), '选项里 img 不在文字之前').toBe('img');
+      expect(String(first?.className), '选项 img 的 class 不对').toBe('option-image');
+      expect(first?.getAttribute('src'), '选项 img 的 src 与该项夹具不一致').toBe(IMAGES[i].imageUrl);
+    }
+
+    // 选中项换了 → trigger 的 img src 跟着换（图标随选中项走，索引 K3 / RF5）
+    await w.setProps({ value: 'cmd' });
+    await flush();
+    expect(imgSrc(w.find('.select-trigger').element as HTMLElement), '切换选中项后 trigger 的 img src 没跟着换').toBe(IMAGES[1].imageUrl);
+    w.unmount();
+  });
+
+  it('imageurl_wins_over_icon_and_absent_imageurl_keeps_the_fa_icon', async () => {
+    const BOTH = [
+      { value: 'both', label: '两个都给', icon: faTerminal, imageUrl: 'data:image/png;base64,RRRR' },
+      { value: 'fa', label: '只给 icon', icon: faFileCode },
+    ];
+    const w = mount(Dropdown, { props: { value: 'both', options: BOTH }, attachTo: document.body });
+    await flush();
+
+    // trigger：imageUrl 优先 → 只有一个 img，FA 图标位空着（既有 ▼ 除外）
+    const trigger = w.find('.select-trigger').element as HTMLElement;
+    const imgs = [...trigger.querySelectorAll('img')];
+    expect(imgs.length, 'trigger 里的 img 数量不对').toBe(1);
+    expect(String(imgs[0].className), 'trigger 的 img class 不对').toBe('select-image');
+    expect(imgs[0].getAttribute('src'), 'trigger 的 img src 与传入值不一致').toBe(BOTH[0].imageUrl);
+    expect(iconTags(trigger), 'imageUrl 在位时 trigger 不该再渲染 FA 图标（既有 ▼ 除外）').toEqual(['fas:list']);
+
+    await w.find('.select-trigger').trigger('click');
+    await flush();
+    const lis = w.findAll('.dropdown-panel li');
+    // 第一项（两个都给）：只有 img，没有 svg
+    expect(lis[0].element.querySelectorAll('img').length, '选项里 img 数量不对').toBe(1);
+    expect(iconTags(lis[0].element), 'imageUrl 优先时选项里不该有 FA svg').toEqual([]);
+    // 第二项（只给 icon）：既有 FontAwesome 通道照常，且不因新通道多出 img
+    expect(lis[1].element.querySelectorAll('img').length, '只给 icon 的选项不该有 img').toBe(0);
+    expect(iconTags(lis[1].element)).toEqual(['far:file-code']);
     w.unmount();
   });
 });

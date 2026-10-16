@@ -26,7 +26,7 @@
 | G3 | 不新增依赖 | `git diff package.json pnpm-lock.yaml package-lock.json` 为空 | task-01 F 段 |
 | G4 | 提取走 `execFile`（异步），不用 `spawnSync` | `grep -n spawnSync src-main/ql-terminal-icons.ts` 无命中 | task-01 F 段 |
 | G5 | 任何失败不抛出、不写日志、不弹提示 | 假接缝三种失败（null / 抛错 / 单项 null）用例 + `grep -n 'emitLog\|console\.' src-main/ql-terminal-icons.ts` 无命中 | task-01 E 段、task-04 E 段 |
-| G6 | 不传 `imageUrl` 的调用方一字不变 | `TemplateModal.test.ts` / `LaunchBar.test.ts` / `QuickLaunchModal.test.ts:669-700` 一字不改且绿 | task-03 F 段、task-04 F 段 |
+| G6 | 不传 `imageUrl` 的调用方一字不变 | 六个调用方（索引 K23）的测试文件全绿且 diff 为空：`TemplateModal.test.ts` / `LaunchBar.test.ts` / `UpdateModal.test.ts` / `SettingsModal.test.ts` / `QuickLaunchModal.test.ts:669-700` | task-03 F/G 段、task-04 F/G 段 |
 | G7 | 不改宽度（`.term-field` / `.type-field`） | `git diff src/modules/QuickLaunchModal.vue` 不含 `:444` / `:534` 两条规则；`type_field_is_widened_to_180px` 仍绿 | task-03 F 段、task-04 F 段 |
 | G8 | 每任务收尾门：tsc + 定向 + 全量 | `npx tsc --noEmit -p tsconfig.main.json` 无输出；`npm test` 总数 = 基线 + 累计新增（1→918、2→919、3→921、4→923） | 全部五张表的 G 段 |
 | G9 | 子代理不 `git add`、不 commit | 子代理报告里 `git status --porcelain` 有改动、`git log --oneline -1` 仍是文档 commit | 全部五张表的 H 段 |
@@ -47,7 +47,7 @@
 | # | 何时必须跑什么 |
 | --- | --- |
 | V1 | 任务 2 之后必跑：`npx vitest run src-main/ipc-ql.test.ts src-main/quick-launch.test.ts`（`ql_terminals` 载荷变了，`quick-launch.ts` 消费 `TerminalInfo.path` 的那条链要确认没被带偏） |
-| V2 | 任务 3 之后必跑：`npx vitest run src/components/Dropdown.test.ts src/modules/TemplateModal.test.ts src/modules/LaunchBar.test.ts`（共享组件被三个调用方用） |
+| V2 | 任务 3 之后必跑：`npx vitest run src/components/Dropdown.test.ts src/modules/TemplateModal.test.ts src/modules/LaunchBar.test.ts src/modules/UpdateModal.test.ts src/modules/SettingsModal.test.ts`（共享组件被**六个**调用方用，索引 K23；名单外一律以 `npm test` 全量兜底） |
 | V3 | 任务 4 之后必跑：`npx vitest run src/modules/QuickLaunchModal.test.ts src/modules/QuickLaunch.test.ts`（含 [类型] 图标门 `:669-700` 与 180px 宽度门 `:711-721`，两条都不许动） |
 | V4 | 每个任务之后：`npx tsc --noEmit -p tsconfig.main.json` + `npm test`（G8） |
 | V5 | 任务 5 之前：`build.bat` 产物核对（`asar list` 里能看到 `dist-main\\ql-terminal-icons.js`），不得用「自动化已过」代替真机门 |
@@ -76,3 +76,6 @@
 | K18 | 任务 1 的 H1 暂存范围除两份 `src-main/` 新文件外，另加受影响的三份文档（plan 的 G5/步骤 3、索引 K13–K17、本表受裁决影响的行） | AGENTS.md「偏离 spec：先改 spec / plan / check 表（同一 commit）」优先于 H1 的窄范围 | task-01 H1 |
 | K19 | 两处口径：① `ipc-ql.test.ts` C4 的「只含 {id,path}」只在 `it()` 标题里，**标题一字不改**，新口径写进断言旁的注释（plan 任务 2 步骤 1 原文自相矛盾，已改）；② 新用例对「本机 PowerShell 可用」是**硬断言**，不为 §9-R1（约束语言模式 / WDAC）加豁免 —— spec §7.1-7 未给豁免口径，与任务 1 真机冒烟的做法一致（只在夹具 exe 不在时 `skipIf`）；R1 机器的降级现象归真机门 §7.2-4 | 实测：该字符串只在标题里；任务 2 报告 §5 疑虑 1/2 | plan 任务 2 步骤 1、task-02 C5/E5 |
 | K20 | 文档里的行号（spec §2「现状」表、各表 A 段锚点）= **取证时的位置**；实现后会漂移（例：`main.ts` 的 `ql_terminals` handler `:1126` → `:1142`）。不改写历史行号，改后真实行号写在各任务报告与 J 段 | 实测 `git diff` 净增行数；与 K17 同一口径 | 全部五张表的 A 段 |
+| K21 | `Dropdown.test.ts` 里断 `flexGrow` 的用例**必须先注入真实 `src/style.css`**（同文件 `:106-112` 的 `injectRealCss` 手法）：`options_without_icon…` 所在 describe（`:182-238`）没有注入真 CSS，happy-dom 里没有 `.select-icon + .select-label` 规则 → 不注入则「不是 1」恒真 = 假勾 | 起飞前扫描 PF2：读 `Dropdown.test.ts:100-112`（helper 是另一个 describe 的局部函数）与 `:182-238`（无注入） | plan 任务 3 步骤 1、task-03 E3 |
+| K22 | 两个 `<img>` 带 `alt=""`（装饰图，规格 §4-4）：C3 字面只写 class 与 `:src`，`alt` 不在契约里 → **接受**，与既有 `src/App.vue:539` 的写法一致，且不写 `alt` 会让读屏器念 data URL | 实测 `App.vue:539` 同写法；任务 3 报告 §5 疑虑 1 | task-03 C3、task-04 E1 |
+| K23 | `Dropdown` 的调用方 = **六处**（实测 `<Dropdown` 全仓 grep）：`SettingsModal.vue:109`、`LaunchBar.vue:118`、`QuickLaunchModal.vue:234`（[类型]）、`QuickLaunchModal.vue:250`（[终端]）、`TemplateModal.vue:409`、`UpdateModal.vue:685`。spec §6.4 / plan G6 / 索引 G6·V2·RF4 原来只点名三个 → **名单补全**；定向名单只是快速反馈，权威门始终是 `npm test` 全量 | 独立审查（任务 3）指出并实测：`UpdateModal.test.ts` 有 ~25 处 `.select-trigger` 断言、`SettingsModal.test.ts` 3 处，另跑这两份 = 82 passed | plan G6、task-03 G2、task-04 G2 |

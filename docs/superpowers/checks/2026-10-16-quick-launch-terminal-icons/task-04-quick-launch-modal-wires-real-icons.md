@@ -67,7 +67,7 @@
 | # | 门 | 命令 | 预期 | ✓ |
 | --- | --- | --- | --- | --- |
 | G1 | 定向 | `npx vitest run src/modules/QuickLaunchModal.test.ts` | 全绿，条数 +2 | ☐ |
-| G2 | 索引 V3 | `npx vitest run src/modules/QuickLaunch.test.ts src/modules/TemplateModal.test.ts src/modules/LaunchBar.test.ts` | 全绿 | ☐ |
+| G2 | 索引 V3 + K23（六个调用方） | `npx vitest run src/modules/QuickLaunch.test.ts src/modules/TemplateModal.test.ts src/modules/LaunchBar.test.ts src/modules/UpdateModal.test.ts src/modules/SettingsModal.test.ts` | 全绿 | ☐ |
 | G3 | 类型 | `npx tsc --noEmit -p tsconfig.main.json` | exit 0 | ☐ |
 | G4 | i18n 三门 | `npx vitest run src-main/i18n` | 全绿 | ☐ |
 | G5 | 全量 | `npm test` | `Tests 923 passed (923)`，exit 0 | ☐ |

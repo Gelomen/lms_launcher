@@ -20,9 +20,14 @@ const byPrefixAndName = { fat: { list: faList } };
 // options 扩出**可选** icon（IconDefinition，调用方自己注册图标）。不传 = 渲染一字不变，
 // TemplateModal / LaunchBar / [终端] 下拉因此完全不受影响；传了则面板选项在文字前渲染该图标，
 // 收起态的 trigger 渲染**当前选中项**的图标（两处同一份来源，见下面的 currentOption）。
+// 同日（2026-10-16-quick-launch-terminal-icons 规格 §6.4）：再扩一个**可选** imageUrl —— 取自本机 exe 的
+// 真实图标（PNG 的 data URL，主进程 ql-terminal-icons.ts 补，见该规格 §6.1）。与 icon 并列、**优先**于它：
+// 有 imageUrl 就渲染 <img>，否则走既有 FontAwesome 通道，两者都没有则渲染一字不变 ——
+// 所以不传 imageUrl 的调用方（TemplateModal / LaunchBar / [类型]）照样完全不受影响。
+// data: URL 直接进 <img>：index.html 无 CSP（该规格 §3-P7），不新增依赖、不加 CSP。
 const props = withDefaults(defineProps<{
   value: string;
-  options: Array<{ value: string; label: string; tip?: string; icon?: IconDefinition }>;
+  options: Array<{ value: string; label: string; tip?: string; icon?: IconDefinition; imageUrl?: string }>;
   /** 触发按钮完整名（长名才有）——hover trigger 弹 tooltip。LaunchBar 传入选中项的 tip。 */
   tip?: string;
   /** 为 true 时禁用（不响应点击）；默认 false。用于 LaunchBar running 锁定。 */
@@ -83,6 +88,8 @@ const currentOption = computed(() =>
   props.options.find((o) => o.value === props.value) ?? (props.options.length > 0 ? props.options[0] : null));
 const triggerLabel = computed(() => currentOption.value?.label ?? props.placeholder);
 const triggerIcon = computed(() => currentOption.value?.icon);
+// 图片图标与 FA 图标取自**同一份** currentOption —— 图标必须随选中项走，不能写死第一项（规格 §6.4 / 索引 K3）。
+const triggerImageUrl = computed(() => currentOption.value?.imageUrl);
 
 // 长名 tooltip（2026-08-26 spec + 当日挪位）：trigger / li 的 tip 存在时 hover 弹 .dd-tip
 // （position:fixed 浮于视口——.dropdown-panel max-height+overflow:auto 会裁剪行内 absolute 浮层，
@@ -124,8 +131,11 @@ onBeforeUnmount(() => {
             @mouseenter="(e) => showTip(e, props.tip)"
             @mouseleave="hideTip"
             @click.stop="toggle()">
-      <!-- 选中项的图标（option.icon 才有）排在 .select-label 之前：与面板选项同一位置口径 -->
-      <FontAwesomeIcon v-if="triggerIcon" :icon="triggerIcon" class="select-icon" />
+      <!-- 选中项的图标（option.icon / option.imageUrl 才有）排在 .select-label 之前：与面板选项同一位置口径。
+           优先级（规格 §6.4）：有 imageUrl → <img>（真实图标，src 原样进 img）；否则有 icon → FontAwesome；
+           两者都无 → 与今天一字不变（只有 .select-label + .select-caret）。alt 置空：图标是装饰（规格 §4-4）。 -->
+      <img v-if="triggerImageUrl" :src="triggerImageUrl" class="select-image" alt="" />
+      <FontAwesomeIcon v-else-if="triggerIcon" :icon="triggerIcon" class="select-icon" />
       <span class="select-label">{{ triggerLabel }}</span>
       <span class="select-caret"><FontAwesomeIcon :icon="byPrefixAndName.fat['list']" /></span>
     </button>
@@ -137,7 +147,7 @@ onBeforeUnmount(() => {
           :class="{ option: true, selected: o.value === props.value }"
           @mouseenter="(e) => showTip(e, o.tip)"
           @mouseleave="hideTip"
-          @click="pick(o.value)"><FontAwesomeIcon v-if="o.icon" :icon="o.icon" class="option-icon" />{{ o.label }}</li>
+          @click="pick(o.value)"><img v-if="o.imageUrl" :src="o.imageUrl" class="option-image" alt="" /><FontAwesomeIcon v-else-if="o.icon" :icon="o.icon" class="option-icon" />{{ o.label }}</li>
     </ul>
     <!-- 长名 tooltip：position:fixed 悬浮层（样式同「编辑」按钮 tooltip / .tpl-tip），显示完整名；
          默认挂元素右侧垂直居中，右侧放不下时 flip 到左缘内侧（.dd-tip--flip） -->

@@ -19,7 +19,7 @@
 - **G3 不新增依赖**：`package.json` / lockfile 一字不动；不用 koffi、不用 PE 解析（§5-6）。
 - **G4 不阻塞主线程**：提取走 `execFile`（异步），**不用** `spawnSync`（索引 K2）。
 - **G5 任何失败都不抛出、不写日志、不弹提示**：`execFile` 报错 / 超时 / 非 0 / JSON 解析失败 / 单项 `null` → 一律「该项无图标」；**缓存目录不可写** = 本次不缓存、图标照常（以 spec §6.2 的更具体口径为准，索引 K14）（§6.1 / Q5）。
-- **G6 不传 `imageUrl` 的调用方一字不变**：`TemplateModal`、`LaunchBar`、[类型] 下拉（`QuickLaunchModal.vue:100-103`）的渲染结果与既有断言不得改动（`Dropdown.test.ts:225-234` 是这条的既有牙）。
+- **G6 不传 `imageUrl` 的调用方一字不变**：`Dropdown` 的调用方实测**六处**（`SettingsModal.vue:109`、`LaunchBar.vue:118`、`QuickLaunchModal.vue:234` [类型] 与 `:250` [终端]、`TemplateModal.vue:409`、`UpdateModal.vue:685`，索引 K23）——除 [终端] 外五处的渲染结果与既有断言不得改动（`Dropdown.test.ts:225-234` 是这条的既有牙）。
 - **G7 不改宽度**：`QuickLaunchModal.vue:534`（`.row-cell .term-field { flex: 1 1 auto; min-width: 0 }`）与 `.type-field` 的 180px（`:444`）一字不动（§6.5 / 索引 K6）。
 - **G8 每个任务的收尾门**：`npx tsc --noEmit -p tsconfig.main.json` 干净 + 该任务定向测试绿 + `npm test` 全量绿。（仓库根只有 `tsconfig.main.json`，没有 `tsconfig.json`）
 - **G9 子代理不 `git add`、不 commit**；改动留在工作区等验收（AGENTS.md 工作流第 5 步）。
@@ -108,16 +108,16 @@
 - 修改：`src/style.css:351-352` 之后 + `:359`
 - 测试：`src/components/Dropdown.test.ts:178-235`
 
-- [ ] **步骤 0：起点核对**：`Dropdown.vue:82-85`（`currentOption` / `triggerLabel` / `triggerIcon`）、`:128`、`:140`；`style.css:343-359`（既有 FA 图标三条）；`Dropdown.test.ts:182-235`（既有 icon 两条用例与 `iconTags` 助手）。
-- [ ] **步骤 1：先写失败测试**（`Dropdown.test.ts`，§7.1 的 8–10）：
+- [x] **步骤 0：起点核对**：`Dropdown.vue:82-85`（`currentOption` / `triggerLabel` / `triggerIcon`）、`:128`、`:140`；`style.css:343-359`（既有 FA 图标三条）；`Dropdown.test.ts:182-235`（既有 icon 两条用例与 `iconTags` 助手）。
+- [x] **步骤 1：先写失败测试**（`Dropdown.test.ts`，§7.1 的 8–10）：
   - `options_with_imageurl_render_an_img_before_the_label_in_trigger_and_panel` —— trigger 子节点序列 = `['img:select-image', 'select-label', 'select-caret']`（`img` 的 `src` 逐字等于传入值）；`li` 的 `firstElementChild` 是 `img.option-image` 且 `src` 对得上；点选另一项 → trigger 的 `src` 换成那一项。
   - `imageurl_wins_over_icon_and_absent_imageurl_keeps_the_fa_icon` —— 同时给两个 → 只有 `<img>`（`iconTags` 里不含它）；只给 `icon` → 只有 svg。
-  - 既有 `options_without_icon_render_no_icon_and_the_trigger_keeps_only_the_caret`（`:225-234`）加一行：`.select-label` 的 `flexGrow` **不是** `'1'`（RF4；这条是从 `QuickLaunchModal.test.ts:735` 搬来的，任务 4 删原处）。
-- [ ] **步骤 2：跑红**：`npx vitest run src/components/Dropdown.test.ts` → 2 条新用例红（`imageUrl` 被忽略 → 没有 img）。
-- [ ] **步骤 3：实现 `Dropdown.vue`**：props 的 options 元素类型加 `imageUrl?: string`；加 `const triggerImageUrl = computed(() => currentOption.value?.imageUrl)`；trigger 与 `li` 的图标位改成：有 `imageUrl` → `<img class="select-image">` / `<img class="option-image">`；否则有 `icon` → 既有 `<FontAwesomeIcon>`（§6.4）。
-- [ ] **步骤 4：实现样式**（`style.css`，§6.4 三条逐字：两条 img 规则紧跟 `:351-352`，`:359` 的选择器扩成 `.select-icon + .select-label, .select-image + .select-label`）。注释里写清 `1em` = 14px 的依据（`.btn` 的 `--fs-body`，`:116` / `:31`）与 `vertical-align: -0.125em` 与 vue-fontawesome 对齐的理由。
-- [ ] **步骤 5：跑绿 + G8**：`npx vitest run src/components/Dropdown.test.ts` 该文件全绿（既有用例一字不改）；`npm test` → `Tests 921 passed (921)`（919 + 2）。**特别核对**：`TemplateModal.test.ts` 与 `LaunchBar.test.ts` 仍绿（G6）。
-- [ ] **步骤 6：Commit（主代理）**：`feat(ui): Dropdown 支持选项图片图标（imageUrl，与 FontAwesome 并列且优先）`
+  - 既有 `options_without_icon_render_no_icon_and_the_trigger_keeps_only_the_caret`（`:225-234`）加一行：`.select-label` 的 `flexGrow` **不是** `'1'`（RF4；这条是从 `QuickLaunchModal.test.ts:735` 搬来的，任务 4 删原处）。**该用例必须先注入真实 `src/style.css`**：本 describe 块没有 `injectRealCss()`，不注入则 happy-dom 里根本没有 `.select-icon + .select-label` 这条规则，断言恒真 = 假勾（用同文件 `:106-112` 的手法，索引 K21）。
+- [x] **步骤 2：跑红**：`npx vitest run src/components/Dropdown.test.ts` → 2 条新用例红（`imageUrl` 被忽略 → 没有 img）。
+- [x] **步骤 3：实现 `Dropdown.vue`**：props 的 options 元素类型加 `imageUrl?: string`；加 `const triggerImageUrl = computed(() => currentOption.value?.imageUrl)`；trigger 与 `li` 的图标位改成：有 `imageUrl` → `<img class="select-image">` / `<img class="option-image">`；否则有 `icon` → 既有 `<FontAwesomeIcon>`（§6.4）。
+- [x] **步骤 4：实现样式**（`style.css`，§6.4 三条逐字：两条 img 规则紧跟 `:351-352`，`:359` 的选择器扩成 `.select-icon + .select-label, .select-image + .select-label`）。注释里写清 `1em` = 14px 的依据（`.btn` 的 `--fs-body`，`:116` / `:31`）与 `vertical-align: -0.125em` 与 vue-fontawesome 对齐的理由。
+- [x] **步骤 5：跑绿 + G8**：`npx vitest run src/components/Dropdown.test.ts` 该文件全绿（既有用例一字不改）；`npm test` → `Tests 921 passed (921)`（919 + 2）。**特别核对**：`TemplateModal.test.ts` 与 `LaunchBar.test.ts` 仍绿（G6）。
+- [x] **步骤 6：Commit（主代理）**：`feat(ui): Dropdown 支持选项图片图标（imageUrl，与 FontAwesome 并列且优先）`
 
 ---
 

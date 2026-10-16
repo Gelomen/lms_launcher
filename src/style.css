@@ -350,13 +350,25 @@ body {
    垂直对齐不自己写：vue-fontawesome 自带的 .svg-inline--fa { vertical-align:-0.125em }（config.autoGenerateCss=true）。 */
 .select-trigger .select-icon { flex: none; }
 .dropdown-panel .option .option-icon { margin-right: 6px; }
+/* 真实终端图标（2026-10-16-quick-launch-terminal-icons 规格 §6.4）：option.imageUrl = 取自本机 exe 的 PNG data URL，
+   挂载点与上面同一位置口径（trigger 的 .select-image / 面板选项的 .option-image）；不传 imageUrl 就不渲染这两个类，
+   TemplateModal / LaunchBar / [类型] 下拉照样一字不变 —— 与上面同理，只加规则、不动既有选择器。
+   尺寸只用 1em、不写死 14px：.btn 的 font-size = var(--fs-body) = 14px（本文件 :116 / :31）→ 1em = 14×14，
+   与 FA 图标的 1em 高度同高（FA 的 17.5 宽是它的 1.25em 盒、不是视觉宽度；真实图标是方形，取 1em 见方，索引 K9 / 规格 §8-K5）。
+   vertical-align: -0.125em 与 vue-fontawesome 自带的 .svg-inline--fa 同值（上面 :350 的注释）→ 两种图标基线一致。
+   面板里的 margin-right: 6px 与 .option-icon 同值（:352）；trigger 里的间距由 .select-trigger 的 gap: 8px（:319）给，不另加。 */
+.select-trigger .select-image { flex: none; width: 1em; height: 1em; object-fit: contain; }
+.dropdown-panel .option .option-image { margin-right: 6px; width: 1em; height: 1em; object-fit: contain; vertical-align: -0.125em; }
 /* 图标是 trigger 的第三个 flex 子节点，而 .select-trigger 是 justify-content:space-between（:319）——
    不处理的话短标签会被推到中间（zh「命令行」实测：图标贴左、文字居中、▼ 贴右）。
    用相邻兄弟选择器把「吸收剩余宽度」只挂给**紧跟图标**的那个 .select-label：
    没有图标就没有这条匹配，TemplateModal / LaunchBar / [终端] 下拉的排布一字不变
    （两子节点 + space-between 本来就是标签贴左、▼ 贴右，flex:1 取到的是同一段宽度）。
    min-width:0（:320）仍在 → 吸收宽度后照样能收缩 + ellipsis。 */
-.select-trigger .select-icon + .select-label { flex: 1 1 auto; }
+/* 同上（真实图标）：图片图标也是 trigger 的 flex 子节点，所以这条相邻兄弟规则对 .select-image 同样成立。
+   只加一个选择器：既没有 icon 也没有 imageUrl 的下拉仍不匹配任何一条，排布一字不变（索引 K12 / RF4；
+   这条牙在 src/components/Dropdown.test.ts 的 options_without_icon… 用例里，索引 K21 要求它注入真实 CSS 才有牙）。 */
+.select-trigger .select-icon + .select-label, .select-trigger .select-image + .select-label { flex: 1 1 auto; }
 
 /* ---- 「llama.cpp 安装目录」卡片下方恒定槽位：预留校验结果 1 行（与「保存中…」共用），
      避免校验前后卡片高度抖动 —— 校验后卡片不再把下方「启动控制」往下挤 ---- */
