@@ -12,7 +12,7 @@
 | A1 | 前置任务 2、3 已提交 | `git log --oneline -3` | 上两条分别是 `feat(main): ql_terminals 带可选 icon…` 与 `feat(ui): Dropdown 支持选项图片图标…` | ☑ |
 | A2 | 接线点属实 | 读 `src/modules/QuickLaunchModal.vue:110-113`（`terminalOptions`：`terminals.value.map(info => ({ value: info.id, label: TERM_LABEL[info.id]() }))`）、`:56-61`（`TERM_LABEL`，**不改**）、`:242-254`（[终端] 那一行，`Dropdown` 用法在 `:250-253`，**不改**） | 与本表引用逐字一致 | ☑ |
 | A3 | 测试夹具与助手属实 | 读 `src/modules/QuickLaunchModal.test.ts:22-27`（`TERMS` 四项，顺序 = powershell → cmd → pwsh → wsl）、`:95-100`（`dropdownOf` / `triggerOf` / `triggerText`）、`:104-106`（`iconTags`）、`:68`（`injectRealCss`）、`:43`（`mockLms`）、`:59`（`mountModal`） | 属实 → 新用例复用这些助手，不另造 | ☑ |
-| A4 | 要改写的两条既有门在位（索引 K12） | 读 `src/modules/QuickLaunchModal.test.ts:711-721`（`type_field_is_widened_to_180px`，**不改**）与 `:722-737`（`trigger_label_after_an_icon_absorbs_the_free_space_others_do_not`：`:733` 断 [类型] 的 `flexGrow === '1'`、`:735) 断 [终端] 的 `not.toBe('1')`） | 属实 → 本任务按 C4 改写 `:735) 那一半；`:722-725` 的注释同步改写 | ☑ |
+| A4 | 要改写的两条既有门在位（索引 K12） | 读 `src/modules/QuickLaunchModal.test.ts:711-721`（`type_field_is_widened_to_180px`，**不改**）与 `:722-737`（`trigger_label_after_an_icon_absorbs_the_free_space_others_do_not`：`:733` 断 [类型] 的 `flexGrow === '1'`、`:735` 断 [终端] 的 `not.toBe('1')`） | 属实 → 本任务按 C4 改写 `:735` 那一半；`:722-725` 的注释同步改写 | ☑ |
 | A5 | 宽度取证（不改宽度的依据） | 读 `src/modules/QuickLaunchModal.vue:527-534`（注释记 `.term-field` 实测 356.7px；规则在 `:534`） | 属实 → 本任务不碰这两行（G7 / 索引 K10）；真机门 §7.2-1/2 兜（规格 §9-R6） | ☑ |
 
 ## B. 改动范围
@@ -47,11 +47,11 @@
 
 | # | 用例名（逐字） | 钉住什么 | 出处 | ✓ |
 | --- | --- | --- | --- | --- |
-| E1 | `terminal_options_and_trigger_carry_the_real_terminal_icons` | 打开 [终端] 面板：四项 `li` 的 `textContent` 与 `t('ql.term.*')` 逐字相同（不重排、不加字）；每项 `firstElementChild` 是 `img.option-image` 且 `src` = 该项夹具的 `icon`；trigger 首个子节点是 `img.select-image` 且 `src) = 当前选中项（默认第一项 = powershell）；点第二项（`cmd)）→ trigger 的 `src) 换成 `cmd) 的 | 规格 §7.1-11 / RF2 RF5 / 索引 K3 | ☑ |
+| E1 | `terminal_options_and_trigger_carry_the_real_terminal_icons` | 打开 [终端] 面板：四项 `li` 的 `textContent` 与 `t('ql.term.*')` 逐字相同（不重排、不加字）；每项 `firstElementChild` 是 `img.option-image` 且 `src` = 该项夹具的 `icon`；trigger 首个子节点是 `img.select-image` 且 `src` = 当前选中项（默认第一项 = powershell）；点第二项（`cmd`）→ trigger 的 `src` 换成 `cmd` 的 | 规格 §7.1-11 / RF2 RF5 / 索引 K3 | ☑ |
 | E2 | `terminal_option_without_icon_renders_no_img` | 夹具里 `cmd` 不带 `icon` → 那一项没有 `<img>`、文字照常；其余三项有。**另加另一半**（实测多出的覆盖面，出处仍是同一口径、不是扩范围）：换选到缺图标那一项 → trigger 也不带 `<img>`、文字照常（与 E1 的 ④ 成对） | 规格 §7.1-12 / §8-Q5 / RF1 / 索引 K5 | ☑ |
 | E3 | 改写后的 `trigger_labels_after_an_icon_absorb_the_free_space` | 两个带图标的下拉的 `.select-label` 都断 `flexGrow === '1'`（`min-width: 0` 仍在 → 吸收宽度后照样能收缩 + ellipsis） | 规格 §6.6-2 / 索引 K12 | ☑ |
-| E4 | 既有 [类型] 图标门（`:669-700)）与 180px 宽度门（`:711-721)）一字不改且绿 | 本次没把 [类型] 带偏 | 规格 §5-5 / G6 G7 | ☑ |
-| E5 | 弹窗高度定高门（`:739`) 起的 218px 契约）仍绿 | 加图标不改变弹窗高度 | 规格 §7.2-5 | ☑ |
+| E4 | 既有 [类型] 图标门（`:669-700`）与 180px 宽度门（`:711-721`）一字不改且绿 | 本次没把 [类型] 带偏 | 规格 §5-5 / G6 G7 | ☑ |
+| E5 | 弹窗高度定高门（`:739` 起的 218px 契约）仍绿 | 加图标不改变弹窗高度 | 规格 §7.2-5 | ☑ |
 
 ## F. 本任务相关的硬约束
 
