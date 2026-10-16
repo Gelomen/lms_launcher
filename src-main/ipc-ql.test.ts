@@ -9,7 +9,7 @@
 // 范围：不改 src-main/process.ts（索引 G4），不新增通道（check F4）。
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process'; // M23：tasklist / taskkill，只清测试自己造出来的记事本窗口
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { t } from './i18n'; // 任务 8 E7（索引 K16(2)）：词典已落地，断言必须按译文写
@@ -276,7 +276,16 @@ describe('C4 · ql_terminals（索引 K10-3：异步、不缓存）', () => {
     for (const r of [a, b]) {
       expect(Array.isArray(r)).toBe(true);
       for (const info of r) {
-        expect(Object.keys(info).sort()).toEqual(['id', 'path']);
+        // 2026-10-16-quick-launch-terminal-icons §6.3 / §6.6-1（索引 K7 / K12）：载荷 = { id, path }，
+        // **可选**带 icon（PNG 的 data URL，由 ql-terminal-icons.ts 补）；除这三项外不得有别的键。
+        // 用例名里的「只含 {id,path}」按 plan 任务 2 步骤 1 保留（只改断言与口径注释）。
+        const keys = Object.keys(info);
+        expect(keys, '缺少 id').toContain('id');
+        expect(keys, '缺少 path').toContain('path');
+        expect(keys.filter((k) => k !== 'id' && k !== 'path' && k !== 'icon'), '多余的键: ' + keys.join(',')).toEqual([]);
+        if (typeof info.icon === 'string') {
+          expect(info.icon.startsWith('data:image/png;base64,')).toBe(true);
+        }
         expect(['pwsh', 'powershell', 'cmd', 'wsl']).toContain(info.id);
         expect(typeof info.path).toBe('string');
       }
@@ -284,6 +293,35 @@ describe('C4 · ql_terminals（索引 K10-3：异步、不缓存）', () => {
     expect(a).not.toBe(b);
     // 本机基线（规格 §6.3）：cmd 必然可用
     expect(a.some((t) => t.id === 'cmd')).toBe(true);
+  });
+
+  // 任务 2（2026-10-16-quick-launch-terminal-icons §7.1-7 / RF3 / 索引 K6 K11）：
+  // ql_terminals 的 icon 来自 <dataDir>/cache/terminal-icons/ 的磁盘缓存。dataDir() 在非打包态 =
+  // process.cwd()（main.ts:83-86），而 beforeAll 已把它换成 workDir（:168-175）→ 缓存必须落在
+  // workDir 下，仓库根不得出现 cache/（check F3 / 索引 K11）。
+  // 「第二次不再起提取进程」已由任务 1 的假接缝计数钉住（ql-terminal-icons.test.ts 的 calls=0）；
+  // IPC 层能观察到的只有：两次 icon 逐字相等 + 缓存目录里的 .png 不因第二次调用而增加。
+  // 不用计时 / 睡眠这类不稳定断言（plan 全局约束之外的自加断言一律要能稳定复现）。
+  it('terminal_icons_are_stable_across_calls_and_come_from_the_disk_cache', async () => {
+    const cacheDir = join(workDir, 'cache', 'terminal-icons');
+    const pngCount = (): number => readdirSync(cacheDir).filter((n) => n.endsWith('.png')).length;
+
+    const first = (await invoke('ql_terminals')) as Array<Record<string, unknown>>;
+    const afterFirst = pngCount();
+    expect(afterFirst, '第一次调用后缓存目录里必须出现 .png（规格 §6.2 的写入）').toBeGreaterThanOrEqual(1);
+
+    const second = (await invoke('ql_terminals')) as Array<Record<string, unknown>>;
+    // 命中 = 不重新提取、也就不再写文件（规格 §6.2：命中不起进程）
+    expect(pngCount(), '第二次不得再往缓存目录写新文件').toBe(afterFirst);
+
+    for (const list of [first, second]) {
+      expect(list.some((info) => info.id === 'cmd'), '本机基线：cmd 必然可用').toBe(true);
+    }
+    const cmdFirst = first.find((info) => info.id === 'cmd') as Record<string, unknown>;
+    const cmdSecond = second.find((info) => info.id === 'cmd') as Record<string, unknown>;
+    expect(typeof cmdFirst.icon, '第一次就必须带 icon（本机 PowerShell 可用，规格 §3-P1）').toBe('string');
+    expect((cmdFirst.icon as string).startsWith('data:image/png;base64,')).toBe(true);
+    expect(cmdSecond.icon, '第二次的 icon 与第一次逐字相等 = 磁盘缓存生效（RF3）').toBe(cmdFirst.icon);
   });
 });
 

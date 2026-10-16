@@ -6,7 +6,8 @@
 //   §6.3 本机基线（pwsh ✅ / powershell ✅ / cmd ✅ / wsl -l -q 退出码 1 ⛔）
 //   §12.3 parseWslDistroOutput（UTF-16LE → 发行版名；空输出 → []）
 // 消费方：任务 6 的 ql_terminals IPC、任务 12 的下拉、任务 5 的 spawnShell（用 path）。
-// 只下发 { id, path }：标签文案由渲染端 t() 决定（索引 K4 / check F4）。
+// 主进程下发 { id, path }，**可选**带 icon（PNG 的 data URL，由 ql-terminal-icons.ts 补，见 2026-10-16 规格 §6.1）；
+// 标签文案仍由渲染端 t() 决定（索引 K7；原口径「只下发 { id, path }」= 旧索引 K4 / check F4）。
 // 不 import node-pty、不 spawn PTY——终端生命周期在任务 5 的 QuickLaunchManager。
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,6 +18,8 @@ import type { TerminalId } from './quick-launch-config';
 export interface TerminalInfo {
   id: TerminalId;
   path: string;
+  /** 该项 exe 的真实图标，PNG 的 data URL（§6.1）。取不到 = 不带这个字段。 */
+  icon?: string;
 }
 
 // 规格 §6.1：单项 3s 超时；任何异常（超时 / ENOENT / 非 0）= 该项不可用（check F1 / F2）

@@ -5,6 +5,7 @@ node_modules/
 !.superpowers/
 !.superpowers/**
 logs/
+cache/
 configs/lms_launcher.yaml
 configs/llama_launch_configs.yaml
 %SystemDrive%/

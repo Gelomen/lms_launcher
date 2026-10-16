@@ -89,15 +89,15 @@
 - 测试：`src-main/ipc-ql.test.ts:273-287`
 - 修改：`.gitignore`（加一行 `cache/`）
 
-- [ ] **步骤 0：起点核对**：`main.ts:1126`（`ql_terminals` handler，**不改**）、`main.ts:83-86`（`dataDir()`）、`main.ts:105-109`（`updateZipDir()` 的 `mkdirSync` 吞错写法）、`ipc-ql.test.ts:265-288`（C4 两条用例）、`quick-launch-terminals.ts:9`（「只下发 { id, path }」注释）。
-- [ ] **步骤 1：先改测试**（`ipc-ql.test.ts`）：
-  - 改写 C4 第二条（`:279`）：断言写成「必含 `id` 与 `path`；除 `id` / `path` / `icon` 外不得有别的键；若 `typeof info.icon === 'string'` 则以 `data:image/png;base64,` 开头」。用例名保留，注释里的「只含 {id,path}」改成 §6.3 的新口径。
+- [x] **步骤 0：起点核对**：`main.ts:1126`（`ql_terminals` handler，**不改**）、`main.ts:83-86`（`dataDir()`）、`main.ts:105-109`（`updateZipDir()` 的 `mkdirSync` 吞错写法）、`ipc-ql.test.ts:265-288`（C4 两条用例）、`quick-launch-terminals.ts:9`（「只下发 { id, path }」注释）。
+- [x] **步骤 1：先改测试**（`ipc-ql.test.ts`）：
+  - 改写 C4 第二条（`:279`）：断言写成「必含 `id` 与 `path`；除 `id` / `path` / `icon` 外不得有别的键；若 `typeof info.icon === 'string'` 则以 `data:image/png;base64,` 开头」。用例名一字不改（「只含 {id,path}」这个字符串只存在于 `it()` 标题里，没有另一处注释可改，索引 K19）；§6.3 的新口径写进断言旁的注释。
   - 新增用例 `terminal_icons_are_stable_across_calls_and_come_from_the_disk_cache`：两次 `invoke('ql_terminals')` → 两次都有 `cmd` 项（本机基线）；两次该项的 `icon` 逐字相等；`join(workDir, 'cache', 'terminal-icons')` 下存在 `.png` 文件（`fs.readdirSync` 计数 ≥ 1）。`workDir` = 该文件 `:168-175` 已经造好的临时目录（`beforeAll` 把 `process.cwd` 换成它，`dataDir()` 因此指向它）——**不许**往仓库根写 `cache/`。
   - `.gitignore` 加一行 `cache/`（§6.2 的 dev 态落点：跑应用会在仓库根生成缓存目录；测试不产生它）。
-- [ ] **步骤 2：跑红取证**：`npx vitest run src-main/ipc-ql.test.ts` → 新用例红（`icon` 不存在 / 缓存目录不存在）。改写后的 C4 仍绿（当前实现不带 `icon`）。两次输出贴 J 段。
-- [ ] **步骤 3：实现接线**：`quick-launch-terminals.ts:17-20` 加 `icon?: string`（注释指向 §6.1）；`:9` 注释按 §6.3 改写；`main.ts` 加 `terminalIconCacheDir()`（`join(dataDir(),'cache','terminal-icons')` + `mkdirSync` 吞错），`detectTerminalsAsync` 改为 `resolve(withTerminalIcons(terminalIconCacheDir(), detectTerminals()))`（返回类型仍是 `Promise<TerminalInfo[]>`；既有断言 `handlerOf('ql_terminals').constructor.name === 'AsyncFunction'` 不得红）。
-- [ ] **步骤 4：跑绿 + G8**：`npx vitest run src-main/ipc-ql.test.ts src-main/ql-terminal-icons.test.ts` 全绿；`npm test` → `Tests 919 passed (919)`（918 + 1）。
-- [ ] **步骤 5：Commit（主代理）**：`feat(main): ql_terminals 带可选 icon（真实终端图标 data URL，走磁盘缓存）`
+- [x] **步骤 2：跑红取证**：`npx vitest run src-main/ipc-ql.test.ts` → 新用例红（`icon` 不存在 / 缓存目录不存在）。改写后的 C4 仍绿（当前实现不带 `icon`）。两次输出贴 J 段。
+- [x] **步骤 3：实现接线**：`quick-launch-terminals.ts:17-20` 加 `icon?: string`（注释指向 §6.1）；`:9` 注释按 §6.3 改写；`main.ts` 加 `terminalIconCacheDir()`（`join(dataDir(),'cache','terminal-icons')` + `mkdirSync` 吞错），`detectTerminalsAsync` 改为 `resolve(withTerminalIcons(terminalIconCacheDir(), detectTerminals()))`（返回类型仍是 `Promise<TerminalInfo[]>`；既有断言 `handlerOf('ql_terminals').constructor.name === 'AsyncFunction'` 不得红）。
+- [x] **步骤 4：跑绿 + G8**：`npx vitest run src-main/ipc-ql.test.ts src-main/ql-terminal-icons.test.ts` 全绿；`npm test` → `Tests 919 passed (919)`（918 + 1）。
+- [x] **步骤 5：Commit（主代理）**：`feat(main): ql_terminals 带可选 icon（真实终端图标 data URL，走磁盘缓存）`
 
 ---
 

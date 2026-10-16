@@ -18,6 +18,8 @@ import { homedir } from 'node:os';
 // 快捷启动卡片（2026-10-10-quick-launch-card 任务 6）：配置层（任务 3）/ 探测层（任务 4）/ 进程管理层（任务 5）→ IPC
 import { qlLoad, qlSave, qlDelete, type QuickLaunchEntry, type QuickLaunchList, type TerminalId } from './quick-launch-config';
 import { detectTerminals, type TerminalInfo } from './quick-launch-terminals';
+// 2026-10-16-quick-launch-terminal-icons §6.3 / 索引 K1：探测层不填 icon，补字段的是提取层（仍走 ql_terminals 一条通道，不新增 IPC）。
+import { withTerminalIcons } from './ql-terminal-icons';
 import { QuickLaunchManager, shellExe } from './quick-launch';
 import { launchShellExe, winShell, type ShellExecProcess } from './shell-execute'; // 2026-10-13-quick-launch-elevated-exe §6.6
 // 提权 PTY 宿主（2026-10-14-quick-launch-admin §6.4 / §6.8）：管道接缝 + 起宿主接缝 + 可 await 的工厂（索引 K45）
@@ -105,6 +107,15 @@ function initI18n(): void {
 function updateZipDir(): string {
   const d = join(dataDir(), 'downloads');
   try { mkdirSync(d, { recursive: true }); } catch { /* 目录创建失败由后续写入报错处理 */ }
+  return d;
+}
+// 终端图标缓存目录（2026-10-16-quick-launch-terminal-icons §6.2 / 索引 K6）：<dataDir>/cache/terminal-icons/，
+// 与 updateZipDir() 同一手法（P10）。不放 configs/：那里是用户配置，会被更新/迁移逻辑当用户数据对待。
+// mkdirSync 失败不阻断：§9-R4（装在只读目录）= 本次不缓存、图标照常（索引 K14），不报错、不写日志。
+// 缓存不失效、也不清理（Q7 用户明确选定，代价登记为 §9-R3）。
+function terminalIconCacheDir(): string {
+  const d = join(dataDir(), 'cache', 'terminal-icons');
+  try { mkdirSync(d, { recursive: true }); } catch { /* 不可写：本次不缓存，图标照常 */ }
   return d;
 }
 // 更新包路径：downloads/lms-launcher-update.zip（download_update 与 run_update 共用同一约定）
@@ -1036,9 +1047,14 @@ export function qlStartContextOrThrow(seam: string): { configId: string; availab
  * 终端探测的异步包装（索引 K10-3）：先让出一拍再跑探测，使排队中的窗口/托盘事件先被处理。
  * 探测本身是同步的（quick-launch-terminals.ts 用 spawnSync，规格 §6.1 钉死），最坏 3×3s ≈ 9s；
  * 规格 §6.1 明确「不跨调用缓存」，所以每次调用都实测。
+ * 2026-10-16-quick-launch-terminal-icons §6.3 / 索引 K1：探测层不填 icon，补字段的是 withTerminalIcons
+ * （图标走磁盘缓存，命中不起进程；任何失败 = 该项不带 icon）。**图标缓存 ≠ 探测缓存**：
+ * 每次调用仍实测终端可用性（RF3：用户装好 WSL，下次调用就要出现）。
  */
 function detectTerminalsAsync(): Promise<TerminalInfo[]> {
-  return new Promise((resolve) => { setImmediate(() => resolve(detectTerminals())); });
+  return new Promise((resolve) => {
+    setImmediate(() => resolve(withTerminalIcons(terminalIconCacheDir(), detectTerminals())));
+  });
 }
 
 /**

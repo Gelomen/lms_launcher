@@ -74,3 +74,5 @@
 | K16 | 「夹具不在则跳过 + 注释指向真机门」的先例 = `src-main/shell-execute.test.ts:204-222`（不是索引 K11，K11 是 `.gitignore` 口径）；测试文件按 plan 步骤 1 需要 `node:os`/`node:fs`/`node:path` 夹具 import，F2 白名单只约束 B1 实现文件 | 实测两处文件原文；plan 任务 1 步骤 1 明确要求 `os.tmpdir()` 夹具 | task-01 E6/F2 |
 | K17 | 实现起点与「文档 commit」= 当前 HEAD（`50c9e77`）；plan:6 的 `b3604be` 与 task-01 A1/F6 的 `5c4313d` 是文档生成时的旧值，不改写历史 hash | 实测 `git log --oneline -1` | task-01 A1/F6 |
 | K18 | 任务 1 的 H1 暂存范围除两份 `src-main/` 新文件外，另加受影响的三份文档（plan 的 G5/步骤 3、索引 K13–K17、本表受裁决影响的行） | AGENTS.md「偏离 spec：先改 spec / plan / check 表（同一 commit）」优先于 H1 的窄范围 | task-01 H1 |
+| K19 | 两处口径：① `ipc-ql.test.ts` C4 的「只含 {id,path}」只在 `it()` 标题里，**标题一字不改**，新口径写进断言旁的注释（plan 任务 2 步骤 1 原文自相矛盾，已改）；② 新用例对「本机 PowerShell 可用」是**硬断言**，不为 §9-R1（约束语言模式 / WDAC）加豁免 —— spec §7.1-7 未给豁免口径，与任务 1 真机冒烟的做法一致（只在夹具 exe 不在时 `skipIf`）；R1 机器的降级现象归真机门 §7.2-4 | 实测：该字符串只在标题里；任务 2 报告 §5 疑虑 1/2 | plan 任务 2 步骤 1、task-02 C5/E5 |
+| K20 | 文档里的行号（spec §2「现状」表、各表 A 段锚点）= **取证时的位置**；实现后会漂移（例：`main.ts` 的 `ql_terminals` handler `:1126` → `:1142`）。不改写历史行号，改后真实行号写在各任务报告与 J 段 | 实测 `git diff` 净增行数；与 K17 同一口径 | 全部五张表的 A 段 |
