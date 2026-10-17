@@ -93,7 +93,10 @@
 | 8 | 变异：`toPtyInput(auto.cmd)` → `auto.cmd` | `2 failed \| 34 passed (36)`，红在 E5 与 E6（E6 25069ms 超时）；其余照绿 |
 | 9 | 改回后 `npm test`（终态） | `Test Files 53 passed (53)` / `Tests 932 passed (932)`，exit 0（18:17） |
 | 10 | `electron.exe … .temp/ql-cmd-rows-probe/shot.js` | `rows1: modalBox 520×218, bodyClient 152/152, grid 487/487`；`rows3: 520×293.3, cmdCell 108, 3×32`；出图两张 |
+| 11 | `npx tsc -p tsconfig.main.json --noEmit` + `npx vitest run src/modules/QuickLaunchModal.test.ts src-main/quick-launch.test.ts src-main/i18n`（提交前门） | exit 0；`6 passed (6)` / `88 passed (88)` |
+| 12 | `npm test`（提交前全量，留档 `.temp/ql-cmd-rows-final.log`） | `Test Files 53 passed (53)` / `Tests 932 passed (932)`，exit 0（19:12） |
+| 13 | 提交（主代理，`git -c user.name=… commit`） | `638fb0c feat(main): 自动命令按行提交…`（2 files, +52/-1）、`f2bd347 feat(ui): …逐行输入…`（3 files, +216/-12）；`git status` 干净 |
 
 **顺序偏离登记（诚实）**：本次是「实现 → 测试」，不是 TDD 的「测试先于实现」——因为口径本身要先靠真 PTY 探针才能定（P2 / P3 / P4 决定用 `\r`，P5 决定不动 schema）。取证在前、实现在中、门在后；E1-E6 全部跑过并做了变异检验（第 8 行）。
 
-**待办（验收后）**：代码改动仍在工作区（五个文件，见 `git status`），提交由主代理做；真机核对清单见规格 §9（R1-R6，用户执行）。
+**已提交（用户 2026-10-17 19:10 说「commit」）**：文档 `fa00eeb` → 主进程 `638fb0c` → 渲染端 `f2bd347`，`git status` 干净。剩下的只有真机核对清单：规格 §9（R1-R6，用户执行）。
