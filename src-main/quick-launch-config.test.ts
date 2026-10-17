@@ -73,13 +73,14 @@ describe('quick-launch-config.ts', () => {
       'qlp9q8r7s6:',
       '  name: LM Studio',
       '  type: exe',
-      '  exe: D:\\Tools\\LM Studio.exe',
+      '  exe:',
+      '    - D:\\Tools\\LM Studio.exe',
     ));
     const list = qlLoad(p);
     expect(list.invalid).toEqual([]);
     expect(Object.keys(list.items)).toEqual(['qlx1a2b3c4', 'qlp9q8r7s6']);
     expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
-    expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: false });
+    expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: false });
     rm(p);
   });
 
@@ -113,14 +114,17 @@ describe('quick-launch-config.ts', () => {
       'ok01:',
       '  name: ok',
       '  type: exe',
-      '  exe: a.exe',
+      '  exe:',
+      '    - a.exe',
       'noName01:',
       '  type: exe',
-      '  exe: a.exe',
+      '  exe:',
+      '    - a.exe',
       'blankName01:',
       '  name: "   "',
       '  type: exe',
-      '  exe: a.exe',
+      '  exe:',
+      '    - a.exe',
       'badType01:',
       '  name: badtype',
       '  type: bat',
@@ -139,12 +143,94 @@ describe('quick-launch-config.ts', () => {
       'noExe01:',
       '  name: noexe',
       '  type: exe',
+      'exeScalar01:',
+      '  name: scalarexe',
+      '  type: exe',
+      '  exe: D:\\a.exe',
     ));
     const list = qlLoad(p);
     expect(Object.keys(list.items)).toEqual(['ok01']);
     expect(list.invalid).toEqual([
-      'noName01', 'blankName01', 'badType01', 'scalar01', 'null01', 'noCmd01', 'badTerm01', 'noExe01',
+      'noName01', 'blankName01', 'badType01', 'scalar01', 'null01', 'noCmd01', 'badTerm01', 'noExe01', 'exeScalar01',
     ]);
+    rm(p);
+  });
+
+  // E1（2026-10-17-quick-launch-exe-rows §4-8 / §8 / RF8）：旧标量写法**一律失效**——
+  // 加载进 invalid（不抛错、不进 items），保存路径 VALIDATION:（不做旧格式兼容，G6）。
+  it('E1_scalar_exe_entry_loads_as_invalid_and_saves_as_validation', () => {
+    const p = tmpPath('ql_scalar_exe.yaml');
+    rm(p);
+    writeText(p, lines(
+      'ok01:',
+      '  name: ok',
+      '  type: exe',
+      '  exe:',
+      '    - D:\\Tools\\a.exe',
+      'scalar01:',
+      '  name: old style',
+      '  type: exe',
+      '  exe: D:\\a.exe', // 今天的写法：单值字符串（§9-R11 的夹具）
+      'scalarQuoted01:',
+      '  name: old quoted',
+      '  type: exe',
+      '  exe: "D:\\b.exe"',
+    ));
+    const list = qlLoad(p);
+    expect(Object.keys(list.items), '只有数组写法的条目进 items').toEqual(['ok01']);
+    expect(list.items['ok01'].exe).toEqual(['D:\\Tools\\a.exe']);
+    expect(list.invalid, '标量条目静默进 invalid：不抛错、不提示（§7-1）').toEqual(['scalar01', 'scalarQuoted01']);
+    // 保存路径同一判据：标量载荷 → VALIDATION:，且失败不落盘
+    expect(() => qlSave(p, 'scalar01', { name: 'old style', type: 'exe', exe: 'D:\\a.exe' as unknown as string[] }, [])).toThrow(/^VALIDATION:/);
+    expect(qlLoad(p).invalid).toEqual(['scalar01', 'scalarQuoted01']);
+    rm(p);
+  });
+
+  // E2（§6.1 落盘形状 / §8）：数组落盘 round-trip——保存两条 → 落盘是序列 → 读回顺序逐字。
+  it('E2_exe_array_round_trips_through_yaml_in_order', () => {
+    const p = tmpPath('ql_exe_array.yaml');
+    rm(p);
+    const id = qlSave(p, 'qlexearr01', { name: '一组工具', type: 'exe', exe: ['D:\\Tools\\a.exe', 'D:\\Tools\\b.exe'] }, []);
+    expect(id).toBe('qlexearr01');
+    // 字节级：落盘是序列（§6.1 的示例形状），不是把两条拼成一条字符串（P10 被否掉的方案）
+    const raw = readText(p);
+    expect(raw).toMatch(/^  exe:$/m);
+    expect(raw).toMatch(/^ {4}- D:\\Tools\\a\.exe$/m);
+    expect(raw).toMatch(/^ {4}- D:\\Tools\\b\.exe$/m);
+    expect(raw).not.toMatch(/^  exe: D:/m); // 标量落盘 = 顺序信息被降级
+    const back = qlLoad(p);
+    expect(back.invalid).toEqual([]);
+    expect(back.items[id].exe, '顺序即启动顺序：读回逐字不变（不去重 R-03）').toEqual(['D:\\Tools\\a.exe', 'D:\\Tools\\b.exe']);
+    // 重复路径不去重：两条相同也照样两条落盘、两条读回（R-03）
+    const dup = qlSave(p, 'qlexedup01', { name: '两遍同一个', type: 'exe', exe: ['C:\\x.exe', 'C:\\x.exe'] }, []);
+    expect(qlLoad(p).items[dup].exe).toEqual(['C:\\x.exe', 'C:\\x.exe']);
+    // 编辑回填再保存：不得把顺序或条数丢掉
+    expect(qlSave(p, id, back.items[id], [])).toBe(id);
+    expect(qlLoad(p).items[id].exe).toEqual(['D:\\Tools\\a.exe', 'D:\\Tools\\b.exe']);
+    rm(p);
+  });
+
+  // E4（§6.1）：逐元素 trim + 丢弃空串——保存与加载两条路径同一归一（R-02：与 cmd 先例逐字一致）。
+  it('E4_exe_entries_are_trimmed_and_blank_rows_dropped_on_both_paths', () => {
+    const p = tmpPath('ql_exe_trim.yaml');
+    rm(p);
+    // 保存路径：两侧空格被 trim、空串/纯空白元素被丢弃，其余顺序不变（弹窗提交前也会做同一件事，这里是主进程的牙）
+    const id = qlSave(p, 'qlexetrim1', { name: 'trim', type: 'exe', exe: ['  D:\\Tools\\a.exe  ', '', '   ', 'D:\\Tools\\b.exe'] }, []);
+    expect(qlLoad(p).items[id].exe).toEqual(['D:\\Tools\\a.exe', 'D:\\Tools\\b.exe']);
+    // 加载路径：yaml 里带空格与空元素 → 读回是规整后的两条（§9-R3「中间留一行空」的自动化对应物）
+    writeText(p, lines(
+      'trim01:',
+      '  name: yaml trim',
+      '  type: exe',
+      '  exe:',
+      '    - "  C:\\\\a.exe  "', // YAML 双引号风格：两个反斜杠 = 一个字面反斜杠（裸 \a 会被解析成 BEL）
+      '    - ""',
+      '    - "   "',
+      '    - C:\\b.exe',
+    ));
+    const back = qlLoad(p);
+    expect(back.invalid).toEqual([]);
+    expect(back.items['trim01'].exe).toEqual(['C:\\a.exe', 'C:\\b.exe']);
     rm(p);
   });
 
@@ -153,7 +239,7 @@ describe('quick-launch-config.ts', () => {
     const p = tmpPath('ql_name_blank.yaml');
     rm(p);
     expect(() => qlSave(p, null, { name: '  ', type: 'shell', shell: 'pwsh', cmd: 'x' }, ['pwsh'])).toThrow(/^VALIDATION:/);
-    expect(() => qlSave(p, null, { name: '', type: 'exe', exe: 'a.exe' }, [])).toThrow(/^VALIDATION:/);
+    expect(() => qlSave(p, null, { name: '', type: 'exe', exe: ['a.exe'] }, [])).toThrow(/^VALIDATION:/);
     expect(qlLoad(p)).toEqual({ items: {}, invalid: [] });
   });
 
@@ -162,10 +248,10 @@ describe('quick-launch-config.ts', () => {
     const p = tmpPath('ql_name_long.yaml');
     rm(p);
     const ok64 = 'x'.repeat(64);
-    expect(qlSave(p, null, { name: ok64, type: 'exe', exe: 'a.exe' }, [])).toBeTruthy();
-    expect(() => qlSave(p, null, { name: ok64 + 'x', type: 'exe', exe: 'b.exe' }, [])).toThrow(/^VALIDATION:/);
+    expect(qlSave(p, null, { name: ok64, type: 'exe', exe: ['a.exe'] }, [])).toBeTruthy();
+    expect(() => qlSave(p, null, { name: ok64 + 'x', type: 'exe', exe: ['b.exe'] }, [])).toThrow(/^VALIDATION:/);
     // 长度按 trim 后计：另一个 64 字符名两侧带空格仍合法
-    expect(qlSave(p, null, { name: '  ' + 'y'.repeat(64) + '  ', type: 'exe', exe: 'c.exe' }, [])).toBeTruthy();
+    expect(qlSave(p, null, { name: '  ' + 'y'.repeat(64) + '  ', type: 'exe', exe: ['c.exe'] }, [])).toBeTruthy();
     rm(p);
   });
 
@@ -201,15 +287,20 @@ describe('quick-launch-config.ts', () => {
     expect(qlLoad(p)).toEqual({ items: {}, invalid: [] });
   });
 
-  // E10（规格 §5.3-5）：exe trim 后为空 → VALIDATION:；不校验文件是否存在
+  // E10（规格 §5.3-5，2026-10-17-quick-launch-exe-rows §8 改写）：exe 归一后为空 → VALIDATION:；不校验文件是否存在。
+  // E3（本次新增编号）：空数组 / 全空串元素 = 旧「trim 后为空」判据的新形状；标量载荷同样被拒（§4-8 / G6）。
   it('ql_save_rejects_blank_exe_but_never_checks_file_existence', () => {
     const p = tmpPath('ql_exe.yaml');
     rm(p);
-    expect(() => qlSave(p, null, { name: 'A', type: 'exe', exe: '   ' }, [])).toThrow(/^VALIDATION:/);
+    expect(() => qlSave(p, null, { name: 'A', type: 'exe', exe: ['   '] }, [])).toThrow(/^VALIDATION:/); // E3 全空串
+    expect(() => qlSave(p, null, { name: 'A', type: 'exe', exe: [] }, [])).toThrow(/^VALIDATION:/); // E3 空数组
+    expect(() => qlSave(p, null, { name: 'A', type: 'exe', exe: ['  ', '', ' \t '] }, [])).toThrow(/^VALIDATION:/); // E3 混空元素，归一后仍为空
     expect(() => qlSave(p, null, { name: 'A', type: 'exe' }, [])).toThrow(/^VALIDATION:/);
+    // 保存路径也不做旧格式兼容：标量载荷 → VALIDATION:（§4-8 / G6）
+    expect(() => qlSave(p, null, { name: 'A', type: 'exe', exe: 'a.exe' as unknown as string[] }, [])).toThrow(/^VALIDATION:/);
     const missing = 'D:\\no-such-dir\\no-such.exe';
-    const id = qlSave(p, null, { name: 'A', type: 'exe', exe: missing }, []);
-    expect(qlLoad(p).items[id].exe).toBe(missing);
+    const id = qlSave(p, null, { name: 'A', type: 'exe', exe: [missing] }, []);
+    expect(qlLoad(p).items[id].exe).toEqual([missing]); // 不判存在性：照样落盘、读回（R-06）
     rm(p);
   });
 
@@ -217,14 +308,14 @@ describe('quick-launch-config.ts', () => {
   it('ql_save_rejects_duplicate_name_compared_trimmed_case_sensitive', () => {
     const p = tmpPath('ql_dup_name.yaml');
     rm(p);
-    const first = qlSave(p, null, { name: 'A', type: 'exe', exe: 'a.exe' }, []);
-    expect(() => qlSave(p, null, { name: 'A', type: 'exe', exe: 'b.exe' }, [])).toThrow(/^VALIDATION:/);
-    expect(() => qlSave(p, null, { name: '  A  ', type: 'exe', exe: 'b.exe' }, [])).toThrow(/^VALIDATION:/);
-    const lower = qlSave(p, null, { name: 'a', type: 'exe', exe: 'c.exe' }, []); // 区分大小写 → 允许
+    const first = qlSave(p, null, { name: 'A', type: 'exe', exe: ['a.exe'] }, []);
+    expect(() => qlSave(p, null, { name: 'A', type: 'exe', exe: ['b.exe'] }, [])).toThrow(/^VALIDATION:/);
+    expect(() => qlSave(p, null, { name: '  A  ', type: 'exe', exe: ['b.exe'] }, [])).toThrow(/^VALIDATION:/);
+    const lower = qlSave(p, null, { name: 'a', type: 'exe', exe: ['c.exe'] }, []); // 区分大小写 → 允许
     expect(lower).toBeTruthy();
-    const again = qlSave(p, first, { name: 'A', type: 'exe', exe: 'a2.exe' }, []); // 与自身同名不算重名
+    const again = qlSave(p, first, { name: 'A', type: 'exe', exe: ['a2.exe'] }, []); // 与自身同名不算重名
     expect(again).toBe(first);
-    expect(qlLoad(p).items[first].exe).toBe('a2.exe');
+    expect(qlLoad(p).items[first].exe).toEqual(['a2.exe']);
     rm(p);
   });
 
@@ -242,12 +333,12 @@ describe('quick-launch-config.ts', () => {
     expect(qlLoad(p).items[shellId]).not.toHaveProperty('exe');
     rm(p);
     const exeId = qlSave(p, null, {
-      name: 'ex', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', shell: 'pwsh', cmd: 'ignored',
+      name: 'ex', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], shell: 'pwsh', cmd: 'ignored',
     }, ['pwsh']);
     const rawExe = readText(p);
     expect(rawExe).not.toMatch(/^\s*shell:/m);
     expect(rawExe).not.toMatch(/^\s*cmd:/m);
-    expect(qlLoad(p).items[exeId]).toEqual({ name: 'ex', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: false });
+    expect(qlLoad(p).items[exeId]).toEqual({ name: 'ex', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: false });
     expect(qlLoad(p).items[exeId]).not.toHaveProperty('shell');
     expect(qlLoad(p).items[exeId]).not.toHaveProperty('cmd');
     rm(p);
@@ -257,17 +348,17 @@ describe('quick-launch-config.ts', () => {
   it('ql_save_generates_ql_prefixed_valid_id_or_keeps_explicit_id', () => {
     const p = tmpPath('ql_id.yaml');
     rm(p);
-    const generated = qlSave(p, null, { name: 'A', type: 'exe', exe: 'a.exe' }, []);
+    const generated = qlSave(p, null, { name: 'A', type: 'exe', exe: ['a.exe'] }, []);
     expect(generated).toMatch(/^ql/);
     expect(validateConfigId(generated)).toBe(true);
     expect(Object.keys(qlLoad(p).items)).toEqual([generated]);
-    const kept = qlSave(p, 'qlkeep01', { name: 'B', type: 'exe', exe: 'b.exe' }, []);
+    const kept = qlSave(p, 'qlkeep01', { name: 'B', type: 'exe', exe: ['b.exe'] }, []);
     expect(kept).toBe('qlkeep01');
     // 显式 id 就是 yaml 的 key，仍须通过 validateConfigId（与 config.ts:129 同一口径）
-    expect(() => qlSave(p, 'Bad ID', { name: 'C', type: 'exe', exe: 'c.exe' }, [])).toThrow(/^VALIDATION:/);
+    expect(() => qlSave(p, 'Bad ID', { name: 'C', type: 'exe', exe: ['c.exe'] }, [])).toThrow(/^VALIDATION:/);
     expect(Object.keys(qlLoad(p).items).sort()).toEqual([generated, 'qlkeep01'].sort());
     const ids = new Set<string>();
-    for (let i = 0; i < 5; i++) ids.add(qlSave(p, null, { name: 'n' + i, type: 'exe', exe: 'x.exe' }, []));
+    for (let i = 0; i < 5; i++) ids.add(qlSave(p, null, { name: 'n' + i, type: 'exe', exe: ['x.exe'] }, []));
     expect(ids.size).toBe(5); // 生成的 id 互不相同
     rm(p);
   });
@@ -276,8 +367,8 @@ describe('quick-launch-config.ts', () => {
   it('ql_delete_unknown_id_throws_validation_and_removes_existing_key', () => {
     const p = tmpPath('ql_delete.yaml');
     rm(p);
-    const id = qlSave(p, null, { name: 'A', type: 'exe', exe: 'a.exe' }, []);
-    const other = qlSave(p, null, { name: 'B', type: 'exe', exe: 'b.exe' }, []);
+    const id = qlSave(p, null, { name: 'A', type: 'exe', exe: ['a.exe'] }, []);
+    const other = qlSave(p, null, { name: 'B', type: 'exe', exe: ['b.exe'] }, []);
     expect(() => qlDelete(p, 'no-such-id')).toThrow(/^VALIDATION:/);
     expect(() => qlDelete(p, 'no-such-id')).toThrow(/^VALIDATION:/); // 重复删除仍是 VALIDATION，不是 MISSING
     qlDelete(p, id);
@@ -308,7 +399,7 @@ describe('quick-launch-config.ts', () => {
       '  name: 坏的',
       '  shell: pwsh',
     ));
-    const id = qlSave(p, null, { name: 'good', type: 'exe', exe: 'a.exe' }, []);
+    const id = qlSave(p, null, { name: 'good', type: 'exe', exe: ['a.exe'] }, []);
     const list = qlLoad(p);
     expect(list.invalid).toEqual(['bad01']); // 坏条目仍在文件里、仍报 invalid，而不是被保存动作静默删除
     expect(Object.keys(list.items)).toEqual([id]);
@@ -331,12 +422,13 @@ describe('quick-launch-config.ts', () => {
       'qlp9q8r7s6:',
       '  name: LM Studio',
       '  type: exe',
-      '  exe: D:\\Tools\\LM Studio.exe',
+      '  exe:',
+      '    - D:\\Tools\\LM Studio.exe',
     ));
     const list = qlLoad(p);
     expect(list.invalid).toEqual([]);
     expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
-    expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: false });
+    expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: false });
     rm(p);
   });
 
@@ -345,11 +437,11 @@ describe('quick-launch-config.ts', () => {
     const p = tmpPath('ql_admin_round_trip.yaml');
     rm(p);
     const shellId = qlSave(p, null, { name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true }, ['cmd']);
-    const exeId = qlSave(p, null, { name: '提权 exe', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: true }, []);
+    const exeId = qlSave(p, null, { name: '提权 exe', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: true }, []);
     const list = qlLoad(p);
     expect(list.invalid).toEqual([]);
     expect(list.items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true });
-    expect(list.items[exeId]).toEqual({ name: '提权 exe', type: 'exe', exe: 'D:\\Tools\\LM Studio.exe', admin: true });
+    expect(list.items[exeId]).toEqual({ name: '提权 exe', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: true });
     // 编辑回填再保存：validateEntry 的规整不得把 true 丢掉（任务 8 弹窗回填靠的就是这个值）
     expect(qlSave(p, shellId, list.items[shellId], ['cmd'])).toBe(shellId);
     expect(qlLoad(p).items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true });
@@ -364,17 +456,20 @@ describe('quick-launch-config.ts', () => {
       'str01:',
       '  name: s',
       '  type: exe',
-      '  exe: a.exe',
+      '  exe:',
+      '    - a.exe',
       '  admin: "yes"',
       'num01:',
       '  name: n',
       '  type: exe',
-      '  exe: b.exe',
+      '  exe:',
+      '    - b.exe',
       '  admin: 1',
       'nul01:',
       '  name: u',
       '  type: exe',
-      '  exe: c.exe',
+      '  exe:',
+      '    - c.exe',
       '  admin: null',
     ));
     const list = qlLoad(p);
@@ -395,7 +490,7 @@ describe('quick-launch-config.ts', () => {
     const rawOff = readText(p);
     expect(rawOff).toMatch(/^ {2}admin: false$/m); // 调用方没写 admin，落盘仍显式写 false
     expect(qlLoad(p).items[offId].admin).toBe(false);
-    const onId = qlSave(p, null, { name: '勾选', type: 'exe', exe: 'a.exe', admin: true }, []);
+    const onId = qlSave(p, null, { name: '勾选', type: 'exe', exe: ['a.exe'], admin: true }, []);
     const rawOn = readText(p);
     expect(rawOn).toMatch(/^ {2}admin: true$/m);
     expect(qlLoad(p).items[onId].admin).toBe(true);

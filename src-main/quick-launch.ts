@@ -215,10 +215,17 @@ interface AutoCommand {
   released: boolean;
 }
 
-/** 一配置一实例（F4）：运行中/停止中的配置再点启动 → STATE: */
+/**
+ * 一配置一实例（F4）：运行中/停止中的配置再点启动 → STATE:。
+ * 2026-10-17-quick-launch-exe-rows §6.5：exe 一条配置 = N 个进程（按启动顺序）；shell 仍是「一个」，
+ * 用同一个数组装（procs.length === 1，G3：shell 分支时序一字不动）。
+ * exited 是**聚合**语义 = 「全部进程都已退出」；逐进程状态放在与 procs 同序的 procExited 上，
+ * exitCode = 最后退出者的 code（R-PF5：上报只发生一次，取最后退出的退出码）。
+ */
 interface Instance {
   kind: 'shell' | 'exe';
-  proc: ShellProcess | ExeProcess;
+  procs: Array<ShellProcess | ExeProcess>;
+  procExited: boolean[];
   tabId: string | null;
   stopping: boolean;
   exited: boolean;
@@ -284,18 +291,14 @@ export class QuickLaunchManager {
         throw new Error('PROC: ' + t('err.ql.ptySpawn', { exe: shellExe(shell).exe, err: msg }));
       }
       const inst: Instance = {
-        kind: 'shell', proc, tabId, stopping: false, exited: false, exitCode: null, auto: null,
+        kind: 'shell', procs: [proc], procExited: [false], tabId, stopping: false, exited: false, exitCode: null, auto: null,
       };
       proc.onData((data) => {
         // 顺序要紧：先把输出转给渲染端，再写自动命令（审查重点 R1 / check E4）
         this.deps.onData(tabId, data);
         this.releaseAutoCommand(inst);
       });
-      proc.onExit((code) => {
-        inst.exited = true;
-        inst.exitCode = code;
-        this.finalize(configId, inst);
-      });
+      this.trackProcessExit(configId, inst, 0, proc);
       this.instances.set(configId, inst);
       if (inst.exited) {
         this.finalize(configId, inst); // 极端竞态：spawn 后同步就退出
@@ -306,23 +309,50 @@ export class QuickLaunchManager {
     }
 
     if (e.type === 'exe') {
-      const exe = typeof e.exe === 'string' ? e.exe.trim() : '';
-      if (!exe) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
-      // 规格 §7.3：可执行程序不用 PTY。不 catch：ProcessState.launch 的 STATE:/PROC: 原样上抛。
-      const proc = this.deps.spawnExe(exe);
+      // 规格 §6.3：exe 是「有序数组」（配置层已归一为非空数组，§6.1）。这里仍对未知载荷做运行时守卫：
+      // 非数组 / 空数组 / 全空串一律 VALIDATION:（与配置层同一判据，start() 的直接调用方不得绕过它）。
+      const rawExe = Array.isArray(e.exe) ? e.exe : null;
+      const paths = rawExe === null ? [] : rawExe.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter((x) => x.length > 0);
+      if (paths.length === 0) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
       const inst: Instance = {
-        kind: 'exe', proc, tabId: null, stopping: false, exited: false, exitCode: null, auto: null,
+        kind: 'exe', procs: [], procExited: [], tabId: null, stopping: false, exited: false, exitCode: null, auto: null,
       };
-      proc.onExit((code) => {
-        inst.exited = true;
-        inst.exitCode = code;
-        this.finalize(configId, inst);
-        // 无页签 → 反馈走日志（任务 6 把 onSysLine 接到既有 emitLog(line,'sys')）。
-        // 复用词典既有键，不新建 err.ql.* / log.ql.*（索引 K9 的「复用既有键」口径）。
-        this.deps.onSysLine(configId, t('log.app.exit', { code }));
-      });
+      // R-PF6：先入表再逐条起 —— 任何退出事件都发生在实例已入表之后，聚合 finalize 的身份守卫才成立
+      // （exe 分支没有 shell 分支那种 set 后补「已全退」守卫的机会：起第二条之前的退出必须看得见）。
       this.instances.set(configId, inst);
-      this.deps.onSysLine(configId, t('log.launcher.start.cmd', { cmd: exe }));
+      try {
+        // §6.3-3 启动循环：按数组顺序逐条发起，**不 await、不观察退出**（RF4）。
+        // 预检循环（§6.3-2）留给任务 2（裁决 R-PF2：QlDeps 此刻没有 checkExe 成员，加不得加）。
+        for (const path of paths) {
+          const proc = this.deps.spawnExe(path); // 失败（UAC 点「否」/ Shell 失败）原样上抛，§6.3-4 见 catch
+          const index = inst.procs.length;
+          inst.procs.push(proc);
+          inst.procExited.push(false);
+          // 每个进程只注册**一次** onExit（修复轮 1 / 审查关键 1）：真 exe 接缝是单槽的 —— shell-execute.ts:138 是
+          // private onExitCb 字段、:168-172 做的是 this.onExitCb = cb（赋值，不是 push），main.ts:1094 的适配器只把
+          // 每次注册转交给这个槽。这里再挂第二条 proc.onExit 就会把上面那条聚合处理器永久覆盖掉：procExited 永不置位
+          // → 永不 finalize → 实例永留表内、ql-exit 永不发出、卡片卡在 [停止]（今天的单路径老配置 N=1 同样中招）。
+          // 逐退出副作用因此从这里作为参数进去，并在聚合记账之后执行 —— 与改动前单条时「先 finalize、后写退出日志」逐字同序。
+          this.trackProcessExit(configId, inst, index, proc, (code) => {
+            // 每条进程退出各写一行 log.app.exit（写法与今天单条时逐字相同，R-08）：
+            // 无页签 → 反馈走日志（任务 6 把 onSysLine 接到既有 emitLog(line,'sys')）。
+            // 复用词典既有键，不新建 err.ql.* / log.ql.*（索引 K9 的「复用既有键」口径）。
+            this.deps.onSysLine(configId, t('log.app.exit', { code }));
+          });
+          // §6.3-5：每条成功启动各写一行 log.launcher.start.cmd（{cmd} = 该条路径），与今天单条时的写法逐字相同。
+          // 顺序要紧：先登记退出回调再写启动行 —— 若退出同步送达，log.app.exit 不得排到 start.cmd 之前。
+          this.deps.onSysLine(configId, t('log.launcher.start.cmd', { cmd: path }));
+        }
+      } catch (err) {
+        // §6.3-4 / R-PF3 / R-PF7：第 k 条抛错 → 后续不再发起，错误原样上抛（PROC: 前缀不变，
+        // main.ts:1085-1091 的日志分工不变）。k>1：已起的 k-1 条留在实例里（实例保持运行，不回滚杀掉，§7-4）。
+        // k=1（零进程）：不得留一个 running:false 的幽灵实例 —— 摘掉实例（含清 auto 计时器）再原样抛出。
+        if (inst.procs.length === 0 && this.instances.get(configId) === inst) {
+          this.instances.delete(configId);
+          if (inst.auto?.timer) clearTimeout(inst.auto.timer);
+        }
+        throw err;
+      }
       return { tabId: null };
     }
 
@@ -333,14 +363,15 @@ export class QuickLaunchManager {
   write(configId: string, data: string): void {
     const inst = this.instances.get(configId);
     if (!inst || inst.kind !== 'shell') throw new Error('STATE: ' + t('err.proc.noChild'));
-    (inst.proc as ShellProcess).write(data);
+    // shell 实例恒为 procs.length === 1（§6.5），write/resize 取那唯一一个
+    (inst.procs[0] as ShellProcess).write(data);
   }
 
   /** 尺寸（§8 ql_resize） */
   resize(configId: string, cols: number, rows: number): void {
     const inst = this.instances.get(configId);
     if (!inst || inst.kind !== 'shell') throw new Error('STATE: ' + t('err.proc.noChild'));
-    (inst.proc as ShellProcess).resize(cols, rows);
+    (inst.procs[0] as ShellProcess).resize(cols, rows);
   }
 
   /** [停止]（§7.5）：直接杀终端进程树，不关页签；幂等。超时走 §7.5 的 3s 口径（STOP_TIMEOUT_SECS） */
@@ -377,10 +408,14 @@ export class QuickLaunchManager {
     const inst = this.instances.get(configId);
     if (!inst) return;
     inst.stopping = true;
-    try {
-      await inst.proc.stopGraceful(timeoutSecs);
-    } catch {
-      // 停止失败也要收尾，否则状态卡在 stopping
+    // §6.5 / R-09：按启动顺序逐个 stopGraceful（与 instances 插入序一致；已退出的进程 stopGraceful
+    // 自己会直接 return，P5）。逐个 await，全部返回后才走下面的收尾 —— 对 shell（N=1）语义逐字不变。
+    for (const proc of inst.procs) {
+      try {
+        await proc.stopGraceful(timeoutSecs);
+      } catch {
+        // 停止失败也要继续停下一个并收尾，否则状态卡在 stopping
+      }
     }
     // 强杀路径下 exit 事件可能还没落地：按未知退出码收尾，保证 states() 清空、按钮回落
     if (this.instances.get(configId) === inst && !inst.exited) {
@@ -395,7 +430,8 @@ export class QuickLaunchManager {
     for (const [configId, inst] of this.instances) {
       // A2·M7：running 不能只由 !inst.stopping 推出 —— 真机上 exit 事件是异步的，
       // 进程已退出而 onExit 尚未到达时那是假状态。isRunning() 是 ShellProcess / ExeProcess 共有的最小面。
-      out[configId] = { running: !inst.stopping && inst.proc.isRunning(), stopping: inst.stopping };
+      // §6.5（R-PF5）：聚合实例的 running = **任一进程存活**；全部退出前按钮不回落（§7-5，用户选定）。
+      out[configId] = { running: !inst.stopping && inst.procs.some((p) => p.isRunning()), stopping: inst.stopping };
     }
     return out;
   }
@@ -406,6 +442,32 @@ export class QuickLaunchManager {
     this.instances.delete(configId);
     if (inst.auto?.timer) clearTimeout(inst.auto.timer);
     this.deps.onExit(configId, inst.exitCode ?? -1);
+  }
+
+  /**
+   * 登记某个进程的退出回调（§6.5 聚合口径）：逐进程只记录退出码；当且仅当全部进程都已退出，
+   * 才置聚合 exited 并走 finalize（removeInstance + deps.onExit 只发生一次 → 按钮只回落一次，R-08）。
+   * shell 分支 procs.length === 1，语义与改动前逐字等价。
+   *
+   * onExitRecorded 是**逐退出**的副作用（exe 的 log.app.exit，R-08），在上面的聚合记账之后执行：
+   * 每个进程只准注册一次 onExit —— 真 exe 接缝是单槽的（shell-execute.ts:138 private onExitCb、:168-172 赋值而不是
+   * push，main.ts:1094 只是转交），第二次注册会永久覆盖第一次，聚合记账就整个丢掉（审查关键 1）。
+   * 副作用在 finalize 之后调用，与改动前单条（含今天的旧配置）的顺序逐字相同。
+   */
+  private trackProcessExit(
+    configId: string, inst: Instance, index: number, proc: ShellProcess | ExeProcess,
+    onExitRecorded?: (code: number) => void,
+  ): void {
+    proc.onExit((code) => {
+      inst.procExited[index] = true;
+      inst.exitCode = code; // R-PF5：exitCode = 最后退出者的 code
+      // procs 与 procExited 始终同长：启动循环中途抛错时循环立即中止，不会留下「已入表但未登记退出」的进程
+      if (inst.procExited.every(Boolean)) {
+        inst.exited = true;
+        this.finalize(configId, inst); // 全部退出 → 摘实例 + 只上报一次
+      } // 还有进程活着 → 不摘实例、不上报
+      onExitRecorded?.(code); // 逐退出副作用不论聚合是否完成都要执行，且必须在聚合记账之后
+    });
   }
 
   /** 登记自动命令与 5s 兜底计时器（§7.3） */
@@ -424,6 +486,6 @@ export class QuickLaunchManager {
     auto.timer = null;
     if (inst.exited || inst.kind !== 'shell') return;
     // 多行命令按行提交：行分隔先规整成 \r（见 toPtyInput 的实测注释），末尾再补一个 \r 提交最后一行。
-    (inst.proc as ShellProcess).write(toPtyInput(auto.cmd) + '\r');
+    (inst.procs[0] as ShellProcess).write(toPtyInput(auto.cmd) + '\r');
   }
 }

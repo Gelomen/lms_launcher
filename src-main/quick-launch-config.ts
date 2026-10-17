@@ -11,7 +11,7 @@ import { suggestConfigId, validateConfigId } from './config';
 
 export type TerminalId = 'pwsh' | 'powershell' | 'cmd' | 'wsl';
 export type QuickLaunchKind = 'shell' | 'exe';
-export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string; admin?: boolean }
+export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string[]; admin?: boolean }
 export type QuickLaunchMap = Record<string, QuickLaunchEntry>;
 export interface QuickLaunchList { items: QuickLaunchMap; invalid: string[] }
 
@@ -57,6 +57,20 @@ function readRawMap(path: string): Record<string, unknown> {
   return parseYamlMap(s);
 }
 
+// exe 数组归一（2026-10-17-quick-launch-exe-rows §6.1）：**只有数组**才继续——标量字符串一律非法，
+// 不做旧格式兼容（G6/R-01）。逐元素只保留字符串并 trim、丢弃空串；归一后为空 → 调用方按「该条非法」处理。
+// 顺序即启动顺序（§6.1），不去重（R-03）、无行数上限（R-04）。
+function normalizeExeList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (trimmed.length > 0) out.push(trimmed);
+  }
+  return out.length === 0 ? null : out;
+}
+
 // 条目形状校验（规格 §5.3 的 1/3/4/5 条 + §5.3-6 的字段规整）。
 // 加载路径不判 §5.3-2（重名）与 §5.3-4 的「终端当前可用」——两者只在保存路径成立（§5.2 只说「单条条目非法」）。
 // 返回 trim 后的规范条目；非法 → null（加载时该条进 invalid，保存时由 validateEntry 抛 VALIDATION:）。
@@ -72,15 +86,15 @@ function normalizeEntry(raw: unknown): QuickLaunchEntry | null {
     return { name, type: 'shell', shell, cmd, admin: e['admin'] === true };
   }
   if (e['type'] === 'exe') {
-    const exe = typeof e['exe'] === 'string' ? (e['exe'] as string).trim() : '';
-    if (exe.length === 0) return null;
+    const exe = normalizeExeList(e['exe']);
+    if (exe === null) return null; // 标量 / 缺字段 / 空数组 / 全空串 → 该条非法（§6.1 / §4-8）
     return { name, type: 'exe', exe, admin: e['admin'] === true };
   }
   return null;
 }
 
 // 保存路径的校验（规格 §5.3 的 1/3/4/5/6 条）：通过则返回「只含该类型字段」的条目。
-// §5.3-5：exe 只判非空，不校验文件是否存在（启动时反馈）。
+// §5.3-5：exe 只判「归一后非空数组」，不校验文件是否存在（启动时反馈；存在性只在启动预检，R-06）。
 function validateEntry(entry: QuickLaunchEntry, available: readonly TerminalId[]): QuickLaunchEntry {
   const e = (entry ?? {}) as Partial<QuickLaunchEntry>;
   const name = typeof e.name === 'string' ? e.name.trim() : '';
@@ -95,8 +109,9 @@ function validateEntry(entry: QuickLaunchEntry, available: readonly TerminalId[]
     return { name, type: 'shell', shell: e.shell, cmd, admin: e.admin === true };
   }
   if (e.type === 'exe') {
-    const exe = typeof e.exe === 'string' ? e.exe.trim() : '';
-    if (exe.length === 0) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
+    const exe = normalizeExeList(e.exe);
+    // 保存路径：空数组 / 全空串 / 缺字段 / 标量写法同样是非法（§6.1「同样归一」+ §4-8 标量一律非法）
+    if (exe === null) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
     return { name, type: 'exe', exe, admin: e.admin === true };
   }
   throw new Error('VALIDATION: ' + t('err.ql.typeInvalid', { type: String(e.type ?? '') }));

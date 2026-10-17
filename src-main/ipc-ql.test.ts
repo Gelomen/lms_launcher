@@ -275,7 +275,8 @@ describe('C1/C2/C3 · ql_list / ql_save / ql_delete', () => {
   });
 
   it('ql_delete → undefined；再删同 id → VALIDATION:（不存在，不是 MISSING）', async () => {
-    const id = String(await invoke('ql_save', 'qlshapedel', { name: '形状门 删除', type: 'exe', exe: 'notepad.exe' }));
+    // 2026-10-17-quick-launch-exe-rows §8：exe 载荷改数组形状（单条 = 长度 1 的数组），断言意图逐字不变
+    const id = String(await invoke('ql_save', 'qlshapedel', { name: '形状门 删除', type: 'exe', exe: ['notepad.exe'] }));
     expect(id).toBe('qlshapedel');
     expect(invoke('ql_delete', id)).toBeUndefined();
     expect((invoke('ql_list') as { items: Record<string, unknown> }).items[id]).toBeUndefined();
@@ -412,8 +413,8 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
   }, 60000);
 
   it('exe 配置：{ tabId: null }；每配置一个新 ShellExecProcess（规格 §6.6），且不动 llama-server 的 ps 单例', async () => {
-    await invoke('ql_save', 'qlshape02', { name: '形状门 exe A', type: 'exe', exe: 'notepad.exe' });
-    await invoke('ql_save', 'qlshape03', { name: '形状门 exe B', type: 'exe', exe: 'notepad.exe' });
+    await invoke('ql_save', 'qlshape02', { name: '形状门 exe A', type: 'exe', exe: ['notepad.exe'] });
+    await invoke('ql_save', 'qlshape03', { name: '形状门 exe B', type: 'exe', exe: ['notepad.exe'] });
 
     const a = await invoke('ql_start', 'qlshape02');
     expect(a).toEqual({ tabId: null });
@@ -434,7 +435,7 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
   }, 30000);
 
   it('exe 启动失败：前缀由 shell-execute 自带（规格 §6.5），经既有日志通道反馈且 `ql_start` 被拒', async () => {
-    await invoke('ql_save', 'qlshape04', { name: '形状门 badexe', type: 'exe', exe: 'notepad.exe' });
+    await invoke('ql_save', 'qlshape04', { name: '形状门 badexe', type: 'exe', exe: ['notepad.exe'] });
     // 观察点 = 真接缝的 shellExecute 属性。这里必须替换它：真 ShellExecuteEx 打一个不存在的 exe
     // 会弹系统错误框并把 vitest worker 卡住（规格 E19 / §9-R8，索引 R8 / K17）；真路径的失败由任务 4
     // 的真机清单守，本用例只钉适配器这一层的分工（同步 reject + 既有日志通道 + 可辨文案）。
@@ -467,7 +468,7 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
   // 替换过的 winShell.shellExecute 一次都没被调用（不弹系统框、不阻塞的端到端牙）+ ql_states 不残留（前置规格 §7.5）。
   it('exe_path_not_found_never_reaches_the_shell', async () => {
     const MISSING = 'Z:\\no-such-dir\\no-such.exe'; // 规格 §7.1-1 的同型夹具：含盘符、目录不存在
-    await invoke('ql_save', 'qlshape05', { name: '形状门 路径不存在', type: 'exe', exe: MISSING });
+    await invoke('ql_save', 'qlshape05', { name: '形状门 路径不存在', type: 'exe', exe: [MISSING] });
 
     let shellCalls = 0;
     const original = winShell.shellExecute;
@@ -507,8 +508,8 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
   // 2026-10-14-quick-launch-admin 任务 3（plan 步骤 5 / check B4、E1、E2、E3）：
   // exe 的「管理员」开关 = 到 Shell 接缝的 lpVerb。观察点仍是 winShell.shellExecute（:103-104 的既有做法）。
   it('exe 提权形状门：admin:true → shellExecute 收到 verb=runas；admin 缺省 → null（规格 §6.9 / 索引 G3、K29）', async () => {
-    await invoke('ql_save', 'qladmin01', { name: '形状门 提权 on', type: 'exe', exe: 'notepad.exe', admin: true });
-    await invoke('ql_save', 'qladmin02', { name: '形状门 提权 off', type: 'exe', exe: 'notepad.exe' });
+    await invoke('ql_save', 'qladmin01', { name: '形状门 提权 on', type: 'exe', exe: ['notepad.exe'], admin: true });
+    await invoke('ql_save', 'qladmin02', { name: '形状门 提权 off', type: 'exe', exe: ['notepad.exe'] });
 
     const seen: Array<{ file: string; nShow: number; opts: { verb?: string | null; parameters?: string | null } | undefined }> = [];
     const original = winShell.shellExecute;
@@ -781,7 +782,7 @@ describe('任务 7 · 提权 shell 条目的端到端形状门（plan 步骤 5 /
 describe('修复轮 1 · 重要 #1（索引 K15(2)）：exe 分支不付终端探测的代价', () => {
   it('ql_save：exe 条目不调 detectTerminals；shell 条目仍实测（对照，规格 §5.3-4）', async () => {
     const beforeExe = cap.termProbes;
-    const id = String(await invoke('ql_save', 'qlfixexe01', { name: '修复 exe 不探测', type: 'exe', exe: 'notepad.exe' }));
+    const id = String(await invoke('ql_save', 'qlfixexe01', { name: '修复 exe 不探测', type: 'exe', exe: ['notepad.exe'] }));
     expect(id).toBe('qlfixexe01');
     // available 只在 quick-launch-config.ts:104-107 的 shell 分支被读 → exe 保存不得付 3×3s
     expect(cap.termProbes, '保存 exe 配置不得调用 detectTerminals').toBe(beforeExe);
@@ -888,8 +889,8 @@ describe('修复轮 1 · 重要 #2：qlStartContext 槽的不变量由代码强�
     };
 
     try {
-      await invoke('ql_save', 'qlconc01', { name: '修复 并发 A', type: 'exe', exe: EXE_OF.qlconc01 });
-      await invoke('ql_save', 'qlconc02', { name: '修复 并发 B', type: 'exe', exe: EXE_OF.qlconc02 });
+      await invoke('ql_save', 'qlconc01', { name: '修复 并发 A', type: 'exe', exe: [EXE_OF.qlconc01] });
+      await invoke('ql_save', 'qlconc02', { name: '修复 并发 B', type: 'exe', exe: [EXE_OF.qlconc02] });
 
       const [a, b] = await Promise.all([invoke('ql_start', 'qlconc01'), invoke('ql_start', 'qlconc02')]);
       expect(a).toEqual({ tabId: null });

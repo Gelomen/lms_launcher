@@ -64,14 +64,14 @@
 
 > 为什么配置层与启动层不能拆成两个任务：`QuickLaunchEntry.exe` 一改类型，`quick-launch.ts:308-327` 就编译不过，G9 的 tsc 门会红。拆了必然违反「每任务收尾门」。
 
-- [ ] **步骤 0：起点核对**：读 `quick-launch-config.ts:14/:74-78/:97-100`、`quick-launch.ts:104-115/:143-145/:308-327/:330-333/:369-383/:396-409`、`main.ts:1076-1098/:1102-1128`、`quick-launch.test.ts:79-81/:165-172/:186/:348/:394`——确认「一实例一进程」的假设被哪些行依赖，以及 `onInstanceExit` 的无条件上报点在哪。
-- [ ] **步骤 1：配置层**：`exe?: string[]`；`normalizeEntry` / `validateEntry` 的 exe 分支按 §6.1 走（数组才继续、逐元素 trim、丢空串、空数组非法、标量非法）。
-- [ ] **步骤 2：实例聚合**：`Instance.procs: ShellProcess[]` + `exited: boolean[]` / `lastCode`；`isRunning()` = 任一存活；`stop()` 按启动顺序逐个 `stopGraceful`；退出回调只在「全部退出」时 `removeInstance` + `deps.onExit`（§6.5）。
-- [ ] **步骤 3：启动循环**：`start()` 的 exe 分支按 §6.3 的 1/3/4/5 步实现（预检留到任务 2，本任务先按「逐条起、失败停止后续」）；每条各写一行 `log.launcher.start.cmd`。
-- [ ] **步骤 4：`main.ts` 接线**：`deps` 里加 `checkExe`（本任务先接 `isLaunchableExe`，但 `quick-launch.ts` 里暂不调用；任务 2 才调用）——若主代理判定「接线与调用必须同任务」，按 G9 的 tsc 门为准，登记偏离。
-- [ ] **步骤 5：改写既有门**：按规格 §8 逐条改写 `quick-launch-config.test.ts` / `quick-launch.test.ts` / `ipc-ql.test.ts` 的载荷与 fixture（**不得删断言**，只改形状）。
-- [ ] **步骤 6：新增门**：E1 标量写法 → invalid；E2 数组落盘 round-trip（顺序逐字）；E3 空数组 / 全空串 → `VALIDATION:`；E4 元素 trim + 丢空行；E5 启动顺序 = 数组顺序、不 await 退出；E6 聚合 running（任一存活）；E7 `stop()` 停全部；E8 全部退出才一次 `onExit`；E9 中途抛错 → 后续不调、已起保留。
-- [ ] **步骤 7：收尾门（G9）**：`npx tsc -p tsconfig.main.json --noEmit` + `npx vitest run src-main/quick-launch-config.test.ts src-main/quick-launch.test.ts src-main/ipc-ql.test.ts` + `npm test`，把命令与真实输出填进「执行记录」。
+- [x] **步骤 0：起点核对**：读 `quick-launch-config.ts:14/:74-78/:97-100`、`quick-launch.ts:104-115/:143-145/:308-327/:330-333/:369-383/:396-409`、`main.ts:1076-1098/:1102-1128`、`quick-launch.test.ts:79-81/:165-172/:186/:348/:394`——确认「一实例一进程」的假设被哪些行依赖，以及 `onInstanceExit` 的无条件上报点在哪。
+- [x] **步骤 1：配置层**：`exe?: string[]`；`normalizeEntry` / `validateEntry` 的 exe 分支按 §6.1 走（数组才继续、逐元素 trim、丢空串、空数组非法、标量非法）。
+- [x] **步骤 2：实例聚合**：`Instance.procs: Array<ShellProcess | ExeProcess>` + 与 `procs` 同序的 `procExited: boolean[]`（`exited` 保持单一布尔 = 「全部退出」，`exitCode` = 最后退出者；措辞按 R-A2 校正）；`isRunning()` = 任一存活；`stop()` 按启动顺序逐个 `stopGraceful`；退出回调只在「全部退出」时 `removeInstance` + `deps.onExit`（§6.5）。
+- [x] **步骤 3：启动循环**：`start()` 的 exe 分支按 §6.3 的 1/3/4/5 步实现（预检留到任务 2，本任务先按「逐条起、失败停止后续」）；每条各写一行 `log.launcher.start.cmd`。
+- [x] ~~**步骤 4：`main.ts` 接线**：`deps` 里加 `checkExe`~~ —— **登记偏离：本任务未做**（裁决 R-PF2：`QlDeps`（`quick-launch.ts:181`）此刻没有 `checkExe` 成员，往 `main.ts:1102-1128` 的内联 deps 字面量多加一个属性会触发 TS2353 → G9 的 tsc 门必红）。`QlDeps` 成员 + `main.ts` 接线 + 预检循环整体归**任务 2**；本任务实现者 `main.ts` 一行未碰（实测 `git diff --name-only` 不含它）。划线 + 「未做」即登记处，不算完成。
+- [x] **步骤 5：改写既有门**：按规格 §8 逐条改写 `quick-launch-config.test.ts` / `quick-launch.test.ts` / `ipc-ql.test.ts` 的载荷与 fixture（**不得删断言**，只改形状）。
+- [x] **步骤 6：新增门**：E1 标量写法 → invalid；E2 数组落盘 round-trip（顺序逐字）；E3 空数组 / 全空串 → `VALIDATION:`；E4 元素 trim + 丢空行；E5 启动顺序 = 数组顺序、不 await 退出；E6 聚合 running（任一存活）；E7 `stop()` 停全部；E8 全部退出才一次 `onExit`；E9 中途抛错 → 后续不调、已起保留。
+- [x] **步骤 7：收尾门（G9）**：`npx tsc -p tsconfig.main.json --noEmit` + `npx vitest run src-main/quick-launch-config.test.ts src-main/quick-launch.test.ts src-main/ipc-ql.test.ts` + `npm test`，把命令与真实输出填进「执行记录」。
 
 ### 任务 2：主进程——启动前全量预检（要么全起，要么都不起）
 
@@ -109,11 +109,11 @@
 | # | 命令 / 操作 | 真实输出摘要 |
 |---|---|---|
 | 0 | `npm test`（基线，主代理已跑） | `Test Files 53 passed (53)` / `Tests 932 passed (932)`，exit 0（20:13，`.temp/ql-exe-rows-baseline/baseline.log`） |
-| 1 |  |  |
-| 2 |  |  |
-| 3 |  |  |
-| 4 |  |  |
-| 5 |  |  |
+| 1 | `npx tsc -p tsconfig.main.json --noEmit`（任务 1 门 1/3） | exit 0，**无任何输出**（干净）。2026-10-18 00:00:50（+08）；报告排版修完后复跑一次仍 exit 0 无输出（00:06） |
+| 2 | `npx vitest run src-main/quick-launch-config.test.ts src-main/quick-launch.test.ts src-main/ipc-ql.test.ts`（任务 1 门 2/3） | `Test Files 3 passed (3)` / `Tests 99 passed (99)`，exit 0，`Duration 10.03s`（00:01:01）。其中 quick-launch-config.test.ts 26、quick-launch.test.ts 42、ipc-ql.test.ts 31（基线 23/36/31 → 26/42/31，**净增 9**：E1/E2/E4 + E5..E9 共 8 条编号门 + 1 条聚合 `-1` 收尾补充门；**E3 无新门**，并入既有 E10 门的断言） |
+| 3 | `npm test`（任务 1 门 3/3，G9 全量） | `Test Files 53 passed (53)` / `Tests 941 passed (941)`，exit 0，`Duration 11.70s`（00:01:13；00:06 复跑仍 `53 passed (53)` / `941 passed (941)`，`Duration 13.40s`）932 + 净增 9（口径同上两行：8 条编号门 + 1 条聚合补充门，E3 无新门）= 941，≥ G9 下限 941。主代理独立复跑同一命令：`53 passed (53)` / `941 passed (941)`，exit 0，`Duration 11.72s`（00:08）。未改 `src/` 任何文件：`git status --porcelain` 只有 brief「文件」行的 5 份 + 本 plan |
+| 4 | 任务 1 修复轮 1（审查关键 1：真接缝 `ExeProcess.onExit` 单槽被二次注册覆盖；重要 2：既有门被删两条 `STATE:` 断言）→ `npx tsc -p tsconfig.main.json --noEmit` / `npx vitest run src-main/quick-launch.test.ts src-main/quick-launch-config.test.ts src-main/ipc-ql.test.ts` / `npm test` | 先红后绿取证：只加夹具与新门时 `Tests 1 failed \| 42 passed (43)`，失败断言 = `同一个进程只准注册一次 onExit: expected 2 to be 1`（`quick-launch.test.ts:815`）。修后 tsc exit 0 无输出；定向 26 / 43 / 31 → `Tests 100 passed (100)`；`npm test` → `53 passed (53)` / `942 passed (942)`，exit 0（实现者 00:38；主代理独立复跑 `942 passed (942)`、exit 0、`Duration 14.22s`）。改动仅 `quick-launch.ts` + `quick-launch.test.ts`，`main.ts`/`shell-execute.ts`/`src/` 未碰 |
+| 5 | 验收门（主代理，提交前独立复跑）：`npx tsc -p tsconfig.main.json --noEmit` / `npm test` / `git status --porcelain` | tsc exit 0 无输出；`Test Files 53 passed (53)` / `Tests 942 passed (942)`，exit 0，`Duration 14.43s`（00:58）。改动范围实测 7 个文件 = 5 份 `src-main`（brief「文件」行，其中 `main.ts` 未碰见 R-PF2 登记）+ 本 plan + 本 spec（R-A2 措辞校正）；无未跟踪文件 |
 | 6 |  |  |
 | 7 |  |  |
 | 8 |  |  |

@@ -26,7 +26,7 @@
 | 加载归一：`exe` 只判 trim 后非空 | `:74-78`（`normalizeEntry` 的 exe 分支） |
 | 保存校验：同上，空 → `err.ql.exeRequired` | `:97-100`（`validateEntry` 的 exe 分支） |
 | 启动：一次一条，无预检循环 | `src-main/quick-launch.ts:308-327`（`start()` 的 exe 分支：`deps.spawnExe(entry.exe)` 一次） |
-| 实例状态：一配置一进程 | `:104-115`（`Instance.proc`）、`:143-145`（`isRunning()` 直接取那个进程）、`:330-333`（`proc.onExit` 直接转发）、`:369-383`（`stop()` 只停那一个） |
+| 实例状态：一配置一进程 | `:219-227`（`interface Instance`，字段 `proc: ShellProcess \| ExeProcess`）、`:425-428`（`states()` 直接取那个进程的 `isRunning()`）、`:316-323`（`proc.onExit` 直接转发）、`:404-413`（`stopInternal()` 只停那一个）（锚点按 HEAD=`7008602` 实测校正，裁决 R-A2；本表原写的 `:104-115`/`:143-145`/`:330-333`/`:369-383` 是更早的偏移） |
 | 生产侧 exe 适配器 | `src-main/main.ts:1076-1098`（`spawnExeProcess`）、`:1108-1111`（`deps.spawnExe` 从 `qlStartContext` 取 configId / admin） |
 | 预检（单条、在 Shell 调用内部） | `src-main/shell-execute.ts:242-261`（`isLaunchableExe`，已导出）、`:272-274`（`launchShellExe` 调它，不可用 → `PROC: err.proc.exeNotFound`） |
 | 提权 | `:268-280`（第三参 `verb='runas'`）、`main.ts:1028-1043`（`qlStartContext` 槽） |
@@ -44,7 +44,7 @@
 | P4 | 预检函数已存在且已导出 | `isLaunchableExe(exe): boolean`（`shell-execute.ts:242-261`，四步判定：解析候选 → 形状 → `.exe` 扩展名（大小写不敏感，重解析点跳过可访问性）→ `openSync` 可读性）；`launchShellExe:272-274` 已在调 Shell 之前调它 → 「全量预检」**不需要新探测逻辑**，只是把同一个判定挪到循环外 |
 | P5 | 停止语义可复用 | `ShellExecProcess.stopGraceful` 对已退出进程第一行就 `return`（`:196-199`）；`terminateTree` 对提权进程 `taskkill` 不可用 → 退回 `TerminateProcess`（`:202-213`）→ 「停全部」= 对每条独立调用，无需新时序、无需新常量 |
 | P6 | 提权接线可复用 | `launchShellExe(api, exe, verb)` 的第三参就是逐条的（`:268-280`），`admin` 来自 `qlStartContext`（`main.ts:1028-1043`、`:1108-1111`），且该槽覆盖**一次 `start()` 的同步窗口**（该 handler 在调这两个回调之前没有 await）→ 同一次启动里调 N 次 `spawnExe` 读到的是同一个槽 |
-| P7 | 退出聚合是本次唯一的新状态机 | `quick-launch.ts:330-333` 现在把 `proc.onExit` 直接转发给 `deps.onExit`；`:396-409` 的 `onInstanceExit` 无条件 `removeInstance` + 上报 → 多进程必须自己数「全部退出」 |
+| P7 | 退出聚合是本次唯一的新状态机 | `quick-launch.ts:316-323` 现在把 `proc.onExit` 直接转发给 `deps.onExit`；`:404-409` 的 `finalize()` 无条件 `removeInstance` + 上报（代码里没有 `onInstanceExit` 这个名字，实测无此符号）→ 多进程必须自己数「全部退出」 |
 | P8 | 卡片不受影响 | `QuickLaunch.vue` 不引用 `entry.exe` / `entry.cmd`（grep 0 命中）→ 多路径不会出现在卡片行里（与 2026-10-17 规格 P9 同一结论） |
 | P9 | 定高门与加行的关系 | 既有门 `modal_height_is_fixed_to_the_shell_form_height_in_both_types`（`QuickLaunchModal.test.ts:970-1010`）数的是 `.flag-grid` 的**直接子控件格** = 3；把多行放进**同一个** `.field-cell` 不增加该数——2026-10-17 规格 P6/P8 已实测：1 行 = `520×218.0`、3 行 = `520×293.3`（每行 +32px 控件高 + 6px 行距 = 38px），无横向滚动条 |
 | P10 | 被否掉的落盘方案（登记，不采用） | 用户选定「`exe` 直接改成数组」。对照登记：用 `\n` 连接成单条字符串（2026-10-17 的 cmd 先例）在本机也可行——Windows 文件名不允许 `0x00-0x1F` 控制字符，`\n` 不会与路径本身撞；但它比数组多一处「路径里出现换行」的转义口径，且用户明确选了数组，故不采用 |
@@ -136,7 +136,7 @@ checkExe(exe: string): boolean;   // 生产侧 = isLaunchableExe（shell-execute
 
 ### 6.5 状态与停止：一条配置 = 一个实例、N 个进程
 
-- `Instance.proc` → `Instance.procs: ShellProcess[]`（按启动顺序）。shell 分支仍是「一个」，用同一个数组装（`procs.length === 1`），不改 shell 路径的任何时序。
+- `Instance.proc` → `Instance.procs: Array<ShellProcess | ExeProcess>` + 与 `procs` 同序的 `procExited: boolean[]`（按启动顺序）。类型写成 `ShellProcess[]` 会在类型上撒谎——exe 进程没有 `write`/`resize`/`onData`（`ExeProcess`，`:206-210`）；`states()`/`stop()` 只用两者共有的 `isRunning`/`stopGraceful`/`onExit`（裁决 R-A2）。`exited` 仍是**单一布尔**，语义 = 「全部退出」，`exitCode` = 最后退出者。shell 分支仍是「一个」，用同一个数组装（`procs.length === 1`），不改 shell 路径的任何时序。
 - `isRunning()` = `procs.some(p => p.isRunning())`（任一存活即运行中）。
 - `stop()`：按**启动顺序**逐个 `stopGraceful(STOP_TIMEOUT_SECS)`（R-09：与 `instances` 插入序一致，代码最省；已退出的进程 `stopGraceful` 自己会直接 return，见 P5），全部返回后才 `removeInstance` + 上报退出。`stopping` 标志与 `ql_states` 的形状不变。
 - 退出上报：每个进程的 `onExit` 只把它的 `exitCode` 记进实例；**当且仅当所有进程都已退出**才 `removeInstance` + `deps.onExit(configId, 最后一个退出的 exitCode)`。中途不重复发 `ql-exit`（渲染端按钮回落只发生一次）。
@@ -164,7 +164,7 @@ checkExe(exe: string): boolean;   // 生产侧 = isLaunchableExe（shell-execute
 4. **中途失败留下半启动状态**（§6.3-4）：已起的进程不回滚杀掉。这是用户选定的失败策略（「已起的保留运行」），与单条时代的「失败不残留状态」不同，差异在 §9-R7 里核对。
 5. **聚合 `isRunning()` 让按钮在最后一个进程退出前不回落**：用户选定。副作用：起多个时以最后一个的存活时间为准。
 6. **`checkExe` 与 `launchShellExe` 内部预检重复一次**：同一条路径被判定两次（一次在循环里、一次在 Shell 调用前）。代价是纯 fs 调用（`lstatSync` / `openSync`），微秒级；换来的是「不得删掉最后一道牙」（§6.4）。登记，不优化。
-7. **`exe` 载荷形状变了**：`QuickLaunchEntry` 是渲染端 `import type` 的（`QuickLaunchModal.vue:13`），类型改动会在编译期把渲染端的旧用法暴露出来——这是好事（tsc 门会红），不是风险。
+7. **`exe` 载荷形状变了**：`QuickLaunchEntry` 是渲染端 `import type` 的（`QuickLaunchModal.vue:13`）。**实测校正（R-A2）**：本仓唯一的 tsc 门是 `tsconfig.main.json`，`include` 只有 `src-main/**/*.ts`、`exclude` 排掉 `*.test.ts`，且没有渲染端 tsconfig、`npm test` = `vitest run`（不做类型检查）→ **渲染端的旧用法不会被 tsc 暴露**，只能由 `QuickLaunchModal.test.ts` 的运行时断言暴露（任务 3 的 G9 门守它）。据此任务 1 之后 `src/` 仍全绿不是侥幸，是因为运行时没人读 `entry.exe`（P8）。
 8. **shell / 提权宿主 / PTY 无关**：本次只动 exe 分支，shell 分支一行不碰。
 
 ## 8 既有测试门的处置（改动前逐条实测定位）

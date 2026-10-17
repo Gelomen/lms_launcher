@@ -81,18 +81,60 @@ class FakeExe {
   constructor(readonly exe: string) {}
   stopArgs: number[] = [];
   running = true;
+  /** A2·Minor-6b 的 exe 版：置位后 stopGraceful 正常返回但**不**触发 exit 事件 —— 模拟强杀后 exit 事件不落地 */
+  silentStop = false;
+  /** 修复轮 1（审查关键 1）：真 exe 接缝的 onExit 是**单槽**的 —— shell-execute.ts:138 是 private onExitCb 字段、
+   * :168-172 是 `this.onExitCb = cb`（赋值，不是 push），main.ts:1094 的适配器只把每次注册转交给那个槽。
+   * 本假进程仍用 exitCbs.push（既有门的口径一字不动），但把注册次数记下来：
+   * quick-launch.ts 对同一个进程只准注册一次 onExit，第二次注册在真机上会永久覆盖第一次。 */
+  onExitRegistrations = 0;
   private exitCbs: Array<(code: number) => void> = [];
-  onExit(cb: (code: number) => void): void { this.exitCbs.push(cb); }
+  onExit(cb: (code: number) => void): void { this.onExitRegistrations++; this.exitCbs.push(cb); }
   isRunning(): boolean { return this.running; }
   async stopGraceful(timeoutSecs: number): Promise<void> {
     this.stopArgs.push(timeoutSecs);
     await Promise.resolve();
     this.running = false;
+    if (this.silentStop) return; // 不发 exit 事件 → 走 stopInternal 的 -1 收尾路径
     this.exitCbs.forEach((cb) => cb(0));
   }
   exit(code: number): void {
     this.running = false;
     this.exitCbs.forEach((cb) => cb(code));
+  }
+}
+
+/**
+ * 照抄真 exe 接缝的**单槽** onExit 的假进程（修复轮 1 / 审查关键 1 的牙）。真实现：shell-execute.ts:138 是
+ * `private onExitCb: ((code: number) => void) | null = null`，:168-172 的 onExit 做的是赋值而不是 push ——
+ * 所以第二次注册会永久覆盖第一次；:165 的 finish() 也只触发槽里那一个。
+ * FakeExe 的 exitCbs.push 比真接缝宽容，因此测不出「同一进程挂两条 onExit」把聚合处理器整个丢掉（连 N=1 的老配置也一样）。
+ * 其余面（isRunning / stopGraceful / exit）与 FakeExe 同形，只把「触发所有订阅者」改成「只触发槽里那一个」。
+ */
+class SingleSlotExe {
+  constructor(readonly exe: string) {}
+  stopArgs: number[] = [];
+  /** 同一个进程上 onExit 的注册次数：真实现下每一次都会覆盖前一次 */
+  onExitRegistrations = 0;
+  private cb: ((code: number) => void) | null = null;
+  private exited = false;
+  private lastCode: number | null = null;
+  onExit(cb: (code: number) => void): void {
+    this.onExitRegistrations++;
+    this.cb = cb; // :169 逐字：赋值，不是 push
+    if (this.exited && this.lastCode !== null) cb(this.lastCode); // :170-171：注册时已退出 → 立即补发
+  }
+  isRunning(): boolean { return !this.exited; } // :174 同形
+  async stopGraceful(timeoutSecs: number): Promise<void> {
+    this.stopArgs.push(timeoutSecs);
+    await Promise.resolve();
+    this.exit(0); // 真实现的 stopGraceful 最终也走 finish() → 触发槽里那一个回调
+  }
+  exit(code: number): void {
+    if (this.exited) return;
+    this.exited = true;
+    this.lastCode = code;
+    this.cb?.(code);
   }
 }
 
@@ -145,8 +187,12 @@ function makeDeps() {
   const data: Array<{ tabId: string; data: string }> = [];
   const exits: Array<{ configId: string; code: number }> = [];
   const sysLines: Array<{ configId: string; line: string }> = [];
+  // 2026-10-17-quick-launch-exe-rows §8：假 ExeProcess / spawnExe 天然支持多条路径 ——
+  // 每次调用各造一个假进程并按调用顺序记账，E5/E9 的判据（「顺序 = 数组顺序」「后续不调」）就落在这两个数组上。
   const exeHandles: FakeExe[] = [];
   const exeRequests: string[] = [];
+  /** E9（2026-10-17-quick-launch-exe-rows）：置位后第 failAt 次（1 起）spawnExe 抛这个错，其余照常 —— 用来钉 §6.3-4 的「第 k 条失败 → 停止后续」 */
+  const spawnCtl: { failAt: number | null; fail: unknown } = { failAt: null, fail: null };
   // 任务 7（2026-10-14-quick-launch-admin §6.8）：提权宿主的**假**接缝。
   // 单测不真起提权进程、也不真建管道（真工厂 startElevatedHost 由 src-main/ql-elevated.test.ts 守，索引 K45）：
   // 这里只交一个假的 ShellProcess 形状（quick-launch.ts:175-182），于是「提权 / 非提权在 start() 之后同形」
@@ -156,6 +202,11 @@ function makeDeps() {
   /** 置位后提权启动抛这个错（E3 / C5 的两条文案路径） */
   const elevatedCtl: { fail: unknown } = { fail: null };
   // 事件时间线：E4 用它断言「deps.onData 先于 pty.write」（审查重点 R1）
+  /** 修复轮 1（审查关键 1）：切换 spawnExe 造的假进程。默认仍是多订阅者的 FakeExe（既有门的口径一字不动）；
+   * 置位后造上面的 SingleSlotExe（照抄真接缝的单槽 onExit，shell-execute.ts:138/:168-172），
+   * 用来钉「每个进程只注册一次 onExit」这条真接缝。 */
+  const exeCtl: { singleSlot: boolean } = { singleSlot: false };
+  const singleSlotHandles: SingleSlotExe[] = [];
   const timeline: string[] = [];
   const deps: QlDeps = {
     onData: (tabId, d) => { timeline.push('deps.onData'); data.push({ tabId, data: d }); },
@@ -165,6 +216,12 @@ function makeDeps() {
     spawnExe: (exe) => {
       timeline.push('spawnExe');
       exeRequests.push(exe);
+      if (spawnCtl.failAt !== null && exeRequests.length === spawnCtl.failAt) throw spawnCtl.fail;
+      if (exeCtl.singleSlot) {
+        const single = new SingleSlotExe(exe);
+        singleSlotHandles.push(single);
+        return single;
+      }
       const h = new FakeExe(exe);
       exeHandles.push(h);
       return h;
@@ -179,11 +236,12 @@ function makeDeps() {
       return f;
     },
   };
-  return { deps, data, exits, sysLines, exeHandles, exeRequests, elevatedHandles, elevatedRequests, elevatedCtl, timeline };
+  return { deps, data, exits, sysLines, exeHandles, exeRequests, spawnCtl, exeCtl, singleSlotHandles, elevatedHandles, elevatedRequests, elevatedCtl, timeline };
 }
 
 const SHELL_ENTRY: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd', cmd: 'echo HI' };
-const EXE_ENTRY: QuickLaunchEntry = { name: 'n', type: 'exe', exe: 'notepad.exe' };
+// 2026-10-17-quick-launch-exe-rows §8：exe 载荷改数组形状（单条 = 长度 1 的数组），断言意图逐字不变
+const EXE_ENTRY: QuickLaunchEntry = { name: 'n', type: 'exe', exe: ['notepad.exe'] };
 
 function allData(data: Array<{ tabId: string; data: string }>): string {
   return data.map((d) => d.data).join('');
@@ -342,12 +400,17 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
     expect(m.shells.length).toBe(0);
   });
 
+  // §8：载荷改数组形状（'  ' → ['  ']）；「标量写法在 start() 层同样被拒」按 §4-8 一并补进同一条门
   it('exe 为空抛 VALIDATION:', async () => {
     const ctx = makeDeps();
     const m = new TestManager(ctx.deps, () => true);
-    await expect(m.start('c1', { name: 'n', type: 'exe', exe: '  ' })).rejects.toThrow(/^VALIDATION:/);
+    await expect(m.start('c1', { name: 'n', type: 'exe', exe: ['  '] })).rejects.toThrow(/^VALIDATION:/);
     await expect(m.start('c2', { name: 'n' } as QuickLaunchEntry)).rejects.toThrow(/^VALIDATION:/);
+    // 标量 / 空数组 / 空串元素：一律不落实例（start() 的运行时守卫与配置层同一判据）
+    await expect(m.start('c3', { name: 'n', type: 'exe', exe: 'notepad.exe' as unknown as string[] })).rejects.toThrow(/^VALIDATION:/);
+    await expect(m.start('c4', { name: 'n', type: 'exe', exe: [] })).rejects.toThrow(/^VALIDATION:/);
     expect(m.states()).toEqual({});
+    expect(ctx.exeRequests).toEqual([]);
   });
 
   it('shell spawn 失败不残留状态（§12.4）', async () => {
@@ -391,7 +454,7 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
     const ctx = makeDeps();
     const m = new TestManager(ctx.deps, () => true);
     await m.start('c1', SHELL_ENTRY);
-    await m.start('c2', { name: 'n', type: 'exe', exe: 'a.exe' });
+    await m.start('c2', { name: 'n', type: 'exe', exe: ['a.exe'] });
     expect(Object.keys(m.states()).sort()).toEqual(['c1', 'c2']);
     await m.stopAll(7);
     expect(m.states()).toEqual({});
@@ -615,6 +678,162 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
   });
 });
 
+// ── 2026-10-17-quick-launch-exe-rows 任务 1（规格 §4-4/4-7、§6.3、§6.5；RF4/RF5/RF6）：exe 多条路径 = 一实例 N 进程 ──
+// 观察点仍是 makeDeps 的假接缝（exeRequests 的调用序、exeHandles 的逐个生命周期、exits/sysLines）。
+// 本任务的 exe 分支没有预检循环（R-PF2：checkExe 接缝整体留给任务 2），判据是「逐条起、失败停止后续」。
+describe('exe 多路径聚合实例（2026-10-17-quick-launch-exe-rows 任务 1 / E5-E9）', () => {
+  // E5（§6.3-3/3-5 / RF4）：发起顺序 = 数组顺序、不等待退出；每条各写一行 log.launcher.start.cmd
+  it('E5 按数组顺序依次发起且不等退出，每条各一行启动日志', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    const paths = ['a.exe', 'b.exe', 'c.exe'];
+    const res = await m.start('c1', { name: 'n', type: 'exe', exe: paths }); // 假进程全程存活：能 await 返回即「不观察退出」
+    expect(res).toEqual({ tabId: null });
+    expect(ctx.exeRequests, 'spawnExe 的调用顺序 = 数组顺序（RF4）').toEqual(paths);
+    expect(ctx.exeHandles.length, '一次配置三个进程，互不复用').toBe(3);
+    expect(m.states()).toEqual({ c1: { running: true, stopping: false } });
+    expect(ctx.exits, '不等待、也不产生退出上报').toEqual([]);
+    const startLines = ctx.sysLines.filter((l) => l.line.startsWith('启动命令 · ')).map((l) => l.line);
+    expect(startLines, '§6.3-5：每条各一行 log.launcher.start.cmd，{cmd} = 该条路径').toEqual(paths.map((x) => '启动命令 · ' + x));
+  });
+
+  // E6（§6.5 / R-PF5 / RF5）：聚合 running = 任一存活；部分退出不得回落、不得上报
+  it('E6 任一进程存活即 running，部分退出不上报也不摘实例', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    await m.start('c1', { name: 'n', type: 'exe', exe: ['a.exe', 'b.exe', 'c.exe'] });
+    ctx.exeHandles[1].exit(7); // 中间那条自己退出
+    expect(m.states(), '任一存活 = 运行中（§4-7）').toEqual({ c1: { running: true, stopping: false } });
+    expect(ctx.exits, '中途退出不得发 onExit（按钮不得闪回落）').toEqual([]);
+    ctx.exeHandles[0].running = false;
+    ctx.exeHandles[2].running = false;
+    expect(m.states(), 'A2·M7 口径同样适用于聚合：进程已死而 exit 事件未到 → running:false，但不摘实例').toEqual({ c1: { running: false, stopping: false } });
+    expect(ctx.exits).toEqual([]);
+  });
+
+  // E7（§6.5 / R-09）：[停止] 按启动顺序逐个 stopGraceful（已退出那条也会被调用，stopGraceful 幂等），
+  // 全部返回后才摘实例并按最后退出者上报一次。
+  it('E7 stop() 按启动顺序停掉全部进程并只上报一次', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    await m.start('c1', { name: 'n', type: 'exe', exe: ['a.exe', 'b.exe', 'c.exe'] });
+    ctx.exeHandles[0].exit(3); // 第一条已自己退出：停止循环仍按序触达它（已退出的 stopGraceful 自己 return，P5）
+    await m.stop('c1');
+    expect(ctx.exeHandles.map((h) => h.stopArgs), '逐条都拿到默认 3s（与单条时代同一口径）').toEqual([[3], [3], [3]]);
+    expect(ctx.exits, '一次配置只上报一次退出，code = 最后退出者（R-PF5）').toEqual([{ configId: 'c1', code: 0 }]);
+    expect(m.states(), '全部停止后 states() 清空（按钮回落）').toEqual({});
+    await m.stop('c1'); // 幂等：不重复上报
+    expect(ctx.exits.length).toBe(1);
+  });
+
+  // E8（§6.5 / R-08 / RF5）：逐条退出日志照旧各一行；deps.onExit 只在全部退出时一次，code = 最后退出者。
+  it('E8 全部退出才发一次 onExit，逐进程退出日志仍各一行', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    await m.start('c1', { name: 'n', type: 'exe', exe: ['a.exe', 'b.exe', 'c.exe'] });
+    ctx.exeHandles[0].exit(1);
+    ctx.exeHandles[2].exit(3); // 乱序退出：先头尾、后中间
+    expect(ctx.exits).toEqual([]);
+    expect(m.states(), '还剩一条存活 → 仍 running').toEqual({ c1: { running: true, stopping: false } });
+    ctx.exeHandles[1].exit(2); // 最后退出者 = 中间那条，code 取它
+    expect(ctx.exits, '只发一次，code = 最后退出者的 2').toEqual([{ configId: 'c1', code: 2 }]);
+    expect(m.states()).toEqual({});
+    const exitLines = ctx.sysLines.filter((l) => l.line.startsWith('进程退出 ')).map((l) => l.line);
+    expect(exitLines, '每条进程退出仍各写一行 log.app.exit（逐条可诊断，R-08）').toEqual(['进程退出 code=1', '进程退出 code=3', '进程退出 code=2']);
+  });
+
+  // E9（§6.3-4 / R-PF3 / R-PF7 / RF6）：第 k 条抛错 → 后续不调、已起的 k-1 条留在实例里、错误原样上抛；
+  // 第 1 条就抛错（零进程）→ 摘掉实例再原样抛出，不得留 running:false 的幽灵实例。
+  it('E9 中途抛错：后续不调、已起保留；第一条就抛错则不残留实例', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    // k=2（中途）：第 1 条已起、第 2 条抛错、第 3 条不得被调（§6.3-4）
+    ctx.spawnCtl.failAt = 2;
+    ctx.spawnCtl.fail = new Error('PROC: spawn boom at b.exe');
+    // start() 的 exe 分支全程同步（E5），故拒绝在同一同步 tick 内就已成形；断言紧接挂上，不留未处理的 rejection
+    await expect(m.start('c1', { name: 'n', type: 'exe', exe: ['a.exe', 'b.exe', 'c.exe'] })).rejects.toThrow('PROC: spawn boom at b.exe'); // 原样上抛（前缀不变，不做二次包装；main.ts:1085-1091 的日志分工不变）
+    expect(ctx.exeRequests, '第 3 条不得被发起').toEqual(['a.exe', 'b.exe']);
+    expect(ctx.exeHandles.length, '失败的第二次调用没有留下进程').toBe(1);
+    expect(m.states(), '已起的第 1 条留在实例里，实例保持运行（§4-6 / §6.3-4 / §7-4：不回滚杀掉）').toEqual({ c1: { running: true, stopping: false } });
+    expect(ctx.exits, '实例仍在 → 不得有退出上报').toEqual([]);
+    expect(ctx.sysLines.some((l) => l.line === '启动命令 · a.exe'), '已起那条的启动日志照写').toBe(true);
+    expect(ctx.sysLines.some((l) => l.line === '启动命令 · c.exe'), '未起的那条不得有启动日志').toBe(false);
+    // 已起那条随后退出：这条配置的**已起集合**只剩它一个（第 3 条从未起过，不进 procs —— §6.3-3 只把成功的进程入表），
+    // 于是聚合语义正常收尾：摘实例、按最后退出者上报一次、逐条退出日志照写。R-PF6 的判据「不得丢退出」正是这样守住的：
+    // 若这里不收尾，实例会永远挂在 running:false（[停止] 也唤不回它）—— 见报告「偏离与裁决」一节。
+    ctx.exeHandles[0].exit(5);
+    expect(ctx.exits, '已起的全部退出 → 聚合收尾恰好一次，code = 最后退出者').toEqual([{ configId: 'c1', code: 5 }]);
+    expect(m.states(), '不得留下 running:false 的实例').toEqual({});
+    expect(ctx.sysLines.some((l) => l.line === '进程退出 code=5'), '逐条退出日志仍要写').toBe(true);
+    // 兜底路径仍在：已退出的实例被 [停止] 摘掉时不重复上报（§6.5 的「按未知退出码收尾」只在未收尾时生效）
+    ctx.exeHandles[0].running = false;
+    await m.stop('c1');
+    expect(ctx.exits.length, '已收尾过的实例不得再补一次 -1').toBe(1);
+    expect(m.states()).toEqual({});
+    // k=1（第 1 条就抛错）：零进程 → 先摘实例（含清 auto 计时器）再原样抛出；无幽灵实例、无退出上报（R-PF7）
+    const boom1 = new Error('PROC: spawn boom at x.exe');
+    const ctx2 = makeDeps();
+    const m2 = new QuickLaunchManager(ctx2.deps, () => true);
+    ctx2.spawnCtl.failAt = 1;
+    ctx2.spawnCtl.fail = boom1;
+    await expect(m2.start('c9', { name: 'n', type: 'exe', exe: ['x.exe', 'y.exe'] })).rejects.toThrow('PROC: spawn boom at x.exe');
+    expect(m2.states(), '不得留下 running:false 的幽灵实例（R-PF7）').toEqual({});
+    expect(ctx2.exits, '没有任何进程，就不该有退出上报').toEqual([]);
+    expect(ctx2.exeRequests, '第 2 条不得被发起').toEqual(['x.exe']);
+  });
+
+  // 补充（§6.5 / A2·Minor-6b 的聚合版）：已退出但退出事件未落地的多条配置，[停止] 仍按未知退出码收尾、只一次
+  it('已起进程已退出而退出事件未到达时，stop() 按 -1 收尾且不重复上报', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    await m.start('c1', { name: 'n', type: 'exe', exe: ['a.exe', 'b.exe'] });
+    // A2·Minor-6b 的聚合版：两条都已死（running=false），但都没有 exit 事件落地
+    ctx.exeHandles.forEach((h) => { h.running = false; h.silentStop = true; });
+    expect(m.states()).toEqual({ c1: { running: false, stopping: false } });
+    await m.stop('c1');
+    expect(ctx.exits, '按未知退出码 -1 收尾一次，保证 states() 清空、按钮回落').toEqual([{ configId: 'c1', code: -1 }]);
+    expect(m.states()).toEqual({});
+  });
+
+  // 修复轮 1 · 审查关键 1（真接缝的牙）：真 exe 接缝的 onExit 是**单槽**（shell-execute.ts:138 onExitCb 字段、
+  // :168-172 是赋值而不是 push；main.ts:1094 只是把每次注册转交给这个槽）。改动前的实现（= 本任务改动后的第一版）
+  // 对同一个进程注册了两次 onExit（聚合记账 + 逐退出日志）→ 第二次永久覆盖第一次：procExited 永不置位 →
+  // 永不 finalize → 实例永久留在 instances 表里、ql-exit 永不发出、卡片卡在 [停止]（正是 R-PF7 要防的幽灵实例）。
+  // 上面 E5-E9 全部走 FakeExe 的 exitCbs.push，比真接缝宽容 → 它们对这条全绿是假绿；这里换成照抄单槽语义的夹具：
+  // (a) N=1 = 今天的单路径老配置（同样两次注册，回归就在它身上）；(b) N=2 = 聚合路径。
+  it('真接缝的 onExit 是单槽：每个进程只注册一次，聚合收尾仍一次并逐条写退出日志', async () => {
+    // (a) N=1（今天的单路径配置形态）。观察点特意换成一条 order 时间线：
+    // 改动前的顺序就是「先 finalize（摘实例 + deps.onExit）、后写该进程的退出日志」，这里逐字钉住它。
+    const ctx = makeDeps();
+    ctx.exeCtl.singleSlot = true;
+    const order: string[] = [];
+    ctx.deps.onExit = (configId, code) => { order.push('deps.onExit:' + code); };
+    ctx.deps.onSysLine = (_configId, line) => { order.push('onSysLine:' + line); };
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    await m.start('c1', { name: 'n', type: 'exe', exe: ['a.exe'] });
+    expect(ctx.singleSlotHandles[0].onExitRegistrations, '同一个进程只准注册一次 onExit：真接缝是单槽，第二次会永久覆盖第一次').toBe(1);
+    ctx.singleSlotHandles[0].exit(4);
+    expect(order, '与单条时代逐字同序：先 deps.onExit 收尾，再写这条进程的退出日志；全程只有这三行').toEqual([
+      'onSysLine:启动命令 · a.exe', 'deps.onExit:4', 'onSysLine:进程退出 code=4',
+    ]);
+    expect(m.states(), '不得留下 running:false 的幽灵实例（R-PF7 要防的正是这个）').toEqual({});
+    // (b) N=2（聚合路径）：中途退出不得上报、不得摘实例；最后一条退出才收尾一次；逐条退出日志仍各一行。
+    const ctx2 = makeDeps();
+    ctx2.exeCtl.singleSlot = true;
+    const m2 = new QuickLaunchManager(ctx2.deps, () => true);
+    await m2.start('c2', { name: 'n', type: 'exe', exe: ['a.exe', 'b.exe'] });
+    expect(ctx2.singleSlotHandles.map((h) => h.onExitRegistrations), '两条进程各只注册一次').toEqual([1, 1]);
+    ctx2.singleSlotHandles[0].exit(1);
+    expect(ctx2.exits, '还剩一条存活 → 不摘实例、不上报').toEqual([]);
+    expect(m2.states()).toEqual({ c2: { running: true, stopping: false } });
+    ctx2.singleSlotHandles[1].exit(2);
+    expect(ctx2.exits, '全部退出才收尾一次，code = 最后退出者（R-PF5）').toEqual([{ configId: 'c2', code: 2 }]);
+    expect(m2.states()).toEqual({});
+    expect(ctx2.sysLines.filter((l) => l.line.startsWith('进程退出 ')).map((l) => l.line), '每条进程退出仍各写一行 log.app.exit（R-08）').toEqual(['进程退出 code=1', '进程退出 code=2']);
+  });
+});
+
+// ── 任务 7（2026-10-14-quick-launch-admin §6.8 / §6.10）：admin 分流到提权宿主 ──
 // ── 任务 7（2026-10-14-quick-launch-admin §6.8 / §6.10）：admin 分流到提权宿主 ──
 // 观察点 = QlDeps.spawnElevatedShell（**假**宿主接缝；真工厂 startElevatedHost 由 src-main/ql-elevated.test.ts 守，索引 K45）。
 // 判据全部落在可观察后果上：走哪条接缝、自动命令的先后、失败是否残留、停止是否与非提权同一条路。
