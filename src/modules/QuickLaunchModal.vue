@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faXmark, faTerminal } from '@fortawesome/free-solid-svg-icons';
+import { faXmark, faTerminal, faPlus, faMinus } from '@fortawesome/free-solid-svg-icons';
 import { faFloppyDisk, faFolderOpen, faTrashCan, faFileCode } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
@@ -23,10 +23,10 @@ config.autoGenerateCss = true;
 //   terminal 只在 free-solid 里（free-regular 无该图标，实测 node_modules/@fortawesome/free-regular-svg-icons
 //   的 index.d.ts 不含 faTerminal）→ 挂 fas 键；file-code 两款都有，取 free-regular（细线款）→ 挂 fat 键。
 //   代价（用户知情选定）：两个图标一实心一细线，粗细不一致。
-library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen, faTerminal, faFileCode);
+library.add(faFloppyDisk, faTrashCan, faXmark, faFolderOpen, faTerminal, faFileCode, faPlus, faMinus);
 const byPrefixAndName = {
   fat: { 'floppy-disk': faFloppyDisk, 'trash-can': faTrashCan, 'folder-open': faFolderOpen, 'file-code': faFileCode },
-  fas: { xmark: faXmark, terminal: faTerminal },
+  fas: { xmark: faXmark, terminal: faTerminal, plus: faPlus, minus: faMinus },
 };
 
 // 接口（check C1 / 索引 K31(1)）：id = null → 新建，新 id 由主进程生成（规格 §5.4）；
@@ -64,7 +64,24 @@ const TERM_LABEL: Record<TerminalId, () => string> = {
 const formName = ref('');
 const formType = ref<QuickLaunchKind>('shell');   // 默认「命令行」（E1）
 const formShell = ref('');
-const formCmd = ref('');
+// 多行命令（2026-10-17 用户改口径，原话：「更改策略, 默认依然是现状的输入框, 不改变输入框高度, 也不需要自动换行,
+// 然后在这个输入框的右侧, 添加 [+] 按钮, 点击会自动在当前输入框下方创建新的输入框, 只有默认的输入框有 [+] 按钮,
+// 下方被手动创建的输入框右侧只有 [-] 按钮, 点击删除该输入框」）：
+// 默认行 = 今天这个输入框，一字不改（32px 高、不换行）；[+] 只加行、[-] 只删自己那一行。
+// 落盘口径不变：cmd 仍是一条字符串（配置 schema 与主进程校验一字不改），行间以 \n 连接、空行丢弃。
+// 选 \n 的取证：yaml 包实测 round-trip 逐字一致（落盘写成 block scalar cmd: |-），见 .temp/ql-cmd-rows-newline/probe.md。
+// 行对象带稳定 id：v-for 的 :key 用它 —— 删中间一行时不会把后面几行的值串位（按 index 做 key 会）。
+interface CmdRow { id: number; text: string }
+let cmdRowSeq = 0;
+const newCmdRow = (text = ''): CmdRow => ({ id: cmdRowSeq++, text });
+// 回读：按 \r\n | \r | \n 拆行（与主进程写入端 toPtyInput 认的三种行分隔同一口径）；空 / 缺 → 一行空输入框。
+function splitCmdRows(cmd: string | undefined): CmdRow[] {
+  const rows = (typeof cmd === 'string' ? cmd.split(/\r\n|\r|\n/) : []).map((line) => newCmdRow(line));
+  return rows.length > 0 ? rows : [newCmdRow()];
+}
+const formCmdRows = ref<CmdRow[]>([newCmdRow()]);
+// 命令那一格的容器：[+] 追加行之后把焦点交给最后一个输入框（用户点 [+] 就是准备接着打字）
+const cmdCell = ref<HTMLElement | null>(null);
 const formExe = ref('');
 // 任务 8（规格 §6.2 / §4-1）：「管理员」= 条目上的 admin 字段（§6.1，可选布尔）。
 // 只有字面量 true 算真（与主进程 normalizeEntry 同一口径），所以回填写 === true 而不是 ?? false。
@@ -88,8 +105,13 @@ const nameError = computed((): string | null =>
 // err.ql.exeRequired（dict.ts:314 zh / :656 en）——渲染端与主进程共用同一份词典（src/i18n.ts:3）。
 // 主进程那两条规则原样保留（quick-launch-config.ts:94 / :99），这里只是把同一句话换个位置说，
 // 并在 save() 里先拦下不发无谓的 IPC。按类型取用：shell 只判 cmd、exe 只判 exe（§5.3-6 的字段口径）。
+// 多行 → 逐行 trim、丢掉空行（空行送进终端就是一条空命令，没有意义）。
+// 「命令不能为空」的判据 = 一行有效内容都没有 —— 与单行时 trim().length === 0 完全等价，
+// 所以 2026-10-13 那条「报错在命令输入框下方」的用例一字不改照样成立。
+const cmdLines = computed((): string[] =>
+  formCmdRows.value.map((row) => row.text.trim()).filter((s) => s.length > 0));
 const cmdError = computed((): string | null =>
-  formType.value === 'shell' && formCmd.value.trim().length === 0 ? t('err.ql.cmdRequired') : null);
+  formType.value === 'shell' && cmdLines.value.length === 0 ? t('err.ql.cmdRequired') : null);
 const exeError = computed((): string | null =>
   formType.value === 'exe' && formExe.value.trim().length === 0 ? t('err.ql.exeRequired') : null);
 
@@ -123,7 +145,7 @@ function fill(): void {
   formName.value = e?.name ?? '';
   formType.value = e?.type === 'exe' ? 'exe' : 'shell';
   formShell.value = e?.shell ?? '';
-  formCmd.value = e?.cmd ?? '';
+  formCmdRows.value = splitCmdRows(e?.cmd);
   formExe.value = e?.exe ?? '';
   formAdmin.value = e?.admin === true;
   terminals.value = [];
@@ -151,6 +173,20 @@ watch(() => props.open, (open) => { if (open) { fill(); void loadTerminals(); } 
 function onTypeChange(v: string): void { formType.value = v === 'exe' ? 'exe' : 'shell'; }
 function onShellChange(v: string): void { formShell.value = v; }
 
+// [+]：在当前所有行的**末尾**追加一行空输入框，并把焦点交给它。只有默认行渲染这个按钮（用户口径）。
+async function addCmdRow(): Promise<void> {
+  formCmdRows.value.push(newCmdRow());
+  await nextTick();
+  const inputs = cmdCell.value ? [...cmdCell.value.querySelectorAll('input')] : [];
+  (inputs[inputs.length - 1] as HTMLInputElement | undefined)?.focus();
+}
+// [-]：删掉自己那一行。按 id 找而不是按 index —— 删的是被点的那一行，且默认行永远删不掉
+// （默认行没有 [-] 按钮，这里再守一道，键盘 Enter / 程序化点击都挡得住）。
+function removeCmdRow(id: number): void {
+  const i = formCmdRows.value.findIndex((row) => row.id === id);
+  if (i > 0) formCmdRows.value.splice(i, 1);
+}
+
 // 选择 .exe（check C3）：主进程对话框取消 = null → 不改表单
 async function pickExe(): Promise<void> {
   const picked = await invoke<string | null>('ql_pick_exe');
@@ -170,7 +206,7 @@ async function save(): Promise<void> {
   // 配置层把非布尔规整成 false（任务 1 / §8-K4「落盘总是显式写」）——两态都带这个字段。
   const entry: QuickLaunchEntry = formType.value === 'exe'
     ? { name, type: 'exe', exe: formExe.value.trim(), admin: formAdmin.value }
-    : { name, type: 'shell', shell: formShell.value as TerminalId, cmd: formCmd.value.trim(), admin: formAdmin.value };
+    : { name, type: 'shell', shell: formShell.value as TerminalId, cmd: cmdLines.value.join('\n'), admin: formAdmin.value };
   saving.value = true;
   try {
     await invoke('ql_save', props.id, entry);
@@ -268,10 +304,25 @@ function close(): void { emit('close'); }
                 </div>
               </div>
               <label class="label flag-label cmd-label">{{ t('ql.modal.cmd') }}</label>
-              <!-- 命令为空的报错在命令那一格内（.field-cell，与 .name-cell 同一手法），不进弹窗顶部错误区 -->
-              <div class="field-cell">
-                <div class="row-cell">
-                  <input class="input" :class="{ error: attemptedSave && cmdError !== null }" v-model="formCmd" />
+              <!-- 命令为空的报错在命令那一格内（.field-cell，与 .name-cell 同一手法），不进弹窗顶部错误区。
+                   多行命令（2026-10-17 用户改口径）：所有行都在**同一个 .field-cell** 里纵向排布，
+                   不新增 .flag-grid 的网格行 —— 测试的 controlCells 计数器仍数到 3，218px 的定高推导一字不改
+                   （见下方 .cmd-cell 注释与 .temp/ql-cmd-rows-newline/）。 -->
+              <div ref="cmdCell" class="field-cell cmd-cell">
+                <div v-for="(row, i) in formCmdRows" :key="row.id" class="row-cell">
+                  <input class="input" :class="{ error: attemptedSave && cmdError !== null }" v-model="row.text" />
+                  <!-- [+] 只在默认行（第一行）；手动追加的行只有 [-]，删的就是它自己那一行（用户口径逐字） -->
+                  <!-- 这两个按钮**不带** .tip-up 气泡（试过，带不起）：气泡居中挂在 36px 按钮上，向右探出 .flag-grid 边界
+                       20px（实测 grid clientWidth 487 / scrollWidth 507），把 .modal-body 顶出 10px 的横向滚动条，
+                       弹窗就从 218 变 227.3 —— 定高门与「两态同高」全被带歪。aria-label 留着，可访问性与测试都不受影响。 -->
+                  <button v-if="i === 0" type="button" class="btn btn-secondary row-btn"
+                    :aria-label="t('ql.modal.btn.addCmd')" @click="addCmdRow">
+                    <FontAwesomeIcon :icon="byPrefixAndName.fas['plus']" style="font-size: 14px;" />
+                  </button>
+                  <button v-else type="button" class="btn btn-secondary row-btn"
+                    :aria-label="t('ql.modal.btn.removeCmd')" @click="removeCmdRow(row.id)">
+                    <FontAwesomeIcon :icon="byPrefixAndName.fas['minus']" style="font-size: 14px;" />
+                  </button>
                 </div>
                 <p v-if="attemptedSave && cmdError" class="error-text">{{ cmdError }}</p>
               </div>
@@ -438,6 +489,17 @@ function close(): void { emit('close'); }
    纵向容器包住「输入行 + 报错」，报错不占 .flag-grid 的网格列（否则会把下一行的标签挤到报错同一行）。
    两态下它都是表单最后一格，所以不影响 218px 的定高推导（报错出现时按 min-height 自然长高）。 */
 .field-cell { min-width: 0; }
+/* 多行命令（2026-10-17 用户改口径）：全部命令行在同一个 .field-cell 内纵向排布，不新增 .flag-grid 的网格行
+   → QuickLaunchModal.test.ts 的 controlCells 计数器仍数到 3，218px 的定高推导一字不改（min-height 是地板不是天花板）。
+   实测（.temp/ql-cmd-rows-probe/：真组件导出的 markup + 真 style.css + 真 Chromium 量取）：
+     1 行 = 218.0（min-height 地板，与改动前逐像素一致，body 无滚动条）
+     3 行 = 293.3（每加一行 = 32 控件 + 6 行距 = 38，与 .flag-grid 的 gap 同口径；0.7px 是网格行高的亚像素，
+                    1 行态的内容高本来就是 217.3，被 218 的地板盖住了）
+   默认行那个输入框的高度与「不换行」一字未改 —— 用户口径逐字：「不改变输入框高度, 也不需要自动换行」。 */
+.cmd-cell { display: flex; flex-direction: column; gap: 6px; }
+/* [+] / [-] 的盒子：与 .file-btn 同一族（.btn 给边框 / 圆角 / --h-control 高），只是定宽成 36px 方块
+   （36px = 本文件 .modal-close / .btn-delete 已经在用的点击区口径）。flex: none 让它不被输入框挤窄。 */
+.row-cell .row-btn { flex: none; width: 36px; padding: 0; }
 /* 名字标签对齐到输入行本身：.flag-grid 是 align-items:center，空名报错出现后 .name-cell 变高，
    默认居中会把标签压到「输入框 + 报错」两行的中间。改为顶对齐 + 8px 内边距
    = (32px 控件高 − 17px 行高) / 2，有无报错都对齐输入框的中线。

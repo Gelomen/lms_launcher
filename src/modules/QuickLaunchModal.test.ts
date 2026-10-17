@@ -278,6 +278,143 @@ describe('QuickLaunchModal', () => {
     w.unmount();
   });
 
+  // ---------- 2026-10-17（用户改口径）：命令行的多行编辑 ----------
+  // 用户原话（逐字）：「更改策略, 默认依然是现状的输入框, 不改变输入框高度, 也不需要自动换行,
+  // 然后在这个输入框的右侧, 添加 [+] 按钮, 点击会自动在当前输入框下方创建新的输入框,
+  // 只有默认的输入框有 [+] 按钮, 下方被手动创建的输入框右侧只有 [-] 按钮, 点击删除该输入框」
+  // 落盘口径不变：cmd 仍是一条字符串（配置 schema / 主进程校验一字不改），行间以 \n 连接、空行丢弃；
+  // 送进 PTY 前由主进程把行分隔归一成 \r（quick-launch.ts 的 toPtyInput，真机实测留档
+  // .temp/ql-cmd-rows-newline/probe.md：裸 \n 会被 ConPTY 吞掉，两行拼成一条命令）。
+  const cmdCellEl = (): HTMLElement | null => document.querySelector('.modal-box .cmd-cell');
+  const cmdRows = (): HTMLElement[] =>
+    [...(cmdCellEl()?.children ?? [])].filter((el) => el.classList.contains('row-cell')) as HTMLElement[];
+  const rowInput = (row: HTMLElement): HTMLInputElement => row.querySelector('input') as HTMLInputElement;
+  const cmdRowInputs = (): HTMLInputElement[] => cmdRows().map(rowInput);
+  const rowBtn = (row: HTMLElement, key: string): HTMLButtonElement | null =>
+    ([...row.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === t(key)) as HTMLButtonElement) ?? null;
+
+  // 按钮的归属与位置：默认行只有 [+]、追加行只有 [-]；[+] 在输入框右侧；新行开在当前行下方；
+  // [-] 删的是被点的那一行（不是最后一行），且不把后面几行的值串位。
+  it('only_the_default_cmd_row_has_plus_and_added_rows_have_minus', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    // 默认态 = 现状：一行、空的、右侧只有 [+]，没有 [-]
+    expect(cmdRows().length, '默认态不止一行命令输入框').toBe(1);
+    expect(cmdRowInputs()[0].value).toBe('');
+    const add0 = rowBtn(cmdRows()[0], 'ql.modal.btn.addCmd');
+    expect(add0, '默认行没有 [+] 按钮').not.toBe(null);
+    expect(rowBtn(cmdRows()[0], 'ql.modal.btn.removeCmd'), '默认行却有 [-] 按钮').toBe(null);
+    // 「输入框的右侧」= 同一个行容器里、输入框之后（flex 行不反向，DOM 顺序即视觉顺序）
+    const kids0 = [...cmdRows()[0].children];
+    expect(kids0.indexOf(add0 as HTMLButtonElement), '[+] 不在默认行输入框的右侧').toBeGreaterThan(kids0.indexOf(cmdRowInputs()[0]));
+    // 「不改变输入框高度, 也不需要自动换行」= 它还是单行 <input>（换成 textarea 才会换行 / 出滚动条）
+    expect(cmdRowInputs()[0].tagName, '命令输入框被换成了能换行的控件').toBe('INPUT');
+
+    // 点 [+] → 在默认行**下方**多出一行
+    (add0 as HTMLButtonElement).click();
+    await flush();
+    expect(cmdRows().length, '点 [+] 没有新增一行').toBe(2);
+    const cellKids = [...(cmdCellEl() as HTMLElement).children];
+    expect(cellKids.indexOf(cmdRows()[1]), '新行不在默认行下方').toBeGreaterThan(cellKids.indexOf(cmdRows()[0]));
+    // 追加行：只有 [-]，没有 [+]；默认行的 [+] 照旧还在
+    expect(rowBtn(cmdRows()[1], 'ql.modal.btn.removeCmd'), '追加行没有 [-] 按钮').not.toBe(null);
+    expect(rowBtn(cmdRows()[1], 'ql.modal.btn.addCmd'), '追加行却有 [+] 按钮（只有默认行有）').toBe(null);
+    expect(rowBtn(cmdRows()[0], 'ql.modal.btn.addCmd'), '追加行之后默认行的 [+] 没了').not.toBe(null);
+
+    // 再加一行 → 三行；填上值后点中间那行的 [-] → 删掉的必须是中间那行
+    rowBtn(cmdRows()[0], 'ql.modal.btn.addCmd')!.click();
+    await flush();
+    expect(cmdRows().length).toBe(3);
+    await setInput(cmdRowInputs()[1], 'A');
+    await setInput(cmdRowInputs()[2], 'B');
+    rowBtn(cmdRows()[1], 'ql.modal.btn.removeCmd')!.click();
+    await flush();
+    expect(cmdRows().length, '点 [-] 没有删掉那一行').toBe(2);
+    expect(cmdRowInputs().map((i) => i.value), '删错了行，或删行把后面几行的值串位了（:key 用了 index）').toEqual(['', 'B']);
+
+    // 多行不新增 .flag-grid 的网格行 → 218px 定高门（controlCells = 3）不被带歪，定高地板一字不改
+    const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    const controlCells = [...grid.children].filter((el) =>
+      el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
+    expect(controlCells.length, '多行命令把 .flag-grid 的控件行数带变了，218px 的推导要重算').toBe(3);
+    expect(getComputedStyle(box() as Element).minHeight, '多行命令改掉了弹窗的定高地板').toBe('218px');
+    w.unmount();
+  });
+
+  // 落盘：多行 = 一条以 \n 连接的 cmd 字符串，空行丢弃（空行送进终端就是一条空命令）。
+  // 除此之外 payload 一字不改：仍只带该类型的字段（规格 §5.3-6）。
+  it('multi_row_cmd_saves_joined_by_newline_and_drops_blank_rows', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, 'webui');
+    await setInput(cmdRowInputs()[0], 'ping -n 1 127.0.0.1');
+    rowBtn(cmdRows()[0], 'ql.modal.btn.addCmd')!.click();   // 第二行故意留空
+    await flush();
+    rowBtn(cmdRows()[0], 'ql.modal.btn.addCmd')!.click();
+    await flush();
+    await setInput(cmdRowInputs()[2], 'dir');
+    saveBtn().click();
+    await flush();
+
+    expect(saveCalls().length).toBe(1);
+    const entry = saveCalls()[0].args[1] as QuickLaunchEntry;
+    expect(entry.cmd, '多行没有以 \n 连接，或空行没被丢掉').toBe('ping -n 1 127.0.0.1\ndir');
+    expect(entry, '多行改动顺带改了 payload 形状').toEqual({
+      name: 'webui', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1\ndir', admin: false,
+    });
+    w.unmount();
+  });
+
+  // 回读：cmd 里带换行（block scalar）→ 一行一个输入框；单行 cmd（现存所有配置）→ 仍是一行。
+  it('editing_a_multiline_cmd_refills_one_row_per_line', async () => {
+    mockLms();
+    const MULTI: QuickLaunchEntry = { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui\npip install x', admin: false };
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: MULTI });
+    await flush();
+
+    expect(cmdRowInputs().map((i) => i.value), '多行 cmd 没有按行回填成多个输入框').toEqual(['python -m webui', 'pip install x']);
+    expect(rowBtn(cmdRows()[0], 'ql.modal.btn.addCmd'), '回填的第一行没有 [+]').not.toBe(null);
+    expect(rowBtn(cmdRows()[1], 'ql.modal.btn.addCmd'), '回填的第二行却有 [+]').toBe(null);
+    w.unmount();
+
+    // 单行 cmd = 今天所有已存在的配置：一字不改，仍是一行
+    const w2 = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY });
+    await flush();
+    expect(cmdRows().length, '单行 cmd 却多出了一行').toBe(1);
+    expect(cmdRowInputs()[0].value).toBe('python -m webui');
+    w2.unmount();
+  });
+
+  // 一行有效内容都没有 = 「命令不能为空」（与单行时代的 trim().length === 0 等价）：
+  // 报错仍在命令那一格内、输入框标红，且不发 ql_save。
+  it('all_blank_cmd_rows_block_save_with_the_error_below_the_first_row', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, 'webui');
+    rowBtn(cmdRows()[0], 'ql.modal.btn.addCmd')!.click();
+    await flush();
+    saveBtn().click();
+    await flush();
+
+    expect(saveCalls().length, '全是空行却发了 ql_save').toBe(0);
+    const err = cmdCellEl()!.querySelector('.error-text');
+    expect(err, '全空行时「命令不能为空」没渲染在命令那一格内').not.toBe(null);
+    expect(err!.textContent).toBe(t('err.ql.cmdRequired'));
+    expect(cmdRowInputs().every((i) => i.classList.contains('error')), '空行没全部标红').toBe(true);
+
+    // 填上任意一行 → 报错即时消失（与单行时代的即时消错口径一致）
+    await setInput(cmdRowInputs()[1], 'dir');
+    expect(cmdCellEl()!.querySelector('.error-text')).toBeNull();
+    w.unmount();
+  });
+
   // 同上，可执行程序态：路径为空 → 「可执行程序路径不能为空」在路径输入框下方（err.ql.exeRequired）
   it('empty_exe_shows_the_error_below_the_exe_path_input_not_at_the_top', async () => {
     mockLms();
