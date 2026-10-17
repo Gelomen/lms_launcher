@@ -53,6 +53,21 @@ function messageOf(err: unknown): string {
 }
 
 /**
+ * 行分隔规整（2026-10-17 用户改口径：弹窗里 [+] 可以追加多条命令行，落盘是一条以 \n 连接的 cmd 字符串）。
+ * 送进 PTY 前必须换成 \r：ConPTY 把裸 \n 吞掉 —— 真机实测（.temp/ql-cmd-rows-newline/probe.md，
+ * 真 @lydell/node-pty + cmd.exe，写入与 :411 逐字同构）：
+ *   写 "ver\necho SECOND-RAN\r" → 输入回显成 "verecho SECOND-RAN"，执行的是 verecho → 命令不存在；
+ *   写 "echo A\recho B\r"      → 先 A 后 B，两条依次执行。
+ * 所以「多行命令」的语义 = 依次执行多条命令，靠 \r 逐行提交实现，不依赖 cmd 的 ^ 续行
+ * （^ 实测会把两行拼成一条且不补空格：echo A^ + echo B → 输出 Aecho B）。
+ * 边界：PowerShell / WSL 本机取不到证（powershell.exe 起不来 8009001d；pwsh / wsl 未安装），
+ * 只有 cmd.exe 的实测证据 —— 已登记。
+ */
+function toPtyInput(cmd: string): string {
+  return cmd.replace(/\r\n|\r|\n/g, '\r');
+}
+
+/**
  * node-pty 句柄在本文件里用到的最小一面（PtyProcess 的构造参数）。
  * 之所以自定义而不是直接用 pty.IPty：测试可注入假句柄验证 stopGraceful 的时序（check E11）。
  * 注意 kill() 无参——Windows 下传 signal 会抛（node-pty.d.ts:184-188）。
@@ -408,6 +423,7 @@ export class QuickLaunchManager {
     if (auto.timer) clearTimeout(auto.timer);
     auto.timer = null;
     if (inst.exited || inst.kind !== 'shell') return;
-    (inst.proc as ShellProcess).write(auto.cmd + '\r');
+    // 多行命令按行提交：行分隔先规整成 \r（见 toPtyInput 的实测注释），末尾再补一个 \r 提交最后一行。
+    (inst.proc as ShellProcess).write(toPtyInput(auto.cmd) + '\r');
   }
 }

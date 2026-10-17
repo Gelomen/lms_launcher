@@ -230,6 +230,22 @@ describe('真机集成（规格 §12.4：真跑 cmd.exe）', () => {
     await m.stop('c1');
     expect(m.states()).toEqual({});
   }, 40000);
+
+  // 真机门（2026-10-17 用户改口径：弹窗里 [+] 追加多条命令行）：多行 cmd 在真 cmd.exe 里必须按行依次执行。
+  // 判据选的是「第二行只有真的被当成第二条命令才会出现的东西」—— dir /b C:\Windows 的输出里有 System32；
+  // 若行分隔没归一（裸 \n 被 ConPTY 吞掉），送进去的是 "echo ALPHA-MARKERdir /b C:\Windows"，
+  // 执行的只有一条 echo，输出是 "ALPHA-MARKERdir /b C:\Windows"，永远不会有 System32。
+  // （不用 "echo A\necho B" 做判据：拼起来的那条 echo 输出里同时含 A 和 B 两个子串，测不出区别。）
+  it('多行 cmd 在真 cmd.exe 里按行依次执行', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    const res = await m.start('c1', { name: 'n', type: 'shell', shell: 'cmd', cmd: 'echo ALPHA-MARKER\ndir /b C:\\Windows' });
+    expect(res).toEqual({ tabId: 'ql:c1' });
+    await waitFor(() => allData(ctx.data).includes('ALPHA-MARKER') && allData(ctx.data).includes('System32'),
+      25000, '第一行的 echo 输出与第二行 dir 的输出（缺后者 = 两行被拼成了一条命令）');
+    await m.stop('c1');
+    expect(m.states()).toEqual({});
+  }, 60000);
 });
 
 describe('自动执行命令（审查重点 R1 / 规格 §7.3）', () => {
@@ -281,6 +297,25 @@ describe('自动执行命令（审查重点 R1 / 规格 §7.3）', () => {
     shell.emit('prompt');
     await vi.waitFor(() => ctx.data.length > 0);
     expect(shell.writes).toEqual([]);
+  });
+
+  // 2026-10-17（弹窗里 [+] 追加多条命令行，用户改口径）：cmd 里的行分隔必须规整成 \r 再写。
+  // 判据落在可观察后果上：假进程收到的那一次 write，三条命令之间全是 \r（真回车），一个裸 \n 都不剩。
+  // 为什么必须是 \r：ConPTY 把裸 \n 吞掉 —— 真机实测 .temp/ql-cmd-rows-newline/probe.md：
+  //   写 "ver\necho SECOND-RAN\r" → 输入回显成 "verecho SECOND-RAN"，执行的是 verecho → 命令不存在；
+  //   写 "echo A\recho B\r"      → 先 A 后 B，两条依次执行。
+  // 三种行分隔（\n / \r\n / \r）都要归一：回读 yaml 的 block scalar 给的是 \n，用户手改文件可能是 \r\n。
+  it('多行命令按行提交：写入的只有 \r，不留裸 \n', async () => {
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    m.timeline = ctx.timeline;
+    await m.start('c1', { name: 'n', type: 'shell', shell: 'cmd', cmd: 'echo A\necho B\r\necho C\recho D' });
+    const shell = m.shells[0];
+    shell.emit('C:\\> ');
+    expect(shell.writes, '行分隔没归一成 \r').toEqual(['echo A\recho B\recho C\recho D\r']);
+    expect(shell.writes[0].includes('\n'), '写入里还剩裸 \n —— ConPTY 会把它吞掉，两行会拼成一条命令').toBe(false);
+    // 只写一次：归一不是「一行一次 write」，仍是一次性写入（E4 / E5 的时序口径不变）
+    expect(ctx.timeline).toEqual(['deps.onData', 'pty.write']);
   });
 });
 
