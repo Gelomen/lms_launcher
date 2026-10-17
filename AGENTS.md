@@ -7,7 +7,6 @@
 - 当前项目使用 `using-superpowers` skill 驱动
 - `docs/` 目录存放项目文档, superpowers 生成的 `spec` 和 `plan` 文档放在这里
 - `.superpowers/` 目录存放 superpowers 实现时的 SDD / TDD 文档（SDD 一律指 Specification-Driven Development, 见下文「术语」）
-- `docs/superpowers/checks/` 存放 plan 的逐任务 check 表（路径与命名见下文「check 表」一节）
 - `.temp/` 目录存放功能的验证/实现过程的临时 文档, 代码 和 脚本 文件
 
 # 工作流
