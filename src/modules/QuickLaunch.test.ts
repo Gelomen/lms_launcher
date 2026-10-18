@@ -252,7 +252,7 @@ describe('QuickLaunch card', () => {
     const rows = w.findAll('.tpl-row');
     expect(rows.length).toBe(2);
 
-    // 字形身份：与弹窗 [类型] 的两项逐字相同（QuickLaunchModal.test.ts:1116 钉的 ['fas:terminal', 'far:file-code']）
+    // 字形身份：与弹窗 [类型] 的两项逐字相同（QuickLaunchModal.test.ts:1118 钉的 ['fas:terminal', 'far:file-code']）
     const firstIcon = (row: Element) => {
       const label = row.querySelector('.tpl-row__id')!;
       const prev = label.previousElementSibling;

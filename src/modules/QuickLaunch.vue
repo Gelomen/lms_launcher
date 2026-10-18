@@ -193,7 +193,7 @@ onMounted(() => { void reload(); });
           <!-- 票 #6（2026-10-19）：名字左侧的类型图标（shell=实心 terminal / exe=细线 file-code，
                与编辑弹窗 [类型] 逐字同一对字形）。它是名字的兄弟节点、不进名字元素 → 名字的宽度预算
                （BUDGET 30）与 .tpl-tip 口径一字不动；纯装饰 → 无 tooltip / aria-label。
-               间距走共享 .tpl-row 的 gap:8px（style.css:410），尺寸走 FA 自己的 1em 盒 —— 见本文件末尾 style 块。 -->
+               间距走共享 .tpl-row 的 gap:8px（style.css:407），尺寸走 FA 自己的 1em 盒 —— 见本文件末尾 style 块。 -->
           <FontAwesomeIcon class="ql-type-icon" :icon="typeIconOf(id)" />
           <span class="tpl-row__id" :data-tooltip="tipFor(id)"
             @mouseenter="(e) => onLabelEnter(e as MouseEvent, id)" @mouseleave="onLabelLeave">{{ rowName(id) }}</span>
@@ -229,7 +229,7 @@ onMounted(() => { void reload(); });
 </template>
 
 <!-- 票 #6（2026-10-19）：列表行名左侧类型图标的唯一一条规则，写在卡片自己的 scoped 样式里 ——
-     共享的 .tpl-rows/.tpl-row/.tpl-row__id/.tpl-row__actions（style.css:406-422）一字不动，
+     共享的 .tpl-rows/.tpl-row/.tpl-row__id/.tpl-row__actions（style.css:405-422）一字不动，
      所以模板卡不会长出图标（负向门 TemplateModule.test.ts rows_render_no_type_icon_classes）。 -->
 <style scoped>
 /* 不写任何 px（与 style.css:356「尺寸只用 1em、不写死 14px」同一口径）：图标盒由 FA 自己的规则给 ——
@@ -240,7 +240,7 @@ onMounted(() => { void reload(); });
    行高有图标/删掉图标都是 42.00（= style.css:388 记的 42px/条，未变）。 */
 /* 唯一要钉的是「图标不参与 flex 收缩」：名字那侧有 min-width:0 + ellipsis 吸收压缩（style.css:417），
    svg 自己没有 —— 不加 flex:none，窄卡片下图标会被压扁（与 style.css:351 .select-icon 同一手法）。
-   间距不另加 margin：共享 .tpl-row 的 gap:8px（style.css:410）已经给了图标与名字之间的 8px，
+   间距不另加 margin：共享 .tpl-row 的 gap:8px（style.css:407）已经给了图标与名字之间的 8px，
    与弹窗 [类型] 图标-标签的 8px 同一来源；垂直也不自定义 —— 行是 flex + align-items:center，
    FA 的 vertical-align:-0.125em 只在内联场景生效，这里用不上。 */
 .ql-type-icon {
