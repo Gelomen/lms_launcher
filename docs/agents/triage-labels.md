@@ -12,6 +12,6 @@
 
 当某个技能提到某个分级角色（例如「打上 AFK-ready 的分级标签」）时，用本表「本仓 tracker 里的标签」那一列的字符串。
 
-本表五条标签已于 2026-10-18 在本仓 tracker 建好并实际使用（spec #1 与三张子票都带 `ready-for-agent`；`wontfix` 是 GitHub 默认标签，原本就在）。
+本表五条标签已于 2026-10-18 在本仓 tracker 建好并实际使用（spec #1 与三张子票都带 `ready-for-agent`；`wontfix` 是 GitHub 默认标签，原本就在）。2026-10-19 经 `gh label list` 复核：五条全部在位，描述与默认词表一致（`needs-triage` = Raw issue awaiting triage、`needs-info` = Waiting on more information、`ready-for-agent` = Agent-ready: can be implemented as-is、`ready-for-human` = Needs a human, not an agent）。本表未做任何改名。
 
 想换用你自己的标签词汇，就改「本仓 tracker 里的标签」这一列。

@@ -2,7 +2,7 @@
 
 本仓的 issue 与 spec 都存放在 GitHub Issues 里。所有操作走 `gh` CLI。
 
-> 工具链注记（2026-10-18 实测）：`gh` 2.102.0 装在 `C:\Program Files\GitHub CLI\gh.exe`，**不在代理 shell 的 `PATH` 上**——请用全路径调用，或把该目录加进 `PATH`。**已登录** github.com / `Gelomen`（凭据在系统 keyring，token 前缀 `gho_`，scopes：`gist`、`read:org`、`repo`、`workflow`）。换机器或换账号时才需要重跑 `gh auth login`。
+> 工具链注记（2026-10-18 实测，2026-10-19 复核仍成立）：`gh` 2.102.0 装在 `C:\Program Files\GitHub CLI\gh.exe`，**不在代理 shell 的 `PATH` 上**——请用全路径调用，或把该目录加进 `PATH`。**已登录** github.com / `Gelomen`（凭据在系统 keyring，token 前缀 `gho_`，scopes：`gist`、`read:org`、`repo`、`workflow`）。换机器或换账号时才需要重跑 `gh auth login`。
 
 ## 约定
 
@@ -26,11 +26,12 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 
 本仓更早的 superpowers 流程把 spec、plan 与逐任务 check 表放在 `docs/superpowers/`（过程账本放在 `.superpowers/`）。2026-10-18 这些内容已迁进本 tracker，随后从工作树里删除；原文仍可从 git 历史取回（`git log -- docs/superpowers`、`git log -- .superpowers`）。
 
-## 本仓当前状态（2026-10-18 实测）
+## 本仓当前状态（2026-10-18 实测，2026-10-19 复核）
 
 - **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick-launch`（2026-10-18 由 `feat/quick_launch-matt` 改名，旧名已不存在）。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
 - **在飞工作**：无。spec #1「快捷启动 [程序路径] 支持多条」连同它的三条子票已于 2026-10-18 全部关闭。
+  - **2026-10-19 复核口径**：`gh issue list --state open` 返回 `[]`（开放 issue 为零），#1 现为 `closed`；当前分支 `feat/quick-launch`，与 `origin/feat/quick-launch` 同步。分级标签经 `gh label list` 复核仍在位（映射见 [triage-labels.md](./triage-labels.md)）。
   - **已关闭**：#2 启动前全量预检（实现提交 `ee77d68`）、#3 弹窗 [程序路径] 多行（`5ac31a4`）、
     #4 打包 + 布局量取 + R1–R12 真机门（`7c32ec4` … `0b43346`）。每票的执行记录与两轴审查结论都写在各自票的评论里；
     spec 的收口评论：https://github.com/Gelomen/lms_launcher/issues/1#issuecomment-6251941207 。
@@ -75,6 +76,8 @@ GitHub 的 issue 与 PR 共用一套编号，所以裸写一个 `#42` 可能指�
 ## 寻路（Wayfinding）操作
 
 供 `/wayfinder` 使用。**地图（map）**是一条 issue，**子票（child）**是挂在地图下的 issue。
+
+> **标签已就位（2026-10-19 建好，`gh label list` 实测在位）**：`wayfinder:map`（`5319E7`）、`wayfinder:research`（`006B75`）、`wayfinder:prototype`（`D4C5F9`）、`wayfinder:grilling`（`F9D0C4`）、`wayfinder:task`（`C2E0C6`）。所以下面的 `gh issue create --label wayfinder:map` 可以直接用，不需要先建标签。这五个**不在** setup 技能自动创建的那五个分级标签之列，因此换仓、换 tracker 或删过标签时要补建：`gh label create wayfinder:map --color 5319E7 --description "Wayfinder map"`（子票同理）。
 
 - **地图**：一条打了 `wayfinder:map` 标签的 issue，正文承载 Notes / Decisions-so-far / Fog 三段。`gh issue create --label wayfinder:map`。
 - **子票**：以 GitHub sub-issue 的形式挂到地图上的 issue（见**把 issue 变成某条的 sub-issue**）。tracker 不支持 sub-issue 时，把子票加进地图正文的任务列表，并在子票正文顶部写 `Part of #<map>`。标签用 `wayfinder:<type>`（`research`/`prototype`/`grilling`/`task`）。领取后把票指派给推进它的开发者。
