@@ -33,18 +33,23 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 - **在飞工作**：spec #1「快捷启动 [程序路径] 支持多条」是当前唯一 open 的 spec，子票 #2、#3、#4 都是它的 sub-issue。
   - **已关闭**：#2 启动前全量预检（实现提交 `ee77d68`）、#3 弹窗 [程序路径] 多行（实现提交 `5ac31a4`）；
     两票的执行记录与两轴审查结论都写在各自的关票评论里。
-  - **#4 打包 + 布局量取 + R1–R12 真机门**：agent 这一侧的部分已做完（布局量取、打包取证、打包前后两次全量门 + 类型门），
-    执行记录与 R1–R12 清单写在票的评论里。**票未关**：最后一道真机门只有用户能跑，等的是用户逐条「通过 / 不通过 + 现象」。
-  - **前沿（可立即开工）**：无——spec #1 的三张子票要么已关，只剩用户的真机门。
+  - **#4 打包 + 布局量取 + R1–R12 真机门**（实现提交 `7c32ec4`）：agent 这一侧已做完——
+    布局量取与出图（`.temp/ql-exe-rows-probe/`）；打包取证（`build.bat` exit 0：`.temp/ql-t4-build.log`，
+    产物核对：`.temp/ql-t4-pack-evidence.txt`）；全量门四次全绿——AC 要求的打包前一次
+    （`ql-t4-baseline-test.log`）+ 打包后一次（`ql-t4-postpack-test.log`）+ 每次改注释之后再跑两次
+    （`ql-t4-final-test.log` / `ql-t4-final2-test.log`），四次都是 53 files / 953 passed；
+    类型门 `npx tsc -p tsconfig.main.json` exit 0（`ql-t4-tsc.log` / `ql-t4-tsc2.log`）。日志都在 `.temp/` 下。
+    执行记录与 R1–R12 清单写在票 #4 的评论里。**票没关**：AC-4 那道真机门只有用户能跑，等的是用户逐条「通过 / 不通过 + 现象」。
+  - **前沿（可立即开工）**：按上面的定义仍是 #4——但它已经没有任何 agent 能做的工作，只剩用户的真机门。除此之外没有可开工的票。
   - **被阻塞**：无。
   - 做完一张票就关一张；真机门这类只有用户能执行的判据，不得由 agent 代填。
-  - 给 #4 的实测结论（已被真机取证取代）：可执行程序态的多行**已真机量取**（`.temp/ql-exe-rows-probe/`，
-    对照组 = 票 #3 之前那一版组件 + 命令行态两态）。1 行 = 218.0，与改前逐像素一致（唯一变化就是多出的 36px [+]，
-    输入框窄 44.0 = 36 + 8 行内 gap）；行 y 步距实测 38.0，两态同口径；两态多行都不出横向 / 竖向滚动条。
-    两处必须记下的差别：③ 3 行的绝对值两态不同（可执行程序 285.3 / 命令行 293.3）——差的 8.0 来自两态「管理员」
-    那一行的既有高度差（只放开关 24 vs 还挂终端下拉 32），1 行时被 218 的 min-height 地板盖住，不是多行引入的；
-    ④ 上一轮「[+] 挂气泡顶出 10px 横向滚动条」的坑在这条上不存在（[+] / [-] 不带气泡；[选择文件] 的既有气泡实测不出溢出）。
-    数字已写进 QuickLaunchModal.vue 的样式注释。
+  - #4 的实测结论（取代上一条 #3 的「exe 态没做真机量取」交接注记）：可执行程序态的多行**已真机量取**
+    （`.temp/ql-exe-rows-probe/`，对照组 = 票 #3 之前那一版组件 + 命令行态两态）。1 行 = 218.0，与改前逐像素一致
+    （唯一变化就是多出的 36px [+]，输入框窄 44.0 = 36 + 8 行内 gap）；行 y 步距实测 38.0，两态同口径；
+    多行两态都不出横向 / 竖向滚动条。两处必须记下的差别：① 3 行的绝对值两态不同（可执行程序 285.3 / 命令行 293.3）——
+    差的 8.0 来自两态「管理员」那一行的既有高度差（只放开关 24 vs 还挂终端下拉 32），1 行时被 218 的 min-height 地板盖住，
+    不是多行引入的；② 上一轮「[+] 挂气泡顶出 10px 横向滚动条」的坑在这条上不存在（[+] / [-] 不带气泡；
+    [选择文件] 的既有气泡实测不出溢出）。数字已写进 QuickLaunchModal.vue 的样式注释。
   - 测试环境注记（#2 实测）：跑 vitest 的 PATH 必须含 `C:\Users\Gelomen\AppData\Local\Microsoft\WindowsApps`（mspaint.exe 别名预检）与 `C:\Windows\System32\WindowsPowerShell\v1.0`（powershell.exe），否则 `process / ps1-encoding / update-bootstrap` 三组共 8 条会因 ENOENT/EINVAL 假红。
 - **sub-issue 与原生依赖在本仓已验证可用**：`gh issue edit <parent> --add-sub-issue <child>` 与 `gh api --method POST .../issues/<child>/dependencies/blocked_by -F issue_id=<db-id>` 都已成功执行过（#4 的 `issue_dependencies_summary.blocked_by` = 2）。上面「更老的 `gh`」分支只是兜底，不必先试。
 - **本地暂存**：迁移时用过的草稿留在 `.scratch/quick-launch-exe-rows/`（被 `.gitignore` 的 `.*/` 忽略，不入库）；tracker 是唯一权威，草稿可随时删。
