@@ -39,7 +39,9 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
     （`ql-t4-baseline-test.log`）+ 打包后一次（`ql-t4-postpack-test.log`）+ 每次改注释之后再跑两次
     （`ql-t4-final-test.log` / `ql-t4-final2-test.log`），四次都是 53 files / 953 passed；
     类型门 `npx tsc -p tsconfig.main.json` exit 0（`ql-t4-tsc.log` / `ql-t4-tsc2.log`）。日志都在 `.temp/` 下。
-    执行记录与 R1–R12 清单写在票 #4 的评论里。**票没关**：AC-4 那道真机门只有用户能跑，等的是用户逐条「通过 / 不通过 + 现象」。
+    最终那次打包取的是提交后的源码（\`ql-t4-build3.log\`，产物复核 7/7 sha256 相同）。执行记录、两轴审查与 R1–R12 清单：
+    https://github.com/Gelomen/lms_launcher/issues/4#issuecomment-6251647704 。**票没关**：AC-4 那道真机门只有用户能跑，
+    等的是用户逐条「通过 / 不通过 + 现象」——agent 不得代填。
   - **前沿（可立即开工）**：按上面的定义仍是 #4——但它已经没有任何 agent 能做的工作，只剩用户的真机门。除此之外没有可开工的票。
   - **被阻塞**：无。
   - 做完一张票就关一张；真机门这类只有用户能执行的判据，不得由 agent 代填。
