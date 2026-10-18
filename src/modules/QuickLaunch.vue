@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { library, config } from '@fortawesome/fontawesome-svg-core';
-import { faPenToSquare, faCopy } from '@fortawesome/free-regular-svg-icons';
-import { faFileCirclePlus, faPlay, faStop } from '@fortawesome/free-solid-svg-icons';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import { faPenToSquare, faCopy, faFileCode } from '@fortawesome/free-regular-svg-icons';
+import { faFileCirclePlus, faPlay, faStop, faTerminal } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 import { t } from '../i18n';
@@ -10,7 +11,7 @@ import { truncateByWidth, visualWidth } from '../util/truncate';
 import { nextCopyName } from '../util/copy-name';
 import QuickLaunchModal from './QuickLaunchModal.vue';
 // 类型只有一份真源（主进程配置层）；与 src/i18n.ts:3 同一先例——import type 在构建期被擦除，不引入运行时依赖。
-import type { QuickLaunchEntry, QuickLaunchList, QuickLaunchMap } from '../src-main/quick-launch-config';
+import type { QuickLaunchEntry, QuickLaunchKind, QuickLaunchList, QuickLaunchMap } from '../src-main/quick-launch-config';
 
 // 模块 · 快捷启动卡片（规格 2026-10-10-quick-launch-card §4 / §5.2 / §9.4 / §11-1）
 // 单向数据流（check C1/C4，与 LaunchBar 同构）：列表数据自己拉 ql_list，运行态由 App 经 states 下发；
@@ -23,10 +24,13 @@ config.autoGenerateCss = true;
 // （2026-10-15 用户要求把本卡 [停止] 的白色方框调小：12px → 10px，取证台 .temp/ql-stop-icon-size/measure.mjs
 //  —— 着墨 10.4×10.4px → 8.6×8.6px，占 24px 按钮 43% → 36%。LaunchBar 的 [停止] 仍 14px，未改）。
 // faPlay 只在 free-solid-svg-icons 里有（free-regular 无该图标），按本文件既有约定挂进 fat 键。
-library.add(faPenToSquare, faCopy, faFileCirclePlus, faPlay, faStop);
+// 票 #6（2026-10-19）：行名左侧的类型图标复用弹窗 [类型] 那一对字形（QuickLaunchModal.vue:26-30）——
+// terminal 只在 free-solid 里（挂 fas 键）、file-code 两个包都有，取 free-regular 那份（挂 fat 键）。
+// 同一份 2026-10-16 定版口径：一个实心一个细线，用户当时知情选定，两处必须逐字一致。
+library.add(faPenToSquare, faCopy, faFileCirclePlus, faPlay, faStop, faTerminal, faFileCode);
 const byPrefixAndName = {
-  fat: { copy: faCopy, 'pen-to-square': faPenToSquare, play: faPlay },
-  fas: { 'file-circle-plus': faFileCirclePlus, stop: faStop },
+  fat: { copy: faCopy, 'file-code': faFileCode, 'pen-to-square': faPenToSquare, play: faPlay },
+  fas: { 'file-circle-plus': faFileCirclePlus, stop: faStop, terminal: faTerminal },
 };
 
 const props = defineProps<{ states: Record<string, { running: boolean; stopping: boolean }> }>();
@@ -126,6 +130,18 @@ function onToggle(id: string): void {
 
 // 行名截断（规格 §11-1）：视觉宽度预算 30（列表行；模板卡同为 30，下拉是 16）——CJK=2 / 拉丁=1，
 // 只在真超预算 + grace=2 时手动 +…(U+2026) 并挂 data-tooltip 全名，grace 内全量渲染不挂。
+// 票 #6（2026-10-19）：行名左侧的类型图标。字形 = 弹窗 [类型] 下拉的同一份（QuickLaunchModal.vue:146-149），
+// 类型也只有一份真源 —— 主进程把 type 归一成 shell/exe 二值（src-main/quick-launch-config.ts:13 QuickLaunchKind，
+// 术语见 GLOSSARY.md「快捷启动类型（QuickLaunchKind）」），所以这里按二值取图标，没有第三种、也不做未知兜底。
+// 图标纯装饰：不挂 data-tooltip / aria-label，可访问性靠 FA 自动补的 aria-hidden（fontawesome-svg-core index.mjs:2366）。
+const TYPE_ICON: Record<QuickLaunchKind, IconDefinition> = {
+  shell: byPrefixAndName.fas['terminal'], // 实心 terminal（free-solid）
+  exe: byPrefixAndName.fat['file-code'], // 细线 file-code（free-regular）
+};
+function typeIconOf(id: string): IconDefinition {
+  return TYPE_ICON[list.value!.items[id].type];
+}
+
 const BUDGET = 30;
 function nameOf(id: string): string {
   return list.value?.items[id]?.name || id;
@@ -174,6 +190,11 @@ onMounted(() => { void reload(); });
       <!-- 行卡片复用模板卡的 .tpl-rows/.tpl-row/.tpl-row__id/.tpl-row__actions（check F1），不新造行样式 -->
       <div v-if="list" class="tpl-rows">
         <div v-for="id in Object.keys(list.items)" :key="id" class="tpl-row">
+          <!-- 票 #6（2026-10-19）：名字左侧的类型图标（shell=实心 terminal / exe=细线 file-code，
+               与编辑弹窗 [类型] 逐字同一对字形）。它是名字的兄弟节点、不进名字元素 → 名字的宽度预算
+               （BUDGET 30）与 .tpl-tip 口径一字不动；纯装饰 → 无 tooltip / aria-label。
+               间距走共享 .tpl-row 的 gap:8px（style.css:410），尺寸走 FA 自己的 1em 盒 —— 见本文件末尾 style 块。 -->
+          <FontAwesomeIcon class="ql-type-icon" :icon="typeIconOf(id)" />
           <span class="tpl-row__id" :data-tooltip="tipFor(id)"
             @mouseenter="(e) => onLabelEnter(e as MouseEvent, id)" @mouseleave="onLabelLeave">{{ rowName(id) }}</span>
           <!-- 按钮顺序 = [复制][编辑][启动/停止]（规格 §4 / check E7） -->
@@ -206,3 +227,23 @@ onMounted(() => { void reload(); });
       @saved="onModalSaved" @deleted="onModalDeleted" @close="modalOpen = false" />
   </section>
 </template>
+
+<!-- 票 #6（2026-10-19）：列表行名左侧类型图标的唯一一条规则，写在卡片自己的 scoped 样式里 ——
+     共享的 .tpl-rows/.tpl-row/.tpl-row__id/.tpl-row__actions（style.css:406-422）一字不动，
+     所以模板卡不会长出图标（负向门 TemplateModule.test.ts rows_render_no_type_icon_classes）。 -->
+<style scoped>
+/* 不写任何 px（与 style.css:356「尺寸只用 1em、不写死 14px」同一口径）：图标盒由 FA 自己的规则给 ——
+   config.autoGenerateCss 生成的 .svg-inline--fa 是 height:1em / width:var(--fa-width,1.25em)
+   （本票取证台 dump 出的生成物：.temp/ql-row-type-icon-probe/fa-generated.css:41-47）；
+   字号继承行名（--fs-body:14px，style.css:31 定义、:62 挂到 body）→ 盒 1.25em×1em = 17.5×14px。
+   真 Chromium 实测（.temp/ql-row-type-icon-probe/measure.md，2026-10-19）：17.5×14、图标↔名字 8.00px、
+   行高有图标/删掉图标都是 42.00（= style.css:388 记的 42px/条，未变）。 */
+/* 唯一要钉的是「图标不参与 flex 收缩」：名字那侧有 min-width:0 + ellipsis 吸收压缩（style.css:417），
+   svg 自己没有 —— 不加 flex:none，窄卡片下图标会被压扁（与 style.css:351 .select-icon 同一手法）。
+   间距不另加 margin：共享 .tpl-row 的 gap:8px（style.css:410）已经给了图标与名字之间的 8px，
+   与弹窗 [类型] 图标-标签的 8px 同一来源；垂直也不自定义 —— 行是 flex + align-items:center，
+   FA 的 vertical-align:-0.125em 只在内联场景生效，这里用不上。 */
+.ql-type-icon {
+  flex: none;
+}
+</style>

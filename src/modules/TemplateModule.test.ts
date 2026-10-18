@@ -187,6 +187,35 @@ describe('TemplateModule', () => {
     wrapper.unmount();
   });
 
+  // 负向门（票 #6，2026-10-19）：类型图标只属于快捷启动卡 —— 模板卡没有「类型」这个概念。
+  // 两张卡共用 style.css 的 .tpl-row*（check F1），QuickLaunch 的图标规则全部写在它自己的
+  // scoped <style> 里（新规则不落进共享类），所以模板卡的行 markup 里不得出现任何类型图标类。
+  it('rows_render_no_type_icon_classes', async () => {
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule);
+    await flush();
+
+    const row = wrapper.find('.module-template .tpl-row');
+    expect(row.exists(), '模板卡行没渲染，负向门就成了假勾').toBe(true);
+    // 类型字形（terminal / file-code）与本卡的图标钩子类，一个都不许出现在模板行里
+    expect(row.findAll('svg.ql-type-icon, svg.fa-terminal, svg.fa-file-code').length).toBe(0);
+    // 行名仍是行的第一个子元素（QuickLaunch 那侧才在它前面插图标）
+    const label = row.find('.tpl-row__id');
+    expect(label.exists()).toBe(true);
+    expect(label.element.previousElementSibling, '模板行的名字前多出了元素').toBeNull();
+    expect(label.element.querySelectorAll('svg').length).toBe(0);
+    wrapper.unmount();
+  });
+
   it('list_has_no_delete_and_edit_modal_shows_it', async () => {
     (window as any).lms = {
       invoke: (cmd: string) => {

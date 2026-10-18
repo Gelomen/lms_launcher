@@ -230,6 +230,58 @@ describe('QuickLaunch card', () => {
     w.unmount();
   });
 
+  // 票 #6（2026-10-19）：行名左侧的类型图标 —— 与编辑弹窗 [类型] 下拉逐字同一对字形
+  // （2026-10-16 定版口径：shell = free-solid 的 terminal、exe = free-regular 的 file-code，
+  // 一实心一细线是用户当时知情选定的代价；见 QuickLaunchModal.vue:22-25）。
+  // 图标是纯装饰：不带 tooltip / aria-label（FA 自己补 aria-hidden），并且它是 .tpl-row__id 的
+  // **兄弟节点**、不进名字元素 —— 名字的宽度预算（BUDGET 30）与 .tpl-tip 口径由 E2/E3 钉住，不得回归。
+  const EXE: QuickLaunchEntry = { name: 'game', type: 'exe', exe: 'D:/game/game.exe' };
+
+  /** 元素自身 + 其内所有 svg 的「前缀:图标名」—— 手法同 QuickLaunchModal.test.ts:108 / Dropdown.test.ts:192，
+      只是这里要读图标本身（querySelectorAll 不含自身），故并入 self。 */
+  function iconTags(el: Element): string[] {
+    const tag = (s: Element) => s.getAttribute('data-prefix') + ':' + s.getAttribute('data-icon');
+    const self = el.tagName.toLowerCase() === 'svg' ? [tag(el)] : [];
+    return [...self, ...[...el.querySelectorAll('svg')].map(tag)];
+  }
+
+  it('row_renders_the_type_icon_before_the_name', async () => {
+    const w = mountCard({ items: { s: entry('shell-item'), e: EXE }, invalid: [] });
+    await flush();
+
+    const rows = w.findAll('.tpl-row');
+    expect(rows.length).toBe(2);
+
+    // 字形身份：与弹窗 [类型] 的两项逐字相同（QuickLaunchModal.test.ts:1116 钉的 ['fas:terminal', 'far:file-code']）
+    const firstIcon = (row: Element) => {
+      const label = row.querySelector('.tpl-row__id')!;
+      const prev = label.previousElementSibling;
+      expect(prev, '行名前必须有类型图标').not.toBeNull();
+      expect(prev?.tagName.toLowerCase(), '行名的前一个兄弟必须是图标本身').toBe('svg');
+      return prev as Element;
+    };
+    expect(iconTags(firstIcon(rows[0].element))).toEqual(['fas:terminal']);
+    expect(iconTags(firstIcon(rows[1].element))).toEqual(['far:file-code']);
+    // 图标只属于「类型」这一处：行内其余 svg 全是按钮里的（复制/编辑/播放），数量不变
+    expect(rows[0].findAll('svg').length).toBe(4); // 类型图标 + copy + pen-to-square + play
+    // 字形类（FA 按 config.cssPrefix + 图标名生成，本票点名的门）+ 本卡专用钩子类
+    expect(rows[0].find('svg.ql-type-icon.fa-terminal').exists()).toBe(true);
+    expect(rows[1].find('svg.ql-type-icon.fa-file-code').exists()).toBe(true);
+
+    // 装饰性：FA 的 aria-hidden 保留，且不得有任何可访问名 / tooltip（图标不替读屏用户重复说话）
+    for (const row of rows) {
+      const icon = firstIcon(row.element);
+      expect(icon.getAttribute('aria-hidden'), '类型图标必须 aria-hidden').toBe('true');
+      for (const attr of ['data-tooltip', 'aria-label', 'title']) {
+        expect(icon.hasAttribute(attr), `类型图标不得带 ${attr}`).toBe(false);
+      }
+      // 名字元素里不得混进图标：那样图标就占了名字的宽度预算（E2/E3 的截断口径随之回归）
+      expect(row.element.querySelectorAll('.tpl-row__id svg').length).toBe(0);
+      expect(row.element.querySelector('.tpl-row__id')?.classList.contains('ql-type-icon')).toBe(false);
+    }
+    w.unmount();
+  });
+
   // 长名不顶错位（2026-10-13 用户反馈 + 截图）：
   // 名字较长时 .tpl-row__actions 被 flex 挤压 → 三个按钮从一行折成两行（[复制][编辑] 一行、[启动] 掉到下一行）。
   // 根因：.tpl-row__actions 无样式（块级 div，min-content = 单个按钮宽 → 可被压到折行），
