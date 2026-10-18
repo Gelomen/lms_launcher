@@ -2,8 +2,6 @@ dist/
 dist-*/
 node_modules/
 .*/
-!.superpowers/
-!.superpowers/**
 logs/
 cache/
 configs/lms_launcher.yaml

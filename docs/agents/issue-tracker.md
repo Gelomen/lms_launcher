@@ -2,7 +2,7 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
-> Toolchain note (2026-10-18): the `gh` CLI is not installed on this machine. Install GitHub CLI and run `gh auth login` before the skills below can write to the tracker.
+> Toolchain note (2026-10-18): `gh` 2.102.0 is installed at `C:\Program Files\GitHub CLI\gh.exe` but may not be on an agent shell's `PATH` — call it by full path, or prepend that directory. It is NOT authenticated by default: run `gh auth login` once (or export `GH_TOKEN`) before any skill writes to the tracker.
 
 ## Conventions
 
@@ -18,8 +18,13 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 
 ## Relationship to this repo's docs flow
 
-`AGENTS.md` keeps spec / plan / check documents in `docs/superpowers/`. Those stay where they are.
-The issue tracker holds the *tickets*: a spec issue links to the `docs/superpowers/specs/…` file rather than replacing it.
+Specs and tickets both live here — there is no separate in-repo spec/plan directory any more.
+
+- A **spec** is one issue carrying the `ready-for-agent` label, written with the `to-spec` template (Problem Statement / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope / Further Notes).
+- **Tickets** are sub-issues of that spec, one per tracer bullet, with blocking edges as native GitHub issue dependencies.
+- Work the **frontier**: any open sub-issue whose blockers are all closed.
+
+The repo's older superpowers workflow kept specs, plans and per-task check tables under `docs/superpowers/` (and process ledgers under `.superpowers/`). Those were migrated into this tracker on 2026-10-18 and then deleted from the tree; the original text is still reachable in git history (`git log -- docs/superpowers`, `git log -- .superpowers`).
 
 ## Pull requests as a triage surface
 
