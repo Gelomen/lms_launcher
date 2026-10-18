@@ -28,24 +28,20 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 
 ## 本仓当前状态（2026-10-18 实测）
 
-- **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick_launch-matt`。
+- **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick-launch`（2026-10-18 由 `feat/quick_launch-matt` 改名，旧名已不存在）。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
-- **在飞工作**：spec #1「快捷启动 [程序路径] 支持多条」是当前唯一 open 的 spec，子票 #2、#3、#4 都是它的 sub-issue。
-  - **已关闭**：#2 启动前全量预检（实现提交 `ee77d68`）、#3 弹窗 [程序路径] 多行（实现提交 `5ac31a4`）；
-    两票的执行记录与两轴审查结论都写在各自的关票评论里。
-  - **#4 打包 + 布局量取 + R1–R12 真机门**（实现提交 `7c32ec4`）：agent 这一侧已做完——
-    布局量取与出图（`.temp/ql-exe-rows-probe/`）；打包取证（`build.bat` exit 0：`.temp/ql-t4-build.log`，
-    产物核对：`.temp/ql-t4-pack-evidence.txt`）；全量门四次全绿——AC 要求的打包前一次
-    （`ql-t4-baseline-test.log`）+ 打包后一次（`ql-t4-postpack-test.log`）+ 每次改注释之后再跑两次
-    （`ql-t4-final-test.log` / `ql-t4-final2-test.log`），四次都是 53 files / 953 passed；
-    类型门 `npx tsc -p tsconfig.main.json` exit 0（`ql-t4-tsc.log` / `ql-t4-tsc2.log`）。日志都在 `.temp/` 下。
-    最终那次打包取的是提交后的源码（\`ql-t4-build3.log\`，产物复核 7/7 sha256 相同）。执行记录、两轴审查与 R1–R12 清单：
-    https://github.com/Gelomen/lms_launcher/issues/4#issuecomment-6251647704 。**票没关**：AC-4 那道真机门只有用户能跑，
-    等的是用户逐条「通过 / 不通过 + 现象」——agent 不得代填。
-  - **前沿（可立即开工）**：按上面的定义仍是 #4——但它已经没有任何 agent 能做的工作，只剩用户的真机门。除此之外没有可开工的票。
+- **在飞工作**：无。spec #1「快捷启动 [程序路径] 支持多条」连同它的三条子票已于 2026-10-18 全部关闭。
+  - **已关闭**：#2 启动前全量预检（实现提交 `ee77d68`）、#3 弹窗 [程序路径] 多行（`5ac31a4`）、
+    #4 打包 + 布局量取 + R1–R12 真机门（`7c32ec4` … `0b43346`）。每票的执行记录与两轴审查结论都写在各自票的评论里；
+    spec 的收口评论：https://github.com/Gelomen/lms_launcher/issues/1#issuecomment-6251941207 。
+  - #4 的收口口径（别混淆两件事）：agent 侧取证在 https://github.com/Gelomen/lms_launcher/issues/4#issuecomment-6251647704
+    （布局量取与出图、打包取证、四次全量门 + 类型门全绿）；R1–R12 是**用户**用打包产物 `dist-release\win-unpacked\lms_launcher.exe`
+    本机实跑后回报「验收通过」= 全部通过、无不满足项，记录在 https://github.com/Gelomen/lms_launcher/issues/4#issuecomment-6251889396 。
+  - **前沿（可立即开工）**：无——本 spec 已收口。下一条 feature 先按上面「spec」那条建新 issue，再拆 tracer-bullet 子票。
   - **被阻塞**：无。
-  - 做完一张票就关一张；真机门这类只有用户能执行的判据，不得由 agent 代填。
-  - #4 的实测结论（取代上一条 #3 的「exe 态没做真机量取」交接注记）：可执行程序态的多行**已真机量取**
+  - 纪律：做完一张票就关一张；真机门这类只有用户能执行的判据不得由 agent 代填，
+    用户的回报按原话记录、口径不明就先问（#4 收票前就问了一次「验收通过」指的是哪一层）。
+  - #4 的实测结论（留给以后改这个弹窗的票，别照搬数字）：可执行程序态的多行已真机量取
     （`.temp/ql-exe-rows-probe/`，对照组 = 票 #3 之前那一版组件 + 命令行态两态）。1 行 = 218.0，与改前逐像素一致
     （唯一变化就是多出的 36px [+]，输入框窄 44.0 = 36 + 8 行内 gap）；行 y 步距实测 38.0，两态同口径；
     多行两态都不出横向 / 竖向滚动条。两处必须记下的差别：① 3 行的绝对值两态不同（可执行程序 285.3 / 命令行 293.3）——
