@@ -293,6 +293,20 @@ describe('QuickLaunchModal', () => {
   const rowBtn = (row: HTMLElement, key: string): HTMLButtonElement | null =>
     ([...row.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === t(key)) as HTMLButtonElement) ?? null;
 
+  // ---------- 票 #3（spec #1「弹窗」段）：[程序路径] 的多行——与上面命令行的手法同一套 ----------
+  // 定位口径照抄 cmdRow*：所有行都在同一个 .field-cell（这里叫 .exe-cell）里纵向排布，
+  // 每行是一个 .row-cell（输入框 + 自己的 [选择文件] + [+] / [-]）。按钮按 aria-label 取（票 #3：不带悬浮气泡）。
+  const exeCellEl = (): HTMLElement | null => document.querySelector('.modal-box .exe-cell');
+  const exeRows = (): HTMLElement[] =>
+    [...(exeCellEl()?.children ?? [])].filter((el) => el.classList.contains('row-cell')) as HTMLElement[];
+  const exeRowInputs = (): HTMLInputElement[] => exeRows().map((row) => rowInput(row));
+  const pickBtnOf = (row: HTMLElement): HTMLButtonElement | null =>
+    ([...row.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === t('ql.modal.btn.pick')) as HTMLButtonElement) ?? null;
+  // 多行用例都要先切到「可执行程序」态
+  const toExeType = async (): Promise<void> => {
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
+  };
+
   // 按钮的归属与位置：默认行只有 [+]、追加行只有 [-]；[+] 在输入框右侧；新行开在当前行下方；
   // [-] 删的是被点的那一行（不是最后一行），且不把后面几行的值串位。
   it('only_the_default_cmd_row_has_plus_and_added_rows_have_minus', async () => {
@@ -445,6 +459,287 @@ describe('QuickLaunchModal', () => {
     w.unmount();
   });
 
+  // ===== 票 #3（spec #1「弹窗」段）：[程序路径] 多行 =====
+  // AC-1：默认那一行「与今天完全一样」——单行不换行的输入框、[选择文件] 在输入框右侧，
+  // 只是 [选择文件] 右边多一个 [+]；默认行没有 [-]。
+  it('exe_path_default_row_has_pick_then_plus_and_no_minus', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await toExeType();
+
+    expect(exeRows().length, '默认态不止一行程序路径输入框').toBe(1);
+    const input = exeRowInputs()[0];
+    expect(input.value).toBe('');
+    // 「高度不变、不需要自动换行」= 它还是单行 <input>（换成 textarea 才会换行 / 出滚动条）
+    expect(input.tagName, '路径输入框被换成了能换行的控件').toBe('INPUT');
+    // 输入框仍是 .input（既有样式：--h-control 高 / 报错标红），行容器仍是 .row-cell（既有行内布局）
+    expect(input.classList.contains('input'), '路径输入框不再是 .input').toBe(true);
+
+    const kids = [...exeRows()[0].children];
+    const pick = pickBtnOf(exeRows()[0]);
+    const add = rowBtn(exeRows()[0], 'ql.modal.btn.addExe');
+    expect(pick, '默认行没有 [选择文件]').not.toBe(null);
+    expect(add, '默认行没有 [+] 按钮').not.toBe(null);
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.removeExe'), '默认行却有 [-] 按钮').toBe(null);
+    // 「[选择文件] 在输入框右侧」+「[+] 在 [选择文件] 右边」= 同一个行容器里 input → pick → [+]
+    expect(kids.indexOf(input), '输入框不在 .row-cell 行容器里').toBeGreaterThanOrEqual(0);
+    expect(kids.indexOf(pick as HTMLButtonElement), '[选择文件] 不在输入框右侧').toBeGreaterThan(kids.indexOf(input));
+    expect(kids.indexOf(add as HTMLButtonElement), '[+] 不在 [选择文件] 右边').toBeGreaterThan(kids.indexOf(pick as HTMLButtonElement));
+    // 报错位置门不受影响：报错 <p> 仍在同一个 .field-cell 内（该门用例已钉，这里只钉它的容器不变）
+    const cell = controlOf(t('ql.modal.exe')) as HTMLElement;
+    expect(cell.classList.contains('field-cell'), '路径那一格不再是 .field-cell（报错位置门要红）').toBe(true);
+    expect(exeCellEl(), '多行容器 .exe-cell 不是路径那一格').toBe(cell);
+    w.unmount();
+  });
+
+  // AC-2：点 [+] 在下方追加一行空路径**并聚焦它**；追加行只有 [-]、没有 [+]；默认行的 [+] 照旧还在。
+  // 顺带钉住票 #3 的硬约束：多行不新增 .flag-grid 的网格行 → 控件格计数门与 218px 定高门一字不改。
+  it('plus_appends_an_exe_path_row_below_and_focuses_it', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await toExeType();
+
+    // 先在默认行打一条路径：这样「追加到下方」与「插到最前面」这两种实现可区分
+    // （只看 DOM 子节点先后是恒真的：exeRows() 本身就是按 DOM 顺序取的）。
+    await setInput(exeRowInputs()[0], 'D:\\top.exe');
+
+    const add0 = rowBtn(exeRows()[0], 'ql.modal.btn.addExe') as HTMLButtonElement;
+    add0.click();
+    await flush();
+    expect(exeRows().length, '点 [+] 没有新增一行程序路径').toBe(2);
+    // 「在当前输入框**下方**创建新的输入框」= 已经打字的这一行仍是最上面一行，空行在它下面
+    expect(exeRowInputs().map((i) => i.value), '新行没有追加在默认行下方（插到了最前面？）').toEqual(['D:\\top.exe', '']);
+    // 带 [+] 的仍是最上面那一行（默认行跟着值走，不跟着位置走）
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.addExe'), '[+] 不在最上面那一行').not.toBe(null);
+    expect(rowBtn(exeRows()[1], 'ql.modal.btn.addExe'), '[+] 跑到了追加行上').toBe(null);
+    // 「点 [+] 追加一行空路径并聚焦它」：焦点落在新输入框上，且它是空的那一行
+    expect(exeRowInputs()[1].value, '被聚焦的不是新加的空行').toBe('');
+    expect(document.activeElement, '[+] 之后焦点没落到新输入框').toBe(exeRowInputs()[1]);
+    // 追加行：只有 [-]，没有 [+]；默认行的 [+] 还在（可以继续加）
+    expect(rowBtn(exeRows()[1], 'ql.modal.btn.removeExe'), '追加行没有 [-] 按钮').not.toBe(null);
+    expect(rowBtn(exeRows()[1], 'ql.modal.btn.addExe'), '追加行却有 [+] 按钮（只有默认行有）').toBe(null);
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.addExe'), '追加行之后默认行的 [+] 没了').not.toBe(null);
+    // 每一行都有自己的 [选择文件]（AC-4 的形状部分）
+    expect(pickBtnOf(exeRows()[1]), '追加行没有自己的 [选择文件]').not.toBe(null);
+
+    // 再加一行 → 三行。这两条断言（控件格计数 = 3 / minHeight = 218px）**逐字照抄**既有的定高门与
+    // 控件格计数门（上面的 only_the_default_cmd_row_has_plus… 与下面的 modal_height_is_fixed… 各钉一次）：
+    // 同一段断言、同一个期望值，这里只是把它们在**新的状态**下再跑一次——可执行程序态 + 三行路径。
+    // 票 #3 的硬约束就是「四张既有门一字不动照样绿」，所以这里不改它们的断言，只换现场；删掉这两行
+    // 就等于放弃「多行没有把弹窗定高带歪」这条 AC-8 的取证。
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+    expect(exeRows().length).toBe(3);
+    const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    const controlCells = [...grid.children].filter((el) =>
+      el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
+    expect(controlCells.length, '多行程序路径把 .flag-grid 的控件行数带变了，218px 的推导要重算').toBe(3);
+    expect(getComputedStyle(box() as Element).minHeight, '多行程序路径改掉了弹窗的定高地板').toBe('218px');
+    // 只数「网格子节点」挡不住一种走偏：把每行做成 .flag-grid 的独立行（格数变了，上面的门会红）；
+    // 也挡不住把 .exe-cell 的纵向排布规则删掉（行仍在一个格内，但 flex 列没了 → 真机上会横排 / 贴死）。
+    // 这里钉的是同一条 CSS 契约（同 type_field_is_widened_to_180px 的手法，injectRealCss 已注入真样式）：
+    const cellStyle = getComputedStyle(exeCellEl() as Element);
+    expect(cellStyle.display, '.exe-cell 不再是 flex 容器').toBe('flex');
+    expect(cellStyle.flexDirection, '.exe-cell 不是纵向排布（多行会在同一格里横排）').toBe('column');
+    expect(cellStyle.gap, '.exe-cell 的行距不是既有的 6px 口径（与 .flag-grid gap 同值）').toBe('6px');
+    w.unmount();
+  });
+
+  // AC-3：点第 2 行的 [-] → 删掉的正是第 2 行，第 3 行的路径仍在（删中间行不串位）。
+  // 同一手法照抄命令行的那一条：:key 用行 id、[-] 按 id 删，按 index 做 key / 删除都会串位。
+  it('minus_on_the_second_exe_row_deletes_exactly_that_row', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await toExeType();
+
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+    expect(exeRows().length).toBe(3);
+    await setInput(exeRowInputs()[1], 'D:\\A.exe');
+    await setInput(exeRowInputs()[2], 'D:\\B.exe');
+
+    // 删之前记住「第 3 行的输入框」是哪一个 DOM 节点
+    const thirdInput = exeRowInputs()[2];
+
+    rowBtn(exeRows()[1], 'ql.modal.btn.removeExe')!.click();
+    await flush();
+    expect(exeRows().length, '点 [-] 没有删掉那一行').toBe(2);
+    expect(exeRowInputs().map((i) => i.value), '删错了行，或删行把后面几行的值串位了（:key 用了 index）')
+      .toEqual(['', 'D:\\B.exe']);
+    // 值层面的断言对 :key=index **不敏感**（v-model 会把复用节点的值改写到新的行上），
+    // 但代价是「第 3 行」这个输入框被换成了另一个节点：光标 / 选区 / IME 组合态 / 滚动位置全跳走——
+    // 这就是用户说的「串位」。所以再钉一层：承载第 3 行路径的还是原来那个节点（:key 用行 id 的直接后果）。
+    expect(exeRowInputs()[1], '第 3 行的输入框被换成了另一个节点（:key 用了 index，光标/选区会跳到别的行）')
+      .toBe(thirdInput);
+    // 默认行仍然可加（两行时 [+] 还在默认行、[-] 只在追加行）
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.removeExe'), '默认行出现了 [-]').toBe(null);
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.addExe'), '删一行后默认行的 [+] 没了').not.toBe(null);
+    w.unmount();
+  });
+
+  // AC-4：每一行的 [选择文件] 只写它自己那一行（其余行的值一字不动）；对话框取消 = null → 不改任何值。
+  // 这也是「一次只选一个文件」的既有口径（spec #1 Out of Scope 2：选文件的 IPC 与对话框属性一字不改）。
+  it('each_exe_row_picker_fills_only_its_own_row_and_cancel_changes_nothing', async () => {
+    mockLms({ pick: 'D:\\Tools\\second.exe' });
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await toExeType();
+    await setInput(exeRowInputs()[0], 'D:\\keep-first.exe');
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+    await setInput(exeRowInputs()[1], 'D:\\keep-second.exe');
+    const pickCallsBefore = calls.filter((c) => c.cmd === 'ql_pick_exe').length;
+
+    // 点第二行的 [选择文件] → 只有第二行被改写，第一行逐字不动
+    (pickBtnOf(exeRows()[1]) as HTMLButtonElement).click();
+    await flush();
+    expect(calls.filter((c) => c.cmd === 'ql_pick_exe').length, '一次点击发了不止一次 ql_pick_exe')
+      .toBe(pickCallsBefore + 1);
+    expect(exeRowInputs()[1].value, '本行没有被 [选择文件] 填上').toBe('D:\\Tools\\second.exe');
+    expect(exeRowInputs()[0].value, '别的行被顺带改了').toBe('D:\\keep-first.exe');
+
+    // 取消（主进程返回 null）→ 任何一行都不改（check C3 的既有口径，逐行同样成立）
+    mockLms({ pick: null });
+    (pickBtnOf(exeRows()[0]) as HTMLButtonElement).click();
+    await flush();
+    expect(exeRowInputs().map((i) => i.value), '取消选择却改了值').toEqual(['D:\\keep-first.exe', 'D:\\Tools\\second.exe']);
+    w.unmount();
+  });
+
+  // AC-5：保存载荷 = 逐行 trim + 丢掉空行后的**有序数组**（顺序 = 从上到下）。
+  // 配置层的落盘形状早就要求数组（quick-launch-config.ts:14 exe?: string[] + normalizeExeList），
+  // 本票之前的弹窗发的是标量 → 主进程按「该条非法」拒绝，这条用例就是钉住这条实际缺陷。
+  it('exe_rows_save_as_a_trimmed_ordered_array_and_drop_blank_rows', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlnew0001'); } });
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await toExeType();
+    await setInput(inputOf(t('ql.modal.name'))!, '一组程序');
+
+    await setInput(exeRowInputs()[0], '  D:\\first.exe  ');
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+    // 中间那一行故意留空（手滑留的空行不得落盘），第三行填上
+    await setInput(exeRowInputs()[2], 'D:\\third.exe');
+
+    saveBtn().click();
+    await flush();
+    expect(saveCalls().length).toBe(1);
+    expect(sent).not.toBeNull();
+    expect(sent!.entry.exe, '保存的不是 trim + 丢空行后的有序数组').toEqual(['D:\\first.exe', 'D:\\third.exe']);
+    // 其余字段一字不改：仍只带该类型的字段（§5.3-6）
+    expect(sent!.entry, '多行改动顺带改了 payload 形状').toEqual({
+      name: '一组程序', type: 'exe', exe: ['D:\\first.exe', 'D:\\third.exe'], admin: false,
+    });
+    w.unmount();
+  });
+
+  // AC-6：所有行都空 → 既有「可执行程序路径不能为空」（err.ql.exeRequired），位置仍在路径那一格内，
+  // 且不发 ql_save；填上**任意一行**（不是只填第一行）报错即时消失。
+  it('all_blank_exe_rows_block_save_with_the_error_still_in_the_path_cell', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await toExeType();
+    await setInput(inputOf(t('ql.modal.name'))!, '记事本');
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+
+    saveBtn().click();
+    await flush();
+    expect(saveCalls().length, '全是空行却发了 ql_save').toBe(0);
+    const cell = controlOf(t('ql.modal.exe')) as HTMLElement;
+    const err = cell.querySelector('.error-text');
+    expect(err, '全空行时「路径不能为空」没渲染在路径那一格内').not.toBe(null);
+    expect(err!.textContent).toBe(t('err.ql.exeRequired'));
+    expect(document.querySelector('.modal-body > .error-text'), '报错仍留在弹窗顶部错误区').toBeNull();
+    expect(exeRowInputs().every((i) => i.classList.contains('error')), '空行没全部标红').toBe(true);
+    // 只有一条报错：多行不产生多条同文案的报错，也不串到别的格子
+    expect(cell.querySelectorAll('.error-text').length, '多行产生了不止一条报错').toBe(1);
+    expect(document.querySelectorAll('.name-cell .error-text').length, '路径的报错串到了名字那一格').toBe(0);
+
+    // 填上第二行（不是默认行）→ 报错即时消失，与单行时代的即时消错口径一致
+    await setInput(exeRowInputs()[1], 'D:\\Tools\\notepad.exe');
+    expect(cell.querySelector('.error-text'), '填上任意一行后报错没有消失').toBeNull();
+    expect(exeRowInputs()[0].classList.contains('error'), '报错消失后输入框仍是标红态').toBe(false);
+    w.unmount();
+  });
+
+  // AC-7 回填：exe 有两条 → 两个输入框，逐条对位（第一条在上），按钮归属与新建态一致
+  // （第一条有 [+]、第二条只有 [-]）；条目缺 exe → 一行空行。
+  // 到渲染端的 exe 一定是 string[]（主进程 normalizeEntry 已归一），所以这里不给标量夹具。
+  it('editing_an_entry_with_two_exe_paths_refills_two_rows_in_order', async () => {
+    mockLms();
+    const TWO: QuickLaunchEntry = { name: '一组程序', type: 'exe', exe: ['D:\\first.exe', 'D:\\third.exe'], admin: false };
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: TWO });
+    await flush();
+
+    expect(exeRowInputs().map((i) => i.value), '两条路径没有按条回填成两个输入框')
+      .toEqual(['D:\\first.exe', 'D:\\third.exe']);
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.addExe'), '回填的第一行没有 [+]').not.toBe(null);
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.removeExe'), '回填的第一行却有 [-]').toBe(null);
+    expect(rowBtn(exeRows()[1], 'ql.modal.btn.removeExe'), '回填的第二行没有 [-]').not.toBe(null);
+    expect(rowBtn(exeRows()[1], 'ql.modal.btn.addExe'), '回填的第二行却有 [+]').toBe(null);
+    expect(pickBtnOf(exeRows()[1]), '回填的第二行没有自己的 [选择文件]').not.toBe(null);
+    w.unmount();
+
+    // 缺 exe 字段（旧配置 / 旧夹具）→ 一行空输入框，不崩、不出空行以外的东西
+    const w2 = mountModal({ open: true, id: 'qlb2c3d4e5', entry: { name: '没有路径', type: 'exe', admin: false } as QuickLaunchEntry });
+    await flush();
+    expect(exeRows().length, '缺 exe 字段时不止一行空输入框').toBe(1);
+    expect(exeRowInputs()[0].value, '缺 exe 字段时那一行不是空的').toBe('');
+    expect(rowBtn(exeRows()[0], 'ql.modal.btn.addExe'), '缺 exe 字段时默认行没有 [+]').not.toBe(null);
+    w2.unmount();
+
+    // 不做旧格式兼容（spec #1 Out of Scope 4）：标量写法在配置层就进 invalid，永远到不了渲染端；
+    // 万一有人顺手套回标量，这里也不「半支持」——一律按「没有」处理成一行空行，而不是把标量当一条路径。
+    const w3 = mountModal({ open: true, id: 'qlc3d4e5f6', entry: { name: '旧写法', type: 'exe', exe: 'D:\\legacy.exe', admin: false } as unknown as QuickLaunchEntry });
+    await flush();
+    expect(exeRows().length, '标量写法被当成了合法的一条路径（本仓不做旧格式兼容）').toBe(1);
+    expect(exeRowInputs()[0].value, '标量写法却把值填进了输入框').toBe('');
+    w3.unmount();
+  });
+
+  // 上一轮的实测教训（登记在 QuickLaunchModal.vue 的 cmd 行注释里）：给 [+] / [-] 挂 .tip-up 气泡
+  // 会把气泡探出 .flag-grid 边界、把 .modal-body 顶出 10px 横向滚动条 → 定高门与「两态同高」全被带歪。
+  // 票 #3 沿用同一个做法：两个新按钮**不带**气泡（无 .tip-up 类、无 data-tooltip），只带 aria-label；
+  // [选择文件] 的既有气泡一字不改（它是 .file-btn + tip-up，属既有外观的一部分）。
+  it('exe_row_plus_and_minus_buttons_have_no_tooltip_bubbles_only_aria_labels', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await toExeType();
+    rowBtn(exeRows()[0], 'ql.modal.btn.addExe')!.click();
+    await flush();
+
+    const add = rowBtn(exeRows()[0], 'ql.modal.btn.addExe') as HTMLButtonElement;
+    const remove = rowBtn(exeRows()[1], 'ql.modal.btn.removeExe') as HTMLButtonElement;
+    expect(add.getAttribute('aria-label'), '默认行的 [+] 没有 aria-label').toBe(t('ql.modal.btn.addExe'));
+    expect(remove.getAttribute('aria-label'), '追加行的 [-] 没有 aria-label').toBe(t('ql.modal.btn.removeExe'));
+    for (const [tag, btn] of [['[+]', add], ['[-]', remove]] as const) {
+      expect(btn.classList.contains('tip-up'), tag + ' 挂了 .tip-up → style.css:414 的 ::after 会渲染气泡，把弹窗顶出横向滚动条').toBe(false);
+      expect(btn.getAttribute('data-tooltip'), tag + ' 仍带 data-tooltip').toBeNull();
+    }
+    // [选择文件] 的既有气泡不动（两行都有，且仍带 tip-up + data-tooltip）
+    for (const row of exeRows()) {
+      const pick = pickBtnOf(row) as HTMLButtonElement;
+      expect(pick.classList.contains('tip-up'), '[选择文件] 的既有气泡被去掉了').toBe(true);
+      expect(pick.getAttribute('data-tooltip')).toBe(t('ql.modal.btn.pick'));
+    }
+    w.unmount();
+  });
+
   // E5（规格 §5.3-2 / 索引 K31(2)）：主进程的重名文案原样进错误区（errMsg 剥壳），不关窗、不冒泡 saved；
   // 不在渲染端映射成 ql.err.nameTaken
   it('duplicate_name_from_main_process_shows_its_message_and_keeps_modal_open', async () => {
@@ -561,7 +856,9 @@ describe('QuickLaunchModal', () => {
     expect(w.emitted('saved')).toEqual([[]]);
     w.unmount();
 
-    // exe 类型：只发 exe，不带 shell / cmd（§5.3-6）
+    // exe 类型：只发 exe，不带 shell / cmd（§5.3-6）。
+    // 票 #3 / spec #1 配置层：exe 的落盘形状是**有序数组**（quick-launch-config.ts:14 + normalizeExeList），
+    // 单条路径 = 只含一个元素的数组；写成标量会被主进程 validateEntry 判非法（那就是本票要修的实际缺陷）。
     sent = null;
     const saveExe = (id: unknown, entry: QuickLaunchEntry) => { sent = { id, entry }; return Promise.resolve('qlyyyyyyyy'); };
     mockLms({ pick: 'D:\\Tools\\notepad.exe', save: saveExe });
@@ -575,7 +872,7 @@ describe('QuickLaunchModal', () => {
     await flush();
     expect(sent).not.toBeNull();
     expect(sent!.id).toBeNull();
-    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: 'D:\\Tools\\notepad.exe', admin: false });
+    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: ['D:\\Tools\\notepad.exe'], admin: false });
     w2.unmount();
   });
 
@@ -1165,7 +1462,7 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
     saveBtn().click();
     await flush();
     expect(sent!.entry.admin).toBe(true);
-    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: 'D:\\Tools\\notepad.exe', admin: true });
+    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: ['D:\\Tools\\notepad.exe'], admin: true });
     w2.unmount();
   });
 

@@ -179,6 +179,9 @@ export const dict = {
     // 命令行的多行编辑（2026-10-17 用户改口径）：默认行的 [+] 与追加行的 [-]，aria-label 与 tooltip 共用这一份。
     'ql.modal.btn.addCmd': '新增命令行',
     'ql.modal.btn.removeCmd': '删除该行',
+    // 程序路径的多行编辑（票 #3 / spec #1）：与 addCmd / removeCmd 同一手法，只带 aria-label、不带悬浮气泡。
+    'ql.modal.btn.addExe': '新增程序路径',
+    'ql.modal.btn.removeExe': '删除该行',
     'ql.modal.btn.save': '保存',
     'ql.modal.btn.delete': '删除',
     'ql.modal.delete.title': '删除启动项',
@@ -526,6 +529,10 @@ export const dict = {
     'ql.modal.btn.pick': 'Select file',
     'ql.modal.btn.addCmd': 'Add command line',
     'ql.modal.btn.removeCmd': 'Remove this line',
+    // Multi-row program paths (ticket #3 / spec #1): same treatment as addCmd / removeCmd —
+    // aria-label only, no tooltip bubble.
+    'ql.modal.btn.addExe': 'Add program path',
+    'ql.modal.btn.removeExe': 'Remove this line',
     'ql.modal.btn.save': 'Save',
     'ql.modal.btn.delete': 'Delete',
     'ql.modal.delete.title': 'Delete quick launch entry',

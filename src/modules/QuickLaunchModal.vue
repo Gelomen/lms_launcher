@@ -82,7 +82,25 @@ function splitCmdRows(cmd: string | undefined): CmdRow[] {
 const formCmdRows = ref<CmdRow[]>([newCmdRow()]);
 // 命令那一格的容器：[+] 追加行之后把焦点交给最后一个输入框（用户点 [+] 就是准备接着打字）
 const cmdCell = ref<HTMLElement | null>(null);
-const formExe = ref('');
+// 多行程序路径（票 #3 / spec #1「弹窗」段）：行模型照抄上面的 CmdRow——{ id, text } + 模块内自增序号，
+// v-for 的 :key 用 id 而非 index（删中间一行不把后面几行的值串位）。与 cmd 的两处差别（不是随意分叉）：
+//   a) 每一行右侧保留自己的 [选择文件]，且它只填自己那一行（票 #3 AC-4）；
+//   b) 落盘形状不同：exe 是**有序数组**（exeLines → 配置层 exe: string[]，见 quick-launch-config.ts:14），
+//      cmd 是一条以 \n 连接的字符串——那是各自的既有契约，本票只是把编辑面搬到逐行。
+interface ExeRow { id: number; text: string }
+let exeRowSeq = 0;
+const newExeRow = (text = ''): ExeRow => ({ id: exeRowSeq++, text });
+// 回读：按 entry.exe 数组逐条映射；缺字段 / 空数组 → 一行空输入框。
+// 非数组按「没有」处理——与主进程 normalizeExeList 同一判据（quick-launch-config.ts:60-72：
+// 「**只有数组**才继续」在那段的 :60，函数签名在 :63），
+// 不做标量旧写法的兼容（spec #1 Out of Scope 4）。
+function splitExeRows(exe: string[] | undefined): ExeRow[] {
+  const rows = (Array.isArray(exe) ? exe : []).map((p) => newExeRow(p));
+  return rows.length > 0 ? rows : [newExeRow()];
+}
+const formExeRows = ref<ExeRow[]>([newExeRow()]);
+// 路径那一格的容器：[+] 追加行之后把焦点交给最后一个输入框（用户点 [+] 就是准备接着打字）
+const exeCell = ref<HTMLElement | null>(null);
 // 任务 8（规格 §6.2 / §4-1）：「管理员」= 条目上的 admin 字段（§6.1，可选布尔）。
 // 只有字面量 true 算真（与主进程 normalizeEntry 同一口径），所以回填写 === true 而不是 ?? false。
 const formAdmin = ref(false);
@@ -112,8 +130,14 @@ const cmdLines = computed((): string[] =>
   formCmdRows.value.map((row) => row.text.trim()).filter((s) => s.length > 0));
 const cmdError = computed((): string | null =>
   formType.value === 'shell' && cmdLines.value.length === 0 ? t('err.ql.cmdRequired') : null);
+// 多行路径（票 #3）：逐行 trim、丢掉空行 —— 与主进程 normalizeExeList 的归一口径逐字一致
+// （那里也是「逐元素 trim + 丢空串 + 归一后为空即非法」），所以「保存时丢掉空行」与「报错判据」不会漂移。
+// 「路径不能为空」的判据 = 一行有效路径都没有 —— 与单行时 trim().length === 0 完全等价，
+// 因此 2026-10-13 那条「报错在路径输入框下方」的用例一字不改照样成立。
+const exeLines = computed((): string[] =>
+  formExeRows.value.map((row) => row.text.trim()).filter((s) => s.length > 0));
 const exeError = computed((): string | null =>
-  formType.value === 'exe' && formExe.value.trim().length === 0 ? t('err.ql.exeRequired') : null);
+  formType.value === 'exe' && exeLines.value.length === 0 ? t('err.ql.exeRequired') : null);
 
 // 类型与终端都走共享 Dropdown（F1，不手写 select）。类型两项固定；终端来自探测结果，
 // 顺序照主进程返回序不重排（索引 K31(3)：规格与计划都没要求 pwsh 优先）。
@@ -146,7 +170,7 @@ function fill(): void {
   formType.value = e?.type === 'exe' ? 'exe' : 'shell';
   formShell.value = e?.shell ?? '';
   formCmdRows.value = splitCmdRows(e?.cmd);
-  formExe.value = e?.exe ?? '';
+  formExeRows.value = splitExeRows(e?.exe);
   formAdmin.value = e?.admin === true;
   terminals.value = [];
 }
@@ -187,10 +211,26 @@ function removeCmdRow(id: number): void {
   if (i > 0) formCmdRows.value.splice(i, 1);
 }
 
-// 选择 .exe（check C3）：主进程对话框取消 = null → 不改表单
-async function pickExe(): Promise<void> {
+// [+]（exe 行）：在末尾追加一行空路径并把焦点交给它；只有默认行渲染这个按钮（与 cmd 同一口径）。
+async function addExeRow(): Promise<void> {
+  formExeRows.value.push(newExeRow());
+  await nextTick();
+  const inputs = exeCell.value ? [...exeCell.value.querySelectorAll('input')] : [];
+  (inputs[inputs.length - 1] as HTMLInputElement | undefined)?.focus();
+}
+// [-]（exe 行）：按 id 删自己那一行；默认行永远删不掉（它没有 [-]，这里再守一道）。
+function removeExeRow(id: number): void {
+  const i = formExeRows.value.findIndex((row) => row.id === id);
+  if (i > 0) formExeRows.value.splice(i, 1);
+}
+
+// 选择 .exe（check C3）：主进程对话框取消 = null → 不改表单。
+// 票 #3 AC-4：每一行的 [选择文件] 只写它自己那一行——按行的 id 找，不按 index（点过 [-] 之后 index 会变）。
+async function pickExe(rowId: number): Promise<void> {
   const picked = await invoke<string | null>('ql_pick_exe');
-  if (picked !== null) formExe.value = picked;
+  if (picked === null) return;
+  const row = formExeRows.value.find((r) => r.id === rowId);
+  if (row) row.text = picked;
 }
 
 // 保存（规格 §5.3 / §8）：只发该类型的字段（§5.3-6：shell 不带 exe，exe 不带 shell/cmd）。
@@ -205,7 +245,7 @@ async function save(): Promise<void> {
   // admin 交**真布尔**（不是 'true' / 1）：主进程按 e.admin === true 分流（任务 7），
   // 配置层把非布尔规整成 false（任务 1 / §8-K4「落盘总是显式写」）——两态都带这个字段。
   const entry: QuickLaunchEntry = formType.value === 'exe'
-    ? { name, type: 'exe', exe: formExe.value.trim(), admin: formAdmin.value }
+    ? { name, type: 'exe', exe: exeLines.value, admin: formAdmin.value }
     : { name, type: 'shell', shell: formShell.value as TerminalId, cmd: cmdLines.value.join('\n'), admin: formAdmin.value };
   saving.value = true;
   try {
@@ -348,13 +388,31 @@ function close(): void { emit('close'); }
                 </div>
               </div>
               <label class="label flag-label exe-label">{{ t('ql.modal.exe') }}</label>
-              <!-- 路径为空的报错在路径那一格内（同上），选择按钮仍在输入行右侧 -->
-              <div class="field-cell">
-                <div class="row-cell">
-                  <input class="input" :class="{ error: attemptedSave && exeError !== null }" v-model="formExe" />
+              <!-- 路径为空的报错在路径那一格内（同上），选择按钮仍在输入行右侧。
+                   多行程序路径（票 #3 / spec #1「弹窗」段）：行模型与上面的命令行多行同构——
+                   所有行都在**同一个 .field-cell**（.exe-cell）里纵向排布，不新增 .flag-grid 的网格行，
+                   因此「3 个控件格」计数门与 218px 的定高推导一字不改（见下方 .exe-cell 注释）。
+                   差别两处（与 script 里 ExeRow 的注释同一份）：每行保留自己的 [选择文件]（AC-4）、落盘是有序数组。
+                   行内顺序仍是输入框 → [选择文件] → [+]（默认行）/ [-]（追加行）：
+                   默认行**作为输入格**一字未改（同样的高度、单行不换行、[选择文件] 在输入框右侧），
+                   只是它的 [选择文件] 右边多了一个 36px 的 [+] —— 这正是 AC-1 的口径，不是「整格不变」。
+                   [+] / [-] 同样**不带**悬浮气泡（上一轮实测：气泡把弹窗体顶出 10px 横向滚动条 → 定高门被带歪），
+                   只带 aria-label。 -->
+              <div ref="exeCell" class="field-cell exe-cell">
+                <div v-for="(row, i) in formExeRows" :key="row.id" class="row-cell">
+                  <input class="input" :class="{ error: attemptedSave && exeError !== null }" v-model="row.text" />
                   <button class="btn btn-secondary file-btn tip-up" :data-tooltip="t('ql.modal.btn.pick')"
-                    :aria-label="t('ql.modal.btn.pick')" @click="pickExe">
+                    :aria-label="t('ql.modal.btn.pick')" @click="pickExe(row.id)">
                     <FontAwesomeIcon :icon="byPrefixAndName.fat['folder-open']" style="font-size: 14px;" />
+                  </button>
+                  <!-- [+] 只在默认行（第一行）；手动追加的行只有 [-]，删的就是它自己那一行 -->
+                  <button v-if="i === 0" type="button" class="btn btn-secondary row-btn"
+                    :aria-label="t('ql.modal.btn.addExe')" @click="addExeRow">
+                    <FontAwesomeIcon :icon="byPrefixAndName.fas['plus']" style="font-size: 14px;" />
+                  </button>
+                  <button v-else type="button" class="btn btn-secondary row-btn"
+                    :aria-label="t('ql.modal.btn.removeExe')" @click="removeExeRow(row.id)">
+                    <FontAwesomeIcon :icon="byPrefixAndName.fas['minus']" style="font-size: 14px;" />
                   </button>
                 </div>
                 <p v-if="attemptedSave && exeError" class="error-text">{{ exeError }}</p>
@@ -496,7 +554,12 @@ function close(): void { emit('close'); }
      3 行 = 293.3（每加一行 = 32 控件 + 6 行距 = 38，与 .flag-grid 的 gap 同口径；0.7px 是网格行高的亚像素，
                     1 行态的内容高本来就是 217.3，被 218 的地板盖住了）
    默认行那个输入框的高度与「不换行」一字未改 —— 用户口径逐字：「不改变输入框高度, 也不需要自动换行」。 */
-.cmd-cell { display: flex; flex-direction: column; gap: 6px; }
+/* 多行程序路径（票 #3）：与 .cmd-cell 共用这一条规则、同一个 6px 间距口径（= .flag-grid 的 gap），
+   所有行在同一个 .field-cell 内纵向排布 → 「3 个控件格」计数门不变，定高是同一套算术（每行 +32 +6 = 38）。
+   上面 :547-550 的 218.0 / 293.3 两个数是**命令行态**真机量取的；可执行程序态形状相同但还没实测——
+   它归票 #4 的「打包 + 布局量取 + R1–R12 真机门」，不在本票范围（本票只钉 DOM 与 CSS 契约）。
+   默认行的输入框与 [选择文件] 一字未改，只是那一行右边多出一个 36px 的 [+]（票 #3 AC-1）。 */
+.cmd-cell, .exe-cell { display: flex; flex-direction: column; gap: 6px; }
 /* [+] / [-] 的盒子：与 .file-btn 同一族（.btn 给边框 / 圆角 / --h-control 高），只是定宽成 36px 方块
    （36px = 本文件 .modal-close / .btn-delete 已经在用的点击区口径）。flex: none 让它不被输入框挤窄。 */
 .row-cell .row-btn { flex: none; width: 36px; padding: 0; }
