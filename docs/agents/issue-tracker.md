@@ -30,9 +30,10 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 
 - **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick-launch`（2026-10-18 由 `feat/quick_launch-matt` 改名，旧名已不存在）。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
-- **在飞工作**：spec #5「快捷启动卡片每行配置名左侧显示 [类型] 图标」（2026-10-19 建，spec + 两子票）。
-  - **#6 实现票已关（2026-10-19）**：实现单提交 `61f5e14`（同一提交含新建 GLOSSARY.md 首条「快捷启动类型（QuickLaunchKind）」）+ 审查轮 `1d06f6a`（GLOSSARY 词条按 GLOSSARY-FORMAT 收干、注释行号 3 处、domain.md 再复核行），FF 进 `feat/quick-launch`；全部门绿（合并后权威全量 53/955、定向 34、build exit 0）。两轴审查结论、裁决（成文格式优先）、探针数值（`.temp/ql-row-type-icon-probe/`）都在执行记录：https://github.com/Gelomen/lms_launcher/issues/6#issuecomment-6254317270
-  - **前沿（可立即开工）**：#7 打包 + 布局量取 + R1–R7 真机门——blocked 边随 #6 关闭已解除。agent 侧先做打包与探针量取；R1–R7 由**用户**真机实跑后逐字回报（不得代填）。
+- **在飞工作**：无。spec #5「快捷启动卡片每行配置名左侧显示 [类型] 图标」连同它的两条子票已于 2026-10-19 全部关闭。
+  - **2026-10-19 收口复核口径**：`gh issue list --state open` 返回 `[]`；当前分支 `feat/quick-launch` @ `400d1bd`，与 `origin/feat/quick-launch` 同步。分级标签在位不变。
+  - **已关闭**：#6 实现票（单提交 `61f5e14`（含 GLOSSARY.md 首条）+ 审查轮 `1d06f6a`，执行记录与两轴审查、裁决、探针数值：https://github.com/Gelomen/lms_launcher/issues/6#issuecomment-6254317270 ）、#7 真机门（R1–R7 **全部通过、无不满足项**，载体 = **打包产物**——用户原话「#7 验收通过」，追问口径的记录：https://github.com/Gelomen/lms_launcher/issues/7#issuecomment-6254379956 ）。spec 的收口评论：https://github.com/Gelomen/lms_launcher/issues/5#issuecomment-6254382382
+  - **前沿（可立即开工）**：无——本 spec 已收口。下一条 feature 先按上面「spec」那条建新 issue，再拆 tracer-bullet 子票。
   - **被阻塞**：无。
 - **历史 spec（2026-10-18，已全部关闭，仅背景参照）**：spec #1「快捷启动 [程序路径] 支持多条」连同它的三条子票已于 2026-10-18 全部关闭。
   - **2026-10-19 复核口径**：`gh issue list --state open` 返回 `[]`（开放 issue 为零），#1 现为 `closed`；当前分支 `feat/quick-launch`，与 `origin/feat/quick-launch` 同步。分级标签经 `gh label list` 复核仍在位（映射见 [triage-labels.md](./triage-labels.md)）。
