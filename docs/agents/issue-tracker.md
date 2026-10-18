@@ -1,58 +1,58 @@
-# Issue tracker: GitHub
+# Issue tracker：GitHub
 
-Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+本仓的 issue 与 spec 都存放在 GitHub Issues 里。所有操作走 `gh` CLI。
 
-> Toolchain note (2026-10-18): `gh` 2.102.0 is installed at `C:\Program Files\GitHub CLI\gh.exe` but may not be on an agent shell's `PATH` — call it by full path, or prepend that directory. It is NOT authenticated by default: run `gh auth login` once (or export `GH_TOKEN`) before any skill writes to the tracker.
+> 工具链注记（2026-10-18）：`gh` 2.102.0 已安装在 `C:\Program Files\GitHub CLI\gh.exe`，但它可能不在代理 shell 的 `PATH` 上——请用全路径调用，或把该目录加进 `PATH`。它默认**没有登录**：任何技能往 tracker 写之前，先跑一次 `gh auth login`（或导出 `GH_TOKEN`）。
 
-## Conventions
+## 约定
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --json number,title,body,labels,comments`.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
-- **Make an issue a sub-issue of a parent**: `gh issue create --parent <parent> ...`, or `gh issue edit <parent> --add-sub-issue <child>` afterwards (`gh` 2.94+). Older `gh`: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>` (database id, as in **Blocking** below). Without sub-issues, put `Part of #<parent>` at the top of the child body.
-- **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
+- **建 issue**：`gh issue create --title "..." --body "..."`。正文多行时用 heredoc。
+- **读 issue**：`gh issue view <number> --json number,title,body,labels,comments`。
+- **列 issue**：`gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`，按需配 `--label` 与 `--state` 过滤。
+- **把 issue 变成某条的 sub-issue**：`gh issue create --parent <parent> ...`，或事后 `gh issue edit <parent> --add-sub-issue <child>`（需 `gh` 2.94+）。更老的 `gh`：`gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>`（数据库 id，取法见下面的**阻塞关系**）。若 tracker 不支持 sub-issue，就在子 issue 正文顶部写一行 `Part of #<parent>`。
+- **评论**：`gh issue comment <number> --body "..."`
+- **加标签 / 去标签**：`gh issue edit <number> --add-label "..."` / `--remove-label "..."`
+- **关闭**：`gh issue close <number> --comment "..."`
 
-Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
+仓库从 `git remote -v` 推断；在 clone 里跑 `gh` 时它会自动这么做。
 
-## Relationship to this repo's docs flow
+## 与本仓文档流程的关系
 
-Specs and tickets both live here — there is no separate in-repo spec/plan directory any more.
+spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目录。
 
-- A **spec** is one issue carrying the `ready-for-agent` label, written with the `to-spec` template (Problem Statement / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope / Further Notes).
-- **Tickets** are sub-issues of that spec, one per tracer bullet, with blocking edges as native GitHub issue dependencies.
-- Work the **frontier**: any open sub-issue whose blockers are all closed.
+- **spec** 就是一条带 `ready-for-agent` 标签的 issue，按 `to-spec` 模板写（Problem Statement / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope / Further Notes）。
+- **ticket** 是这条 spec 的 sub-issue，一张票一个 tracer bullet（示踪弹：贯穿各层、可独立演示的最小完整切片），票与票之间的阻塞边用 GitHub 原生 issue 依赖表示。
+- 干活的顺序是**前沿（frontier）**：所有阻塞者都已关闭的 open sub-issue 都可以开工。
 
-The repo's older superpowers workflow kept specs, plans and per-task check tables under `docs/superpowers/` (and process ledgers under `.superpowers/`). Those were migrated into this tracker on 2026-10-18 and then deleted from the tree; the original text is still reachable in git history (`git log -- docs/superpowers`, `git log -- .superpowers`).
+本仓更早的 superpowers 流程把 spec、plan 与逐任务 check 表放在 `docs/superpowers/`（过程账本放在 `.superpowers/`）。2026-10-18 这些内容已迁进本 tracker，随后从工作树里删除；原文仍可从 git 历史取回（`git log -- docs/superpowers`、`git log -- .superpowers`）。
 
-## Pull requests as a triage surface
+## PR 是否作为分级入口
 
-**PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
+**PRs as a request surface: no.** _（若本仓把外部 PR 当作功能请求，就把它设为 `yes`；`/triage` 会读这个开关。）_
 
-When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
+设为 `yes` 时，PR 走与 issue 同一套标签与状态，只是换用 `gh pr` 的等价命令：
 
-- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
-- **List external PRs for triage**: `gh api --paginate 'repos/{owner}/{repo}/pulls?state=open' --jq '.[] | select(.author_association | IN("OWNER","MEMBER","COLLABORATOR") | not) | {number, title, author: .user.login, author_association, labels: [.labels[].name]}'`.
-- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
+- **读 PR**：`gh pr view <number> --comments`，diff 用 `gh pr diff <number>`。
+- **列出待分级的外部 PR**：`gh api --paginate 'repos/{owner}/{repo}/pulls?state=open' --jq '.[] | select(.author_association | IN("OWNER","MEMBER","COLLABORATOR") | not) | {number, title, author: .user.login, author_association, labels: [.labels[].name]}'`。
+- **评论 / 打标签 / 关闭**：`gh pr comment`、`gh pr edit --add-label`/`--remove-label`、`gh pr close`。
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either: resolve with `gh pr view 42` and fall back to `gh issue view 42`.
+GitHub 的 issue 与 PR 共用一套编号，所以裸写一个 `#42` 可能指两者之一：先用 `gh pr view 42` 解析，查不到再退回 `gh issue view 42`。
 
-## When a skill says "publish to the issue tracker"
+## 当技能说「发布到 issue tracker」
 
-Create a GitHub issue.
+建一条 GitHub issue。
 
-## When a skill says "fetch the relevant ticket"
+## 当技能说「取出相关 ticket」
 
-Read it as in **Read an issue** above.
+按上面**读 issue** 的做法读它。
 
-## Wayfinding operations
+## 寻路（Wayfinding）操作
 
-Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
+供 `/wayfinder` 使用。**地图（map）**是一条 issue，**子票（child）**是挂在地图下的 issue。
 
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (see **Make an issue a sub-issue of a parent**). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
-- **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only, the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
-- **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+- **地图**：一条打了 `wayfinder:map` 标签的 issue，正文承载 Notes / Decisions-so-far / Fog 三段。`gh issue create --label wayfinder:map`。
+- **子票**：以 GitHub sub-issue 的形式挂到地图上的 issue（见**把 issue 变成某条的 sub-issue**）。tracker 不支持 sub-issue 时，把子票加进地图正文的任务列表，并在子票正文顶部写 `Part of #<map>`。标签用 `wayfinder:<type>`（`research`/`prototype`/`grilling`/`task`）。领取后把票指派给推进它的开发者。
+- **阻塞关系**：用 GitHub **原生 issue 依赖**——这是唯一能在界面上看见的标准表示。加边用 `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`，其中 `<blocker-db-id>` 是阻塞者的数字**数据库 id**（`gh api repos/<owner>/<repo>/issues/<n> --jq .id`，**不是** `#number`，也不是 `node_id`）。GitHub 用 `issue_dependencies_summary.blocked_by` 报告还开着的阻塞者数量（这是实时闸口）。tracker 不支持依赖时，退回在子票正文顶部写一行 `Blocked by: #<n>, #<n>`。一条票的所有阻塞者都关闭，它才解除阻塞。
+- **前沿查询**：列出地图下所有 open 的子票（`gh issue list --state open`，范围限地图的 sub-issue / 任务列表），丢掉还有 open 阻塞者的（`issue_dependencies_summary.blocked_by > 0`，或 `Blocked by` 那行里仍有 open 的）以及已被指派的；按地图顺序，第一个胜出。
+- **领取**：`gh issue edit <n> --add-assignee @me`，这是本会话的第一次写操作。
+- **结案**：`gh issue comment <n> --body "<answer>"`，然后 `gh issue close <n>`，最后把一段上下文指针（要点 + 链接）追加到地图的 Decisions-so-far。
