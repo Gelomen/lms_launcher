@@ -185,6 +185,14 @@ export interface QlDeps {
   homedir(): string;
   spawnExe(exe: string): { onExit(cb: (code: number) => void): void; stopGraceful(s: number): Promise<void>; isRunning(): boolean };
   /**
+   * 启动前全量预检的接缝（2026-10-17-quick-launch-exe-rows §6.4 / 任务 2）：这条路径能不能启动。
+   * 生产侧 = isLaunchableExe（shell-execute.ts:242，已导出、一字不改）。
+   * 为什么走接缝而不是直接 import：exe 单测用的是本机不存在的假路径（notepad.exe / a.exe），
+   * 直接调用会让它们全部预检失败——本文件的既有边界就是「可测性靠 deps 注入假实现」（§6.4）。
+   * 必填而非可选：可选会让「忘了接线」退化成静默降级（spawnElevatedShell 同一口径）。
+   */
+  checkExe(exe: string): boolean;
+  /**
    * 起一个**提权**终端（2026-10-14-quick-launch-admin §6.8，接线在 main.ts）：返回 ShellProcess 形状，
    * 所以 write / resize / stop / stopAll / states 一字不改。可 await 的工厂（索引 K45 / 裁决 R-12）：
    * 「等 READY」与「失败按 §6.10 抛出且抛出前关掉两个句柄」都在工厂里（ql-elevated.ts 的 startElevatedHost）。
@@ -314,6 +322,23 @@ export class QuickLaunchManager {
       const rawExe = Array.isArray(e.exe) ? e.exe : null;
       const paths = rawExe === null ? [] : rawExe.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter((x) => x.length > 0);
       if (paths.length === 0) throw new Error('VALIDATION: ' + t('err.ql.exeRequired'));
+      // §6.3-2 预检循环（任务 2 / 审查重点 RF3 / 票 #2）：按数组顺序对**全部**路径调 deps.checkExe——
+      // 不短路（审查轮 1 · Spec 轴：「全量预检」按字面执行；E10 钉住第一条 false 之后其余路径仍被检查）。
+      // 任一条 false → 抛既有 PROC: err.proc.exeNotFound（{exe} = 数组序里第一条不可用的——错误形状由规范
+      // 钉死为单条，只点名一条），且此前一次 spawnExe 都没调（要么全起，要么都不起；用户故事 11/12）。
+      // 在实例入表之前：预检失败不留任何实例痕迹——不会造出「运行中但一个进程都没有」的幽灵实例（R-PF7）。
+      // 原因行经 deps.onSysLine 自己写：多条时失败发生在到达 main.ts 的 spawnExeProcess 适配器**之前**，
+      // 那里的日志分工触不到这条；而用户故事 12 / 真机 R6 / 既有「路径不存在 → 不调 Shell」端到端门都要求
+      // 日志有一行点名失败的那条路径。文案与 launchShellExe :273 逐字同形——同一个键，同一个 {exe}。
+      let firstUnavailable: string | null = null;
+      for (const path of paths) {
+        if (!this.deps.checkExe(path) && firstUnavailable === null) firstUnavailable = path;
+      }
+      if (firstUnavailable !== null) {
+        const line = 'PROC: ' + t('err.proc.exeNotFound', { exe: firstUnavailable });
+        this.deps.onSysLine(configId, line);
+        throw new Error(line);
+      }
       const inst: Instance = {
         kind: 'exe', procs: [], procExited: [], tabId: null, stopping: false, exited: false, exitCode: null, auto: null,
       };
@@ -322,7 +347,7 @@ export class QuickLaunchManager {
       this.instances.set(configId, inst);
       try {
         // §6.3-3 启动循环：按数组顺序逐条发起，**不 await、不观察退出**（RF4）。
-        // 预检循环（§6.3-2）留给任务 2（裁决 R-PF2：QlDeps 此刻没有 checkExe 成员，加不得加）。
+        // 能走到这里说明 §6.3-2 的全量预检已经过了（任务 2 已落地：接缝与调用同批，R-PF2 随之解除）。
         for (const path of paths) {
           const proc = this.deps.spawnExe(path); // 失败（UAC 点「否」/ Shell 失败）原样上抛，§6.3-4 见 catch
           const index = inst.procs.length;

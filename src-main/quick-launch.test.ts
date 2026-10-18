@@ -208,6 +208,12 @@ function makeDeps() {
   const exeCtl: { singleSlot: boolean } = { singleSlot: false };
   const singleSlotHandles: SingleSlotExe[] = [];
   const timeline: string[] = [];
+  // 任务 2（2026-10-17-quick-launch-exe-rows §6.4 / E10–E11）：checkExe 的**假**接缝。
+  // 默认全部可用：E5–E9 等既有门用的 a.exe / notepad.exe 全是本机不存在的假路径，默认值保证它们不被预检挡下——
+  // 这正是「走接缝而不是直接调 isLaunchableExe」的理由（§6.4）。checkRequests 记预检的路径顺序；
+  // timeline 里的 'checkExe' 条目钉「全量预检先于任何发起」（E11 的顺序判据）。
+  const checkRequests: string[] = [];
+  const checkCtl: { unavailable: Set<string> } = { unavailable: new Set<string>() };
   const deps: QlDeps = {
     onData: (tabId, d) => { timeline.push('deps.onData'); data.push({ tabId, data: d }); },
     onExit: (configId, code) => { exits.push({ configId, code }); },
@@ -226,6 +232,7 @@ function makeDeps() {
       exeHandles.push(h);
       return h;
     },
+    checkExe: (exe) => { checkRequests.push(exe); timeline.push('checkExe'); return !checkCtl.unavailable.has(exe); },
     spawnElevatedShell: async (shell, cols, rows, cwd) => {
       if (elevatedCtl.fail !== null) throw elevatedCtl.fail;
       // 不往 timeline 里记：那条时间线的判据是「deps.onData 先于 pty.write」（E4 / RF1），
@@ -236,7 +243,7 @@ function makeDeps() {
       return f;
     },
   };
-  return { deps, data, exits, sysLines, exeHandles, exeRequests, spawnCtl, exeCtl, singleSlotHandles, elevatedHandles, elevatedRequests, elevatedCtl, timeline };
+  return { deps, data, exits, sysLines, exeHandles, exeRequests, spawnCtl, exeCtl, singleSlotHandles, elevatedHandles, elevatedRequests, elevatedCtl, timeline, checkRequests, checkCtl };
 }
 
 const SHELL_ENTRY: QuickLaunchEntry = { name: 'n', type: 'shell', shell: 'cmd', cmd: 'echo HI' };
@@ -680,7 +687,7 @@ describe('状态机（规格 §7.3 / §7.5 / §12.4）', () => {
 
 // ── 2026-10-17-quick-launch-exe-rows 任务 1（规格 §4-4/4-7、§6.3、§6.5；RF4/RF5/RF6）：exe 多条路径 = 一实例 N 进程 ──
 // 观察点仍是 makeDeps 的假接缝（exeRequests 的调用序、exeHandles 的逐个生命周期、exits/sysLines）。
-// 本任务的 exe 分支没有预检循环（R-PF2：checkExe 接缝整体留给任务 2），判据是「逐条起、失败停止后续」。
+// 任务 1 的 exe 分支没有预检循环（R-PF2 当时留给任务 2——现已落地，见下面「启动前全量预检」块），判据是「逐条起、失败停止后续」。
 describe('exe 多路径聚合实例（2026-10-17-quick-launch-exe-rows 任务 1 / E5-E9）', () => {
   // E5（§6.3-3/3-5 / RF4）：发起顺序 = 数组顺序、不等待退出；每条各写一行 log.launcher.start.cmd
   it('E5 按数组顺序依次发起且不等退出，每条各一行启动日志', async () => {
@@ -830,6 +837,57 @@ describe('exe 多路径聚合实例（2026-10-17-quick-launch-exe-rows 任务 1 
     expect(ctx2.exits, '全部退出才收尾一次，code = 最后退出者（R-PF5）').toEqual([{ configId: 'c2', code: 2 }]);
     expect(m2.states()).toEqual({});
     expect(ctx2.sysLines.filter((l) => l.line.startsWith('进程退出 ')).map((l) => l.line), '每条进程退出仍各写一行 log.app.exit（R-08）').toEqual(['进程退出 code=1', '进程退出 code=2']);
+  });
+});
+
+// ── 2026-10-17-quick-launch-exe-rows 任务 2（规格 §6.3-2 / §6.4；审查重点 RF3）：启动前全量预检——要么全起，要么都不起 ──
+// 观察点 = makeDeps 的假接缝：checkRequests（预检调用序）、exeRequests（发起调用序）、checkCtl（逐条可用性开关）。
+// 既有 E5–E9 一字不改：默认 checkExe 全 true，它们用的假路径（a.exe / notepad.exe）照旧能起——这正是 §6.4 走接缝的理由。
+describe('启动前全量预检（任务 2 / E10–E11 / RF3）', () => {
+  // E10（§6.3-2 / RF3 / 票 #2 验收 1+3）：三条里第二条不可用 → 一次 spawnExe 都没调、
+  // 错误文案点名第二条（复用既有键 err.proc.exeNotFound，不新增键）、sys 通道同样点名、实例零残留（无幽灵实例）。
+  it('E10 任一路径不可用：一次都不发起，错误与日志点名该条，无实例残留', async () => {
+    const ctx = makeDeps();
+    ctx.checkCtl.unavailable.add('b.exe');
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    const paths = ['a.exe', 'b.exe', 'c.exe'];
+    // 断「零次调用」而不是断「抛错了」（票 #2 的注意点：别退化）
+    await expect(m.start('c1', { name: 'n', type: 'exe', exe: paths })).rejects.toThrow('PROC: ' + t('err.proc.exeNotFound', { exe: 'b.exe' }));
+    expect(ctx.exeRequests, 'RF3：任一条不可用 → spawnExe 一次都没被调').toEqual([]);
+    expect(ctx.sysLines.filter((l) => l.line.startsWith('启动命令')), '不得有任何一条启动日志（要么全起，要么都不起）').toEqual([]);
+    expect(m.states(), '预检在实例入表之前：不留任何实例痕迹（不得出现「运行中但零进程」的幽灵实例）').toEqual({});
+    expect(ctx.exits, '没有进程就不该有退出上报').toEqual([]);
+    // 用户故事 12 / R6：日志里有一行点名是哪一条不可用。多条时这行只能由管理器经 deps.onSysLine 写——
+    // 失败发生在到达 main.ts 的 spawnExeProcess 适配器之前，那条既有路径上的日志分工触不到这里。
+    const procLines = ctx.sysLines.filter((l) => l.line.startsWith('PROC: ')).map((l) => l.line);
+    expect(procLines, 'sys 通道必须有一行 PROC: 点名 b.exe（故事 12 / R6）').toEqual(['PROC: ' + t('err.proc.exeNotFound', { exe: 'b.exe' })]);
+    // 审查轮 1（Spec 轴 a-2）：「全量预检」按字面——预检**不得短路**，b.exe 已不可用时 c.exe 也必须被检查过。
+    // 这不是鸡蛋壳：它让「对每条路径调 deps.checkExe」（§6.3-2）成为可观察事实，也和 E11 钉的全序列同一条判据。
+    expect(ctx.checkRequests, '§6.3-2 字面：对全部路径逐条调 checkExe，第一条 false 之后不得停掉其余路径').toEqual(paths);
+    // 第一条就不可用：同样零发起、点名第一条（不短路时「点名数组序里第一条不可用的」是确定行为）
+    const ctx2 = makeDeps();
+    ctx2.checkCtl.unavailable.add('a.exe');
+    const m2 = new QuickLaunchManager(ctx2.deps, () => true);
+    await expect(m2.start('c9', { name: 'n', type: 'exe', exe: ['a.exe', 'b.exe'] })).rejects.toThrow('PROC: ' + t('err.proc.exeNotFound', { exe: 'a.exe' }));
+    expect(ctx2.exeRequests, '零发起').toEqual([]);
+    expect(ctx2.checkRequests, '同样不得短路：两条都被检查过').toEqual(['a.exe', 'b.exe']);
+    expect(m2.states(), '无幽灵实例').toEqual({});
+  });
+
+  // E11（§6.3-2 的顺序判据 + 票 #2 验收 2）：全部可用 → 预检按数组顺序逐条跑完、先于任何发起；
+  // 发起顺序仍 = 数组顺序（已落地的发起语义不得因预检而变）。
+  it('E11 全部可用：预检逐条在前、发起顺序逐字不变', async () => {
+    const ctx = makeDeps();
+    const m = new QuickLaunchManager(ctx.deps, () => true);
+    const paths = ['a.exe', 'b.exe', 'c.exe'];
+    const res = await m.start('c1', { name: 'n', type: 'exe', exe: paths });
+    expect(res).toEqual({ tabId: null });
+    expect(ctx.checkRequests, '§6.3-2：对全部路径逐条预检，一条不落、顺序 = 数组顺序').toEqual(paths);
+    expect(
+      ctx.timeline.filter((x) => x === 'checkExe' || x === 'spawnExe'),
+      '三段预检都在任何发起之前（预检与发起不得交错）',
+    ).toEqual(['checkExe', 'checkExe', 'checkExe', 'spawnExe', 'spawnExe', 'spawnExe']);
+    expect(ctx.exeRequests, '已落地的发起语义一字不动（票 #2 验收 2）').toEqual(paths);
   });
 });
 

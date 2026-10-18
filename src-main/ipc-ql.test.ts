@@ -505,6 +505,43 @@ describe('C5-C9 + C12 · ql_start / ql_write / ql_resize / ql_states / ql_stop +
     }
   }, 30000);
 
+  // 2026-10-17-quick-launch-exe-rows 任务 2（规格 §6.3-2 / plan 步骤 3 E12 / 审查重点 RF3 / 票 #2 验收 4）：
+  // 多条路径的预检在**管理器层**——比 launchShellExe 内部那道（shell-execute.ts:272-274）高一层。
+  // 夹具特意用「真实可用的第一条 + 不存在的第二条」：只有内部那道预检时，第一条会先调一次 Shell（计数 1）才轮到第二条；
+  // 接上 QlDeps.checkExe 后第一条也被挡下、计数保持 0——「要么全起，要么都不起」的端到端证据就在这条差值上。
+  it('exe_multi_row_precheck_blocks_the_whole_batch_before_the_shell', async () => {
+    const MISSING = 'Z:\\no-such-dir\\no-such.exe'; // 与上一条门（:470）同型夹具：含盘符、目录不存在
+    await invoke('ql_save', 'qlshape06', { name: '形状门 多行预检', type: 'exe', exe: ['notepad.exe', MISSING] });
+
+    let shellCalls = 0;
+    const original = winShell.shellExecute;
+    // 计数 spy，形状照 :474-480：只数次数、不委托真实现（真 ShellExecuteEx 会开真窗口）。
+    winShell.shellExecute = (file: string, nShow: number, opts?: { verb?: string | null; parameters?: string | null }) => {
+      shellCalls += 1;
+      return { ok: false, handle: null, win32Error: 1223 };
+    };
+    try {
+      await expect(invoke('ql_start', 'qlshape06')).rejects.toThrow(/^PROC: /);
+      await waitFor(
+        () => cap.sends.some((s) => s.channel === 'log-line' && /^\[lms_launcher\] PROC:/.test(String((s.payload as { line?: string }).line ?? ''))),
+        5000, '[lms_launcher] PROC: 日志行',
+      );
+      const logLines = sendsOf('log-line') as Array<{ line: string; stream: string }>;
+      const procLines = logLines.filter((l) => l.stream === 'sys' && /^\[lms_launcher\] PROC:/.test(l.line));
+      // 取最后一条（前面用例也发过 PROC: 行——:449 的口径）
+      const procLine = procLines[procLines.length - 1];
+      expect(procLine, 'sys 通道必须有一行 PROC: 点名失败的路径（用户故事 12 / 真机 R6）').toBeTruthy();
+      // 文案点名的是失败那条（不是可用的第一条）；去掉预检门就换成 uacCancelled(notepad) —— 这条断言会红
+      expect(procLine!.line).toContain(t('err.proc.exeNotFound', { exe: MISSING }));
+      // RF3 的牙：**可用的那条也没调 Shell**——去掉管理器层的预检 → 第一条已起（计数 1），此断言红。
+      expect(shellCalls, '任一条不可用 → Shell 一次都没被调（要么全起，要么都不起）').toBe(0);
+      expect(invoke('ql_states'), '预检失败零实例痕迹（无幽灵实例）').toEqual({});
+    } finally {
+      winShell.shellExecute = original;
+      await invoke('ql_stop', 'qlshape06'); // 幂等兜底：正常路径下本就没有实例
+    }
+  }, 30000);
+
   // 2026-10-14-quick-launch-admin 任务 3（plan 步骤 5 / check B4、E1、E2、E3）：
   // exe 的「管理员」开关 = 到 Shell 接缝的 lpVerb。观察点仍是 winShell.shellExecute（:103-104 的既有做法）。
   it('exe 提权形状门：admin:true → shellExecute 收到 verb=runas；admin 缺省 → null（规格 §6.9 / 索引 G3、K29）', async () => {

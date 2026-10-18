@@ -21,7 +21,7 @@ import { detectTerminals, type TerminalInfo } from './quick-launch-terminals';
 // 2026-10-16-quick-launch-terminal-icons §6.3 / 索引 K1：探测层不填 icon，补字段的是提取层（仍走 ql_terminals 一条通道，不新增 IPC）。
 import { withTerminalIcons } from './ql-terminal-icons';
 import { QuickLaunchManager, shellExe } from './quick-launch';
-import { launchShellExe, winShell, type ShellExecProcess } from './shell-execute'; // 2026-10-13-quick-launch-elevated-exe §6.6
+import { isLaunchableExe, launchShellExe, winShell, type ShellExecProcess } from './shell-execute'; // 2026-10-13-quick-launch-elevated-exe §6.6；isLaunchableExe = 任务 2 的 checkExe 生产侧（2026-10-17-quick-launch-exe-rows §6.4）
 // 提权 PTY 宿主（2026-10-14-quick-launch-admin §6.4 / §6.8）：管道接缝 + 起宿主接缝 + 可 await 的工厂（索引 K45）
 import { hostLauncher, startElevatedHost, winPipe } from './ql-elevated';
 
@@ -1067,7 +1067,9 @@ function detectTerminalsAsync(): Promise<TerminalInfo[]> {
  * 为什么不再走 spawn：CreateProcessW 不做 UAC 提权，manifest 为 requireAdministrator 的 exe
  * 直接 EACCES（规格 §2 / E1-E3）。ShellExecuteEx 才有权按 manifest 提权（E6）。
  * 失败（含用户在 UAC 点「否」= GetLastError 1223）先经既有日志通道 emitLog(…, 'sys') 再原样抛出：
- * 渲染端 App.vue:477-478 的 catch 只负责把按钮回落，原因行只由这里负责（旧路径也是这个分工）。
+ * 渲染端 App.vue:477-478 的 catch 只负责把按钮回落。原因行的分工（票 #2 起）：走到这里才失败的（UAC 点「否」/
+ * Shell 失败/TOCTOU）由这里写；「不存在 / 不是 .exe / 不可访问」现在到不了这里——管理器在实例入表前就预检
+ * 拦下并自己写了那行（quick-launch.ts 的 §6.3-2 预检循环 / 任务 2）。两条路同一时刻只有一条在写，不会双行。
  * configId 形参不再被本函数使用，但 :1080 的接线（本表写的 :1084 因新块比旧块短 5 行、又新增一行 import 而上移）必须保持调用 qlStartContextOrThrow('spawnExe')
  * ——那是「ql_start 在途」的槽守卫（修复轮 1 · 重要 #2），删掉它就退化成静默降级。
  * admin（2026-10-14-quick-launch-admin §6.9 / 索引 K16）：显式形参，true → lpVerb='runas'（UAC 提权），
@@ -1109,6 +1111,10 @@ const ql = new QuickLaunchManager(
       const ctx = qlStartContextOrThrow('spawnExe');
       return spawnExeProcess(exe, ctx.configId, ctx.admin);
     },
+    // 启动前全量预检（2026-10-17-quick-launch-exe-rows §6.4 / 任务 2 / 票 #2）：生产侧 = isLaunchableExe。
+    // 它与 launchShellExe 内部的预检（shell-execute.ts:272-274）是两道牙，都在（§6.4 / G5 不得删任何一道）：
+    // 这道挡在「起第一条之前」（任一条不可用 → 要么全起要么都不起），那道是「不可用的目标不得调 Shell」的最后兜底。
+    checkExe: (exe) => isLaunchableExe(exe),
     // 提权终端（2026-10-14-quick-launch-admin §6.8 / 索引 K45）：真工厂 = 建管道 + runas 起宿主（R-23：起的是应用
     // 自己的 exe，参数是 --ql-host + 管道名 + token，由应用入口按这个开关分流；没有硬链接那一步）+ 等 READY，返回 ShellProcess 形状。形参取名 term 是为了不遮蔽 :1 导入的 electron shell（审查 Minor #3 口径）。
     // logTarget = shellExe(term).exe：§6.10 第一行要求 {exe} 是**用户那一行的目标**（与 quick-launch.ts:244 的
