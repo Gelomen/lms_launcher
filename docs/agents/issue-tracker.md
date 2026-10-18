@@ -2,7 +2,7 @@
 
 本仓的 issue 与 spec 都存放在 GitHub Issues 里。所有操作走 `gh` CLI。
 
-> 工具链注记（2026-10-18）：`gh` 2.102.0 已安装在 `C:\Program Files\GitHub CLI\gh.exe`，但它可能不在代理 shell 的 `PATH` 上——请用全路径调用，或把该目录加进 `PATH`。它默认**没有登录**：任何技能往 tracker 写之前，先跑一次 `gh auth login`（或导出 `GH_TOKEN`）。
+> 工具链注记（2026-10-18 实测）：`gh` 2.102.0 装在 `C:\Program Files\GitHub CLI\gh.exe`，**不在代理 shell 的 `PATH` 上**——请用全路径调用，或把该目录加进 `PATH`。**已登录** github.com / `Gelomen`（凭据在系统 keyring，token 前缀 `gho_`，scopes：`gist`、`read:org`、`repo`、`workflow`）。换机器或换账号时才需要重跑 `gh auth login`。
 
 ## 约定
 
@@ -25,6 +25,17 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 - 干活的顺序是**前沿（frontier）**：所有阻塞者都已关闭的 open sub-issue 都可以开工。
 
 本仓更早的 superpowers 流程把 spec、plan 与逐任务 check 表放在 `docs/superpowers/`（过程账本放在 `.superpowers/`）。2026-10-18 这些内容已迁进本 tracker，随后从工作树里删除；原文仍可从 git 历史取回（`git log -- docs/superpowers`、`git log -- .superpowers`）。
+
+## 本仓当前状态（2026-10-18 实测）
+
+- **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick_launch-matt`。
+- **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
+- **在飞工作**：spec #1「快捷启动 [程序路径] 支持多条」是当前唯一 open 的 spec，子票 #2、#3、#4 都是它的 sub-issue。
+  - **前沿（可立即开工）**：#2 启动前全量预检、#3 弹窗 [程序路径] 多行。
+  - **被阻塞**：#4 打包 + 布局量取 + R1–R12 真机门，被 #2、#3 原生阻塞。
+  - 做完一张票就关一张；#2、#3 都关掉后 #4 自然进入前沿。
+- **sub-issue 与原生依赖在本仓已验证可用**：`gh issue edit <parent> --add-sub-issue <child>` 与 `gh api --method POST .../issues/<child>/dependencies/blocked_by -F issue_id=<db-id>` 都已成功执行过（#4 的 `issue_dependencies_summary.blocked_by` = 2）。上面「更老的 `gh`」分支只是兜底，不必先试。
+- **本地暂存**：迁移时用过的草稿留在 `.scratch/quick-launch-exe-rows/`（被 `.gitignore` 的 `.*/` 忽略，不入库）；tracker 是唯一权威，草稿可随时删。
 
 ## PR 是否作为分级入口
 

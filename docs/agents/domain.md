@@ -10,6 +10,12 @@
 
 这些文件若不存在，**静默跳过**：不要指出它们缺失，也不要主动建议先建。`/domain-modeling` 技能（入口是 `/grill-with-docs` 与 `/improve-codebase-architecture`）会在术语或决策真正定下来时按需创建它们。
 
+## 当前状态（2026-10-18 实测）
+
+本仓是**单上下文（single-context）**布局：`GLOSSARY.md` 在仓库根、ADR 放 `docs/adr/`。
+
+两者**目前都还不存在**（`GLOSSARY.md`、`GLOSSARY-MAP.md`、`docs/adr/` 实测均缺失）。按上面的规则静默跳过即可：不要因为找不到就报错或先建空文件，等术语或决策真正定下来时由 `/domain-modeling` 建。同样地，`AGENTS.md` 与 `docs/agents/domain.md` 里写的「单上下文」是**声明的布局**，不是「文件已就位」。
+
 ## 文件结构
 
 单上下文仓库（single-context，绝大多数仓库属于这种）：
