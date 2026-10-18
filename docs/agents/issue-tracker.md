@@ -31,9 +31,11 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 - **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick_launch-matt`。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
 - **在飞工作**：spec #1「快捷启动 [程序路径] 支持多条」是当前唯一 open 的 spec，子票 #2、#3、#4 都是它的 sub-issue。
-  - **前沿（可立即开工）**：#2 启动前全量预检、#3 弹窗 [程序路径] 多行。
-  - **被阻塞**：#4 打包 + 布局量取 + R1–R12 真机门，被 #2、#3 原生阻塞。
-  - 做完一张票就关一张；#2、#3 都关掉后 #4 自然进入前沿。
+  - **已关闭**：#2 启动前全量预检（实现提交 `ee77d68`；执行记录与两轴审查结论在 #2 的关票评论里）。
+  - **前沿（可立即开工）**：#3 弹窗 [程序路径] 多行。
+  - **被阻塞**：#4 打包 + 布局量取 + R1–R12 真机门，被 #2、#3 原生阻塞——#3 关掉后自然进入前沿（#2 已关）。
+  - 做完一张票就关一张。
+  - 测试环境注记（#2 实测）：跑 vitest 的 PATH 必须含 `C:\Users\Gelomen\AppData\Local\Microsoft\WindowsApps`（mspaint.exe 别名预检）与 `C:\Windows\System32\WindowsPowerShell\v1.0`（powershell.exe），否则 `process / ps1-encoding / update-bootstrap` 三组共 8 条会因 ENOENT/EINVAL 假红。
 - **sub-issue 与原生依赖在本仓已验证可用**：`gh issue edit <parent> --add-sub-issue <child>` 与 `gh api --method POST .../issues/<child>/dependencies/blocked_by -F issue_id=<db-id>` 都已成功执行过（#4 的 `issue_dependencies_summary.blocked_by` = 2）。上面「更老的 `gh`」分支只是兜底，不必先试。
 - **本地暂存**：迁移时用过的草稿留在 `.scratch/quick-launch-exe-rows/`（被 `.gitignore` 的 `.*/` 忽略，不入库）；tracker 是唯一权威，草稿可随时删。
 
