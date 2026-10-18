@@ -30,7 +30,11 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 
 - **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick-launch`（2026-10-18 由 `feat/quick_launch-matt` 改名，旧名已不存在）。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
-- **在飞工作**：无。spec #1「快捷启动 [程序路径] 支持多条」连同它的三条子票已于 2026-10-18 全部关闭。
+- **在飞工作**：spec #5「快捷启动卡片每行配置名左侧显示 [类型] 图标」（2026-10-19 建，spec + 两子票）。
+  - **#6 实现票已关（2026-10-19）**：实现单提交 `61f5e14`（同一提交含新建 GLOSSARY.md 首条「快捷启动类型（QuickLaunchKind）」）+ 审查轮 `1d06f6a`（GLOSSARY 词条按 GLOSSARY-FORMAT 收干、注释行号 3 处、domain.md 再复核行），FF 进 `feat/quick-launch`；全部门绿（合并后权威全量 53/955、定向 34、build exit 0）。两轴审查结论、裁决（成文格式优先）、探针数值（`.temp/ql-row-type-icon-probe/`）都在执行记录：https://github.com/Gelomen/lms_launcher/issues/6#issuecomment-6254317270
+  - **前沿（可立即开工）**：#7 打包 + 布局量取 + R1–R7 真机门——blocked 边随 #6 关闭已解除。agent 侧先做打包与探针量取；R1–R7 由**用户**真机实跑后逐字回报（不得代填）。
+  - **被阻塞**：无。
+- **历史 spec（2026-10-18，已全部关闭，仅背景参照）**：spec #1「快捷启动 [程序路径] 支持多条」连同它的三条子票已于 2026-10-18 全部关闭。
   - **2026-10-19 复核口径**：`gh issue list --state open` 返回 `[]`（开放 issue 为零），#1 现为 `closed`；当前分支 `feat/quick-launch`，与 `origin/feat/quick-launch` 同步。分级标签经 `gh label list` 复核仍在位（映射见 [triage-labels.md](./triage-labels.md)）。
   - **已关闭**：#2 启动前全量预检（实现提交 `ee77d68`）、#3 弹窗 [程序路径] 多行（`5ac31a4`）、
     #4 打包 + 布局量取 + R1–R12 真机门（`7c32ec4` … `0b43346`）。每票的执行记录与两轴审查结论都写在各自票的评论里；
@@ -38,8 +42,7 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
   - #4 的收口口径（别混淆两件事）：agent 侧取证在 https://github.com/Gelomen/lms_launcher/issues/4#issuecomment-6251647704
     （布局量取与出图、打包取证、四次全量门 + 类型门全绿）；R1–R12 是**用户**用打包产物 `dist-release\win-unpacked\lms_launcher.exe`
     本机实跑后回报「验收通过」= 全部通过、无不满足项，记录在 https://github.com/Gelomen/lms_launcher/issues/4#issuecomment-6251889396 。
-  - **前沿（可立即开工）**：无——本 spec 已收口。下一条 feature 先按上面「spec」那条建新 issue，再拆 tracer-bullet 子票。
-  - **被阻塞**：无。
+  - 前沿与被阻塞状态以上方「在飞工作」为准，本节不再维护。
   - 纪律：做完一张票就关一张；真机门这类只有用户能执行的判据不得由 agent 代填，
     用户的回报按原话记录、口径不明就先问（#4 收票前就问了一次「验收通过」指的是哪一层）。
   - #4 的实测结论（留给以后改这个弹窗的票，别照搬数字）：可执行程序态的多行已真机量取
