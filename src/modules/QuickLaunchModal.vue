@@ -6,6 +6,8 @@ import { faFloppyDisk, faFolderOpen, faTrashCan, faFileCode } from '@fortawesome
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke, errMsg } from '../ipc';
 import { t } from '../i18n';
+// truncate：删除确认对话框里的启动项名按视觉宽度截断（truncDeleteName），与 TemplateModal.vue:9-10 同一口径
+import { truncateByWidth, visualWidth } from '../util/truncate';
 import Dropdown from '../components/Dropdown.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 // 类型只有一份真源（主进程的配置层 / 探测层）；import type 在构建期被擦除，不引入运行时依赖
@@ -277,8 +279,21 @@ async function doDelete(): Promise<void> {
   }
 }
 
-// Minor 9：确认文案用 trim 后的名字，与 save() 里的 formName.value.trim() 同一处理
-const deleteMessage = computed(() => t('ql.modal.delete.message', { name: formName.value.trim() }));
+// Minor 9：确认文案用 trim 后的名字，与 save() 里的 formName.value.trim() 同一处理。
+// 2026-10-19（用户报告：长名没按模板卡删除确认处理）：名字段与 TemplateModal.vue:231-243 同一口径——
+// NAME_BUDGET = 16（视觉宽，CJK=2/拉丁=1）+ grace=2：中文 ≤8 字 / 英文 ≤16 字符原样，超出才手动截到
+// 预算内 + …(U+2026)。手动截断时把「截断片段 + 完整名字」交给 ConfirmDialog 的 tipName/tipFull，
+// hover 片段弹自绘 .tpl-tip 显示完整名字；未截断（短名）不传 → 片段与 tooltip 都不出现。
+const NAME_BUDGET = 16; // 与 TemplateModal 的删除确认 / options 行同一预算
+const deleteFullName = computed(() => formName.value.trim());
+function truncDeleteName(n: string): string {
+  const full = n ?? '';
+  if (visualWidth(full) <= NAME_BUDGET + 2) return full; // grace：只超 1~2 不手动 +…（交 CSS ellipsis）
+  return truncateByWidth(full, NAME_BUDGET);
+}
+const deleteMsgName = computed(() => truncDeleteName(deleteFullName.value));
+const deleteTruncated = computed(() => visualWidth(deleteFullName.value) > NAME_BUDGET + 2);
+const deleteMessage = computed(() => t('ql.modal.delete.message', { name: deleteMsgName.value }));
 function close(): void { emit('close'); }
 </script>
 <template>
@@ -440,8 +455,12 @@ function close(): void { emit('close'); }
         </footer>
       </div>
     </div>
-    <!-- 删除二次确认（E6）：tone=danger；[确认] 才 invoke('ql_delete')，[取消] / 遮罩只关窗 -->
+    <!-- 删除二次确认（E6）：tone=danger；[确认] 才 invoke('ql_delete')，[取消] / 遮罩只关窗。
+         长名（2026-10-19 用户报告）：截断片段走 tip-name / 完整名走 tip-full → ConfirmDialog 把该片段渲染成
+         可 hover 的 .confirm-msg__name，hover 弹自绘 .tpl-tip 显示完整名字（与 TemplateModal.vue:469-473 逐字同构）；
+         未截断时两个属性都是 undefined → 无片段、无 tooltip。 -->
     <ConfirmDialog :open="confirmDeleteOpen" :title="t('ql.modal.delete.title')" :message="deleteMessage"
+      :tip-name="deleteTruncated ? deleteMsgName : undefined" :tip-full="deleteTruncated ? deleteFullName : undefined"
       tone="danger" @confirm="doDelete" @close="() => (confirmDeleteOpen = false)" />
   </Teleport>
 </template>

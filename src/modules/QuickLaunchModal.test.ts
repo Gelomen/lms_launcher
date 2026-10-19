@@ -1323,6 +1323,70 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
     w.unmount();
   });
 
+  // 2026-10-19（用户报告）：本弹窗的删除确认里，长名字没有按 [启动参数模板] 卡删除确认的处理走
+  // —— 那边（TemplateModal.test.ts:366-389）按视觉宽度预算截断 + hover 显示完整名字。
+  // 三条用例与那一份逐条对齐：拉丁长名截断 + tooltip、CJK 同一视觉预算、预算内不截且无 tooltip。
+  it('delete_confirm_dialog_truncates_long_name_and_tooltips_the_full_name', async () => {
+    const LONG_NAME = 'abcdefgabcdefgabcdefgabcdefgabcdefg'; // 30 拉丁（视觉宽 30）
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, LONG_NAME);
+    (document.querySelector('.btn-delete') as HTMLButtonElement).click();
+    await flush();
+
+    const confirm = document.querySelector('.confirm-box');
+    expect(confirm).not.toBeNull();
+    expect(confirm!.textContent).not.toContain(LONG_NAME); // 完整长名不出现（截断了）
+    const msg = document.querySelector('.confirm-msg') as HTMLElement;
+    expect(msg.textContent).toContain('abcdefgabcdefgab…」吗？'); // 前 16 视觉宽 + …(U+2026)，后接固定后缀
+
+    // 截断名独立成可 hover 片段（ConfirmDialog 的 tipName/tipFull），自绘 .tpl-tip 只显示完整名字
+    const span = document.querySelector('.confirm-msg__name') as HTMLElement;
+    expect(span).not.toBeNull();
+    expect(span.textContent).toBe('abcdefgabcdefgab…');
+    expect(span.getAttribute('data-tooltip')).toBe(LONG_NAME);
+    span.dispatchEvent(new MouseEvent('mouseenter'));
+    await flush();
+    expect(document.querySelector('.tpl-tip')?.textContent).toBe(LONG_NAME); // hover 显示完整名字
+    w.unmount();
+  });
+
+  // 同一视觉宽度预算的另一半：CJK=2/拉丁=1 —— 8 字 = 16 不截（grace 到 18），9 字起截到 8 字 + …
+  it('delete_confirm_dialog_truncates_cjk_name_at_the_same_visual_budget', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, '日常推理用的启动项名称'); // 11 汉字（视觉宽 22）
+    (document.querySelector('.btn-delete') as HTMLButtonElement).click();
+    await flush();
+    const msg = document.querySelector('.confirm-msg') as HTMLElement;
+    expect(msg.textContent).toContain('确定删除启动项「日常推理用的启动…」吗？'); // 截到 8 字（=16 视觉宽）
+    expect(document.querySelector('.tpl-tip') === null).toBe(true); // 未 hover → 没有浮层
+    const span = document.querySelector('.confirm-msg__name') as HTMLElement;
+    expect(span.getAttribute('data-tooltip')).toBe('日常推理用的启动项名称');
+    w.unmount();
+  });
+
+  // 预算内 = 原样、无 .confirm-msg__name 片段、无 tooltip（与模板卡同一「未截断不传」口径）
+  it('delete_confirm_dialog_keeps_within_budget_name_whole_without_tooltip', async () => {
+    const OK_NAME = '日常推理启动项名'; // 8 汉字（视觉宽 16 ≤ 预算 + grace）
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, OK_NAME);
+    (document.querySelector('.btn-delete') as HTMLButtonElement).click();
+    await flush();
+
+    const confirm = document.querySelector('.confirm-box');
+    expect(confirm!.textContent).toContain(t('ql.modal.delete.message', { name: OK_NAME })); // 整名原样
+    expect(document.querySelector('.confirm-msg__name')).toBeNull(); // 未截断 → 无片段、无 tooltip
+    w.unmount();
+  });
+
   // ---------- 任务 8（规格 §6.2 / §8-K5 / K7 / K8）：两态的「管理员」开关 ----------
   // E1（§8-K5）：控件 = role="switch" + aria-checked 的切换开关（不是原生 checkbox），默认关。
   it('admin_switch_defaults_off_and_is_a_role_switch', async () => {
