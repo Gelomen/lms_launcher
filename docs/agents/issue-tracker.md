@@ -30,7 +30,10 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 
 - **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick-launch`（2026-10-18 由 `feat/quick_launch-matt` 改名，旧名已不存在）。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
-- **在飞工作**：无。spec #5「快捷启动卡片每行配置名左侧显示 [类型] 图标」连同它的两条子票已于 2026-10-19 全部关闭。
+- **在飞工作**：spec #8「页签条溢出时可横滚与翻页：滚轮横滚 + 两端翻页箭头」（`ready-for-agent`，2026-10-19 grilling 全部设计决定已写入 spec 正文）。
+  - 子票：#9 T1 滚轮横滚、#10 T2 两端翻页箭头（互不阻塞）、#11 T3 真机门 R1–R6（阻塞于 #9+#10，只有用户能执行）。
+  - **前沿（可立即开工）**：#9、#10。**被阻塞**：#11。
+  - spec #5「快捷启动卡片每行配置名左侧显示 [类型] 图标」连同它的两条子票已于 2026-10-19 全部关闭。
   - **2026-10-19 收口复核口径**：`gh issue list --state open` 返回 `[]`；当前分支 `feat/quick-launch` @ `400d1bd`，与 `origin/feat/quick-launch` 同步。分级标签在位不变。
   - **已关闭**：#6 实现票（单提交 `61f5e14`（含 GLOSSARY.md 首条）+ 审查轮 `1d06f6a`，执行记录与两轴审查、裁决、探针数值：https://github.com/Gelomen/lms_launcher/issues/6#issuecomment-6254317270 ）、#7 真机门（R1–R7 **全部通过、无不满足项**，载体 = **打包产物**——用户原话「#7 验收通过」，追问口径的记录：https://github.com/Gelomen/lms_launcher/issues/7#issuecomment-6254379956 ）。spec 的收口评论：https://github.com/Gelomen/lms_launcher/issues/5#issuecomment-6254382382
   - **前沿（可立即开工）**：无——本 spec 已收口。下一条 feature 先按上面「spec」那条建新 issue，再拆 tracer-bullet 子票。
