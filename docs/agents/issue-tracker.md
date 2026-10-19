@@ -31,8 +31,10 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 - **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick-launch`（2026-10-18 由 `feat/quick_launch-matt` 改名，旧名已不存在）。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
 - **在飞工作**：spec #8「页签条溢出时可横滚与翻页：滚轮横滚 + 两端翻页箭头」（`ready-for-agent`，2026-10-19 grilling 全部设计决定已写入 spec 正文）。
-  - 子票：#9 T1 滚轮横滚、#10 T2 两端翻页箭头（互不阻塞）、#11 T3 真机门 R1–R6（阻塞于 #9+#10，只有用户能执行）。
-  - **前沿（可立即开工）**：#9、#10。**被阻塞**：#11。
+  - 子票：#9 T1 滚轮横滚 与 #10 T2 两端翻页箭头（**均已关闭**，同一提交 `7c9f662`，两票的执行记录各写在各票评论里）、#11 T3 真机门 R1–R6（open；阻塞者 #9+#10 已关 → **已解除阻塞**）。
+  - **前沿（可立即开工）**：#11 —— 真机门只有用户能执行：载体 = 打包产物 `dist-release\win-unpacked\lms_launcher.exe`（沿用 #4/#7 口径），R1–R6 按原话回报后 spec 才收口。
+  - 实现备忘（留给真机门失败时回查）：底部灰线、z-index、-16px 延伸已从 .tab-bar 上移到 .tab-bar-wrap（箭头段上连续）；`.tab-bar-wrap .tab-bar` 后代规则必须写在 .tab-bar 主规则之后——测试的 cssRule 助手按第一次出现取规则（style.css 注释里有同条警示）。
+  - **被阻塞**：无。
   - spec #5「快捷启动卡片每行配置名左侧显示 [类型] 图标」连同它的两条子票已于 2026-10-19 全部关闭。
   - **2026-10-19 收口复核口径**：`gh issue list --state open` 返回 `[]`；当前分支 `feat/quick-launch` @ `400d1bd`，与 `origin/feat/quick-launch` 同步。分级标签在位不变。
   - **已关闭**：#6 实现票（单提交 `61f5e14`（含 GLOSSARY.md 首条）+ 审查轮 `1d06f6a`，执行记录与两轴审查、裁决、探针数值：https://github.com/Gelomen/lms_launcher/issues/6#issuecomment-6254317270 ）、#7 真机门（R1–R7 **全部通过、无不满足项**，载体 = **打包产物**——用户原话「#7 验收通过」，追问口径的记录：https://github.com/Gelomen/lms_launcher/issues/7#issuecomment-6254379956 ）。spec 的收口评论：https://github.com/Gelomen/lms_launcher/issues/5#issuecomment-6254382382
