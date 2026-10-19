@@ -984,12 +984,13 @@ describe('QuickLaunchModal', () => {
     expect(del.getAttribute('data-tooltip')).toBe(t('ql.err.running'));
 
     // 机制断言（修复轮 B1）：tooltip 的渲染条件是**类选择器**，不是「属性存在」——
-    // src/style.css:414-425 = `.tip-up::after { content: attr(data-tooltip) }` +
-    // `.tip-up:hover::after { opacity: 1 }`；本组件的 .btn-delete（QuickLaunchModal.vue:338-353）
+    // style.css「.tip-* tooltip」段 = `.tip-right::after { content: attr(data-tooltip) }` +
+    // `.tip-right:hover::after { opacity: 1 }`；本组件的 .btn-delete 自身
     // 没有任何 ::after 规则，所以只挂 data-tooltip 在真机上什么都不渲染（jsdom 只看属性 → 上一轮漏网）。
     // 对照正确用法：src/App.vue:565 = class="winbtn winbtn--github tip-down" + :data-tooltip（类与属性成对）。
-    expect(del.classList.contains('tip-up'),
-      'data-tooltip 已挂但缺 .tip-up 类 → style.css:414-425 的 ::after 不渲染（真机看不到 tooltip）').toBe(true);
+    // 2026-10-19（用户报告 + 截图）：[删除] 贴弹窗左下角，.tip-up 气泡被窗口左缘裁掉 → 改用 .tip-right（挂按钮右侧）。
+    expect(del.classList.contains('tip-right'),
+      'data-tooltip 已挂但缺 .tip-right 类 → style.css 的 ::after 不渲染（真机看不到 tooltip）').toBe(true);
 
     // 点了也不开二次确认、不发 ql_delete（守卫在模板与 onDelete 两处，任一被去掉本用例都红）
     del.click();
@@ -1001,18 +1002,18 @@ describe('QuickLaunchModal', () => {
     w.unmount();
   });
 
-  // I-1 负面对照（修复轮 B1）：tip-up 必须与 data-tooltip **同条件**挂载（只在 running 为真时）。
-  // 理由在 style.css:414-425：`content: attr(data-tooltip)` 在属性缺失时求值为空串，
-  // 而 .tip-up::after 仍带 padding / border-radius / 深灰底 → 无条件挂 tip-up 会让未运行条目的
+  // I-1 负面对照（修复轮 B1）：tip-right 必须与 data-tooltip **同条件**挂载（只在 running 为真时）。
+  // 理由在 style.css「.tip-* tooltip」段：`content: attr(data-tooltip)` 在属性缺失时求值为空串，
+  // 而 .tip-right::after 仍带 padding / border-radius / 深灰底 → 无条件挂 tip-right 会让未运行条目的
   // 删除按钮在 hover 时弹出一个空白气泡。本用例就是钉这条负面对照（变异门 b 让它红）。
-  it('tip_up_class_and_data_tooltip_are_mounted_only_while_running', async () => {
+  it('tip_right_class_and_data_tooltip_are_mounted_only_while_running', async () => {
     mockLms();
     const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: SHELL_ENTRY, running: false });
     await flush();
 
     const del = document.querySelector('.btn-delete') as HTMLButtonElement;
     expect(del).not.toBeNull();
-    expect(del.classList.contains('tip-up'), '未运行却挂了 .tip-up → hover 时渲染空 tooltip 气泡').toBe(false);
+    expect(del.classList.contains('tip-right'), '未运行却挂了 .tip-right → hover 时渲染空 tooltip 气泡').toBe(false);
     expect(del.getAttribute('data-tooltip')).toBeNull();
     w.unmount();
   });

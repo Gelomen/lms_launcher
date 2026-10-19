@@ -424,11 +424,13 @@ function close(): void { emit('close'); }
         <!-- 底栏：左下删除（仅编辑态，F2）+ 右下紫色保存（单飞：:disabled=saving，与 TemplateModal.vue:442 同构） -->
         <footer class="modal-actions">
           <!-- I-1：运行中的条目禁用 [删除]，原因挂 tooltip（ql.err.running 是既有键，本轮不新建）。
-               修复轮 B1：tooltip 的渲染条件是**类选择器**（style.css:414-425 `.tip-up::after { content: attr(data-tooltip) }`），
+               修复轮 B1：tooltip 的渲染条件是**类选择器**（style.css「.tip-* tooltip」段 `.tip-*::after { content: attr(data-tooltip) }`），
                本组件的 .btn-delete 自身没有 ::after 规则 → 光有 data-tooltip 属性真机上什么都不显示。
                故类与属性**同条件**（running）成对挂载，与 App.vue:565（tip-down + :data-tooltip）同一用法。
-               不能无条件挂 .tip-up：attr() 在属性缺失时求值为空串，仍会渲染一个带 padding 的空白气泡。 -->
-          <button v-if="isEdit" class="btn-delete" :class="{ 'tip-up': running }" :aria-label="t('ql.modal.btn.delete')"
+               不能无条件挂 .tip-right：attr() 在属性缺失时求值为空串，仍会渲染一个带 padding 的空白气泡。
+               2026-10-19（用户报告 + 截图）：本按钮贴弹窗左下角，.tip-up 的气泡向上/左探出被窗口裁掉
+               → 改用同段的 .tip-right，气泡挂按钮右侧、垂直居中（弹窗内部空间足够，不再被裁）。 -->
+          <button v-if="isEdit" class="btn-delete" :class="{ 'tip-right': running }" :aria-label="t('ql.modal.btn.delete')"
             :disabled="running" :data-tooltip="running ? t('ql.err.running') : undefined" @click="onDelete">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['trash-can']" />
           </button>
@@ -613,7 +615,8 @@ function close(): void { emit('close'); }
 .btn-delete:hover { background: var(--danger); color: #fff; }
 /* 修复轮 B1：只 :disabled 不改外观 = 用户看不出为什么点不动。禁用口径照 style.css:232
    （.icon-btn:disabled 同色同 cursor）与本文件 .modal-save:disabled（下方）同一语言。
-   tooltip 类 .tip-up 复用 style.css:414-425，本文件不复制、不改 style.css。 */
+   tooltip 类 .tip-right 复用 style.css「.tip-* tooltip」段（2026-10-19 起从 .tip-up 换为 .tip-right，
+   原因见底栏 [删除] 按钮处注释），本文件不复制、不再改 style.css。 */
 .btn-delete:disabled { color: #C7CCD4; cursor: not-allowed; }
 .modal-save {
   position: absolute;

@@ -565,6 +565,21 @@ body {
   opacity: 0;
 }
 .tip-down:hover::after { opacity: 1; }
+/* 向右 tooltip 定位（2026-10-19 用户报告 + 截图：快捷启动 [编辑启动项] 弹窗左下 [删除] 的 tooltip
+   挂按钮上方居中，左半截探出弹窗/窗口左缘被裁）：贴弹窗左下角的按钮上方/左方都是边界，只有右侧有空间。
+   与 .tip-up / .tip-down 同视觉语言（深灰底白字/12px/圆角/z-30），仅定位轴换到右侧、垂直居中。 */
+.tip-right { position: relative; }
+.tip-right::after {
+  content: attr(data-tooltip);
+  position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+  background: #374151; color: #fff;
+  font-size: var(--fs-label); line-height: 1.4; white-space: nowrap;
+  padding: 2px 8px; border-radius: 6px;
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+}
+.tip-right:hover::after { opacity: 1; }
 /* flag-grid 参数 label 的 hover tooltip：position:fixed 浮于视口（.modal-body overflow-y:auto 会裁剪行内
    abspos 浮层——同 .dd-tip/.vram-tip/.tpl-tip 方案）；JS 挂 label 右侧垂直居中，右侧放不下视口时
    .flag-tip--flip 翻到左缘内侧。两行：长 flag（第一行）+ 中文说明（第二行）；min-width 260px 兜底宽度。 */
