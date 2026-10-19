@@ -19,6 +19,18 @@ import type { LogTabItem } from './log-tabs';
 
 interface E { line: string; stream: 'sys' | 'out' | 'err' }
 
+// 规则文本取证：happy-dom 不加载 style.css，computed style 读不到 → 只能读 style.css 的规则文本。
+// 边界按「选择器 + 它自己的 { … }」取一条规则，不依赖下一条规则叫什么名字；注释一律剥掉 ——
+// 断的是声明本身，不是解释历史的那段注释（本文件的注释恰恰会写出被删掉的那条声明）。
+function stripComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+function cssRule(css: string, selector: string): string {
+  const at = css.indexOf(selector + ' {');
+  if (at === -1) throw new Error('css rule not found: ' + selector);
+  return stripComments(css.slice(at, css.indexOf('}', at)));
+}
+
 function rowClass(tab: 'launcher' | 'llama-server', lines: E[]): string[] {
   const buckets = { launcher: [], 'llama-server': [] } as Record<'launcher' | 'llama-server', E[]>;
   buckets[tab] = lines;
@@ -363,11 +375,10 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: many, register: vi.fn(), unregister: vi.fn() } });
     expect(w.findAll('.tab-bar .log-tab').length).toBe(10);
     const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
-    const barRule = css.slice(css.indexOf('.tab-bar {'), css.indexOf('.log-tab {'));
+    const barRule = cssRule(css, '.tab-bar');
     expect(barRule).toMatch(/flex-wrap:\s*nowrap/);
     expect(barRule).toMatch(/overflow-x:\s*auto/);
-    const tabRule = css.slice(css.indexOf('.log-tab {'), css.indexOf('.log-tab +'));
-    expect(tabRule).toMatch(/flex:\s*none/);
+    expect(cssRule(css, '.log-tab')).toMatch(/flex:\s*none/);
     // F2：切换页签时把激活页签滚进可视区（happy-dom 无 scrollIntoView → 打桩断被调用与参数）
     const seen: unknown[] = [];
     const proto = HTMLElement.prototype as unknown as { scrollIntoView?: (o: unknown) => void };
@@ -381,6 +392,33 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     expect(seen.length).toBe(1);
     expect(seen[0]).toMatchObject({ inline: 'nearest' });
     w.unmount();
+  });
+
+  // 缺口回归（2026-10-19，用户实机截图：面板左缘从页签到内容区少了一段竖线）。
+  // 致错模式：页签条是 overflow-x:auto 的滚动容器（上面 E5 断的就是它），裁切边界在它的 padding box；
+  // 页签一旦用 margin-left:-1px 做「共边」，首 tab 就整体悬出裁切框 1px —— 那 1px 正是它的左边线，被裁掉
+  // （.log-pane 的 margin-left:-1px 是为了把面板左边框再去对齐那条被裁掉的线，一并删）。
+  // 所以共边的负边距只能朝右。像素级判定见 .scratch/tab-gap/loop.cjs（Electron 离屏渲染 + 逐像素读线）：
+  // 本仓的 vitest 层没有 layout/paint，够不到「线连不连得上」这条真缝，这里断的是致错的写法本身。
+  it('tab_shared_edge_negative_margin_points_right_not_left', () => {
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
+    expect(cssRule(css, '.log-tab')).toMatch(/margin-right:\s*-1px/);
+    expect(cssRule(css, '.log-tab')).not.toMatch(/margin-left:\s*-1px/);
+    expect(stripComments(css)).not.toMatch(/\.log-tab\s*\+\s*\.log-tab\s*\{[^}]*margin-left:\s*-1px/);  // 共边只写在页签自身，且方向朝右
+    expect(cssRule(css, '.log-pane')).not.toMatch(/margin-left:\s*-1px/);                     // pane 不再补偿页签的悬出
+  });
+
+  // 缺口回归 2（2026-10-19 第二轮）：用户这次看的是「页签多到溢出」的截图 —— 左缘断 9px，且断口下方多一处拐弯。
+  // 致错模式：页签条本身是横向滚动容器，而本文件的全局滚动条是 10px（*::-webkit-scrollbar），
+  // 于是页签一多，页签条就在自己盒子里让出这 10px（实测 26 → 36），把 .log-pane 整块推下去 10px：
+  // 左边框断一截、面板顶边与页签底错开 = 「拐弯」。这条滚动条按设计本来就看不见（track/thumb 全透明），
+  // 所以它连一位都不该占。像素级判定同样见 .scratch/tab-gap/loop.cjs（--more-tabs 8 那条会断在 y=38..46）。
+  it('tab_bar_reserves_no_scrollbar_layout', () => {
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
+    const barScrollbar = cssRule(css, '.tab-bar::-webkit-scrollbar');   // 缺这条规则时 cssRule 直接抛 = 红
+    expect(barScrollbar).toMatch(/width:\s*0/);
+    expect(barScrollbar).toMatch(/height:\s*0/);
+    expect(cssRule(css, '.tab-bar')).toMatch(/scrollbar-width:\s*none/);
   });
 
   // E7（规格 §11-1 / 索引 K26(2)）：title 只在 label !== fullLabel 时挂 fullLabel；页签文案原样渲染、不二次截断

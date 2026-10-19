@@ -138,7 +138,7 @@ body {
 }
 .btn-launch:hover { background: var(--primary-hover); } /* hover 加深一档（与 .vram-badge:hover 同档，压过 .btn:hover 的浅灰） */
 /* 状态按钮改圆形 + 缩小（2026-10-14 用户要求，仅快捷启动列表行）：24×24 正圆
-   （同日第二轮：28×28 → 24×24，与同行 [复制][编辑] 的 .icon-btn--sm(:457) 同尺寸）。
+   （同日第二轮：28×28 → 24×24，与同行 [复制][编辑] 的 .icon-btn--sm 同尺寸）。
    覆盖 .btn 的 height:32px / padding:0 14px —— 定宽定高 + padding:0 + flex 居中放图标；
    本类只管形状与尺寸：配色仍由 .btn-launch（紫）/ .btn-danger（红）给，:disabled 置灰仍由
    .btn:disabled（伪类权重更高）给，图标字号在模板里逐字给（play 12px / stop 10px ——
@@ -269,9 +269,18 @@ body {
   margin-right: -16px;   /* 抵消 .log-panel 右侧 --card-pad：灰线延伸到面板右缘而非仅 tab 区右缘 */
   padding-bottom: 0;
   background: linear-gradient(0deg, var(--border) 1px, transparent 1px);  /* 仅底部 1px 灰（最右无页签段） */
+  /* 横向溢出时一条滚动条都不留（2026-10-19 修「面板左缘缺口 + 缺口下一处拐弯」）：
+     全局那条 *::-webkit-scrollbar 是 10px（见下文「#12 滚动条美化」段），页签条一旦横向溢出就在自己盒子里让出这 10px —— 它按设计本来就看不见
+     （track/thumb 全透明），却把页签条从 26 顶到 36，于是 .log-pane 被推下去 10px：左边框断 9px、
+     面板顶边与页签底错开一段，看着就是「缺口下面拐了个弯」。上面那句 overflow-y:hidden 的注释要的正是
+     「别让滚动条把页签条顶高」，横向这条同理。滚动能力不变：wheel / shift+wheel / 触摸板 / 键盘照旧，
+     激活页签仍由 LogPanel 的 scrollIntoView 滚进可视区（规格 §11-2 / F2）。 */
+  scrollbar-width: none;                                 /* Firefox */
 }
+/* Chromium：本选择器比「#12 滚动条美化」段里全局那条 *::-webkit-scrollbar 更具体，横竖都不留 */
+.tab-bar::-webkit-scrollbar { width: 0; height: 0; }
 .log-tab {
-  position: relative; margin-left: -1px;
+  position: relative; margin-right: -1px;   /* 共边：相邻页签共用 1px 竖线。方向只能朝右（压住自己的右边线），方向的理由见上方 .tab-bar 那段注释 */
   flex: none;                                        /* 页签不被压扁（规格 §11-2 / F1）：横向滚动时保持自身宽度 */
   display: inline-flex; align-items: center; gap: 6px;   /* 页签文案 + [x] 同行（任务 10） */
   white-space: nowrap;                               /* 文案不折行：截断由构造方做（索引 K26(2)），这里不二次处理 */
@@ -281,7 +290,10 @@ body {
   border-radius: 0 8px 0 0;   /* 左上直角 / 右上圆角（用户指定） */
   cursor: pointer; font-family: var(--font-ui);
 }
-.log-tab + .log-tab { margin-left: -1px; }          /* 共边：后一个页签叠上前一个的右边 */
+/* 共边的负边距只能朝右，不能朝左（2026-10-19 修「页签左侧缺口」，删掉了这里的 margin-left:-1px 重复规则）。
+   原写法下首 tab 整体悬出 .tab-bar 左边 1px，而 .tab-bar 自 e351a9b 起是 overflow-x:auto 的滚动容器 ——
+   滚动容器的裁切边界在 padding box，那 1px 正是首 tab 的左边线，被裁掉就是面板左缘上「页签到内容区」的缺口。
+   现在整行都在裁切框内：共边不变、页签照常横向滚动，首 tab 左边线与 .log-pane 左边框连成一条。 */
 .log-tab:hover { background: #ECEEF0; color: var(--text); }   /* hover 加深一档灰（与 btn hover 同向） */
 .log-tab.active {
   z-index: 1;                                       /* 前层：压住相邻页签的共享边（Chrome 式） */
@@ -301,7 +313,8 @@ body {
 .log-pane {
   display: flex; flex-direction: column; flex: 1; min-height: 0;
   margin-top: -1px;                              /* 与页签条共边（消 1px 缝隙） */
-  margin-left: -1px;                             /* 左缘对齐页签边框左缘（首 tab 左边线 +1px） */
+  /* 这里曾有 margin-left:-1px（86073e0：把 pane 左缘对齐首 tab 的左边线）。首 tab 不再向左悬出，
+     两者都落在面板左缘 → 补偿随负边距一并删除；面板左缘也顺势与上方 .card 列对齐。 */
   padding: 8px;
   background: var(--card);
   border: 1px solid var(--border); border-top: none;
@@ -448,8 +461,8 @@ body {
 }
 
 /* ---- #12 滚动条美化（两态透明度：idle 隐形 / 容器 hover 浮现 ≈5%；
-     覆盖 .dropdown-panel(下拉) / .template-list(模板列表 + 快捷启动列表，同一容器类) / .log-view(日志) /
-     .tab-bar(页签条横向滚动，任务 10)）---- */
+     覆盖 .dropdown-panel(下拉) / .template-list(模板列表 + 快捷启动列表，同一容器类) / .log-view(日志)。
+     .tab-bar(页签条横向滚动)不在其列：它一条滚动条都不留，理由写在 .tab-bar 规则内那段注释里）---- */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb {
@@ -457,11 +470,11 @@ body {
   border-radius: 5px;
   border: 2px solid var(--card);    /* 与容器留白，视觉悬浮 */
 }
-.modal-body:hover, .log-view:hover, .template-list:hover, .dropdown-panel:hover, .tab-bar:hover {
+.modal-body:hover, .log-view:hover, .template-list:hover, .dropdown-panel:hover {
   --sb-thumb: rgba(0, 0, 0, 0.05);
   scrollbar-color: rgba(0, 0, 0, .05) transparent; /* Firefox hover：≈5% */
 }
-.modal-body, .log-view, .template-list, .dropdown-panel, .tab-bar {
+.modal-body, .log-view, .template-list, .dropdown-panel {
   --sb-thumb: transparent;
   scrollbar-color: transparent transparent;         /* Firefox idle：隐形 */
 }
@@ -469,8 +482,7 @@ body {
 .modal-body::-webkit-scrollbar-thumb,
 .log-view::-webkit-scrollbar-thumb,
 .template-list::-webkit-scrollbar-thumb,
-.dropdown-panel::-webkit-scrollbar-thumb,
-.tab-bar::-webkit-scrollbar-thumb { background: var(--sb-thumb); }
+.dropdown-panel::-webkit-scrollbar-thumb { background: var(--sb-thumb); }
 
 
 /* ---- 图标按钮 + tooltip（2026-08-25）：「新建模板」+ / 行内「编辑」铅笔 ---- */
