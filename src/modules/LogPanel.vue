@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
-import { faXmark } from '@fortawesome/free-solid-svg-icons';
+import { faChevronLeft, faChevronRight, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import LogTabView from './LogTabView.vue';
 import TerminalTabView from './TerminalTabView.vue';
@@ -10,7 +10,7 @@ import { t } from '../i18n';
 
 // 标签条 + 激活切换；行数据由 App 分桶后按 tab 下发，视图状态全在 LogTabView 实例内。
 // 两种页签共存（规格 §9.1）：text → LogTabView（不改）；terminal → TerminalTabView（xterm，任务 9）。
-library.add(faXmark);   // [x]（F3：本组件内注册；TerminalTabView 在它自己组件内也 add 过，两处各自注册）
+library.add(faXmark, faChevronLeft, faChevronRight);   // [x]（F3：本组件内注册；TerminalTabView 在它自己组件内也 add 过，两处各自注册）；chevron 对 = 票 #10 的翻页箭头（free-solid 才有 chevron，同 GpuModule 先例）
 
 interface Entry { line: string; stream: 'sys' | 'out' | 'err' }
 
@@ -66,6 +66,81 @@ watch(active, (id) => {
   tabEls.get(id)?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
 }, { flush: 'post' });
 
+// 滚轮直接横滚（spec #8 / T1 #9）：Chromium 对纯 overflow-x 容器不响应竖向滚轮
+// （历史只有 shift+滚轮），style.css 旧注释「wheel 照旧」实测不成立（用户 2026-10-19 回报）。
+// 这里把 deltaY 转成横向滚动；shift+滚轮（事件里表现为 deltaX）与触摸板横向手势走原生路径不动。
+// 不溢出、或该方向已无可滚量时不介入（不 preventDefault），把事件还给页面；滚动条 CSS 不动。
+function wheelPixels(el: HTMLElement, e: WheelEvent): number {
+  if (e.deltaMode === 1) return e.deltaY * 16;            // 行 → px
+  if (e.deltaMode === 2) return e.deltaY * el.clientWidth; // 页 → px
+  return e.deltaY;
+}
+function onTabBarWheel(e: WheelEvent): void {
+  const el = e.currentTarget as HTMLElement;
+  const max = el.scrollWidth - el.clientWidth;
+  if (max <= 0) return;
+  if (e.deltaX !== 0) return; // 已带横向意图（含原生 shift+滚轮）→ 原生路径
+  const d = wheelPixels(el, e);
+  if (d === 0) return;
+  const at = el.scrollLeft;
+  if ((d < 0 && at <= 0) || (d > 0 && at >= max)) return;
+  el.scrollLeft = Math.min(Math.max(at + d, 0), max);
+  e.preventDefault();
+}
+
+// ---- 两端翻页箭头（spec #8 / T2 #10）：只在「还能滚的方向」渲染；端点自隐；一步 = 最近被截断页签完整带入 ----
+// 显隐判据读真实几何：max = scrollWidth − clientWidth − ε（ε=1px：共边负边距最多 1px，防误报）。happy-dom 无布局
+// → 这些数在单测里全 0（箭头天然不出现），测试打桩几何并用 scroll 事件驱动重测（与 T1 同一「无布局取证」口径）。
+const tabBarEl = ref<HTMLElement | null>(null);
+const canScrollLeft = ref(false);
+const canScrollRight = ref(false);
+function measureBar(): void {
+  const el = tabBarEl.value;
+  if (!el) { canScrollLeft.value = false; canScrollRight.value = false; return; }
+  const max = el.scrollWidth - el.clientWidth - 1;
+  canScrollLeft.value = el.scrollLeft > 0;
+  canScrollRight.value = max > 0 && el.scrollLeft < max;
+}
+let barObserver: ResizeObserver | null = null;
+onMounted(() => {
+  measureBar();
+  // 刷新时机：容器尺寸（窗口 resize / RO）+ 页签增删（watch items）+ 一切来源的滚动（nav @scroll）。
+  window.addEventListener('resize', measureBar);
+  if (typeof ResizeObserver === 'function' && tabBarEl.value) {   // happy-dom 无 RO：跳过，测试靠打桩 + scroll 事件驱动
+    barObserver = new ResizeObserver(() => measureBar());
+    barObserver.observe(tabBarEl.value);
+  }
+});
+onUnmounted(() => {
+  window.removeEventListener('resize', measureBar);
+  if (barObserver) { barObserver.disconnect(); barObserver = null; }
+});
+// 页签增删 → 下一帧重测（新开页签立刻出现右箭头；关掉到不溢出则两端都消失）。
+watch(items, () => { nextTick(measureBar); }, { flush: 'post' });
+
+// 步长（设计确认：把最近被截断的页签完整带入视野）：右 = 该页签右缘对齐视口右缘；左 = 左缘对齐视口左缘；剩余不足贴边。
+// 坐标用 offsetLeft/offsetWidth：偏移父 = .tab-bar 自身（position:relative），不随滚动变化 —— 读 getBoundingClientRect 也行，
+// 但偏移属性无视口换算、在单测里可直接打桩。
+function stepBar(dir: 1 | -1): void {
+  const el = tabBarEl.value;
+  if (!el) return;
+  const max = el.scrollWidth - el.clientWidth;
+  if (max <= 0) return;
+  const cur = el.scrollLeft;
+  const tabs = Array.from(el.querySelectorAll<HTMLElement>('.log-tab'));
+  let target = dir === 1 ? max : 0;
+  if (dir === 1) {
+    const cut = tabs.find((t) => t.offsetLeft + t.offsetWidth > cur + el.clientWidth + 1);
+    if (cut) target = Math.min(Math.max(cut.offsetLeft + cut.offsetWidth - el.clientWidth, 0), max);
+  } else {
+    const cut = [...tabs].reverse().find((t) => t.offsetLeft < cur - 1);
+    if (cut) target = Math.min(Math.max(cut.offsetLeft, 0), max);
+  }
+  if (target === cur) return;
+  if (typeof el.scrollTo === 'function') el.scrollTo({ left: target, behavior: 'smooth' });
+  else el.scrollLeft = target;   // 无 scrollTo 的兜底（与 F2 scrollIntoView 可选链同一口径）
+}
+
 function onTabClick(item: LogTabItem): void {
   if (active.value === item.id) return;
   // 受控：只冒泡 update:active(id)，切换由 App 改 prop 完成（E9）；非受控：自持（既有行为不变）。
@@ -87,7 +162,14 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
 </script>
 <template>
   <section class="log-panel">
-    <nav class="tab-bar" role="tablist">
+    <div class="tab-bar-wrap">
+      <!-- 翻页箭头（票 #10）：v-if 只在「还能滚的方向」渲染（端点自隐）；放在 role=tablist 之外 —— 它们不是页签。
+           aria-label 走 i18n（tab.nav.prev/next，中英）。无 disabled 态：不可滚 = 不存在。 -->
+      <button v-if="canScrollLeft" type="button" class="tab-nav-btn"
+        :aria-label="t('tab.nav.prev')" @click="stepBar(-1)">
+        <FontAwesomeIcon :icon="['fas', 'chevron-left']" />
+      </button>
+      <nav class="tab-bar" role="tablist" ref="tabBarEl" @wheel="onTabBarWheel" @scroll.passive="measureBar">
       <!-- data-tab-id 只是测试/调试钩子（索引 M4）；页签文案取 item.label（构造方给的短名），不反取终端组件的 data-* -->
       <button v-for="item in items" :key="item.id" type="button" role="tab"
         class="log-tab" :data-tab-id="item.id" :class="{ active: item.id === active }"
@@ -102,7 +184,12 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
           <FontAwesomeIcon :icon="['fas', 'xmark']" />
         </button>
       </button>
-    </nav>
+      </nav>
+      <button v-if="canScrollRight" type="button" class="tab-nav-btn"
+        :aria-label="t('tab.nav.next')" @click="stepBar(1)">
+        <FontAwesomeIcon :icon="['fas', 'chevron-right']" />
+      </button>
+    </div>
     <!-- 两种页签的内容一律 v-show 保活（索引 K26(4) / F7）：TerminalTabView 卸载即 unregister + term.dispose()
          （TerminalTabView.vue:180-188），用 v-if 等于「切页签杀终端」。下面的 v-if 只按 kind 分流，与激活态无关。 -->
     <template v-for="item in items" :key="item.id">

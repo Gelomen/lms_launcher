@@ -259,26 +259,47 @@ body {
 .icon-btn:disabled:hover { background: transparent; color: #C7CCD4; }
 
 /* ---- 日志 tab 条（文件夹/浏览器式：相邻共边、左上右上圆角；
-    激活页签「切断」一条 1px 顶部横线——可见灰线从其右下角（右缘底点）出发延伸到面板右缘）---- */
-.tab-bar {
+     激活页签「切断」一条 1px 顶部横线——可见灰线从其右下角（右缘底点）出发延伸到面板右缘）。
+     spec #8 / 票 #10：页签条外包一层 .tab-bar-wrap，两端固定翻页箭头按钮（组件只在「还能滚的方向」渲染，端点自隐）。
+     底部 1px 灰线与 -16px 延伸上移到包裹层：箭头占位时灰线也不得断；滚动容器本体 .tab-bar 的
+     F1/§11-2 声明（nowrap / overflow-x:auto / 不留滚动条）一律不动。 ---- */
+.tab-bar-wrap {
+  display: flex; align-items: flex-end;
+  align-self: stretch; width: 100%;
   position: relative; z-index: 1;        /* 高于 .log-pane（pane 后绘制会盖住顶缘 1px 重叠区）：底部 1px 行与页签底边线压在上面 */
-  display: flex; align-self: stretch; width: 100%;
+  margin-right: -16px;   /* 抵消 .log-panel 右侧 --card-pad：灰线延伸到面板右缘而非仅 tab 区右缘 */
+  background: linear-gradient(0deg, var(--border) 1px, transparent 1px);  /* 仅底部 1px 灰；画在包裹层上，横穿两端箭头段也连续 */
+}
+.tab-nav-btn {
+  /* 翻页箭头（票 #10）：与页签同高 26px、贴齐页签条上下缘的无边框图标按钮；
+     hover 语言同 .log-tab .btn-close-tab（只变图标色，底色不变）。组件按方向 v-if 渲染，故 CSS 无禁用态。 */
+  flex: none; width: 24px; height: 26px; padding: 0; border: none; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); cursor: pointer;
+}
+.tab-nav-btn:hover { background: transparent; color: var(--primary); }
+.tab-bar {
+  position: relative;                    /* 激活页签 z-index 的堆叠参照；也是步长坐标（页签 offsetLeft 的偏移父，不随滚动变化） */
+  display: flex;
   /* 页签溢出（规格 §11-2 / F1）：不换行 + 横向滚动；页签自身 flex:none 不被压扁（见 .log-tab）。
      overflow-y 显式 hidden：overflow-x 非 visible 时它按规范算成 auto，多出来的一条横向滚动条会把页签条顶高。 */
   flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
-  margin-right: -16px;   /* 抵消 .log-panel 右侧 --card-pad：灰线延伸到面板右缘而非仅 tab 区右缘 */
   padding-bottom: 0;
-  background: linear-gradient(0deg, var(--border) 1px, transparent 1px);  /* 仅底部 1px 灰（最右无页签段） */
   /* 横向溢出时一条滚动条都不留（2026-10-19 修「面板左缘缺口 + 缺口下一处拐弯」）：
      全局那条 *::-webkit-scrollbar 是 10px（见下文「#12 滚动条美化」段），页签条一旦横向溢出就在自己盒子里让出这 10px —— 它按设计本来就看不见
      （track/thumb 全透明），却把页签条从 26 顶到 36，于是 .log-pane 被推下去 10px：左边框断 9px、
      面板顶边与页签底错开一段，看着就是「缺口下面拐了个弯」。上面那句 overflow-y:hidden 的注释要的正是
-     「别让滚动条把页签条顶高」，横向这条同理。滚动能力不变：wheel / shift+wheel / 触摸板 / 键盘照旧，
+     「别让滚动条把页签条顶高」，横向这条同理。滚动能力：shift+滚轮 / 触摸板横滚 / 键盘照旧；普通滚轮本不响应纯横向溢出容器
+     （旧注释「wheel 照旧」不成立——用户 2026-10-19 实测，票 #9 起由 LogPanel 的 wheel 处理器把 deltaY 转成横滚）；
+     两端翻页箭头见 .tab-bar-wrap（票 #10）；
      激活页签仍由 LogPanel 的 scrollIntoView 滚进可视区（规格 §11-2 / F2）。 */
   scrollbar-width: none;                                 /* Firefox */
 }
 /* Chromium：本选择器比「#12 滚动条美化」段里全局那条 *::-webkit-scrollbar 更具体，横竖都不留 */
 .tab-bar::-webkit-scrollbar { width: 0; height: 0; }
+/* 注意：这条后代规则必须写在 .tab-bar 主规则之后 —— 它的文本里含子串「.tab-bar {」，
+   而测试的 cssRule 取证按「选择器 + 「 {」」取文件中第一次出现（LogPanel.test.ts），写在前面会把主规则读串。 */
+.tab-bar-wrap .tab-bar { flex: 1 1 auto; min-width: 0; }   /* 占两端按钮之外的剩余宽度（页签照旧不被压扁：.log-tab flex:none） */
 .log-tab {
   position: relative; margin-right: -1px;   /* 共边：相邻页签共用 1px 竖线。方向只能朝右（压住自己的右边线），方向的理由见上方 .tab-bar 那段注释 */
   flex: none;                                        /* 页签不被压扁（规格 §11-2 / F1）：横向滚动时保持自身宽度 */

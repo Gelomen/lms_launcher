@@ -527,4 +527,188 @@ describe('LogPanel 受控激活（E9/E10 · 索引 K27(1)）', () => {
   });
 });
 
+// ============================================================================
+// spec #8 · T1（#9）· 页签条滚轮直接横滚。
+// 致错根因：Chromium 对纯 overflow-x 容器不响应竖向滚轮（只有 shift+滚轮走原生），
+// 组件 wheel 处理器把 deltaY 转成横向滚动。happy-dom 无布局 → 页签条的滚动几何
+// （scrollWidth/clientWidth/scrollLeft）一律打桩在元素实例上——与 E5/F2 同一「无布局取证」
+// 口径：断的是处理器的行为本身，不是浏览器的滚动语义（真实手感归 #11 真机门）。
+// ============================================================================
+describe('LogPanel 页签条滚轮横滚（T1 #9）', () => {
+  // 打桩滚动几何：max = scrollWidth - clientWidth；scrollLeft 是真变量，返回读取器。
+  function stubBar(w: any, clientWidth: number, scrollWidth: number, startLeft = 0): () => number {
+    const el = w.find('.tab-bar').element as HTMLElement;
+    let sl = startLeft;
+    Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => clientWidth });
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => scrollWidth });
+    Object.defineProperty(el, 'scrollLeft', { configurable: true, get: () => sl, set: (v: number) => { sl = v; } });
+    return () => sl;
+  }
+  function wheel(el: HTMLElement, init: { deltaY?: number; deltaX?: number; deltaMode?: number }): WheelEvent {
+    const ev = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init });
+    el.dispatchEvent(ev);
+    return ev;
+  }
+  function barEl(w: any): HTMLElement { return w.find('.tab-bar').element as HTMLElement; }
+
+  // 核心：溢出时普通滚轮（deltaY）直接横滚并被拦截
+  it('wheel_deltaY_scrolls_horizontally_when_overflow', () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets() } });
+    const getLeft = stubBar(w, 100, 500);
+    const ev = wheel(barEl(w), { deltaY: 120 });
+    expect(getLeft()).toBe(120);
+    expect(ev.defaultPrevented).toBe(true);
+    w.unmount();
+  });
+
+  // 边界不介入：左端往左 / 右端往右 → 不滚动、不 preventDefault；贴边钳制仍介入
+  it('wheel_at_edges_not_consumed_clamped_at_end_consumed', () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets() } });
+    const gl0 = stubBar(w, 100, 500, 0);
+    let ev = wheel(barEl(w), { deltaY: -50 });
+    expect(gl0()).toBe(0);
+    expect(ev.defaultPrevented).toBe(false);
+    const glMax = stubBar(w, 100, 500, 400);
+    ev = wheel(barEl(w), { deltaY: 50 });
+    expect(glMax()).toBe(400);
+    expect(ev.defaultPrevented).toBe(false);
+    const glNear = stubBar(w, 100, 500, 380);
+    ev = wheel(barEl(w), { deltaY: 50 });
+    expect(glNear()).toBe(400); // 钳到 max = 500-100
+    expect(ev.defaultPrevented).toBe(true);
+    w.unmount();
+  });
+
+  // 不溢出 → 完全不介入（页签数量正常时滚轮无副作用）
+  it('wheel_without_overflow_not_consumed', () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets() } });
+    const gl = stubBar(w, 100, 100);
+    const ev = wheel(barEl(w), { deltaY: 120 });
+    expect(gl()).toBe(0);
+    expect(ev.defaultPrevented).toBe(false);
+    w.unmount();
+  });
+
+  // 已带横向意图（deltaX≠0：原生 shift+滚轮、触摸板横滚）→ 走原生路径，处理器不动作
+  it('native_horizontal_intent_passes_through', () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets() } });
+    const gl = stubBar(w, 100, 500);
+    const ev = wheel(barEl(w), { deltaY: 120, deltaX: 30 });
+    expect(gl()).toBe(0);
+    expect(ev.defaultPrevented).toBe(false);
+    w.unmount();
+  });
+
+  // deltaMode=line 换算成像素（Firefox 系语义；Electron 恒为 pixel，此条只锁换算分支）
+  it('line_delta_mode_scaled', () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets() } });
+    const gl = stubBar(w, 100, 500);
+    const ev = wheel(barEl(w), { deltaY: 3, deltaMode: 1 });
+    expect(gl()).toBe(48);
+    expect(ev.defaultPrevented).toBe(true);
+    w.unmount();
+  });
+});
+
+// ============================================================================
+// spec #8 · T2（#10）· 两端翻页箭头：仅溢出出现、端点自隐、一页签一步。
+// 无布局口径与 T1 相同：页签条几何（clientWidth/scrollWidth/scrollLeft）与各页签的
+// offsetLeft/offsetWidth 打桩在元素实例上，重测由真实 'scroll' 事件驱动（组件 @scroll.passive）。
+// 断的是显隐判定、步长换算、按钮位置（role=tablist 之外）；真实布局与手感归 #11 真机门。
+// ============================================================================
+describe('LogPanel 页签条翻页箭头（T2 #10）', () => {
+  function manyTabs(n: number): LogTabItem[] {
+    const many: LogTabItem[] = [textTab('launcher'), textTab('llama-server')];
+    for (let i = 1; i <= n; i++) many.push(termTab('ql:cfg' + i));
+    return many;
+  }
+  const TAB_W = 100;
+  // 页签条视口 100px，10 个页签各 100px（scrollWidth = 1000，max = 900）
+  function stubGeom(w: any, startLeft = 0) {
+    const el = w.find('.tab-bar').element as HTMLElement;
+    let sl = startLeft;
+    Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => 100 });
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => 1000 });
+    Object.defineProperty(el, 'scrollLeft', { configurable: true, get: () => sl, set: (v: number) => { sl = v; } });
+    const scrollToCalls: Array<Record<string, unknown>> = [];
+    Object.defineProperty(el, 'scrollTo', { configurable: true, value: (o: Record<string, unknown>) => { scrollToCalls.push(o); } });
+    w.findAll('.tab-bar .log-tab').forEach((t: any, i: number) => {
+      Object.defineProperty(t.element, 'offsetLeft', { configurable: true, get: () => i * TAB_W });
+      Object.defineProperty(t.element, 'offsetWidth', { configurable: true, get: () => TAB_W });
+    });
+    return { sl: () => sl, setSl: (v: number) => { sl = v; }, scrollToCalls, el };
+  }
+  function tickScroll(el: HTMLElement): void { el.dispatchEvent(new Event('scroll')); }
+  const LEFT_ARIA = '向左翻页签';
+  const RIGHT_ARIA = '向右翻页签';
+
+  // 不溢出（真实数全 0 → max<0）：两端都不渲染
+  it('no_arrows_when_not_overflowing', () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets() } });
+    expect(w.findAll('.tab-nav-btn').length).toBe(0);
+    w.unmount();
+  });
+
+  // 显隐 = 可滚方向：左端只出右箭头；中段双箭头；右端只出左箭头。按钮不在 nav（tablist）内。
+  it('arrows_follow_scrollable_direction_outside_tablist', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: manyTabs(8), register: vi.fn(), unregister: vi.fn() } });
+    const g = stubGeom(w, 0);
+    tickScroll(g.el); await nextTick();
+    expect(w.findAll(`.tab-nav-btn[aria-label="${LEFT_ARIA}"]`).length).toBe(0);
+    expect(w.findAll(`.tab-nav-btn[aria-label="${RIGHT_ARIA}"]`).length).toBe(1);
+    g.setSl(300); tickScroll(g.el); await nextTick();
+    expect(w.findAll(`.tab-nav-btn[aria-label="${LEFT_ARIA}"]`).length).toBe(1);
+    expect(w.findAll(`.tab-nav-btn[aria-label="${RIGHT_ARIA}"]`).length).toBe(1);
+    g.setSl(900); tickScroll(g.el); await nextTick();   // max = 1000 - 100，右端
+    expect(w.findAll(`.tab-nav-btn[aria-label="${LEFT_ARIA}"]`).length).toBe(1);
+    expect(w.findAll(`.tab-nav-btn[aria-label="${RIGHT_ARIA}"]`).length).toBe(0);
+    expect(w.findAll('.tab-bar .tab-nav-btn').length).toBe(0);          // 箭头不是 tablist 的孩子
+    expect(w.findAll('.tab-bar-wrap > .tab-nav-btn').length).toBe(1);   // 是包裹层的直接兄弟
+    w.unmount();
+  });
+
+  // 右步 = 把最近被截断的页签完整带入：tab#2 右缘(200) 对齐视口右缘(100) → left=100，smooth
+  it('step_right_brings_nearest_clipped_tab_into_view', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: manyTabs(8), register: vi.fn(), unregister: vi.fn() } });
+    const g = stubGeom(w, 0);
+    tickScroll(g.el); await nextTick();
+    await w.find(`.tab-nav-btn[aria-label="${RIGHT_ARIA}"]`).trigger('click');
+    expect(g.scrollToCalls.length).toBe(1);
+    expect(g.scrollToCalls[0]).toMatchObject({ left: 100, behavior: 'smooth' });
+    w.unmount();
+  });
+
+  // 剩余不足一整页 → 贴边（钳到 max）
+  it('step_right_clamps_at_end', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: manyTabs(8), register: vi.fn(), unregister: vi.fn() } });
+    const g = stubGeom(w, 850);
+    tickScroll(g.el); await nextTick();
+    await w.find(`.tab-nav-btn[aria-label="${RIGHT_ARIA}"]`).trigger('click');
+    expect(g.scrollToCalls[0]).toMatchObject({ left: 900, behavior: 'smooth' }); // 900 = 1000 - 100 = max
+    w.unmount();
+  });
+
+  // 左步镜像：最近被截断 = tab#3（300 < 349），其左缘对齐视口左缘 → left=300
+  it('step_left_mirrors', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: manyTabs(8), register: vi.fn(), unregister: vi.fn() } });
+    const g = stubGeom(w, 350);
+    tickScroll(g.el); await nextTick();
+    await w.find(`.tab-nav-btn[aria-label="${LEFT_ARIA}"]`).trigger('click');
+    expect(g.scrollToCalls[0]).toMatchObject({ left: 300, behavior: 'smooth' });
+    w.unmount();
+  });
+
+  // CSS 取证：灰线与 -16px 延伸在包裹层（箭头段上连续）；按钮 26px 与页签同高、flex:none
+  it('css_line_on_wrap_and_btn_metrics', () => {
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
+    const wrap = cssRule(css, '.tab-bar-wrap');
+    expect(wrap).toMatch(/display:\s*flex/);
+    expect(wrap).toMatch(/margin-right:\s*-16px/);
+    expect(wrap).toMatch(/linear-gradient\(0deg,\s*var\(--border\)\s*1px/);
+    const btn = cssRule(css, '.tab-nav-btn');
+    expect(btn).toMatch(/height:\s*26px/);
+    expect(btn).toMatch(/flex:\s*none/);
+  });
+});
+
 

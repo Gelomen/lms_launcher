@@ -149,6 +149,9 @@ export const dict = {
     'ql.empty.none': '暂无启动项',
     'ql.invalid': '{n} 条配置无效，已跳过',
     'ql.tab.closeBlocked': '终端运行中，请先停止再关闭',
+    // 页签条溢出翻页箭头（spec #8 / 票 #10）：只在「还能滚的方向」渲染，按钮不占文案位
+    'tab.nav.prev': '向左翻页签',
+    'tab.nav.next': '向右翻页签',
     'ql.btn.new': '新建启动项',
     'ql.btn.copy': '复制',
     'ql.btn.edit': '编辑',
@@ -500,6 +503,9 @@ export const dict = {
     'ql.empty.none': 'No quick launch entries',
     'ql.invalid': 'invalid entries skipped: {n}',
     'ql.tab.closeBlocked': 'Terminal is running. Stop it before closing.',
+    // 页签条溢出翻页箭头（spec #8 / 票 #10）
+    'tab.nav.prev': 'Scroll tabs left',
+    'tab.nav.next': 'Scroll tabs right',
     'ql.btn.new': 'New entry',
     'ql.btn.copy': 'Copy',
     'ql.btn.edit': 'Edit',
