@@ -67,6 +67,8 @@ export const dict = {
     'tplModal.btn.delete': '删除',
     'tplModal.delete.title': '删除模板',
     'tplModal.delete.message': '确定删除配置「{name}」吗？',
+    // 编辑运行中模板时 [删除] 禁用原因（QuickLaunchModal 的 ql.err.running 同口径，2026-10-19）
+    'tplModal.err.running': '该模板正在运行',
     'tplModal.tip.m': '模型文件（gguf）',
     'tplModal.tip.mmproj': '视觉投影文件（mmproj gguf）',
     'tplModal.tip.image_min_tokens': '每张图片消耗的 token 数（下限）',
@@ -422,6 +424,7 @@ export const dict = {
     'tplModal.btn.delete': 'Delete',
     'tplModal.delete.title': 'Delete template',
     'tplModal.delete.message': 'Delete template "{name}"?',
+    'tplModal.err.running': 'This template is running',
     'tplModal.tip.m': 'Model file (gguf)',
     'tplModal.tip.mmproj': 'Vision projector file (mmproj gguf)',
     'tplModal.tip.image_min_tokens': 'Minimum tokens consumed per image',

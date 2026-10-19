@@ -21,6 +21,10 @@ interface ParamMeta { params: Record<string, string>; required: string[]; params
 // 数据 key：desc → name（2026-09）；legacy desc 由 main configsLoad 归一
 type ConfigMap = Record<string, { name?: string; values: Record<string, string> }>;
 
+// 正在运行的 llama-server 配置 id（App 下发；运行态唯一来源 = App 的 state，C1 与 QuickLaunch 的 states 同构）。
+// 编辑该项 → 弹窗 [删除] 禁用 + tooltip「该模板正在运行」（QuickLaunchModal I-1 镜像口径，2026-10-19）。
+const props = withDefaults(defineProps<{ runningConfigId?: string | null }>(), { runningConfigId: null });
+
 // 显卡显存总量(GB)：卡片右上角 VRAM 按钮(紫底白字,未配置显 VRAM / 已配置显 24GB)；
 // 数据源 = lms_launcher.yaml 的 vram_total_gb(经 get_app_config 读,save_vram_total 写)。
 const vramTotal = ref<number | undefined>(undefined);
@@ -203,6 +207,7 @@ onMounted(() => { void reload(); void loadVramTotal(); });
       :name="configs && editingId ? configs[editingId]?.name ?? undefined : undefined"
       :params-meta="paramsMeta"
       :vram-total-gb="vramTotal"
+      :running="editingId !== null && props.runningConfigId === editingId"
       @saved="onSaved"
       @deleted="onDeleted"
       @close="modalOpen = false"

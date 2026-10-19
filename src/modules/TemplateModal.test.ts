@@ -7,7 +7,7 @@ import TemplateModal from './TemplateModal.vue';
 import { repoParams } from '../../src-main/test-utils';
 // 视觉宽度（截断 util 口径）：CJK=2/拉丁=1——删除确认对话框的 name 预算契约用
 import { visualWidth } from '../util/truncate';
-import { applyLangLocal } from '../i18n';
+import { applyLangLocal, t } from '../i18n';
 import { dict } from '../../src-main/i18n/dict';
 
 
@@ -444,6 +444,51 @@ describe('TemplateModal delete', () => {
     await flush();
     expect(w.emitted('deleted')).toBeUndefined(); // 失败不 emit、不关窗
     expect(document.querySelector('.modal-box')?.textContent).toContain('VALIDATION: 配置不存在');
+    w.unmount();
+  });
+
+  // ===== 2026-10-19（用户报告）：正在运行的模板不可删 =====
+  // 镜像 = QuickLaunchModal 修复轮 B I-1（QuickLaunchModal.test.ts:974-1019 同构）：
+  // running = true → [删除] 禁用 + tooltip 走新键 tplModal.err.running（dict.ts zh「该模板正在运行」）。
+  // 来源链 = App state → runningConfigId（App.test.ts 钉）→ TemplateModule 比对 editingId（TemplateModule.test.ts 钉）
+  // → 本弹窗 :disabled（本文件钉）。未运行可删的正对照已由上方既有用例覆盖（clicking delete / [确认] deletes）。
+  function mountEditRunning(): ReturnType<typeof mount> {
+    return mount(TemplateModal, {
+      attachTo: document.body,
+      props: { open: true, id: 'qwen38', values: {}, paramsMeta, name: 'qwen27b 日常推理', running: true },
+    });
+  }
+
+  it('delete_button_is_disabled_for_running_template_and_shows_tpl_err_running', async () => {
+    calls = []; mockLms();
+    const w = mountEditRunning(); await flush();
+
+    // 编辑态仍渲染删除按钮（位置/图标不变），只是不可用
+    const del = findDeleteBtn()!;
+    expect(del.getAttribute('disabled')).not.toBeNull();
+    expect(del.getAttribute('data-tooltip')).toBe(t('tplModal.err.running')); // 「该模板正在运行」
+
+    // 机制断言（同 QuickLaunchModal.test.ts:992）：tooltip 渲染条件是类选择器（style.css .tip-right::after）——
+    // 类与属性必须成对挂载，真机上才看得到气泡。
+    expect(del.classList.contains('tip-right'),
+      'data-tooltip 已挂但缺 .tip-right 类 → style.css 的 ::after 不渲染（真机看不到 tooltip）').toBe(true);
+
+    // 点了也不开二次确认、不发 delete_config（:disabled 之外 onDelete 还有守卫，任一被去掉本用例都红）
+    del.click(); await flush();
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    expect(calls.find((c) => c.cmd === 'delete_config')).toBeUndefined();
+    expect(w.emitted('deleted')).toBeUndefined();
+    w.unmount();
+  });
+
+  // 负面对照（同 QuickLaunchModal.test.ts:1009）：tip-right 与 data-tooltip 只在 running 为真时挂。
+  // 理由在 style.css：attr() 缺属性时求值空串 → 无条件挂 .tip-right 会让未运行模板 hover 时弹空白气泡。
+  it('tpl_tip_right_and_data_tooltip_mounted_only_while_running', async () => {
+    calls = []; mockLms();
+    const w = mountEdit(); await flush(); // 不传 running = 缺省 false
+    const del = findDeleteBtn()!;
+    expect(del.classList.contains('tip-right'), '未运行却挂了 .tip-right → hover 时渲染空 tooltip 气泡').toBe(false);
+    expect(del.getAttribute('data-tooltip')).toBeNull();
     w.unmount();
   });
 });

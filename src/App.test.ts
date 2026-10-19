@@ -106,6 +106,25 @@ function btn(w: import('@vue/test-utils').VueWrapper<any>): any {
   return all.find((b) => b.classes().includes('btn-launch') || b.classes().includes('btn-danger'));
 }
 
+// 2026-10-19（用户报告）：正在运行的模板不可删 —— App 持有的运行配置 id 经 runningConfigId 下发给
+// TemplateModule（运行态唯一来源 = state，C1 与 QuickLaunch 的 qlStates 下发同构）；
+// 卡片比对 + 弹窗禁用契约分别钉在 TemplateModule.test.ts / TemplateModal.test.ts。
+describe('App running_config_id flows to TemplateModule', () => {
+  it('running_state_passes_running_config_id_and_ready_clears_it', async () => {
+    const { w } = mountApp(RUNNING); // { running: true, stopping: false, configId: 'c1' }
+    await flush();
+    const tm = w.findComponent({ name: 'TemplateModule' });
+    expect(tm.exists()).toBe(true);
+    expect(tm.props('runningConfigId')).toBe('c1'); // 运行中 → 下发该配置 id
+    w.unmount();
+
+    const r = mountApp(READY);
+    await flush();
+    expect(r.w.findComponent({ name: 'TemplateModule' }).props('runningConfigId')).toBeNull(); // 未运行 → null
+    r.w.unmount();
+  });
+});
+
 describe('App stop flow', () => {
   it('clicking [停止] immediately shows stopping and disables the button while stop_server is pending, then restores green [启动]', async () => {
     const { w, stop } = mountApp();

@@ -37,7 +37,10 @@ const props = withDefaults(defineProps<{
   };
   // 显卡显存总量（GB）：卡片右上角 VRAM 按钮持久化值；未配置 = undefined
   vramTotalGb?: number;
-}>(), { name: '', vramTotalGb: undefined });
+  // 当前编辑的模板是否正在运行（App 的 llama state → TemplateModule 按 runningConfigId 比对 editingId 下发；
+  // 运行态唯一来源在 App，C1 与 QuickLaunch states 同构）。true → [删除] 禁用 + tooltip（QuickLaunchModal I-1 镜像）
+  running?: boolean;
+}>(), { name: '', vramTotalGb: undefined, running: false });
 
 const emit = defineEmits<{ (e: 'saved'): void; (e: 'close'): void; (e: 'deleted', id: string): void }>();
 
@@ -225,6 +228,8 @@ async function save(): Promise<void> {
 // [删除] → ConfirmDialog(danger)，点[确认]才 doDelete()；失败进 saveError 区展示，不关窗。
 const confirmDeleteOpen = ref(false); // 删除二次确认对话框开关
 function onDelete(): void {
+  // I-1（QuickLaunchModal.vue:265-267 同口径）：运行中的模板 :disabled 之外再守一道——禁用样式挡不住键盘 Enter 与程序化点击。
+  if (props.running) return;
   confirmDeleteOpen.value = true; // 弹主题化对话框（tone=danger）
 }
 
@@ -421,8 +426,13 @@ function close(): void { emit('close'); }
              正中 = VRAM 指示（used / total GB，按余量变色，规格 §6） -->
         <footer class="modal-actions">
           <!-- [删除]：参考 [保存] 角形按钮——左下角形，上下占满底部栏全高、左缘贴卡片左缘（.modal-actions padding:0 16px 让位于绝对定位）；
-               文字「删除」（2026-08）→ FontAwesome trash-can 图标 + a11y label（仅编辑模式渲染，行为不变） -->
-          <button v-if="isEdit" class="btn-delete" :aria-label="t('tplModal.btn.delete')" @click="onDelete">
+               文字「删除」（2026-08）→ FontAwesome trash-can 图标 + a11y label（仅编辑模式渲染，行为不变）；
+               2026-10-19（用户报告）：正在运行的模板不可删 —— QuickLaunchModal.vue:448-451 同一实现：
+               tooltip 的渲染条件是类选择器（style.css「.tip-* tooltip」段 .tip-*::after { content: attr(data-tooltip) }），
+               本组件 .btn-delete 自身没有 ::after → 类与属性同条件（running）成对挂载，不能无条件挂 .tip-right
+               （attr() 缺属性时求值空串，仍渲染带 padding 的空白气泡）；气泡挂按钮右侧（.tip-right），弹窗内空间足够不被裁。 -->
+          <button v-if="isEdit" class="btn-delete" :class="{ 'tip-right': running }" :aria-label="t('tplModal.btn.delete')"
+            :disabled="running" :data-tooltip="running ? t('tplModal.err.running') : undefined" @click="onDelete">
             <FontAwesomeIcon :icon="byPrefixAndName.fat['trash-can']" />
           </button>
           <!-- 软盘图标 = 保存（2026-08-27 角形按钮；2026-09：手写 SVG → FontAwesome floppy-disk） -->
@@ -618,6 +628,9 @@ function close(): void { emit('close'); }
   cursor: pointer;
 }
 .btn-delete:hover { background: var(--danger); color: #fff; }
+/* 2026-10-19（QuickLaunchModal.vue:639 同口径）：只 :disabled 不改外观 = 用户看不出为什么点不动。
+   禁用 = 图标灰 + not-allowed 光标；hover 气泡走 style.css 全局 .tip-right 段（本文件不复制、不改它）。 */
+.btn-delete:disabled { color: #C7CCD4; cursor: not-allowed; }
 /* [保存] 软盘按钮：同 [×] 的角形语言——右下角形，上下占满底部栏全高、右缘贴卡片右缘；
    右下圆角随卡片 12px 走形避免白角穿帮；颜色 = 紫（--primary，与 VRAM 按钮/启动按钮统一），hover 加深一档。 */
 .modal-save {

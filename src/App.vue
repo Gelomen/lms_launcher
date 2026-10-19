@@ -38,6 +38,9 @@ const MAX_LINES = 500; // 全仓唯一裁剪处——LaunchBar/LogPanel 不重�
 const logBuckets = ref<Record<LogTabId, LogEntry[]>>({ launcher: [], 'llama-server': [] });
 const state = ref<ServerState>({ running: false, stopping: false, configId: null });
 const configsReloadKey = ref(0); // TemplateModule 保存/删除后 bump（ref，Vue 响应式追踪）
+// 正在运行的 llama-server 配置 id（运行态唯一来源 = 上方 state，C1 与 QuickLaunch 的 qlStates 下发同构）：
+// TemplateModule 据此比对 editingId → 编辑运行中的模板时弹窗 [删除] 禁用 + tooltip（QuickLaunchModal I-1 镜像，2026-10-19）。
+const runningConfigId = computed(() => (state.value.running || state.value.stopping) ? state.value.configId : null);
 const exitConfirm = ref(false); // 共用二次确认：托盘「退出」/ 更新 ready 后「重启应用」→ 同一 ConfirmDialog（规格 2026-09-01-update-modal §D）
 const exitAction = ref<'exit' | 'run_update'>('exit'); // 确认框 confirm 时的动作分流
 const version = ref(''); // 顶栏版本号（get_version IPC → app.getVersion；获取失败静默，不显示）
@@ -576,7 +579,7 @@ function onQlChanged(): void {
           <LaunchBar :state="state" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
         </div>
       </div>
-      <div class="card"><TemplateModule @changed="onTemplateChanged" /></div>
+      <div class="card"><TemplateModule :running-config-id="runningConfigId" @changed="onTemplateChanged" /></div>
       <!-- 快捷启动（2026-10-10）：第 3 列，GPU 卡顺移到第 4 列（规格 §4）。卡片自持列表与弹窗（索引 K29），
            App 只下发运行态 states、接 start/stop/changed —— 进程与页签的所有权在 App（规格 §9.2） -->
       <div class="card"><QuickLaunch :states="qlStates" @start="doQlStart" @stop="doQlStop" @changed="onQlChanged" /></div>

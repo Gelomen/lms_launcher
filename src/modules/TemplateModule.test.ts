@@ -244,6 +244,59 @@ describe('TemplateModule', () => {
     wrapper.unmount();
   });
 
+  // ===== 2026-10-19（用户报告）：正在运行的模板不可删 —— 卡片中转层 =====
+  // App 下发 runningConfigId（运行态唯一来源在 App，C1 与 QuickLaunch states 同构）→ 卡片比对 editingId →
+  // 弹窗 :running（弹窗自身契约钉在 TemplateModal.test.ts，这里只钉「哪一项被判定为运行中」）。
+  it('editing_running_config_disables_delete_with_running_tooltip', async () => {
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    const wrapper = mount(TemplateModule, { attachTo: document.body, props: { runningConfigId: 'c1' } });
+    await flush();
+    const editBtn = wrapper.findAll("button").find((bb) => bb.attributes("data-tooltip") === "编辑")!;
+    await editBtn.trigger('click');
+    await flush();
+
+    const del = document.querySelector('.modal-actions .btn-delete') as HTMLButtonElement;
+    expect(del).not.toBeNull(); // 编辑态仍渲染（位置/图标不变）
+    expect(del.getAttribute('disabled')).not.toBeNull(); // 运行中 → 禁用
+    expect(del.getAttribute('data-tooltip')).toBe(t('tplModal.err.running')); // 「该模板正在运行」
+    expect(del.classList.contains('tip-right')).toBe(true); // 类与属性成对 → style.css ::after 渲染
+    wrapper.unmount();
+  });
+
+  it('editing_not_running_config_keeps_delete_enabled', async () => {
+    (window as any).lms = {
+      invoke: (cmd: string) => {
+        if (cmd === 'get_configs') return Promise.resolve(CONFIGS);
+        if (cmd === 'get_params') return Promise.resolve(repoParams());
+        return Promise.resolve(null);
+      },
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+    // 运行的是别的配置（或 null = 未运行）→ 编辑 c1 照旧可删，不挂气泡
+    const wrapper = mount(TemplateModule, { attachTo: document.body, props: { runningConfigId: 'other' } });
+    await flush();
+    const editBtn = wrapper.findAll("button").find((bb) => bb.attributes("data-tooltip") === "编辑")!;
+    await editBtn.trigger('click');
+    await flush();
+
+    const del = document.querySelector('.modal-actions .btn-delete') as HTMLButtonElement;
+    expect(del).not.toBeNull();
+    expect(del.getAttribute('disabled')).toBeNull();
+    expect(del.getAttribute('data-tooltip')).toBeNull();
+    wrapper.unmount();
+  });
+
   // ---------- 复制按钮（2026-08-30 spec-template-copy-button）----------
   function stubLms(over: Record<string, (...a: unknown[]) => unknown> = {}): void {
     (window as any).lms = {
