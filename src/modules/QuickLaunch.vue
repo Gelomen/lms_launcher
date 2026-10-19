@@ -92,6 +92,10 @@ async function reload(): Promise<void> {
 // （src-main/quick-launch-config.ts:137-139，没有 insert-after 通道）。
 // 「插到源行正后方」因此是卡片本地重排：对象键序 = 显示序，按现有键序遍历、源 id 后插入新 id
 // （与 TemplateModule.vue:86-93 同一手法）。失败（VALIDATION:/YAML:）→ error 区，列表不变。
+// 2026-10-19 用户反馈：[可执行程序] 行点这个按钮报 "An object could not be cloned."，[命令行] 行正常。
+// 下面那句浅拷贝本身没坏：src 来自挂在 ref 上的列表 = 响应式代理，浅拷贝只拆最外层，exe 那个数组仍是代理，
+// 而 ipcRenderer.invoke 用结构化克隆序列化参数（代理一律 DataCloneError）。因此这里不改形：
+// 还原放在唯一出口 src/ipc.ts 的 invoke（plainArg），契约钉在 src/ipc.test.ts。
 async function onCopy(id: string): Promise<void> {
   const cur = list.value;
   if (copying.value || !cur) return;

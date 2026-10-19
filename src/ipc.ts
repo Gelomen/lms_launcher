@@ -1,4 +1,7 @@
 // 渲染端 IPC 封装——window.lms 由 preload 注入（contextIsolation 下唯一通道）
+// 也正因为是唯一通道，出站参数的「必须可结构化克隆」这条契约在这里一次做掉：见下面 invoke 上面的 plainArg。
+// 这是本文件唯一的运行时 import；其余 import type 在构建期被擦除。
+import { toRaw } from 'vue';
 // GPU 卡片（spec 2026-09-09-gpu-card-design §3/§4）：主进程 gpu-stats 事件的合并结果。
 // 字节单位；合计行（专用 + 共享）由组件层计算，不在数据层。
 export interface GpuStats {
@@ -45,8 +48,32 @@ export type RunUpdateResult =
   | { ok: true }
   | { ok: false; errorKey?: string; errorParams?: Record<string, string | number>; error?: string };
 
+// 出站参数必须是「可结构化克隆」的纯数据。ipcRenderer.invoke 用结构化克隆序列化参数，HTML 规范对
+// 带 [[PrimaryTemplate]] 内部槽的对象（= Proxy）一律 DataCloneError，界面上因此只剩一句
+// "An object could not be cloned."（2026-10-19 用户反馈：快捷启动 [可执行程序] 行点 [复制] 必现，
+// 同一条 [命令行] 行正常 —— shell 态字段全是标量。回归用例：QuickLaunch.test.ts 的
+// copy_of_exe_row_sends_a_payload_that_survives_structured_clone。）
+// 成因：渲染端的列表都挂在 ref 上 = Vue 深层响应式，`list.items[id]` 本身是 Proxy，
+// QuickLaunch.vue 的 onCopy 里 `{ ...src, name }` 只拆最外层、嵌套的 exe 数组仍是 Proxy。
+// 契约放在这个唯一出口，而不是要求每个调用点自己剥代理：调用点只需知道「参数是快照」。
+// toRaw 取响应式代理的原始对象（其自身属性本就是纯数据），再重建数组与普通对象 ——
+// 顺带把出站值与调用方状态脱钩。标量原样透传；类实例 / Date / Map 本仓没有作为 IPC 载荷的用法，
+// 取 toRaw 后原样交给克隆（真出现嵌套代理泄漏时，宁可抛 DataCloneError 也不静默改形）。
+// 最小复现（Vue ref + 浅拷贝 + structuredClone，三行）留在取证台 .temp/ql-copy-clone-probe/probe.mjs。
+function plainArg<T>(value: T): T {
+  const raw = toRaw(value);
+  if (Array.isArray(raw)) return raw.map((v) => plainArg(v)) as unknown as T;
+  const proto = typeof raw === 'object' && raw !== null ? Object.getPrototypeOf(raw) : undefined;
+  if (proto === Object.prototype || proto === null) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) out[k] = plainArg(v);
+    return out as T;
+  }
+  return raw as T;
+}
+
 export function invoke<T = unknown>(cmd: string, ...args: unknown[]): Promise<T> {
-  return window.lms.invoke(cmd, ...args) as Promise<T>;
+  return window.lms.invoke(cmd, ...args.map((a) => plainArg(a))) as Promise<T>;
 }
 
 export function onLogLine(cb: (e: { line: string; stream: 'sys' | 'out' | 'err'; echoTabs?: string[] }) => void): () => void {

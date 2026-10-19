@@ -179,6 +179,38 @@ describe('QuickLaunch card', () => {
     w2.unmount();
   });
 
+  // 2026-10-19 用户反馈：[可执行程序] 行点 [复制] 复制失败，提示 "An object could not be cloned."；
+  // 同一行的 [编辑] 保存同样的 exe 数组却正常。成因不在卡片，而在出口：列表挂在 ref 上 = Vue 深层响应式，
+  // onCopy 里那句 { ...src, name } 只拆最外层，exe 那个数组仍是 Proxy；而 ipcRenderer.invoke 用结构化克隆
+  // 序列化参数，规范对带 [[PrimaryTemplate]] 的对象（Proxy）一律 DataCloneError。
+  // 修复在 src/ipc.ts 的 invoke（契约由 src/ipc.test.ts 钉）。上面 E5 的复制用例全是 shell 条目
+  // （字段全是标量），所以这条一直没被钉住。
+  // 这里的 window.lms.invoke 只是普通 JS 函数、不做序列化 → 必须自己过一遍 structuredClone
+  // 才等价于真 IPC 的那道门槛（两端文案不同，只钉抛不抛）。
+  it('copy_of_exe_row_sends_a_payload_that_survives_structured_clone', async () => {
+    const saves: SaveCall[] = [];
+    const exe: QuickLaunchEntry = { name: 'game', type: 'exe', exe: ['D:/game/game.exe', 'D:/tool/tool.exe'], admin: true };
+    const w = mountCard({ items: { e: exe }, invalid: [] }, {}, { saves, newId: 'qlcopyexe01' });
+    await flush();
+
+    await buttonWithTip(w.findAll('.tpl-row')[0], t('ql.btn.copy')).trigger('click');
+    await flush();
+
+    // 落盘：id 仍是 null（追加语义），除 name 外逐字复制 —— 含 exe 的**顺序**（2026-10-17-quick-launch-exe-rows §6.1）
+    expect(saves.length).toBe(1);
+    expect(saves[0].id).toBeNull();
+    expect(saves[0].entry).toEqual({
+      name: 'game - copy',
+      type: 'exe',
+      exe: ['D:/game/game.exe', 'D:/tool/tool.exe'],
+      admin: true,
+    });
+    expect(() => structuredClone(saves[0].entry)).not.toThrow();
+    // 本地显示序不变：新行仍在源行正后方
+    expect(w.findAll('.tpl-row .tpl-row__id').map((l) => l.text())).toEqual(['game', 'game - copy']);
+    w.unmount();
+  });
+
   // E6（规格 §5.2）：invalid 非空 → 顶部「N 条配置无效」提示；无效 id 不渲染行。
   // 顺带钉索引 M2 / K28(2)：en 侧改成 invalid entries skipped: 后 n=1 语法成立。
   it('invalid_ids_render_count_hint', async () => {
