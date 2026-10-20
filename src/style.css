@@ -249,13 +249,18 @@ body {
    视觉上不居于清空与上一个之间；居中后两侧留白对称，位数增长也不跳位 */
 .log-search { display: flex; align-items: center; gap: 2px; margin-left: 8px; flex: none; }
 .log-search .icon-btn { width: 24px; height: 24px; }
-/* 终端工具条的进程态按钮（[停止] / [重新启动]，2026-10-20 用户实机截图：它的 tooltip 比同排其他按钮高）。
-   根因不在 tooltip：.icon-btn::after 的 bottom: calc(100% + 6px) 以盒顶为基准（style.css:601），
-   而 .icon-btn 默认盒 32×32 —— 取证台 .temp/term-toolbar-align（headless Chrome 量真盒）实测
-   同排查找三颗 24px 盒顶 = 37、这颗 32px 盒顶 = 33 → tooltip 起点高 4px（图1 的「Next match」比图2 的「Restart」低 4px）。
-   收成 24×24 与同排查找三颗同盒：tooltip 起点、热区、盒心（行中心 49）三样一起对齐，
-   不动 ::after、不加位移魔法数（同段上面那条 24×24 是同一族决定）。 */
+/* 终端页签工具条整排收齐 24×24（2026-10-20 用户三轮实机截图，逐轮取证后定版）。
+   根因不在 tooltip 也不在图标：.icon-btn::after 的 bottom: calc(100% + 6px) 锚在盒顶，且偏移随盒高放大；
+   .icon-btn 默认盒 32×32，同排查找三颗是 .log-search .icon-btn 的 24×24 ——
+   取证台 .temp/term-toolbar-align（真组件 + 真 style.css，headless Chrome --dump-dom，::after 取计算值）实测：
+   24px 盒顶 131.797 / ::after 30px → tooltip 底边 y = 101.797；32px 盒顶 127.797 / ::after 38px → 89.797，
+   高 12px = 4px 盒顶差 + 8px 偏移放大（「Restart 比 Next match 高」逐对上这个量级）。
+   故两颗 32px 盒（[清空终端]、进程态那颗 [停止]/[重新启动]）收到与同排同尺寸：五颗盒同尺寸 →
+   盒心、热区、tooltip 起点一起成一条线；图标字号不动（继承 13.3333px，与同排逐字同值）。
+   不动 ::after、不加位移魔法数；同段上面那条 24×24（2026-09-05 那串缩盒决定）是同一族。
+   副作用一并记录：本行高度随最宽子项由 32 → 24（终端页签的工具条更紧，终端可视区多 8px）。 */
 .log-pane .btn-term-state { width: 24px; height: 24px; }
+.log-pane .btn-term-clear { width: 24px; height: 24px; }
 .log-search .btn-search-clear { margin-left: 4px; }
 /* 查找输入框降高（2026-09-05 用户追加）：.input 默认 32px 与 24px 图标按钮不协调 → 本框降至 24px，与组内按钮等高 */
 .log-search-input { width: 170px; flex: none; height: 24px; }

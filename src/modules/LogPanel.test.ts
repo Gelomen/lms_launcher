@@ -411,12 +411,19 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
   // 致错写法 = 让它吃 .icon-btn 的默认 32×32 盒：::after 的 bottom: calc(100% + 6px) 以盒顶为基准，
   // 32px 盒顶比同排查找三颗（.log-search .icon-btn = 24×24）高 4px → tooltip 一起高 4px。
   // 修法是把盒收到与同排同尺寸（一处解决 tooltip 起点 / 热区 / 盒心），故断这条规则的存在与取值。
-  it('state_button_box_matches_the_search_group_size_for_tooltip_anchor', () => {
+  // 整排五颗盒同尺寸（[清空终端] + 查找三颗 + 进程态那颗）→ 盒心 / 热区 / tooltip 起点一条线。
+  // ::after 的 bottom: calc(100% + 6px) 锚在盒顶且随盒高放大（实测 32px 盒 = tooltip 高 12px），
+  // 所以齐高靠收盒，不靠改 ::after；三条断言把「谁被收、谁没被当模板改」钉死。
+  it('terminal_toolbar_row_boxes_are_all_24px_so_tooltips_share_the_same_anchor', () => {
     const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
-    expect(cssRule(css, '.log-pane .btn-term-state')).toMatch(/width:\s*24px/);
-    expect(cssRule(css, '.log-pane .btn-term-state')).toMatch(/height:\s*24px/);
-    expect(cssRule(css, '.log-search .icon-btn')).toMatch(/width:\s*24px;\s*height:\s*24px/);  // 同排基准未动
-    expect(cssRule(css, '.icon-btn::after')).toMatch(/bottom:\s*calc\(100% \+ 6px\)/);      // tooltip 锚在盒顶：口径未动
+    for (const sel of ['.log-pane .btn-term-clear', '.log-pane .btn-term-state', '.log-search .icon-btn']) {
+      expect(cssRule(css, sel)).toMatch(/width:\s*24px;\s*height:\s*24px/);
+    }
+    expect(cssRule(css, '.icon-btn::after')).toMatch(/bottom:\s*calc\(100% \+ 6px\)/);  // 锚点口径未动
+    // 基类 32×32 默认盒未动（其它排的图标按钮不受本次影响）。
+    // 不用 cssRule：它的选择器是子串匹配，'.icon-btn {' 会先命中上面那条 '.log-search .icon-btn {'；
+    // 于是剥注释后自己按「选择器 + 到第一个 } 为止」取一条，正合本意。
+    expect(stripComments(css)).toMatch(/\.icon-btn \{[^}]*width:\s*var\(--h-control\)/);
   });
 
   // E5（规格 §11-2）：页签多于 6 条时页签条不换行。
