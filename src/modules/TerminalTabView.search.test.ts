@@ -51,6 +51,7 @@ async function mountReal(over: Record<string, unknown> = {}): Promise<{ w: VueWr
       fullLabel: 'Demo · PowerShell 7 (pwsh)',
       running: true,
       stopping: false,
+      restartDisabled: false,
       register: (_id: string, cb: (d: string) => void) => { sink = cb; },
       unregister: () => { /* noop */ },
       onInput: () => { /* noop */ },

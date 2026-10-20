@@ -1224,9 +1224,10 @@ function tabIds(w: any): string[] {
 function tabClose(w: any, id: string): any {
   return w.find(`.log-tab[data-tab-id="${id}"] .btn-close-tab`);
 }
-// 终端工具条最右的 [停止]（2026-10-20 用户要求，替换原工具条 [x]）：挂在页签面板上，不是页签条上
-function tabStop(w: any, id: string): any {
-  return w.find(`.log-pane[data-tab-id="${id}"] .btn-term-stop`);
+// 终端工具条最右那颗进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完变 [重新启动]）：
+// 挂在页签面板上，不是页签条上（页签条那颗是 tabClose）
+function tabState(w: any, id: string): any {
+  return w.find(`.log-pane[data-tab-id="${id}"] .btn-term-state`);
 }
 function tabLabel(w: any, id: string): string {
   return w.find(`.log-tab[data-tab-id="${id}"] .log-tab-label`).text();
@@ -1336,15 +1337,15 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
-  // 2026-10-20 用户要求：工具条最右那颗由 [x] 换成 [停止]，动作 = 列表行 [停止] 同一条路（doQlStop → ql_stop）。
-  // 钉住整条链：页签里点 [停止] → ql_stop 发出 → 卡片行同步回落 [启动] → 页签保留 → 页签 [x] 由禁用转可用，
-  // 于是「在页签里停完、直接点页签的 [x] 关掉」不必回列表找那一行（用户点名的诉求）。
-  it('toolbar_stop_button_stops_process_and_enables_tab_close', async () => {
+  // 2026-10-20 用户要求两步：工具条最右那颗由 [x] 换成 [停止]，停完之后就地变 [重新启动]，
+  // 点它 = 列表行那颗 [启动]。钉住整条链：页签里 [停止] → ql_stop → 卡片行同步回落 [启动] → 页签保留 →
+  // 那颗转成 [重新启动] → 点它 → ql_start → 行按钮同步变红、页签不重复建、页签 [x] 重新禁用（运行中）。
+  it('toolbar_state_button_stops_then_becomes_restart_and_starts_again', async () => {
     const { w } = mountQl();
     await flush();
     await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签
     await flush();
-    const stop = tabStop(w, 'ql:c1');
+    const stop = tabState(w, 'ql:c1');
     expect(stop.exists()).toBe(true);
     expect(stop.attributes('aria-label')).toBe('停止');
     expect(stop.attributes('disabled')).toBeUndefined();      // 运行中 → 可点
@@ -1355,11 +1356,23 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     expect(qlRowBtn(w, 0).classes()).toContain('btn-launch');  // 列表行同步回落 [启动]
     expect(tabIds(w)).toContain('ql:c1');                      // 停止不关页签（§7.5）
     expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeUndefined();
+    // 停完：同一颗就地变 [重新启动]（用户点名的「不用回列表找那一行」）
+    const restart = tabState(w, 'ql:c1');
+    expect(restart.attributes('aria-label')).toBe('重新启动');
+    expect(restart.find('svg[data-icon="arrow-rotate-right"]').exists()).toBe(true);
+    expect(restart.attributes('disabled')).toBeUndefined();
+    await restart.trigger('click');
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c1'], ['c1']]);   // 与列表行 [启动] 同一个出口（doQlStart）
+    expect(qlRowBtn(w, 0).classes()).toContain('btn-danger');   // 列表行同步变红 [停止]
+    expect(tabIds(w).filter((id) => id === 'ql:c1').length).toBe(1); // 同一页签再次启动，不重复建
+    expect(tabState(w, 'ql:c1').attributes('aria-label')).toBe('停止'); // 起来之后又回到 [停止]
+    expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeDefined();  // 运行中 [x] 重新禁用（R3）
     w.unmount();
   });
 
-  // 负向门（2026-10-20）：工具条不再渲染 [x]；未运行的页签 [停止] 禁用（进程已退、没有可停的东西）
-  it('toolbar_has_no_close_button_and_stop_is_disabled_after_exit', async () => {
+  // 负向门（2026-10-20）：工具条不再渲染 [x]；进程自己退出后那颗是 [重新启动]（不是「禁用的停止」）
+  it('toolbar_has_no_close_button_and_offers_restart_after_process_exit', async () => {
     const { w } = mountQl();
     await flush();
     await qlRowBtn(w, 0).trigger('click');
@@ -1367,8 +1380,36 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     expect(w.find('.log-pane[data-tab-id="ql:c1"] .btn-close-tab').exists()).toBe(false);
     qlExitHandlers.at(-1)!({ configId: 'c1', code: 0 });       // 进程自己退出 → 运行态清空、页签保留
     await flush();
-    expect(tabStop(w, 'ql:c1').attributes('disabled')).toBeDefined();
+    const btn = tabState(w, 'ql:c1');
+    expect(btn.attributes('aria-label')).toBe('重新启动');
+    expect(btn.attributes('disabled')).toBeUndefined();
     expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeUndefined();
+    w.unmount();
+  });
+
+  // restartDisabled（App 的 qlConfigs 只读镜像查不到该条 = 配置已删）：那颗禁用，
+  // 对着不存在的配置点重启不该发出 ql_start（页签只剩 [x] 可关）
+  it('restart_is_disabled_once_the_config_is_deleted', async () => {
+    const { w } = mountQl();
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 停止 → 未运行
+    await flush();
+    expect(tabState(w, 'ql:c1').attributes('aria-label')).toBe('重新启动');
+    expect(tabState(w, 'ql:c1').attributes('disabled')).toBeUndefined();
+    // 删掉这条配置：ql_list 变空 + 卡片冒泡 changed → App 的只读镜像刷掉它（与页签名那条用例同一手法）
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: {}, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+    const btn = tabState(w, 'ql:c1');
+    expect(btn.attributes('aria-label')).toBe('重新启动');
+    expect(btn.attributes('disabled')).toBeDefined();
+    await btn.trigger('click');
+    expect(qlInvokes('ql_start')).toEqual([['c1']]);           // 只有开头那次，重启没发出
     w.unmount();
   });
 

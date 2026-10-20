@@ -31,13 +31,14 @@ const props = defineProps<{
 // [清空日志]（2026-08-28）：LogTabView emit('clear') → 携带本 tab id 透传 App，只清该桶。
 // close(id)（任务 10 / 审查重点 3）：页签条的 [x] → App 关页签；终端运行中时 [x] 禁用，否则留孤儿 PTY。
 //   （2026-10-20 用户要求：终端工具条那颗不再是 [x]，close 只有页签条一个来源。）
-// stop(id)（2026-10-20）：终端工具条的 [停止] → App.doQlStop（= 列表行 [停止] 同一条路），本组件不碰进程。
-const emit = defineEmits<{ (e: 'clear', id: LogTabId): void; (e: 'close', id: string): void; (e: 'stop', id: string): void; (e: 'update:active', id: string): void }>();
+// stop(id) / restart(id)（2026-10-20）：终端工具条那颗进程态按钮 → App.doQlStop / doQlStart
+//   （= 列表行 [停止] / [启动] 同一条路），本组件只透传 id、不碰进程。
+const emit = defineEmits<{ (e: 'clear', id: LogTabId): void; (e: 'close', id: string): void; (e: 'stop', id: string): void; (e: 'restart', id: string): void; (e: 'update:active', id: string): void }>();
 
 // 缺省 = 静态两页签（LOG_TABS 仍是 id 与顺序的单一真源）；label === fullLabel ⇒ 不挂 title（E7 / 索引 K26(2)）。
 const fallbackTabs: LogTabItem[] = LOG_TABS.map((tab) => ({
   id: tab.id, label: tab.label, fullLabel: tab.label, kind: 'text',
-  closable: false, closeDisabled: false, running: false, stopping: false,
+  closable: false, closeDisabled: false, running: false, stopping: false, restartDisabled: false,
 }));
 const items = computed<LogTabItem[]>(() => props.tabs ?? fallbackTabs);
 
@@ -247,9 +248,9 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
         :id="item.id" :lines="buckets[item.id as LogTabId]" @clear="emit('clear', item.id as LogTabId)" />
       <TerminalTabView v-else v-show="item.id === active"
         :id="item.id" :label="item.label" :full-label="item.fullLabel"
-        :running="item.running" :stopping="item.stopping"
+        :running="item.running" :stopping="item.stopping" :restart-disabled="item.restartDisabled"
         :register="pipeRegister" :unregister="pipeUnregister" :on-input="pipeInput" :on-resize="pipeResize"
-        @stop="emit('stop', $event)" />
+        @stop="emit('stop', $event)" @restart="emit('restart', $event)" />
     </template>
     <!-- 长名 tooltip：仓内既有 .dd-tip 视口浮层（深灰底白字/12px/圆角/z-30，position:fixed 避开
          .tab-bar overflow-x 裁切），坐标由 onTabEnter/placeTip 写内联；挂页签右侧垂直居中，

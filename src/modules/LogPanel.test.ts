@@ -256,11 +256,12 @@ function emptyBuckets(): Record<'launcher' | 'llama-server', E[]> {
   return { launcher: [], 'llama-server': [] };
 }
 function textTab(id: 'launcher' | 'llama-server', over: Partial<LogTabItem> = {}): LogTabItem {
-  return { id, label: id, fullLabel: id, kind: 'text', closable: false, closeDisabled: false, running: false, stopping: false, ...over };
+  return { id, label: id, fullLabel: id, kind: 'text', closable: false, closeDisabled: false, running: false, stopping: false, restartDisabled: false, ...over };
 }
-// running / stopping = 终端工具条 [停止] 的三态来源（2026-10-20 替换原工具条 [x]）：缺省 = 运行中、未停止
+// running / stopping / restartDisabled = 终端工具条那颗进程态按钮的三态来源（2026-10-20 替换原工具条 [x]）：
+// 缺省 = 运行中、未停止、配置还在 → [停止] 可点
 function termTab(id: string, over: Partial<LogTabItem> = {}): LogTabItem {
-  return { id, label: id, fullLabel: id, kind: 'terminal', closable: true, closeDisabled: false, running: true, stopping: false, configId: id.slice(3), ...over };
+  return { id, label: id, fullLabel: id, kind: 'terminal', closable: true, closeDisabled: false, running: true, stopping: false, restartDisabled: false, configId: id.slice(3), ...over };
 }
 // 页签按钮上的测试钩子 data-tab-id（与 LogTabView / TerminalTabView 的根节点同名钩子，M4：只作测试用）
 function tabBtn(w: any, id: string) { return w.find('.tab-bar .log-tab[data-tab-id="' + id + '"]'); }
@@ -361,30 +362,48 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     await tabBtn(w, 'ql:demo').find('.btn-close-tab').trigger('click');
     expect(w.emitted('close')).toEqual([['ql:demo']]);
     expect(tabBtn(w, 'ql:demo').classes()).not.toContain('active');
-    // 2026-10-20 用户要求：终端工具条那颗不再是 [x]（与页签条重复），已换成 [停止] →
-    // 负向门：工具条里没有 .btn-close-tab，close 只剩页签条一个来源；工具条的点击冒泡 stop(id)。
+    // 2026-10-20 用户要求：终端工具条那颗不再是 [x]（与页签条重复），已换成进程态按钮 →
+    // 负向门：工具条里没有 .btn-close-tab，close 只剩页签条一个来源；工具条运行中的点击冒泡 stop(id)。
     expect(w.find('.log-pane[data-tab-id="ql:demo"] .btn-close-tab').exists()).toBe(false);
-    await w.find('.log-pane[data-tab-id="ql:demo"] .btn-term-stop').trigger('click');
+    await w.find('.log-pane[data-tab-id="ql:demo"] .btn-term-state').trigger('click');
     expect(w.emitted('close')).toEqual([['ql:demo']]);
     expect(w.emitted('stop')).toEqual([['ql:demo']]);
     w.unmount();
   });
 
-  // 2026-10-20：running / stopping 只是透传（进程态归 App 的 qlStates），三态落点由 TerminalTabView 定；
-  // 这条钉住「未运行的页签 = [停止] 禁用 + 页签 [x] 可用」——用户要的「停完直接在页签上点关闭」这条链。
-  it('running_and_stopping_forward_to_the_toolbar_stop_button', () => {
+  // 2026-10-20 两步：running / stopping / restartDisabled 一律透传（进程态与配置镜像归 App），三态落点由
+  // TerminalTabView 定。钉住用户要的两条链：运行中 = [停止] 可点且页签 [x] 禁用；未运行 = [重新启动] 可点
+  // 且页签 [x] 可用；restartDisabled（配置已删）= 那颗禁用，只剩 [x] 可关。
+  it('state_button_forwards_running_stopping_and_restartDisabled', async () => {
     const w = mount(LogPanel, {
       props: {
         buckets: emptyBuckets(),
-        tabs: [termTab('ql:run'), termTab('ql:busy', { running: true, stopping: true }), termTab('ql:idle', { running: false, closeDisabled: false })],
+        tabs: [
+          // closeDisabled = App 那侧按进程态算出来的（App.vue 的 closeDisabled: !!s && …），
+          // 这里照着真实条目传进来：运行中的页签 = 工具条 [停止] 可点 + 页签 [x] 禁用
+          termTab('ql:run', { closeDisabled: true }),
+          termTab('ql:busy', { running: true, stopping: true, closeDisabled: true }),
+          termTab('ql:idle', { running: false, closeDisabled: false }),
+          termTab('ql:gone', { running: false, restartDisabled: true }),
+        ],
       },
     });
-    expect(w.find('.log-pane[data-tab-id="ql:run"] .btn-term-stop').attributes('disabled')).toBeUndefined();
-    const busy = w.find('.log-pane[data-tab-id="ql:busy"] .btn-term-stop');
+    const run = w.find('.log-pane[data-tab-id="ql:run"] .btn-term-state');
+    expect(run.attributes('aria-label')).toBe('停止');
+    expect(run.attributes('disabled')).toBeUndefined();
+    expect(tabBtn(w, 'ql:run').find('.btn-close-tab').attributes('disabled')).toBeDefined(); // 运行中 [x] 禁用（R3）
+    const busy = w.find('.log-pane[data-tab-id="ql:busy"] .btn-term-state');
     expect(busy.attributes('disabled')).toBeDefined();
     expect(busy.text()).toBe('...');
-    expect(w.find('.log-pane[data-tab-id="ql:idle"] .btn-term-stop').attributes('disabled')).toBeDefined();
+    const idle = w.find('.log-pane[data-tab-id="ql:idle"] .btn-term-state');
+    expect(idle.attributes('aria-label')).toBe('重新启动');
+    expect(idle.attributes('disabled')).toBeUndefined();
     expect(tabBtn(w, 'ql:idle').find('.btn-close-tab').attributes('disabled')).toBeUndefined();
+    await idle.trigger('click');
+    expect(w.emitted('restart')).toEqual([['ql:idle']]);
+    expect(w.emitted('stop')).toBeUndefined();
+    const gone = w.find('.log-pane[data-tab-id="ql:gone"] .btn-term-state');
+    expect(gone.attributes('disabled')).toBeDefined();
     w.unmount();
   });
 

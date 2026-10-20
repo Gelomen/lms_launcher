@@ -147,9 +147,10 @@ function baseProps(over: Record<string, unknown> = {}) {
     id: 'ql:demo',
     label: 'Demo',
     fullLabel: 'Demo · PowerShell 7 (pwsh)',
-    // 进程态（App 的 qlStates 下发）：缺省 = 运行中，工具条 [停止] 可点（2026-10-20 替换原 closable/closeDisabled）
+    // 进程态（App 的 qlStates 下发）：缺省 = 运行中 → 工具条那颗 = [停止] 可点（2026-10-20 替换原 closable/closeDisabled）
     running: true,
     stopping: false,
+    restartDisabled: false,
     register,
     unregister,
     onInput,
@@ -347,7 +348,7 @@ describe('TerminalTabView 键盘与剪贴板（E5/E7，审查重点 5）', () =>
   });
 });
 
-describe('TerminalTabView 工具条与停止（E6/E8/E10 · 2026-10-20 工具条 [x] → [停止]）', () => {
+describe('TerminalTabView 工具条进程态按钮（E6/E8/E10 · 2026-10-20 工具条 [x] → [停止] → 停完 [重新启动]）', () => {
   it('clear_button_clears_the_terminal_only', async () => {
     const { w, register } = mountTab();
     const btn = w.find('.btn-term-clear');
@@ -426,40 +427,60 @@ describe('TerminalTabView 工具条与停止（E6/E8/E10 · 2026-10-20 工具条
     w.unmount();
   });
 
-  // ===== 工具条最右那颗 = [停止]（2026-10-20 用户要求，替换原 [x]）=====
-  // 三态判据与 QuickLaunch 列表行的状态按钮逐字同口径（索引 K30(1)）：运行中可点 / 停止中「...」禁用 / 未运行禁用。
-  it('running_stop_button_is_enabled_and_emits_stop_with_tab_id', async () => {
+  // ===== 工具条最右那颗 = 进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完变 [重新启动]）=====
+  // 三态判据与 QuickLaunch 列表行的状态按钮逐字同口径（索引 K30(1)）：运行中 [停止] / 在途「...」禁用 / 未运行 [重新启动]。
+  it('running_state_button_shows_stop_and_emits_stop_with_tab_id', async () => {
     const { w } = mountTab({ running: true, stopping: false });
-    const btn = w.find('.btn-term-stop');
+    const btn = w.find('.btn-term-state');
     expect(btn.exists()).toBe(true);
     expect(btn.attributes('disabled')).toBeUndefined();
-    // 文案复用既有 ql.btn.stop（词典中英齐全），不新建 key
+    // 文案复用既有 ql.btn.stop（词典中英齐全）
     expect(btn.attributes('aria-label')).toBe('停止');
     expect(btn.attributes('data-tooltip')).toBe('停止');
     expect(btn.find('svg[data-icon="stop"]').exists()).toBe(true);   // 字形 = 列表行那颗的 faStop
     await btn.trigger('click');
     expect(w.emitted('stop')).toEqual([['ql:demo']]);                // 只报意图，进程归 App（doQlStop）
+    expect(w.emitted('restart')).toBeUndefined();
     expect(w.emitted('close')).toBeUndefined();
     w.unmount();
   });
 
-  it('stopping_stop_button_shows_ellipsis_and_is_disabled', () => {
+  it('in_flight_state_button_shows_ellipsis_and_is_disabled', () => {
     const { w } = mountTab({ running: true, stopping: true });
-    const btn = w.find('.btn-term-stop');
+    const btn = w.find('.btn-term-state');
     expect(btn.attributes('disabled')).toBeDefined();
     expect(btn.text()).toBe('...');   // 半角三点 = LaunchBar.vue:129 / QuickLaunch.vue:221 同款在途反馈
     w.unmount();
   });
 
-  it('not_running_stop_button_is_disabled', () => {
-    // 进程已退出：页签保留（规格 §7.5），没有可停的东西 → 禁用；此时关页签走页签条那颗 [x]
-    const { w } = mountTab({ running: false, stopping: false });
-    expect(w.find('.btn-term-stop').attributes('disabled')).toBeDefined();
+  it('not_running_state_button_shows_restart_and_emits_restart_with_tab_id', async () => {
+    // 用户 2026-10-20 第二轮：停完（或进程自己退出后）那颗必须是 [重新启动]，点它 = 列表行那颗 [启动]
+    const { w } = mountTab({ running: false, stopping: false, restartDisabled: false });
+    const btn = w.find('.btn-term-state');
+    expect(btn.attributes('disabled')).toBeUndefined();
+    expect(btn.attributes('aria-label')).toBe('重新启动');           // 新增 key ql.terminal.restart（zh/en 齐全）
+    expect(btn.attributes('data-tooltip')).toBe('重新启动');
+    expect(btn.find('svg[data-icon="arrow-rotate-right"]').exists()).toBe(true);
+    expect(btn.find('svg[data-icon="stop"]').exists()).toBe(false);  // 状态切换 = 字形也换，不留「停止」的样子
+    await btn.trigger('click');
+    expect(w.emitted('restart')).toEqual([['ql:demo']]);             // → App.doQlStart（与列表行同一个出口）
+    expect(w.emitted('stop')).toBeUndefined();
+    w.unmount();
+  });
+
+  it('restart_is_disabled_when_the_config_no_longer_exists', async () => {
+    // restartDisabled = App 的 qlConfigs 镜像查不到该条（配置已删）→ 对着不存在的配置发 ql_start 只会失败
+    const { w } = mountTab({ running: false, stopping: false, restartDisabled: true });
+    const btn = w.find('.btn-term-state');
+    expect(btn.attributes('disabled')).toBeDefined();
+    expect(btn.attributes('aria-label')).toBe('重新启动');
+    await btn.trigger('click');
+    expect(w.emitted('restart')).toBeUndefined();
     w.unmount();
   });
 
   it('toolbar_renders_no_close_button_anymore', () => {
-    // 负向门：工具条的 [x] 已删（与页签条的 [x] 重复 → 用户 2026-10-20 要求换 [停止]）
+    // 负向门：工具条的 [x] 已删（与页签条的 [x] 重复 → 用户 2026-10-20 要求换成进程态按钮）
     const { w } = mountTab();
     expect(w.find('.btn-close-tab').exists()).toBe(false);
     w.unmount();

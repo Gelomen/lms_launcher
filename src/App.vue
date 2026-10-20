@@ -356,12 +356,15 @@ const TAB_LABEL_BUDGET = 16; // 规格 §11-1：页签的宽度预算 16（列�
 
 // 两种页签共存（规格 §9.1）：静态两页签仍由 LOG_TABS 生成（label === fullLabel ⇒ LogPanel 不出长名浮层），
 // 终端页签追加在后。closeDisabled = 该配置仍在运行 / 停止中（R3：那时关页签会留下孤儿 PTY）。
-// running / stopping 同源于 qlStates，下发给终端页签工具条的 [停止]（2026-10-20 用户要求：那颗由 [x] 改 [停止]）
-// ——三态判据与 QuickLaunch 列表行完全一致（QuickLaunch.vue:stateOf），两处按钮因此永远同步。
+// running / stopping 同源于 qlStates，下发给终端页签工具条那颗进程态按钮（2026-10-20 用户要求：
+// 那颗先由 [x] 改 [停止]，同日第二轮改成「运行中 [停止] / 停完 [重新启动]」）——三态判据与 QuickLaunch
+// 列表行完全一致（QuickLaunch.vue:stateOf），两处按钮因此永远同步。
+// restartDisabled 取 qlConfigs 只读镜像（Minor 2 那份）：条目被删 → 镜像里没有它 → [重新启动] 禁用，
+// 页签只剩 [x] 可关（对着一条已不存在的配置发 ql_start 只会拿回一条失败）。
 const logTabItems = computed<LogTabItem[]>(() => {
   const statics: LogTabItem[] = LOG_TABS.map((tab) => ({
     id: tab.id, label: tab.label, fullLabel: tab.label, kind: 'text',
-    closable: false, closeDisabled: false, running: false, stopping: false,
+    closable: false, closeDisabled: false, running: false, stopping: false, restartDisabled: false,
   }));
   const terminals: LogTabItem[] = qlTabs.value.map((tab) => {
     // Minor 2：文案取页签自己存的 name（构造方 = 下面的 openTerminalTab），不回查镜像；
@@ -377,6 +380,7 @@ const logTabItems = computed<LogTabItem[]>(() => {
       closeDisabled: !!s && (s.running || s.stopping),
       running: !!s && s.running,
       stopping: !!s && s.stopping,
+      restartDisabled: !qlConfigs.value[tab.configId],
       configId: tab.configId,
     };
   });
@@ -513,14 +517,21 @@ function onTerminalClose(tabId: string): void {
   unregisterTerminalSink(tabId); // 页签卸载时也会注销，这里不依赖卸载时机
 }
 
-// 工具条 [停止]（2026-10-20 用户要求，替换原工具条 [x]）：动作与卡片列表行的 [停止] 完全同一条路
-// ——直接进 doQlStop（卡片侧 QuickLaunch emit('stop') 也是它），运行态回落在 doQlStop 里做，页签保留（§7.5）。
-// tabId 带前缀 → configId 按索引 K2 反解；页签已不在表里（并发关掉）时不反解、不停进程。
-// 于是「在页签里点 [停止] → 进程停 → 页签 [x] 转可用 → 点 [x] 关页签」整条都在页签上，不必回列表找那一行。
+// 工具条那颗进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完再变 [重新启动]）。
+// 两条都与卡片列表行完全同一条路：[停止] → doQlStop（运行态回落在它里做，页签保留，§7.5）、
+// [重新启动] → doQlStart（单飞守卫 qlStarting / 在途「...」反馈 / 同一页签再次启动 → fit(true) + 聚焦，
+// 全部复用任务 13 那条路径）。tabId 带前缀 → configId 按索引 K2 反解；页签已不在表里（并发关掉）时原样不动。
+// 于是「在页签里 [停止] → 就地 [重新启动] → 或点页签 [x] 关掉」整条闭环都留在页签上，不必回列表找那一行。
 function onTerminalStop(tabId: string): void {
   const tab = qlTabs.value.find((t) => t.id === tabId);
   if (!tab) return;
   void doQlStop(tab.configId);
+}
+
+function onTerminalRestart(tabId: string): void {
+  const tab = qlTabs.value.find((t) => t.id === tabId);
+  if (!tab) return;
+  void doQlStart(tab.configId);
 }
 
 // 窗口重载复原（规格 §7.6）：主进程仍持有 PTY → 为运行中的配置重建**空**页签（历史不回放，F5）。
@@ -608,7 +619,7 @@ function onQlChanged(): void {
       <LogPanel :tabs="logTabItems" :buckets="logBuckets" v-model:active="activeTabId"
         :register="registerTerminalSink" :unregister="unregisterTerminalSink"
         :on-input="onTerminalInput" :on-resize="onTerminalResize"
-        @clear="onLogClear" @close="onTerminalClose" @stop="onTerminalStop" />
+        @clear="onLogClear" @close="onTerminalClose" @stop="onTerminalStop" @restart="onTerminalRestart" />
     </section>
     <!-- §D 共用退出确认：托盘「退出」(exit_app) 与 更新 ready 后「重启应用」(run_update) 共享；exitAction 分流 -->
     <ConfirmDialog :open="exitConfirm" :title="t('app.exit.title')" :message="t('app.exit.message')" tone="primary"

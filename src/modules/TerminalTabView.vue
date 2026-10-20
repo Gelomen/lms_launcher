@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { faCircleDown, faCircleUp, faCircleXmark, faTrashCan } from '@fortawesome/free-regular-svg-icons';
-import { faStop } from '@fortawesome/free-solid-svg-icons';
+import { faArrowRotateRight, faStop } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -16,27 +16,32 @@ import { t } from '../i18n';
 // 单向数据流：输出由上层按 tabId 派发进来（挂载时 register 交出的 sink），
 // 输入与尺寸经 props 的回调出去（对应 §8 的 ql_write / ql_resize）；本组件不订阅任何事件。
 // 外壳复用静态页签的尺寸链（style.css 的 .log-pane → .log-view，见 :262 那条高度链注释），不新增 CSS 类。
-library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop);
+library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop, faArrowRotateRight);
 
 // props 以计划 §任务 9 为准（索引 K2 / 本任务 A4）：含 label/fullLabel，不含 configId。
 // 2026-10-20 用户要求：工具条最右那颗由 [x]（关闭页签）换成 [停止]——它与页签条上的 [x] 重复，
 // 而列表行的 [停止] 才是这里真正需要的动作（关页签前先停进程，两处 [x] 的 R3 守卫由此变得多余）。
 // 于是 closable / closeDisabled 不再进本组件（关闭只归页签条那颗 [x]，所有权在 LogPanel），
 // 改收 running / stopping：进程态的唯一来源仍是 App 的 qlStates（QuickLaunch 列表行同一份，C1 不变）。
+// 同日第二轮用户要求：停完之后那颗不能是「禁用的停止」，要变成 [重新启动]（= 列表行那颗 [启动]），
+// 于是这里再收 restartDisabled = 该条配置已从 ql_list 消失（App 的只读镜像 qlConfigs 查不到）：
+// 没有配置就没有可启动的东西，点下去只会让主进程回一条失败，那颗按钮因此禁用。
 const props = defineProps<{
   id: string;
   label: string;
   fullLabel: string;
   running: boolean;
   stopping: boolean;
+  restartDisabled: boolean;
   register: (id: string, sink: (d: string) => void) => void;
   unregister: (id: string) => void;
   onInput: (id: string, data: string) => void;
   onResize: (id: string, cols: number, rows: number) => void;
 }>();
-// stop(id)：与 QuickLaunch 列表行 [停止] 同一个动作，一路冒泡到 App.doQlStop → invoke('ql_stop')；
-// 本组件不碰 IPC（进程所有权在 App，规格 §9.2），只报「这条页签要停」。
-const emit = defineEmits<{ stop: [id: string] }>();
+// stop(id) / restart(id)：与 QuickLaunch 列表行的 [停止] / [启动] 一一对应，一路冒泡到
+// App.doQlStop / doQlStart（invoke('ql_stop') / invoke('ql_start')）；
+// 本组件不碰 IPC（进程所有权在 App，规格 §9.2），只报「这条页签要停 / 要重启」。
+const emit = defineEmits<{ stop: [id: string]; restart: [id: string] }>();
 
 const view = ref<HTMLElement | null>(null);
 let term: Terminal | null = null;
@@ -157,12 +162,19 @@ function onClearTerminal(): void {
   resetSearchState();
 }
 
-// [停止]（2026-10-20 替换原工具条 [x]）：只有「运行中且不在停止在途」才报 stop。
-// :disabled 是界面，这道守卫才是契约（与 LogPanel.vue 的 onCloseClick 同构）：点了禁用的按钮
-// 也不冒泡，App.doQlStop 就不会在「未运行」时把 running 置回 true 并发一次多余的 ql_stop。
-function onStopClick(): void {
-  if (!props.running || props.stopping) return;
-  emit('stop', props.id);
+// 工具条最右那颗 = 进程态按钮（2026-10-20 两步用户要求：先 [x] → [停止]，再 [停止] → 停完变 [重新启动]）。
+// 判据与 QuickLaunch 列表行的状态按钮同源同口径（QuickLaunch.vue 的 stateOf/onToggle 是同一份 qlStates）：
+// 运行中 → [停止]；未运行 → [重新启动]；在途（stopping，含 doQlStart 的启动探测在途）→ 「...」禁用。
+const stateLabel = computed(() => (props.running ? t('ql.btn.stop') : t('ql.terminal.restart')));
+const stateDisabled = computed(() => props.stopping || (!props.running && props.restartDisabled));
+
+// 只有「不在途」才动，且运行中只报 stop、未运行只报 restart：:disabled 是界面，这道守卫才是契约
+// （与 LogPanel.vue 的 onCloseClick 同构）。点了禁用的重启按钮也不冒泡，App 不会为已删除的配置发一次 ql_start。
+function onStateClick(): void {
+  if (props.stopping) return;
+  if (props.running) { emit('stop', props.id); return; }
+  if (props.restartDisabled) return;
+  emit('restart', props.id);
 }
 
 // 链接（规格 §9.1）：复用既有 open_external（主进程已白名单校验，reject 静默）
@@ -242,16 +254,19 @@ defineExpose({
           <FontAwesomeIcon :icon="['far', 'circle-down']" />
         </button>
       </div>
-      <!-- [停止]（2026-10-20 用户要求，替换原 [x]）：三态与列表行的状态按钮逐字同口径（索引 K30(1)）——
-           运行中 = 可点、停止中 = 半角三点 + 禁用（与 LaunchBar.vue:129 / QuickLaunch.vue:221 一致）、
-           未运行 = 禁用（进程已退出、页签保留，没有可停的东西；此时关闭走页签条那颗 [x]）。
-           图标 faStop 字号 10px = 列表行 [停止] 的定版取值（QuickLaunch.vue:23-24，2026-10-15 量化取证）。
-           盒型沿用本工具条的 .icon-btn--noborder，配色不动（一排无框灰色图标按钮），故不新增 CSS 类。
-           文案复用 ql.btn.stop，不新建 key（词典已有，中英齐全）。 -->
-      <button type="button" class="icon-btn icon-btn--noborder btn-term-stop"
-        :aria-label="t('ql.btn.stop')" :data-tooltip="t('ql.btn.stop')"
-        :disabled="!running || stopping" @click="onStopClick">
-        <span v-if="stopping">...</span><FontAwesomeIcon v-else :icon="['fas', 'stop']" style="font-size: 10px;" />
+      <!-- 进程态按钮（2026-10-20 替换原 [x]，同日第二轮加「停完变 [重新启动]」）：三态与列表行逐字同口径
+           （索引 K30(1)）——运行中 = [停止] 可点、在途 = 半角三点 + 禁用（与 LaunchBar.vue:129 /
+           QuickLaunch.vue:221 一致）、未运行 = [重新启动] 可点（页签保留，点它 = 列表行那颗 [启动]）。
+           字形与字号都跟着列表行：faStop 10px（QuickLaunch.vue:23-24，2026-10-15 量化取证）、
+           faArrowRotateRight 10px（solid 一侧才有旋转字形，free-regular 无；10px = 与本那颗对齐，
+           两颗按钮共用同一个 32px 无框盒，图标同字号才不会随状态跳动）。
+           restartDisabled（配置已删除）时禁用：没有配置就没有可启动的东西。
+           盒型沿用本工具条的 .icon-btn--noborder，配色不动 → 不新增 CSS 类；
+           文案 = 既有 ql.btn.stop + 新增 ql.terminal.restart（zh「重新启动」/ en 'Restart'，词典两侧齐全）。 -->
+      <button type="button" class="icon-btn icon-btn--noborder btn-term-state"
+        :aria-label="stateLabel" :data-tooltip="stateLabel"
+        :disabled="stateDisabled" @click="onStateClick">
+        <span v-if="stopping">...</span><FontAwesomeIcon v-else-if="running" :icon="['fas', 'stop']" style="font-size: 10px;" /><FontAwesomeIcon v-else :icon="['fas', 'arrow-rotate-right']" style="font-size: 10px;" />
       </button>
     </div>
     <!-- xterm 挂载点：沿用 .log-view 的 flex:1 高度链，只把它的 overflow-y 关掉（xterm 自带视口滚动） -->
