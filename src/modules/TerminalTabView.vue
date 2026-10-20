@@ -159,7 +159,12 @@ onMounted(() => {
   if (!el) return;
   // 取值逐字按计划 步骤 3 / 规格 §9.3
   // fontFamily 用字面量栈，必须与 src/style.css:29 的 --font-mono 逐字同值（改字体时两处同步）：这里不能用 CSS 变量——xterm 5.5.0 的 CharSizeService 走 canvas 测量，canvas 的 font 不解析 var()，格子按 canvas 默认字体量、字形按 CSS 解析的字体画 → 网格与字形不匹配（索引 K23(1)）
-  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace" });
+  // allowProposedApi 必开：查找计数依赖 addon-search 建匹配装饰，而装饰走 xterm 的 registerDecoration——
+  // 该 API 在 @xterm/xterm 5.5.0 里仍是 EXPERIMENTAL（typings/xterm.d.ts:1118），未开此开关时它抛
+  // 「You must set the allowProposedApi option to true to use proposed API」；抛出点在 _highlightAllMatches 内、
+  // 早于 _fireResults，故计数事件从不触发 → 输入终端里存在的文本也恒显「0 / 0」且无上/下一个可用。
+  // 打桩套件看不见这条真机契约（假 addon 无条件发结果事件），由 TerminalTabView.search.test.ts 钉住。
+  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true });
   fitAddon = new FitAddon();
   searchAddon = new SearchAddon();
   term.loadAddon(fitAddon);

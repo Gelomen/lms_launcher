@@ -200,7 +200,9 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
   it('terminal_is_created_with_spec_options_and_three_addons', () => {
     const { w } = mountTab();
     // F1 逐字：scrollback 5000 / fontSize 13 / fontFamily 是与 src/style.css:29 逐字同值的字面量栈（索引 K23(1)）
-    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace" });
+    // allowProposedApi：查找装饰（= 计数与高亮）依赖它，见 TerminalTabView.vue 构造处注释与
+    // TerminalTabView.search.test.ts（真 xterm 集成，本套件的假 addon 看不见该真机契约）
+    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true });
     expect(h.state.linkHandlers.length).toBe(1);   // WebLinksAddon 构造时拿到 open_external 处理器
     w.unmount();
   });
