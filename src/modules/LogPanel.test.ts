@@ -407,6 +407,18 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     w.unmount();
   });
 
+  // 2026-10-20 用户实机截图：那颗进程态按钮的 tooltip 比同排其他按钮高 4px。
+  // 致错写法 = 让它吃 .icon-btn 的默认 32×32 盒：::after 的 bottom: calc(100% + 6px) 以盒顶为基准，
+  // 32px 盒顶比同排查找三颗（.log-search .icon-btn = 24×24）高 4px → tooltip 一起高 4px。
+  // 修法是把盒收到与同排同尺寸（一处解决 tooltip 起点 / 热区 / 盒心），故断这条规则的存在与取值。
+  it('state_button_box_matches_the_search_group_size_for_tooltip_anchor', () => {
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
+    expect(cssRule(css, '.log-pane .btn-term-state')).toMatch(/width:\s*24px/);
+    expect(cssRule(css, '.log-pane .btn-term-state')).toMatch(/height:\s*24px/);
+    expect(cssRule(css, '.log-search .icon-btn')).toMatch(/width:\s*24px;\s*height:\s*24px/);  // 同排基准未动
+    expect(cssRule(css, '.icon-btn::after')).toMatch(/bottom:\s*calc\(100% \+ 6px\)/);      // tooltip 锚在盒顶：口径未动
+  });
+
   // E5（规格 §11-2）：页签多于 6 条时页签条不换行。
   // happy-dom 不加载外部 CSS，computed style 读不到 style.css → 断的是「渲染出的页签数 + style.css 里的规则文本」，
   // 即 .tab-bar 的 flex-wrap:nowrap / overflow-x:auto 与 .log-tab 的 flex:none（不被压扁）。见 check 表 J 段说明。

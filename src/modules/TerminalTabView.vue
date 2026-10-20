@@ -258,12 +258,15 @@ defineExpose({
            （索引 K30(1)）——运行中 = [停止] 可点、在途 = 半角三点 + 禁用（与 LaunchBar.vue:129 /
            QuickLaunch.vue:221 一致）、未运行 = [重新启动] 可点（页签保留，点它 = 列表行那颗 [启动]）。
            restartDisabled（配置已删除）时禁用：没有配置就没有可启动的东西。
-           字号 = 不写 inline、随本工具条继承：本排四个图标（[清空终端] + 查找三个）都是 13.3333px
-           —— .icon-btn 不设字号，落到 UA 的 button{font:13.3333px}；列表行那颗的 10px 属于 24px 圆按钮
-           的语境（QuickLaunch.vue 的 2026-10-15 定版），放进这条工具条就是「比同排小一圈」。
-           取证台 .temp/term-toolbar-align（headless Chrome 量真盒）：同排 svg 着墨中心 48.992、
-           32×32 盒中心 49；那颗按钮的盒中心同为 49 → 中心本就对齐，观感不齐全因字号小一圈。
-           故只去 inline 字号（两颗字形同排同尺寸、着墨外接盒中心 = 行中心），不新增 CSS 类，配色不动；
+           字号与盒都随本工具条同排，两处各由一条已定版的事实决定（取证台 .temp/term-toolbar-align，
+           headless Chrome 量真盒，两轮用户截图逐条对过）：
+           ① 字号不写 inline、继承 = 13.3333px（.icon-btn 不设字号 → UA 的 button{font:13.3333px}，
+              同排 [清空终端] + 查找三颗皆如此）；列表行那颗的 10px 属于 24px 红色圆按钮的语境
+              （QuickLaunch.vue 的 2026-10-15 定版），搬进这条工具条就是「比同排小一圈」= 第一轮截图。
+           ② 盒 = 24×24（style.css:257 .log-pane .btn-term-state，与 .log-search .icon-btn 同尺寸）：
+              tooltip 的 ::after 是 bottom: calc(100% + 6px)，锚在盒顶（style.css:607）——32px 盒顶 33
+              比同排 24px 盒顶 37 高 4px，tooltip 就跟着高 4px = 第二轮截图「Restart 比 Next match 高」。
+              收盒一并对齐 tooltip 起点、热区与盒心（行中心 49），不动 ::after、不加位移魔法数。
            文案 = 既有 ql.btn.stop + 新增 ql.terminal.restart（zh「重新启动」/ en 'Restart'，词典两侧齐全）。 -->
       <button type="button" class="icon-btn icon-btn--noborder btn-term-state"
         :aria-label="stateLabel" :data-tooltip="stateLabel"
