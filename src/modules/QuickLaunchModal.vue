@@ -36,8 +36,9 @@ const byPrefixAndName = {
 // running（修复轮 B · I-1）：本条目此刻是否处于运行 / 停止中。来源链 = 主进程 ql_states →
 // App.vue 的只读镜像 qlStates（:339）→ App.vue:567 以 :states 下发卡片（QuickLaunch.vue:27 接住）→
 // 卡片按 editingId 取一项传进来（QuickLaunch.vue 的 editingRunning）。弹窗只读、不写。
-// 用途只有一个：运行中的条目禁用 [删除]（删掉后卡片行消失、页签 [x] 又因 closeDisabled 永久禁用 →
-// 既停不掉也关不掉）。tooltip 用**已存在**的键 ql.err.running（src-main/i18n/dict.ts:184 zh / :526 en），不新建键。
+// 用途只有一个：运行中的条目禁用 [删除]——删掉后卡片行消失，行上的 [停止] 随之没了，页签 [x] 又因
+// closeDisabled 在运行中禁用，剩下的唯一出路是在页签工具条点那颗 [停止]（2026-10-20 由 [x] 改来）。
+// tooltip 用**已存在**的键 ql.err.running（src-main/i18n/dict.ts:184 zh / :526 en），不新建键。
 const props = withDefaults(defineProps<{
   open: boolean;
   id: string | null;

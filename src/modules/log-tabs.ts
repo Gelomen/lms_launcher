@@ -26,6 +26,8 @@ export type LogTabKind = 'text' | 'terminal';
  * LogPanel 只渲染 label、并在 label 与 fullLabel 不同时把 fullLabel 做成 hover 浮层（2026-10-20：原 native
  * title 已换成仓内自绘 .dd-tip，见 LogPanel.vue 的 onTabEnter），不再二次截断（两处预算会互相抵消）。
  * closeDisabled = 该页签的终端仍在运行，[x] 禁用（计划 审查重点 3 / R3：运行中关掉页签会留下孤儿 PTY）。
+ * running / stopping = 该页签的进程态（唯一来源 = App 的 qlStates，QuickLaunch 列表行同一份）：
+ * 终端工具条最右的 [停止]（2026-10-20 用户要求，替换原 [x]）据此给三态——运行中可点、停止中「...」禁用、未运行禁用。
  */
 export interface LogTabItem {
   id: string;
@@ -34,5 +36,7 @@ export interface LogTabItem {
   kind: LogTabKind;
   closable: boolean;
   closeDisabled: boolean;
+  running: boolean;
+  stopping: boolean;
   configId?: string;
 }

@@ -1224,6 +1224,10 @@ function tabIds(w: any): string[] {
 function tabClose(w: any, id: string): any {
   return w.find(`.log-tab[data-tab-id="${id}"] .btn-close-tab`);
 }
+// 终端工具条最右的 [停止]（2026-10-20 用户要求，替换原工具条 [x]）：挂在页签面板上，不是页签条上
+function tabStop(w: any, id: string): any {
+  return w.find(`.log-pane[data-tab-id="${id}"] .btn-term-stop`);
+}
 function tabLabel(w: any, id: string): string {
   return w.find(`.log-tab[data-tab-id="${id}"] .log-tab-label`).text();
 }
@@ -1329,6 +1333,42 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     await flush();
     expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeUndefined(); // 停止后可关
     expect(tabIds(w)).toContain('ql:c1'); // 停止不关页签（规格 §7.5）
+    w.unmount();
+  });
+
+  // 2026-10-20 用户要求：工具条最右那颗由 [x] 换成 [停止]，动作 = 列表行 [停止] 同一条路（doQlStop → ql_stop）。
+  // 钉住整条链：页签里点 [停止] → ql_stop 发出 → 卡片行同步回落 [启动] → 页签保留 → 页签 [x] 由禁用转可用，
+  // 于是「在页签里停完、直接点页签的 [x] 关掉」不必回列表找那一行（用户点名的诉求）。
+  it('toolbar_stop_button_stops_process_and_enables_tab_close', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签
+    await flush();
+    const stop = tabStop(w, 'ql:c1');
+    expect(stop.exists()).toBe(true);
+    expect(stop.attributes('aria-label')).toBe('停止');
+    expect(stop.attributes('disabled')).toBeUndefined();      // 运行中 → 可点
+    expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeDefined(); // 运行中页签 [x] 仍禁用（R3）
+    await stop.trigger('click');
+    await flush();
+    expect(qlInvokes('ql_stop')).toEqual([['c1']]);            // 与列表行同一个出口
+    expect(qlRowBtn(w, 0).classes()).toContain('btn-launch');  // 列表行同步回落 [启动]
+    expect(tabIds(w)).toContain('ql:c1');                      // 停止不关页签（§7.5）
+    expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeUndefined();
+    w.unmount();
+  });
+
+  // 负向门（2026-10-20）：工具条不再渲染 [x]；未运行的页签 [停止] 禁用（进程已退、没有可停的东西）
+  it('toolbar_has_no_close_button_and_stop_is_disabled_after_exit', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(w.find('.log-pane[data-tab-id="ql:c1"] .btn-close-tab').exists()).toBe(false);
+    qlExitHandlers.at(-1)!({ configId: 'c1', code: 0 });       // 进程自己退出 → 运行态清空、页签保留
+    await flush();
+    expect(tabStop(w, 'ql:c1').attributes('disabled')).toBeDefined();
+    expect(tabClose(w, 'ql:c1').attributes('disabled')).toBeUndefined();
     w.unmount();
   });
 

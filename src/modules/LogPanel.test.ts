@@ -256,10 +256,11 @@ function emptyBuckets(): Record<'launcher' | 'llama-server', E[]> {
   return { launcher: [], 'llama-server': [] };
 }
 function textTab(id: 'launcher' | 'llama-server', over: Partial<LogTabItem> = {}): LogTabItem {
-  return { id, label: id, fullLabel: id, kind: 'text', closable: false, closeDisabled: false, ...over };
+  return { id, label: id, fullLabel: id, kind: 'text', closable: false, closeDisabled: false, running: false, stopping: false, ...over };
 }
+// running / stopping = 终端工具条 [停止] 的三态来源（2026-10-20 替换原工具条 [x]）：缺省 = 运行中、未停止
 function termTab(id: string, over: Partial<LogTabItem> = {}): LogTabItem {
-  return { id, label: id, fullLabel: id, kind: 'terminal', closable: true, closeDisabled: false, configId: id.slice(3), ...over };
+  return { id, label: id, fullLabel: id, kind: 'terminal', closable: true, closeDisabled: false, running: true, stopping: false, configId: id.slice(3), ...over };
 }
 // 页签按钮上的测试钩子 data-tab-id（与 LogTabView / TerminalTabView 的根节点同名钩子，M4：只作测试用）
 function tabBtn(w: any, id: string) { return w.find('.tab-bar .log-tab[data-tab-id="' + id + '"]'); }
@@ -360,9 +361,30 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     await tabBtn(w, 'ql:demo').find('.btn-close-tab').trigger('click');
     expect(w.emitted('close')).toEqual([['ql:demo']]);
     expect(tabBtn(w, 'ql:demo').classes()).not.toContain('active');
-    // 终端页签工具条里的 [x]（任务 9 的组件）同样经 LogPanel 冒泡 close(id)
-    await w.find('.log-pane[data-tab-id="ql:demo"] .btn-close-tab').trigger('click');
-    expect(w.emitted('close')).toEqual([['ql:demo'], ['ql:demo']]);
+    // 2026-10-20 用户要求：终端工具条那颗不再是 [x]（与页签条重复），已换成 [停止] →
+    // 负向门：工具条里没有 .btn-close-tab，close 只剩页签条一个来源；工具条的点击冒泡 stop(id)。
+    expect(w.find('.log-pane[data-tab-id="ql:demo"] .btn-close-tab').exists()).toBe(false);
+    await w.find('.log-pane[data-tab-id="ql:demo"] .btn-term-stop').trigger('click');
+    expect(w.emitted('close')).toEqual([['ql:demo']]);
+    expect(w.emitted('stop')).toEqual([['ql:demo']]);
+    w.unmount();
+  });
+
+  // 2026-10-20：running / stopping 只是透传（进程态归 App 的 qlStates），三态落点由 TerminalTabView 定；
+  // 这条钉住「未运行的页签 = [停止] 禁用 + 页签 [x] 可用」——用户要的「停完直接在页签上点关闭」这条链。
+  it('running_and_stopping_forward_to_the_toolbar_stop_button', () => {
+    const w = mount(LogPanel, {
+      props: {
+        buckets: emptyBuckets(),
+        tabs: [termTab('ql:run'), termTab('ql:busy', { running: true, stopping: true }), termTab('ql:idle', { running: false, closeDisabled: false })],
+      },
+    });
+    expect(w.find('.log-pane[data-tab-id="ql:run"] .btn-term-stop').attributes('disabled')).toBeUndefined();
+    const busy = w.find('.log-pane[data-tab-id="ql:busy"] .btn-term-stop');
+    expect(busy.attributes('disabled')).toBeDefined();
+    expect(busy.text()).toBe('...');
+    expect(w.find('.log-pane[data-tab-id="ql:idle"] .btn-term-stop').attributes('disabled')).toBeDefined();
+    expect(tabBtn(w, 'ql:idle').find('.btn-close-tab').attributes('disabled')).toBeUndefined();
     w.unmount();
   });
 

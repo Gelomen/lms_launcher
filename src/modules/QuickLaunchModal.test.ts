@@ -970,6 +970,7 @@ describe('QuickLaunchModal', () => {
 
   // I-1（必修）：运行中的条目不能删 —— 删掉后卡片行消失（没有 [停止] 了），而页签的 [x] 因
   // closeDisabled（App.vue:358-369）永久禁用 → 既关不掉也停不掉。裁定 = 禁用 [删除]，
+  // （2026-10-20：页签工具条那颗改成 [停止]，这条死路多了一处出口；禁用 [删除] 的裁定不变。）
   // tooltip 接上**已存在**的键 ql.err.running（src-main/i18n/dict.ts:184 zh / :526 en，本轮不新建键）。
   it('delete_button_is_disabled_for_running_entry_and_shows_ql_err_running', async () => {
     let delCalls = 0;
