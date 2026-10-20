@@ -421,25 +421,125 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     expect(cssRule(css, '.tab-bar')).toMatch(/scrollbar-width:\s*none/);
   });
 
-  // E7（规格 §11-1 / 索引 K26(2)）：title 只在 label !== fullLabel 时挂 fullLabel；页签文案原样渲染、不二次截断
-  it('tab_title_attribute_only_when_label_differs_from_fullLabel', () => {
-    const full = 'Very Long Launch Name · PowerShell 7 (pwsh)';
+  // E7（规格 §11-1 / 索引 K26(2)）：页签文案原样渲染、不二次截断（截断只在构造方）。
+  // 完整名的提示 2026-10-20 起改口径（用户要求）：native title → 仓内自绘 .dd-tip 视口浮层
+  // （与下拉长名同视觉语言、hover 即出、不受浏览器 ~1s 延迟与系统样式约束）。显示判据一字未改：只在 label !== fullLabel 时出。
+  function stubRect(el: HTMLElement, left: number, width: number, top = 4, height = 26): void {
+    (el as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () =>
+      ({ left, right: left + width, top, bottom: top + height, width, height, x: left, y: top }) as DOMRect;
+  }
+  /** 钉住视口宽（flip 判据读 window.innerWidth）；happy-dom 默认 1024，测试不依赖它。 */
+  async function withInnerWidth(v: number, fn: () => Promise<void>): Promise<void> {
+    const orig = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+    Object.defineProperty(window, 'innerWidth', { value: v, configurable: true });
+    try { await fn(); }
+    finally {
+      // 还原按原 descriptor 原样写回：innerWidth 在 happy-dom 是 accessor，补 value 会撞 get（Dropdown.test.ts:79 同一手法）
+      if (orig) Object.defineProperty(window, 'innerWidth', orig);
+      else delete (window as unknown as Record<string, unknown>)['innerWidth'];
+    }
+  }
+  const LONG_FULL = 'Very Long Launch Name · PowerShell 7 (pwsh)';
+  const LONG_LABEL = 'Very Long Launch Na…';
+
+  it('truncated_tab_hovers_custom_tip_with_full_label_and_leave_clears_it', async () => {
     const w = mount(LogPanel, {
       props: {
         buckets: emptyBuckets(),
-        tabs: [textTab('launcher'), termTab('ql:short', { label: 'Short', fullLabel: 'Short' }), termTab('ql:long', { label: 'Very Long Launch Na…', fullLabel: full })],
+        tabs: [textTab('launcher'), termTab('ql:short', { label: 'Short', fullLabel: 'Short' }), termTab('ql:long', { label: LONG_LABEL, fullLabel: LONG_FULL })],
       },
     });
+    // native title 已彻底移除（三条页签都不留）
     expect(tabBtn(w, 'launcher').attributes('title')).toBeUndefined();
     expect(tabBtn(w, 'ql:short').attributes('title')).toBeUndefined();
-    expect(tabBtn(w, 'ql:long').attributes('title')).toBe(full);
-    expect(tabBtn(w, 'ql:long').text()).toBe('Very Long Launch Na…');
-    w.unmount();
-    // 构造方没截断时，LogPanel 也不截断（两处预算会互相抵消 → 截断职责只在构造方）
-    const w2 = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [termTab('ql:raw', { label: full, fullLabel: full })] } });
-    expect(tabBtn(w2, 'ql:raw').text()).toBe(full);
+    expect(tabBtn(w, 'ql:long').attributes('title')).toBeUndefined();
+    expect(tabBtn(w, 'ql:long').text()).toBe(LONG_LABEL);   // 文案原样（不二次截断）
+
+    await tabBtn(w, 'ql:long').trigger('mouseenter');
+    expect(w.find('.dd-tip').exists()).toBe(true);
+    expect(w.find('.dd-tip').text()).toBe(LONG_FULL);
+    await tabBtn(w, 'ql:long').trigger('mouseleave');
+    expect(w.find('.dd-tip').exists()).toBe(false);
+
+    // 未截断（label === fullLabel）→ 无浮层；构造方没截断时 LogPanel 也不截断（两处预算会互相抵消）
+    await tabBtn(w, 'ql:short').trigger('mouseenter');
+    expect(w.find('.dd-tip').exists()).toBe(false);
+    const w2 = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [termTab('ql:raw', { label: LONG_FULL, fullLabel: LONG_FULL })] } });
+    expect(tabBtn(w2, 'ql:raw').text()).toBe(LONG_FULL);
+    await tabBtn(w2, 'ql:raw').trigger('mouseenter');
+    expect(w2.find('.dd-tip').exists()).toBe(false);
     expect(tabBtn(w2, 'ql:raw').attributes('title')).toBeUndefined();
     w2.unmount();
+    w.unmount();
+  });
+
+  // title 撤掉后完整名不能丢：可访问名（aria-label）取完整名；未截断的页签不动（保持文案即名字）
+  it('truncated_tab_aria_label_is_full_label_short_tabs_have_none', () => {
+    const w = mount(LogPanel, {
+      props: {
+        buckets: emptyBuckets(),
+        tabs: [textTab('launcher'), termTab('ql:short', { label: 'Short', fullLabel: 'Short' }), termTab('ql:long', { label: LONG_LABEL, fullLabel: LONG_FULL })],
+      },
+    });
+    expect(tabBtn(w, 'ql:long').attributes('aria-label')).toBe(LONG_FULL);
+    expect(tabBtn(w, 'ql:short').attributes('aria-label')).toBeUndefined();
+    expect(tabBtn(w, 'launcher').attributes('aria-label')).toBeUndefined();
+    w.unmount();
+  });
+
+  // 定位沿用 Dropdown 长名口径：挂页签右侧垂直居中（left = 右缘 + 8，top = 垂直中心，CSS translateY(-50%)）
+  it('tab_tip_positions_right_of_tab_vertically_centered', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [termTab('ql:long', { label: LONG_LABEL, fullLabel: LONG_FULL })] } });
+    stubRect(tabBtn(w, 'ql:long').element, 50, 150);   // left 50 / width 150 → right 200；中心 = 4 + 26/2 = 17
+    await withInnerWidth(1024, async () => { await tabBtn(w, 'ql:long').trigger('mouseenter'); });
+    const tipEl = w.find('.dd-tip');
+    expect(tipEl.exists()).toBe(true);
+    const style = tipEl.attributes('style') ?? '';
+    expect(style).toContain('left: 208px');
+    expect(style).toContain('top: 17px');
+    expect(tipEl.classes()).not.toContain('dd-tip--flip');
+    w.unmount();
+  });
+
+  // 右侧估宽放不下视口 → .dd-tip--flip：右缘贴页签左缘内侧（left = 左缘 - 8），不出窗口（同 Dropdown 的 flip）
+  it('tab_tip_flips_left_when_no_room_right_in_viewport', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [termTab('ql:long', { label: LONG_LABEL, fullLabel: LONG_FULL })] } });
+    stubRect(tabBtn(w, 'ql:long').element, 642, 150);  // right = 792，估宽 42*12+36 = 540 → 右侧放不下
+    await withInnerWidth(800, async () => { await tabBtn(w, 'ql:long').trigger('mouseenter'); });
+    const tipEl = w.find('.dd-tip');
+    expect(tipEl.exists()).toBe(true);
+    const style = tipEl.attributes('style') ?? '';
+    expect(style).toContain('left: 634px');
+    expect(style).toContain('top: 17px');
+    expect(tipEl.classes()).toContain('dd-tip--flip');
+    w.unmount();
+  });
+
+  // 页签条是横向滚动容器，fixed 浮层不随内容滚动 → 滚动时按锚点矩形重算坐标（滚轮横滚时浮层不脱锚）
+  it('tab_tip_follows_tab_when_tab_bar_scrolls', async () => {
+    // attachTo：placeTip 的滚动监听挂在 document（capture，scroll 不冒泡）→ 组件必须真进文档，
+    // 否则游离元素的事件传播路径里没有 document，监听永远不触发（VTU 默认不 attach，Dropdown.test.ts:25 同理）
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [termTab('ql:long', { label: LONG_LABEL, fullLabel: LONG_FULL })] }, attachTo: document.body });
+    stubRect(tabBtn(w, 'ql:long').element, 50, 150);
+    await withInnerWidth(1024, async () => {
+      await tabBtn(w, 'ql:long').trigger('mouseenter');
+      expect((w.find('.dd-tip').attributes('style') ?? '')).toContain('left: 208px');
+      stubRect(tabBtn(w, 'ql:long').element, 250, 150);   // 页签横滚后右缘 400
+      await w.find('.tab-bar').trigger('scroll');
+      expect((w.find('.dd-tip').attributes('style') ?? '')).toContain('left: 408px');
+    });
+    w.unmount();
+  });
+
+  // 关掉的正是 hover 中的页签：浮层已 fixed 脱离页签 DOM，不显式关就留在原地变孤儿
+  it('closing_a_tab_clears_its_open_tip', async () => {
+    const w = mount(LogPanel, { props: { buckets: emptyBuckets(), tabs: [termTab('ql:long', { label: LONG_LABEL, fullLabel: LONG_FULL })] } });
+    await tabBtn(w, 'ql:long').trigger('mouseenter');
+    expect(w.find('.dd-tip').exists()).toBe(true);
+    await tabBtn(w, 'ql:long').find('.btn-close-tab').trigger('click');
+    expect(w.emitted('close')).toEqual([['ql:long']]);
+    expect(w.find('.dd-tip').exists()).toBe(false);
+    w.unmount();
   });
 });
 

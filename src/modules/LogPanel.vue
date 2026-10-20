@@ -114,9 +114,11 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', measureBar);
   if (barObserver) { barObserver.disconnect(); barObserver = null; }
+  hideTip();   // 卸载时浮层正开着：不摘 scroll/resize 监听 = 永久泄漏（回调指向已卸载组件的 ref）
 });
-// 页签增删 → 下一帧重测（新开页签立刻出现右箭头；关掉到不溢出则两端都消失）。
-watch(items, () => { nextTick(measureBar); }, { flush: 'post' });
+// 页签增删 → 下一帧重测（新开页签立刻出现右箭头；关掉到不溢出则两端都消失）；
+// 同时关掉浮层：增删会让被 hover 页签的 label/fullLabel 变化，留着就是过期文本。
+watch(items, () => { hideTip(); nextTick(measureBar); }, { flush: 'post' });
 
 // 步长（设计确认：把最近被截断的页签完整带入视野）：右 = 该页签右缘对齐视口右缘；左 = 左缘对齐视口左缘；剩余不足贴边。
 // 坐标用 offsetLeft/offsetWidth：偏移父 = .tab-bar 自身（position:relative），不随滚动变化 —— 读 getBoundingClientRect 也行，
@@ -151,7 +153,50 @@ function onTabClick(item: LogTabItem): void {
 // [x]：closable 才渲染（E3）；closeDisabled（终端运行中，R3）时禁用且不冒泡 close。
 function onCloseClick(item: LogTabItem): void {
   if (!item.closable || item.closeDisabled) return;
+  hideTip();   // 关掉的正是 hover 中的页签时，浮层不能留在原地（fixed 已脱离页签 DOM）
   emit('close', item.id);
+}
+
+// ---- 页签长名 tooltip（2026-10-20 用户要求：native title 改自绘 tooltip 显示完整页签名）----
+// 原来（E7 / 索引 K26(2)）：label !== fullLabel 时把 fullLabel 挂成 title → hover 出浏览器原生提示：
+// 系统黄底样式与应用脱节、要等 ~1s、且不受控。现改用仓内既有的 .dd-tip 视口浮层
+// （Dropdown.vue:154 长名同款：深灰底白字/12px/圆角/z-30，position:fixed）——
+// 必须 fixed：.tab-bar 是 overflow-x:auto 的滚动容器，行内 absolute 浮层会被它裁掉
+// （本仓同口径手法：.dd-tip / .tpl-tip / .flag-tip 的注释都写着这条）。
+// 定位沿用 Dropdown 口径：挂页签右侧垂直居中，右侧估宽放不下视口时 .dd-tip--flip 翻到左缘内侧。
+// 显示判据与旧 title 一字不改：label !== fullLabel（截断只在构造方，App.vue:370）。
+const tip = ref<{ text: string; x: number; y: number; flip: boolean } | null>(null);
+/** 当前浮层锚定的页签元素：fixed 不随内容滚动，故滚动/改窗时要按它的矩形重算坐标。 */
+let tipAnchor: HTMLElement | null = null;
+/** tooltip 估算宽：与 Dropdown.vue:103 同一口径（CJK 12px/字 × 字数 + padding 2×8 + 余量）。 */
+function estTipWidth(text: string): number { return text.length * 12 + 36; }
+function placeTip(): void {
+  const el = tipAnchor;
+  const cur = tip.value;
+  if (!el || !cur) return;
+  const r = el.getBoundingClientRect();
+  const y = r.top + r.height / 2;   // 垂直中心（CSS translateY(-50%) 居中）
+  // 右侧放不下（right + 8 + 估宽 > 视口宽 - 8px 安全边距）→ flip 到左缘内侧
+  const fitsRight = r.right + 8 + estTipWidth(cur.text) <= (window.innerWidth ?? 0) - 8;
+  const x = fitsRight ? r.right + 8 : r.left - 8;
+  if (cur.x === x && cur.y === y && cur.flip === !fitsRight) return;   // 值没变不写，省掉无谓重渲染
+  tip.value = { text: cur.text, x, y, flip: !fitsRight };
+}
+function onTabEnter(e: MouseEvent, item: LogTabItem): void {
+  if (item.label === item.fullLabel) return;   // 未截断 → 无浮层（与旧 title 同判据）
+  tipAnchor = e.currentTarget as HTMLElement;
+  tip.value = { text: item.fullLabel, x: 0, y: 0, flip: false };
+  placeTip();   // 首帧就带坐标，不留「先渲染再跳位」的一帧
+  // 页签条是横向滚动容器（滚轮 / 翻页箭头 / 拖拽都走它）：fixed 浮层不跟着内容滚 → 滚动时按锚点矩形重算。
+  // scroll 不冒泡：capture 才收得到 .tab-bar 的滚动（同 Dropdown.vue:68）。
+  document.addEventListener('scroll', placeTip, true);
+  window.addEventListener('resize', placeTip);
+}
+function hideTip(): void {
+  tip.value = null;
+  tipAnchor = null;
+  document.removeEventListener('scroll', placeTip, true);
+  window.removeEventListener('resize', placeTip);
 }
 
 // 终端数据接线的透传（C4）：props 未给时按 no-op —— TerminalTabView 的这几个 prop 是必填的。
@@ -170,12 +215,14 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
         <FontAwesomeIcon :icon="['fas', 'chevron-left']" />
       </button>
       <nav class="tab-bar" role="tablist" ref="tabBarEl" @wheel="onTabBarWheel" @scroll.passive="measureBar">
-      <!-- data-tab-id 只是测试/调试钩子（索引 M4）；页签文案取 item.label（构造方给的短名），不反取终端组件的 data-* -->
+      <!-- data-tab-id 只是测试/调试钩子（索引 M4）；页签文案取 item.label（构造方给的短名），不反取终端组件的 data-*。
+           aria-label：截断页签把完整名给可访问名（native title 已移除，它原本也参与计算可访问名 → 不能一删了之）。 -->
       <button v-for="item in items" :key="item.id" type="button" role="tab"
         class="log-tab" :data-tab-id="item.id" :class="{ active: item.id === active }"
         :aria-selected="item.id === active ? 'true' : 'false'"
-        :title="item.label === item.fullLabel ? undefined : item.fullLabel"
-        :ref="(el) => setTabEl(item.id, el)" @click="onTabClick(item)">
+        :aria-label="item.label === item.fullLabel ? undefined : item.fullLabel"
+        :ref="(el) => setTabEl(item.id, el)"
+        @click="onTabClick(item)" @mouseenter="onTabEnter($event, item)" @mouseleave="hideTip">
         <span class="log-tab-label">{{ item.label }}</span>
         <button v-if="item.closable" type="button" class="icon-btn icon-btn--noborder btn-close-tab"
           :aria-label="t('ql.btn.closeTab')"
@@ -201,5 +248,10 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
         :register="pipeRegister" :unregister="pipeUnregister" :on-input="pipeInput" :on-resize="pipeResize"
         @close="emit('close', $event)" />
     </template>
+    <!-- 长名 tooltip：仓内既有 .dd-tip 视口浮层（深灰底白字/12px/圆角/z-30，position:fixed 避开
+         .tab-bar overflow-x 裁切），坐标由 onTabEnter/placeTip 写内联；挂页签右侧垂直居中，
+         放不下视口右侧时 .dd-tip--flip 翻左缘内侧。替换原 native title（用户 2026-10-20 要求）。 -->
+    <div v-if="tip" class="dd-tip" :class="{ 'dd-tip--flip': tip.flip }"
+      :style="{ left: tip.x + 'px', top: tip.y + 'px' }">{{ tip.text }}</div>
   </section>
 </template>

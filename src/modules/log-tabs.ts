@@ -23,7 +23,8 @@ export type LogTabKind = 'text' | 'terminal';
 
 /**
  * 页签条目（索引 K26(2)）：label 是**构造方**（任务 13 的 App 接线）用 truncateByWidth(fullLabel, 16) 生成的短名，
- * LogPanel 只渲染 label、并在 label 与 fullLabel 不同时把 fullLabel 挂成 title，不再二次截断（两处预算会互相抵消）。
+ * LogPanel 只渲染 label、并在 label 与 fullLabel 不同时把 fullLabel 做成 hover 浮层（2026-10-20：原 native
+ * title 已换成仓内自绘 .dd-tip，见 LogPanel.vue 的 onTabEnter），不再二次截断（两处预算会互相抵消）。
  * closeDisabled = 该页签的终端仍在运行，[x] 禁用（计划 审查重点 3 / R3：运行中关掉页签会留下孤儿 PTY）。
  */
 export interface LogTabItem {

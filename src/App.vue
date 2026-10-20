@@ -354,7 +354,7 @@ const qlStarting = new Set<string>(); // 索引 K14(2)：ql_start 带最坏约 9
 
 const TAB_LABEL_BUDGET = 16; // 规格 §11-1：页签的宽度预算 16（列表行 30 在卡片侧）
 
-// 两种页签共存（规格 §9.1）：静态两页签仍由 LOG_TABS 生成（label === fullLabel ⇒ LogPanel 不挂 title），
+// 两种页签共存（规格 §9.1）：静态两页签仍由 LOG_TABS 生成（label === fullLabel ⇒ LogPanel 不出长名浮层），
 // 终端页签追加在后。closeDisabled = 该配置仍在运行 / 停止中（R3：那时关页签会留下孤儿 PTY）。
 const logTabItems = computed<LogTabItem[]>(() => {
   const statics: LogTabItem[] = LOG_TABS.map((tab) => ({
