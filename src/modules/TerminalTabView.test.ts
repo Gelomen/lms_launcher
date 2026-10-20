@@ -438,6 +438,9 @@ describe('TerminalTabView 工具条进程态按钮（E6/E8/E10 · 2026-10-20 工
     expect(btn.attributes('aria-label')).toBe('停止');
     expect(btn.attributes('data-tooltip')).toBe('停止');
     expect(btn.find('svg[data-icon="stop"]').exists()).toBe(true);   // 字形 = 列表行那颗的 faStop
+    // 字号随工具条继承（UA 的 button{font:13.3333px}，与 [清空终端] / 查找三个逐字同尺寸）：
+    // 写 inline font-size 就是「比同排小一圈」→ 用户看到的「不在一条水平线」（取证台 .temp/term-toolbar-align）
+    expect(btn.find('svg[data-icon="stop"]').attributes('style') ?? '').not.toContain('font-size');
     await btn.trigger('click');
     expect(w.emitted('stop')).toEqual([['ql:demo']]);                // 只报意图，进程归 App（doQlStop）
     expect(w.emitted('restart')).toBeUndefined();
@@ -461,6 +464,7 @@ describe('TerminalTabView 工具条进程态按钮（E6/E8/E10 · 2026-10-20 工
     expect(btn.attributes('aria-label')).toBe('重新启动');           // 新增 key ql.terminal.restart（zh/en 齐全）
     expect(btn.attributes('data-tooltip')).toBe('重新启动');
     expect(btn.find('svg[data-icon="arrow-rotate-right"]').exists()).toBe(true);
+    expect(btn.find('svg[data-icon="arrow-rotate-right"]').attributes('style') ?? '').not.toContain('font-size'); // 同上：不写 inline 字号
     expect(btn.find('svg[data-icon="stop"]').exists()).toBe(false);  // 状态切换 = 字形也换，不留「停止」的样子
     await btn.trigger('click');
     expect(w.emitted('restart')).toEqual([['ql:demo']]);             // → App.doQlStart（与列表行同一个出口）

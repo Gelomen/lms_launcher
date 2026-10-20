@@ -257,16 +257,18 @@ defineExpose({
       <!-- 进程态按钮（2026-10-20 替换原 [x]，同日第二轮加「停完变 [重新启动]」）：三态与列表行逐字同口径
            （索引 K30(1)）——运行中 = [停止] 可点、在途 = 半角三点 + 禁用（与 LaunchBar.vue:129 /
            QuickLaunch.vue:221 一致）、未运行 = [重新启动] 可点（页签保留，点它 = 列表行那颗 [启动]）。
-           字形与字号都跟着列表行：faStop 10px（QuickLaunch.vue:23-24，2026-10-15 量化取证）、
-           faArrowRotateRight 10px（solid 一侧才有旋转字形，free-regular 无；10px = 与本那颗对齐，
-           两颗按钮共用同一个 32px 无框盒，图标同字号才不会随状态跳动）。
            restartDisabled（配置已删除）时禁用：没有配置就没有可启动的东西。
-           盒型沿用本工具条的 .icon-btn--noborder，配色不动 → 不新增 CSS 类；
+           字号 = 不写 inline、随本工具条继承：本排四个图标（[清空终端] + 查找三个）都是 13.3333px
+           —— .icon-btn 不设字号，落到 UA 的 button{font:13.3333px}；列表行那颗的 10px 属于 24px 圆按钮
+           的语境（QuickLaunch.vue 的 2026-10-15 定版），放进这条工具条就是「比同排小一圈」。
+           取证台 .temp/term-toolbar-align（headless Chrome 量真盒）：同排 svg 着墨中心 48.992、
+           32×32 盒中心 49；那颗按钮的盒中心同为 49 → 中心本就对齐，观感不齐全因字号小一圈。
+           故只去 inline 字号（两颗字形同排同尺寸、着墨外接盒中心 = 行中心），不新增 CSS 类，配色不动；
            文案 = 既有 ql.btn.stop + 新增 ql.terminal.restart（zh「重新启动」/ en 'Restart'，词典两侧齐全）。 -->
       <button type="button" class="icon-btn icon-btn--noborder btn-term-state"
         :aria-label="stateLabel" :data-tooltip="stateLabel"
         :disabled="stateDisabled" @click="onStateClick">
-        <span v-if="stopping">...</span><FontAwesomeIcon v-else-if="running" :icon="['fas', 'stop']" style="font-size: 10px;" /><FontAwesomeIcon v-else :icon="['fas', 'arrow-rotate-right']" style="font-size: 10px;" />
+        <span v-if="stopping">...</span><FontAwesomeIcon v-else-if="running" :icon="['fas', 'stop']" /><FontAwesomeIcon v-else :icon="['fas', 'arrow-rotate-right']" />
       </button>
     </div>
     <!-- xterm 挂载点：沿用 .log-view 的 flex:1 高度链，只把它的 overflow-y 关掉（xterm 自带视口滚动） -->
