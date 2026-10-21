@@ -443,7 +443,8 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
   // 所以齐高靠收盒，不靠改 ::after；三条断言把「谁被收、谁没被当模板改」钉死。
   it('terminal_toolbar_row_boxes_are_all_24px_so_tooltips_share_the_same_anchor', () => {
     const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
-    for (const sel of ['.log-pane .btn-term-clear', '.log-pane .btn-term-state', '.log-search .icon-btn']) {
+    // 票 #14 多了一颗配色按钮 → 整排六颗盒同尺寸（同一条 24×24，tooltip 锚点仍是一条线）
+    for (const sel of ['.log-pane .btn-term-clear', '.log-pane .btn-term-palette', '.log-pane .btn-term-state', '.log-search .icon-btn']) {
       expect(cssRule(css, sel)).toMatch(/width:\s*24px;\s*height:\s*24px/);
     }
     expect(cssRule(css, '.icon-btn::after')).toMatch(/bottom:\s*calc\(100% \+ 6px\)/);  // 锚点口径未动

@@ -595,7 +595,7 @@ describe('票 #14 · 工具条配色浮层', () => {
     expect(pop.findAll('.term-palette-group-label').map((g) => g.text())).toEqual(['明底', '暗底']);
     // 行序 = id 真源（三明三暗），不在此处重排
     expect(rows.map((r) => r.attributes('data-palette'))).toEqual([...TERM_PALETTE_IDS]);
-    expect(rows.map((r) => r.text())).toEqual(['纯白', '浅灰画布', '暖纸', '炭黑', '控制台深黑', '暖夜']);
+    expect(rows.map((r) => r.find('.term-palette-name').text())).toEqual(['纯白', '浅灰画布', '暖纸', '炭黑', '控制台深黑', '暖夜']);   // 当前档那一行还挂一个 ✓，故取名字那一截
     const current = pop.findAll('.term-palette-row.is-current');
     expect(current.length).toBe(1);
     expect(current[0].attributes('data-palette')).toBe('warm-night');

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { faCircleDown, faCircleUp, faCircleXmark, faTrashCan } from '@fortawesome/free-regular-svg-icons';
-import { faArrowRotateRight, faStop } from '@fortawesome/free-solid-svg-icons';
+import { faArrowRotateRight, faPalette, faStop } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -11,14 +11,14 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { invoke } from '../ipc';
 import { t } from '../i18n';
-import { termPaletteOf } from './term-palettes';
-import type { TermPaletteId } from '../../src-main/term-palettes';
+import { TERM_PALETTES, termPaletteOf } from './term-palettes';
+import { TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palettes';
 
 // 终端页签（规格 2026-10-10-quick-launch-card-design §9.3）：一个 xterm 实例 = 一个 PTY。
 // 单向数据流：输出由上层按 tabId 派发进来（挂载时 register 交出的 sink），
 // 输入与尺寸经 props 的回调出去（对应 §8 的 ql_write / ql_resize）；本组件不订阅任何事件。
 // 外壳复用静态页签的尺寸链（style.css 的 .log-pane → .log-view，见 :262 那条高度链注释），不新增 CSS 类。
-library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop, faArrowRotateRight);
+library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop, faArrowRotateRight, faPalette);
 
 // props 以计划 §任务 9 为准（索引 K2 / 本任务 A4）：含 label/fullLabel，不含 configId。
 // 2026-10-20 用户要求：工具条最右那颗由 [x]（关闭页签）换成 [停止]——它与页签条上的 [x] 重复，
@@ -59,6 +59,8 @@ const paletteOf = computed(() => termPaletteOf(props.palette));
 // 改 term.options.theme.background 这类内部属性不生效，所以必须赋一个新对象。终端还没建时（v-show 隐藏 / 未挂载）不做事。
 watch(() => props.palette, () => {
   if (!term) return;
+  // 快照变了（票 #14 选定一档后 App 改的就是这份快照）：预览态一并清掉，别让 hover 残留盖过落盘结果。
+  previewId.value = null;
   term.options.theme = { ...termPaletteOf(props.palette).theme };
 });
 
@@ -69,6 +71,106 @@ let searchAddon: SearchAddon | null = null;
 let observer: ResizeObserver | null = null;
 let reportedCols = 0;
 let reportedRows = 0;
+
+// ---- 票 #14：工具条那颗配色按钮 + 六行浮层（hover 预览、点击才落盘）----
+// 三条边界，逐条由同文件「票 #14 · 工具条配色浮层」那组用例钉住：
+// ① hover = 只把 theme **整对象**换成那一档（同一个终端实例，PTY 与滚动缓冲不动，ADR:15）；移开 / ESC /
+//    点击外部都还原成 props.palette 那份快照 —— 预览不写状态、不落盘、也不改 prop。
+// ② 只有点击才 emit(palette, id, 档)：落盘在 App.onTerminalPalette 的窄通道 ql_set_palette，
+//    本组件一次 ql_* 都不发（进程与配置的所有权都在 App，规格 §9.2 同一口径）。
+// ③ 行序取 TERM_PALETTE_IDS、分组取表里那一行的 dark、颜色取表、档名取词典字面量 key：
+//    组件源码里不得出现任何 hex —— 同文件那条源码扫描门会把硬编码打回来。
+const paletteOpen = ref(false);
+const popLeft = ref(0);
+const popTop = ref(0);
+// 正在预览的那一档（null = 没有预览）。它是本组件的局部态：不写回 prop、不落盘，浮层一关就清零。
+const previewId = ref<TermPaletteId | null>(null);
+const paletteBtn = ref<HTMLElement | null>(null);
+const popRef = ref<HTMLElement | null>(null);
+
+// 分组判据就是颜色表里那一行的 dark（这里不另立一份名单）：以后加一档只改 term-palettes.ts，浮层自己跟着分。
+const paletteGroups = computed(() => [
+  { key: 'light', label: t('ql.palette.group.light'), ids: TERM_PALETTE_IDS.filter((id) => !TERM_PALETTES[id].dark) },
+  { key: 'dark', label: t('ql.palette.group.dark'), ids: TERM_PALETTE_IDS.filter((id) => TERM_PALETTES[id].dark) },
+].filter((g) => g.ids.length > 0));
+
+// 档名：六个 key 各写一次字面量 t()（key-coverage.test.ts 只认字面量 key，动态拼接的 key 进不了那道覆盖门）。
+const paletteLabels: Record<TermPaletteId, () => string> = {
+  paper: () => t('ql.palette.paper'),
+  console: () => t('ql.palette.console'),
+  'warm-paper': () => t('ql.palette.warm-paper'),
+  charcoal: () => t('ql.palette.charcoal'),
+  campbell: () => t('ql.palette.campbell'),
+  'warm-night': () => t('ql.palette.warm-night'),
+};
+
+// 换 theme：整对象赋一个新对象（改 term.options.theme.background 这类内部属性不生效 —— ADR:15 的真机取证）。
+// termPaletteOf 负责回落：预览传 id，还原传快照（快照缺省时回落默认档，与构造那次同一张嘴）。
+function applyTheme(id: TermPaletteId | null | undefined): void {
+  if (!term) return;
+  term.options.theme = { ...termPaletteOf(id).theme };
+}
+
+// hover 与键盘 focus 共用这对处理器：Tab 进浮层也能预览，且预览态只有一份
+function onPaletteHover(id: TermPaletteId): void { previewId.value = id; applyTheme(id); }
+function onPaletteLeave(): void {
+  if (previewId.value === null) return;
+  previewId.value = null;
+  applyTheme(props.palette);
+}
+function onPalettePick(id: TermPaletteId): void {
+  // 先清预览态再冒事件：屏幕就停在选中的那一档，等 App 把快照 prop 改成同一档。
+  // 在这里还原就会看到一次「回闪成旧档」（用户实机最容易盯上的那一下）。
+  previewId.value = null;
+  emit('palette', props.id, id);
+  closePalettePop();
+}
+
+function detachPopListeners(): void {
+  window.removeEventListener('keydown', onPopKeyDown, true);
+  window.removeEventListener('mousedown', onOutsideMouseDown, true);
+}
+function closePalettePop(): void {
+  if (!paletteOpen.value) return;
+  paletteOpen.value = false;
+  detachPopListeners();
+  // 关浮层不留预览：屏幕回到那份快照档（ESC / 点外部都走这里，与 onPaletteLeave 同一个还原口径）
+  if (previewId.value !== null) { previewId.value = null; applyTheme(props.palette); }
+}
+function onPopKeyDown(e: KeyboardEvent): void {
+  if (e.key !== 'Escape') return;
+  closePalettePop();
+  paletteBtn.value?.focus();      // 关闭后焦点回那颗按钮，不让它掉回页面里
+}
+function onOutsideMouseDown(e: MouseEvent): void {
+  const target = e.target as Node | null;
+  if (target && (popRef.value?.contains(target) || paletteBtn.value?.contains(target))) return;
+  closePalettePop();
+}
+
+// 浮层定位 = position: fixed + JS（本仓浮层同一族做法：.dd-tip / .tpl-tip / .flag-tip，见 style.css:468-493 与 :595-607
+// 那几段注释——absolute 会被容器裁切）。锚在按钮下缘 + 6px；先渲染再量宽，贴右缘时整体左移，不把宽度抄成第二个魔法数。
+async function openPalettePop(): Promise<void> {
+  // 条目配置已删（restartDisabled）：没有可写 terminal_palette 的条目，按钮禁用、浮层也开不出，
+  // 页签继续用创建时那份快照（ADR:14；App.test.ts 钉着「删条目不跳档」）。
+  if (props.restartDisabled) return;
+  const el = paletteBtn.value;
+  if (!el || paletteOpen.value) return;
+  const r = el.getBoundingClientRect();
+  popLeft.value = r.left;
+  popTop.value = r.bottom + 6;
+  paletteOpen.value = true;
+  await nextTick();
+  const pop = popRef.value;
+  const vw = window.innerWidth;
+  if (pop && vw > 0) {
+    const maxLeft = vw - pop.offsetWidth - 4;
+    if (popLeft.value > maxLeft) popLeft.value = Math.max(4, maxLeft);
+  }
+  // capture 阶段挂 window：查找输入框那类元素上的 mousedown 也要能关掉它，而不被组件外的事件顺序吃掉
+  window.addEventListener('keydown', onPopKeyDown, true);
+  window.addEventListener('mousedown', onOutsideMouseDown, true);
+}
 
 // ---- 尺寸（规格 §9.3 / 计划 审查重点 2）----
 // v-show 切走的页宽高为 0，此时 fit() 会把 cols/rows 算成异常值写坏 PTY → 先按盒尺寸挡掉；
@@ -222,6 +324,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  closePalettePop();   // 浮层挂在 window 上的两个监听必须跟着组件走（v-show 卸载即注销）
   props.unregister(props.id);
   observer?.disconnect();
   observer = null;
@@ -266,6 +369,39 @@ defineExpose({
           :aria-label="t('ql.terminal.searchNext')" :data-tooltip="t('ql.terminal.searchNext')" :disabled="navDisabled" @click="runSearch(1)">
           <FontAwesomeIcon :icon="['far', 'circle-down']" />
         </button>
+      </div>
+      <!-- 配色入口（票 #14）：盒 24×24 与同排其余几颗一致（style.css 里那一族收盒的定版理由同样适用，
+           见 :252-263 那段取证注释）——盒顶一变 tooltip 就跟着高一截，那颗按钮已经被这件事返工过三轮。
+           restartDisabled（条目配置已删）时禁用：没有条目就没有可写的 terminal_palette，页签沿用创建时那份快照。 -->
+      <button ref="paletteBtn" type="button" class="icon-btn icon-btn--noborder btn-term-palette"
+        :aria-label="t('ql.terminal.palette')" :data-tooltip="t('ql.terminal.palette')"
+        :disabled="restartDisabled" :aria-expanded="paletteOpen ? 'true' : 'false'" @click="openPalettePop">
+        <FontAwesomeIcon :icon="['fas', 'palette']" />
+      </button>
+      <!-- 六行配色浮层（票 #14）：position: fixed + JS 定位（组件里 openPalettePop 那段），不塞进那一排 →
+           那一排的 24px 定版与 .log-pane 的高度链都不受影响。分组 = 表里那一行的 dark、行序 = TERM_PALETTE_IDS；
+           行 = 三格微条（底色 / 字色 / 两个 ANSI 槽，全部取表里的 hex）+ 档名 + 当前档的 ✓。
+           hover 与键盘 focus 走同一对处理器：当场预览到身后那块真画布（整对象换 theme，不重建终端），移开还原；
+           只有点击才 emit 给 App 落盘（窄通道 ql_set_palette），ESC 与点击外部关闭并还原预览。 -->
+      <div v-if="paletteOpen" ref="popRef" class="term-palette-pop" role="menu"
+        :aria-label="t('ql.terminal.palette')" :style="{ left: popLeft + 'px', top: popTop + 'px' }">
+        <div v-for="g in paletteGroups" :key="g.key" class="term-palette-group">
+          <div class="term-palette-group-label">{{ g.label }}</div>
+          <button v-for="id in g.ids" :key="id" type="button" role="menuitem" class="term-palette-row"
+            :class="{ 'is-current': id === paletteOf.id }" :data-palette="id"
+            :aria-current="id === paletteOf.id ? 'true' : undefined"
+            @mouseenter="onPaletteHover(id)" @mouseleave="onPaletteLeave()"
+            @focus="onPaletteHover(id)" @blur="onPaletteLeave()"
+            @click="onPalettePick(id)">
+            <span class="term-palette-swatch" :style="{ background: TERM_PALETTES[id].theme.background }">
+              <span class="term-palette-cell" :style="{ background: TERM_PALETTES[id].theme.foreground }"></span>
+              <span class="term-palette-cell" :style="{ background: TERM_PALETTES[id].theme.red }"></span>
+              <span class="term-palette-cell" :style="{ background: TERM_PALETTES[id].theme.magenta }"></span>
+            </span>
+            <span class="term-palette-name">{{ paletteLabels[id]() }}</span>
+            <span v-if="id === paletteOf.id" class="term-palette-check" aria-hidden="true">✓</span>
+          </button>
+        </div>
       </div>
       <!-- 进程态按钮（2026-10-20 替换原 [x]，同日第二轮加「停完变 [重新启动]」）：三态与列表行逐字同口径
            （索引 K30(1)）——运行中 = [停止] 可点、在途 = 半角三点 + 禁用（与 LaunchBar.vue:129 /
