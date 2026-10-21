@@ -164,6 +164,25 @@ export function qlSave(path: string, id: string | null, entry: QuickLaunchEntry,
   return finalId;
 }
 
+/**
+ * 窄通道落盘（spec #12 的 Implementation Decisions / 票 #13）：只改一条 shell 条目的 terminal_palette **一个键**。
+ * 走法 = 读原始表 → 改一键 → 整表写回（与 qlSave:142 / qlDelete:160 同一形状，qlLoad 判为 invalid 的条目不会被抹掉）。
+ * **不复用 qlSave**：它是整条覆盖，会把弹窗里别的尚未保存的表单值一并写回该条目。
+ * id 不在表里 → VALIDATION:（照 :159 的 qlDelete，复用词典 err.ql.notFound）；
+ * 该条不是 shell（exe 没有终端、因而没有配色，GLOSSARY:19）或非映射形态 → 一个字节都不写、也不抛。
+ * 「表外 id 不得进落盘」由 IPC 边界的 isTermPaletteId 挡（main.ts 的 ql_set_palette，照 set_language），
+ * 所以这里的参数类型已经是 TermPaletteId。
+ */
+export function qlSetPalette(path: string, id: string, palette: TermPaletteId): void {
+  const map = readRawMap(path);
+  if (!Object.prototype.hasOwnProperty.call(map, id)) throw new Error('VALIDATION: ' + t('err.ql.notFound', { id }));
+  const entry = map[id];
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return; // 非映射形态的条目（读盘即 invalid）：没有可改的键
+  if ((entry as Record<string, unknown>)['type'] !== 'shell') return; // exe 条目不写配色键（与 normalizeEntry / validateEntry 同一口径）
+  (entry as Record<string, unknown>)['terminal_palette'] = palette;
+  writeFileSync(path, dump(map));
+}
+
 /** 删除（规格 §8）：id 不存在 → VALIDATION:（文件不存在同样是「不存在」，不是 MISSING）。 */
 export function qlDelete(path: string, id: string): void {
   const map = readRawMap(path);

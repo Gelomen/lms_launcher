@@ -8,6 +8,7 @@ import {
   qlLoad,
   qlSave,
   qlDelete,
+  qlSetPalette,
   validateQuickLaunchName,
   type QuickLaunchEntry,
   type TerminalId,
@@ -593,6 +594,44 @@ describe('quick-launch-config.ts', () => {
     expect(raw).toMatch(/^ {2}admin: false$/m);            // 对照组：exe 条目显式写 admin
     expect(raw).not.toMatch(/^\s*terminal_palette:/m);     // 字节级：配色键没有落盘
     expect(qlLoad(p).items[id]).not.toHaveProperty('terminal_palette');
+    rm(p);
+  });
+
+  // 窄通道 qlSetPalette（spec #12「只改这一个键：readRawMap → 改一键 → 整表写回；不复用 ql_save」）：
+  // 字节级门 = 除 terminal_palette 那一行外，文件里的每一个字节都不动，坏条目也不被顺手抹掉。
+  it('ql_set_palette_changes_only_that_one_key_and_preserves_everything_else', () => {
+    const p = tmpPath('ql_palette_narrow.yaml');
+    rm(p);
+    const shellId = qlSave(p, 'qlpal00001', { name: '甲', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: true }, ['pwsh']);
+    const exeId = qlSave(p, 'qlpal00002', { name: '乙', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'] }, []);
+    writeText(p, readText(p) + lines('bad01:', '  name: 坏的', '  shell: pwsh')); // 坏条目：走 qlSave 的整表写回会被静默抹掉的那一类
+    const before = readText(p);
+    qlSetPalette(p, shellId, 'charcoal');
+    const raw = readText(p);
+    expect(raw).toMatch(/^ {2}terminal_palette: charcoal$/m);
+    // 字节级：把被改的那一键摘掉后，其余每一行逐字不变（既不重排、也不丢键）
+    const withoutPaletteKey = (s: string): string[] => s.split(NL).filter((l) => !/^\s*terminal_palette:/.test(l));
+    expect(withoutPaletteKey(raw)).toEqual(withoutPaletteKey(before));
+    // 另一条条目与坏条目的整块原文都还在（ql_set_palette 与 ql_save 的区别正在这里）
+    expect(raw).toContain(exeId + ':\n  name: 乙\n  type: exe\n  exe:\n    - D:\\Tools\\LM Studio.exe\n  admin: false\n');
+    const list = qlLoad(p);
+    expect(list.invalid).toEqual(['bad01']);
+    expect(list.items[shellId]).toEqual({ name: '甲', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: true, terminal_palette: 'charcoal' });
+    expect(list.items[exeId]).not.toHaveProperty('terminal_palette');
+    rm(p);
+  });
+
+  // exe 条目没有终端、因而没有配色（GLOSSARY:19）→ 不写键也不抛；id 不在表里 → VALIDATION:（照 :159 的 qlDelete）
+  it('ql_set_palette_skips_exe_entries_and_throws_validation_for_an_unknown_id', () => {
+    const p = tmpPath('ql_palette_narrow_guards.yaml');
+    rm(p);
+    const exeId = qlSave(p, 'qlpalexe01', { name: '记事本', type: 'exe', exe: ['notepad.exe'] }, []);
+    const before = readText(p);
+    qlSetPalette(p, exeId, 'charcoal');
+    expect(readText(p)).toBe(before); // 逐字节不动
+    expect(qlLoad(p).items[exeId]).not.toHaveProperty('terminal_palette');
+    expect(() => qlSetPalette(p, 'no-such-id', 'paper')).toThrow(/^VALIDATION:/);
+    expect(readText(p)).toBe(before); // 抛错那次同样没有落盘
     rm(p);
   });
 });
