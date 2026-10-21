@@ -11,6 +11,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { invoke } from '../ipc';
 import { t } from '../i18n';
+import { termPaletteOf } from './term-palettes';
+import type { TermPaletteId } from '../../src-main/term-palettes';
 
 // 终端页签（规格 2026-10-10-quick-launch-card-design §9.3）：一个 xterm 实例 = 一个 PTY。
 // 单向数据流：输出由上层按 tabId 派发进来（挂载时 register 交出的 sink），
@@ -33,6 +35,10 @@ const props = defineProps<{
   running: boolean;
   stopping: boolean;
   restartDisabled: boolean;
+  // 终端配色快照（票 #13 / ADR 0001）：App 在**建页签那一刻**从 ql_list 只读镜像里取一次，此后不随镜像变化
+  // （条目被删后仍开着的页签沿用创建时的快照，不会跳回默认档 —— ADR:14）。缺省 = 表里的默认档（termPaletteOf 的回落）。
+  // 换档由上层改这个 prop（票 #14 的浮层 / 票 #15 的色块走窄通道 ql_set_palette 后把快照改掉），本组件不碰落盘。
+  palette?: TermPaletteId;
   register: (id: string, sink: (d: string) => void) => void;
   unregister: (id: string) => void;
   onInput: (id: string, data: string) => void;
@@ -42,6 +48,17 @@ const props = defineProps<{
 // App.doQlStop / doQlStart（invoke('ql_stop') / invoke('ql_start')）；
 // 本组件不碰 IPC（进程所有权在 App，规格 §9.2），只报「这条页签要停 / 要重启」。
 const emit = defineEmits<{ stop: [id: string]; restart: [id: string] }>();
+
+// 当前档（id → 颜色表那一行）：theme / 查找 decorations / 画布描边**三样都从这里取**，
+// 于是换一次档三处一起换（spec 的结构性同源门在 TerminalTabView.test.ts：源码里不得再出现硬编码 hex）。
+const paletteOf = computed(() => termPaletteOf(props.palette));
+
+// 换配色不重建终端（ADR:15 的真机取证）：把 theme **整对象**换掉，xterm 即时重绘，PTY 与滚动缓冲都不动；
+// 改 term.options.theme.background 这类内部属性不生效，所以必须赋一个新对象。终端还没建时（v-show 隐藏 / 未挂载）不做事。
+watch(() => props.palette, () => {
+  if (!term) return;
+  term.options.theme = { ...termPaletteOf(props.palette).theme };
+});
 
 const view = ref<HTMLElement | null>(null);
 let term: Terminal | null = null;
@@ -118,17 +135,11 @@ const countText = computed(() => t('ql.terminal.count', { cur: searchCount.value
 const navDisabled = computed(() => searchCount.value.total === 0);
 const queryEmpty = computed(() => query.value.length === 0);
 
-// 计数来自 SearchAddon 的结果事件，而它只在带 decorations 时发；
-// 颜色取 style.css 既有查找高亮（--log-mark / --log-mark-current）与主题紫，保持同一套视觉语言。
+// 计数来自 SearchAddon 的结果事件，而它只在带 decorations 时发。
+// 四值取自**当前配色的那一行**（与 theme 同一张表 = term-palettes.ts）：这四值曾在本组件里硬编码成两档淡紫，
+// 换配色时高亮不换、暗底上几乎看不见，因此 spec #12 把「theme 与查找 decorations 同源」定成结构性门。
 function searchOptions(): { decorations: Record<string, string> } {
-  return {
-    decorations: {
-      matchBackground: '#E9D5FF',
-      activeMatchBackground: '#C4B5FD',
-      matchOverviewRuler: '#8B5CF6',
-      activeMatchColorOverviewRuler: '#8B5CF6',
-    },
-  };
+  return { decorations: { ...paletteOf.value.decorations } };
 }
 
 // 查找状态复位：清掉高亮装饰 + 计数归零（空查询与「清空终端」共用同一条路径）
@@ -190,7 +201,7 @@ onMounted(() => {
   // 「You must set the allowProposedApi option to true to use proposed API」；抛出点在 _highlightAllMatches 内、
   // 早于 _fireResults，故计数事件从不触发 → 输入终端里存在的文本也恒显「0 / 0」且无上/下一个可用。
   // 打桩套件看不见这条真机契约（假 addon 无条件发结果事件），由 TerminalTabView.search.test.ts 钉住。
-  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true });
+  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, theme: { ...paletteOf.value.theme } });
   fitAddon = new FitAddon();
   searchAddon = new SearchAddon();
   term.loadAddon(fitAddon);
@@ -274,7 +285,9 @@ defineExpose({
         <span v-if="stopping">...</span><FontAwesomeIcon v-else-if="running" :icon="['fas', 'stop']" /><FontAwesomeIcon v-else :icon="['fas', 'arrow-rotate-right']" />
       </button>
     </div>
-    <!-- xterm 挂载点：沿用 .log-view 的 flex:1 高度链，只把它的 overflow-y 关掉（xterm 自带视口滚动） -->
-    <div ref="view" class="log-view term-view" style="overflow: hidden; min-height: 0;" @contextmenu.prevent="onContextMenu"></div>
+    <!-- xterm 挂载点：沿用 .log-view 的 flex:1 高度链，只把它的 overflow-y 关掉（xterm 自带视口滚动）。
+         描边取当前档的 canvasBorder（票 #13）：浅灰 / 暖纸那两档与卡片只差一档明度，靠描边才读作「有意另起一块台面」；
+         暗底两档存的是字面 hex，paper / charcoal 存 transparent（不画）。outline 不占布局，故网格尺寸不受影响。 -->
+    <div ref="view" class="log-view term-view" :style="{ overflow: 'hidden', minHeight: '0', outline: '1px solid ' + paletteOf.canvasBorder, outlineOffset: '-1px' }" @contextmenu.prevent="onContextMenu"></div>
   </div>
 </template>

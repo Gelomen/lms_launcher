@@ -4,8 +4,12 @@
 // happy-dom 无布局：页签可见性用覆写 offsetWidth/offsetHeight 模拟（0 = v-show 隐藏），
 // 尺寸由假 FitAddon 固定给出 118×41，用来断言首帧与恢复可见后的尺寸上报（索引 K11(2)）。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { mount } from '@vue/test-utils';
 import TerminalTabView from './TerminalTabView.vue';
+import { TERM_PALETTES } from './term-palettes';
+import type { TermPaletteId } from '../../src-main/term-palettes';
 import { applyLangLocal } from '../i18n';
 
 // 假 xterm：记录构造参数、写入/清空/粘贴、onData 与自定义键盘处理器的注册位。
@@ -42,7 +46,10 @@ const h = vi.hoisted(() => {
     dataCb: ((d: string) => void) | null = null;
     resizeCb: ((e: { cols: number; rows: number }) => void) | null = null;
     keyHandler: ((e: unknown) => boolean) | null = null;
-    constructor(options: unknown) { state.termOptions.push(options); state.terms.push(this); }
+    // 构造参数同时挂到实例（票 #13）：「换配色不重建终端」要断 term.options.theme 被**整对象替换**，
+    // 假 xterm 不给实例挂 options 那条断言就无从落点。
+    options: Record<string, unknown> = {};
+    constructor(options: unknown) { state.termOptions.push(options); state.terms.push(this); this.options = { ...(options as object) }; }
     open(): void { /* 真实渲染不在范围 */ }
     loadAddon(addon: any): void { if (addon && typeof addon.activate === 'function') addon.activate(this); }
     write(data: string): void { this.written.push(data); }
@@ -151,6 +158,8 @@ function baseProps(over: Record<string, unknown> = {}) {
     running: true,
     stopping: false,
     restartDisabled: false,
+    // 终端配色快照（票 #13）：App 在建页签时取一次，缺省 = 默认档
+    palette: 'paper' as TermPaletteId,
     register,
     unregister,
     onInput,
@@ -204,10 +213,62 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     // F1 逐字：scrollback 5000 / fontSize 13 / fontFamily 是与 src/style.css:29 逐字同值的字面量栈（索引 K23(1)）
     // allowProposedApi：查找装饰（= 计数与高亮）依赖它，见 TerminalTabView.vue 构造处注释与
     // TerminalTabView.search.test.ts（真 xterm 集成，本套件的假 addon 看不见该真机契约）
-    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true });
+    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, theme: TERM_PALETTES['paper'].theme });
     expect(h.state.linkHandlers.length).toBe(1);   // WebLinksAddon 构造时拿到 open_external 处理器
     w.unmount();
   });
+
+  // ── 票 #13 · 终端配色（ADR 0001 / spec #12 的渲染端决定）----
+  // 三条门：① 构造参数带 theme，且 theme 由 palette prop 决定；② 换配色 = term.options.theme 整对象替换，
+  // 终端实例不变（PTY 与滚动缓冲不动）；③ 查找高亮 decorations 与 theme 取自**同一张表**
+  // （搜索高亮曾被单独硬编码成两档淡紫，硬编码是这次要根除的东西）。
+
+  it('palette_prop_decides_the_theme_the_terminal_is_constructed_with', () => {
+    const { w } = mountTab({ palette: 'charcoal' });
+    expect(h.state.termOptions[0]).toMatchObject({ theme: TERM_PALETTES['charcoal'].theme });
+    w.unmount();
+  });
+
+  // 描边也取表里那一行。happy-dom 把 outline 简写展开成长写属性，断言按长写来；
+  // 只钉字面 hex / transparent 的两档 —— console 与 warm-paper 存的是应用令牌 var(--border)，CSSOM 不解析 var()。
+  it('canvas_border_of_the_view_comes_from_the_same_palette_row', () => {
+    const { w } = mountTab({ palette: 'campbell' });
+    const style = (w.find('.term-view').attributes('style') ?? '').toLowerCase();
+    expect(style).toMatch(/outline-width:\s*1px/);
+    expect(style).toMatch(/outline-style:\s*solid/);
+    expect(style).toContain(TERM_PALETTES['campbell'].canvasBorder.toLowerCase());
+    w.unmount();
+    const second = mountTab({ palette: 'charcoal' });
+    expect((second.w.find('.term-view').attributes('style') ?? '')).toContain(TERM_PALETTES['charcoal'].canvasBorder);
+    second.w.unmount();
+  });
+
+  it('palette_change_replaces_the_whole_theme_object_without_recreating_the_terminal', async () => {
+    const { w } = mountTab({ palette: 'charcoal' });
+    const term0 = h.state.terms[0];
+    await w.setProps({ palette: 'warm-night' });
+    // 终端实例必须还是那一个（重建 = 杀 PTY、丢滚动缓冲，正是票 #13 禁止的做法）
+    expect(h.state.terms.length).toBe(1);
+    expect(h.state.terms[0]).toBe(term0);
+    expect(term0.disposed).toBe(false);
+    expect(term0.options.theme).toEqual(TERM_PALETTES['warm-night'].theme);
+    // 整对象替换（ADR:15 的真机取证：改 term.options.theme.background 这类内部属性不生效）
+    expect(term0.options.theme).not.toBe(TERM_PALETTES['warm-night'].theme);
+    w.unmount();
+  });
+
+  it('search_decorations_and_theme_come_from_the_same_palette_row', async () => {
+    const { w } = mountTab({ palette: 'warm-paper' });
+    await w.find('input.log-search-input').setValue('abc');
+    const opts = h.state.searches[0]?.opts as { decorations: Record<string, string> };
+    expect(opts.decorations).toEqual(TERM_PALETTES['warm-paper'].decorations);
+    expect((h.state.termOptions[0] as { theme: unknown }).theme).toEqual(TERM_PALETTES['warm-paper'].theme);
+    // 结构性门：组件源码里不得再出现任何 hex 字面量（配色只能从表里取）
+    const src = readFileSync(join(__dirname, 'TerminalTabView.vue'), 'utf8');
+    expect(src, 'TerminalTabView.vue 里不得再硬编码 hex —— 配色与查找高亮一律取自 TERM_PALETTES').not.toMatch(/#[0-9A-Fa-f]{6}/);
+    w.unmount();
+  });
+
 
   it('sink_writes_terminal_output_into_the_terminal_instance', () => {
     const { register, w } = mountTab();
