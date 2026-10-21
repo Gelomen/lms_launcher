@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { mount } from '@vue/test-utils';
 import TerminalTabView from './TerminalTabView.vue';
 import { TERM_PALETTES } from './term-palettes';
-import type { TermPaletteId } from '../../src-main/term-palettes';
+import { TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palettes';
 import { applyLangLocal } from '../i18n';
 
 // 假 xterm：记录构造参数、写入/清空/粘贴、onData 与自定义键盘处理器的注册位。
@@ -557,6 +557,97 @@ describe('TerminalTabView 工具条进程态按钮（E6/E8/E10 · 2026-10-20 工
     expect(typeof handler).toBe('function');
     handler({} as MouseEvent, 'https://example.com/guide');
     expect(invoke).toHaveBeenCalledWith('open_external', 'https://example.com/guide');
+    w.unmount();
+  });
+});
+
+// ── 票 #14 · 工具条那颗配色按钮 + 六行浮层（hover 预览 / 点击才落盘 / 配置已删时禁用）──
+// 三条不变量：① 预览只换 theme（同一个终端实例，PTY 与滚动缓冲不动）且移开必还原快照；
+// ② 只有点击才冒 palette 事件（落盘在 App 的窄通道，本组件不发任何 ql_* 调用）；
+// ③ 浮层里每一档的颜色一律取 TERM_PALETTES 那一行，行序取 TERM_PALETTE_IDS，档名取词典字面量 key。
+describe('票 #14 · 工具条配色浮层', () => {
+  it('palette_button_sits_in_the_toolbar_disabled_once_the_config_is_gone', async () => {
+    const { w } = mountTab();
+    const btn = w.find('.btn-term-palette');
+    expect(btn.exists()).toBe(true);
+    expect(btn.attributes('aria-label')).toBe('配色');
+    expect(btn.attributes('data-tooltip')).toBe('配色');
+    expect(btn.attributes('disabled')).toBeUndefined();
+    w.unmount();
+
+    // 条目配置已删（restartDisabled）→ 按钮禁用且浮层开不出，页签沿用创建时的快照档（ADR:14）
+    const gone = mountTab({ restartDisabled: true });
+    const gb = gone.w.find('.btn-term-palette');
+    expect(gb.attributes('disabled')).toBeDefined();
+    await gb.trigger('click');
+    expect(gone.w.find('.term-palette-pop').exists()).toBe(false);
+    gone.w.unmount();
+  });
+
+  it('the_popover_lists_six_rows_in_light_and_dark_groups_marking_current_palette', async () => {
+    const { w } = mountTab({ palette: 'warm-night' });
+    await w.find('.btn-term-palette').trigger('click');
+    const pop = w.find('.term-palette-pop');
+    expect(pop.exists()).toBe(true);
+    const rows = pop.findAll('.term-palette-row');
+    expect(rows.length).toBe(6);
+    expect(pop.findAll('.term-palette-group').length).toBe(2);
+    expect(pop.findAll('.term-palette-group-label').map((g) => g.text())).toEqual(['明底', '暗底']);
+    // 行序 = id 真源（三明三暗），不在此处重排
+    expect(rows.map((r) => r.attributes('data-palette'))).toEqual([...TERM_PALETTE_IDS]);
+    expect(rows.map((r) => r.find('.term-palette-name').text())).toEqual(['纯白', '浅灰画布', '暖纸', '炭黑', '控制台深黑', '暖夜']);   // 当前档那一行还挂一个 ✓，故取名字那一截
+    const current = pop.findAll('.term-palette-row.is-current');
+    expect(current.length).toBe(1);
+    expect(current[0].attributes('data-palette')).toBe('warm-night');
+    expect(current[0].attributes('aria-current')).toBe('true');
+    // 色块底色也取表里那一行（不得有硬编码 hex，源码门在同文件那条 structural 测试里）
+    expect(rows[4].find('.term-palette-swatch').attributes('style') ?? '').toContain(TERM_PALETTES['campbell'].theme.background);
+    w.unmount();
+  });
+
+  it('hovering_a_row_previews_it_on_the_same_terminal_and_leaving_restores_the_snapshot', async () => {
+    const { w } = mountTab({ palette: 'paper' });
+    await w.find('.btn-term-palette').trigger('click');
+    const term = h.state.terms[0];
+    await w.find('.term-palette-row[data-palette="campbell"]').trigger('mouseenter');
+    expect(h.state.terms.length).toBe(1);                 // 预览不重建终端
+    expect(term.options.theme).toEqual(TERM_PALETTES['campbell'].theme);
+    expect(term.options.theme).not.toBe(TERM_PALETTES['campbell'].theme);   // 整对象替换（ADR:15）
+    expect(w.find('.term-palette-pop').exists()).toBe(true);
+    await w.find('.term-palette-row[data-palette="campbell"]').trigger('mouseleave');
+    expect(term.options.theme).toEqual(TERM_PALETTES['paper'].theme);
+    w.unmount();
+  });
+
+  it('clicking_a_row_emits_the_choice_closes_the_popover_and_persists_nothing_itself', async () => {
+    const { w } = mountTab({ palette: 'paper' });
+    await w.find('.btn-term-palette').trigger('click');
+    await w.find('.term-palette-row[data-palette="charcoal"]').trigger('mouseenter');
+    await w.find('.term-palette-row[data-palette="charcoal"]').trigger('click');
+    expect(w.emitted('palette')).toEqual([['ql:demo', 'charcoal']]);   // → LogPanel → App.onTerminalPalette（那里才发 ql_set_palette）
+    expect(w.find('.term-palette-pop').exists()).toBe(false);
+    expect(invoke.mock.calls.filter((c) => String(c[0]).startsWith('ql_'))).toEqual([]);
+    // 选定后不回跳成旧快照：屏幕就停在选中的那一档，等 App 把 prop 改成同一档（否则用户看到一次回闪）
+    expect(h.state.terms[0].options.theme).toEqual(TERM_PALETTES['charcoal'].theme);
+    w.unmount();
+  });
+
+  it('escape_and_outside_mousedown_close_the_popover_and_restore_the_previewed_palette', async () => {
+    const { w } = mountTab({ palette: 'warm-paper' });
+    await w.find('.btn-term-palette').trigger('click');
+    await w.find('.term-palette-row[data-palette="charcoal"]').trigger('mouseenter');
+    expect(h.state.terms[0].options.theme).toEqual(TERM_PALETTES['charcoal'].theme);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await flush();
+    expect(w.find('.term-palette-pop').exists()).toBe(false);
+    expect(h.state.terms[0].options.theme).toEqual(TERM_PALETTES['warm-paper'].theme);   // 关闭时还原快照，不把预览留下
+    expect(w.emitted('palette')).toBeUndefined();                                        // ESC 不落盘
+
+    await w.find('.btn-term-palette').trigger('click');
+    expect(w.find('.term-palette-pop').exists()).toBe(true);
+    document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await flush();
+    expect(w.find('.term-palette-pop').exists()).toBe(false);
     w.unmount();
   });
 });
