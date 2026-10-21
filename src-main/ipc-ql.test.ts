@@ -6,10 +6,11 @@
 // 附带两件事：
 //   • 事件载荷（C12）：真起一个 cmd 配置，断 ql-data / ql-exit 的载荷形状（规格 §8 事件表）；
 //   • preload 的两个订阅（check E3）：清理后不再收到 → 重复订阅不叠加。
-// 范围：不改 src-main/process.ts（索引 G4），不新增通道（check F4）。
+// 范围：不改 src-main/process.ts（索引 G4）。通道除规格 §8 那 12 条外，只有 spec #12 / 票 #13 批准的
+// ql_set_palette（终端配色窄通道，ADR 0001）——其余 ql_* 一律不加（check F4）。
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process'; // M23：tasklist / taskkill，只清测试自己造出来的记事本窗口
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { t } from './i18n'; // 任务 8 E7（索引 K16(2)）：词典已落地，断言必须按译文写
@@ -180,6 +181,7 @@ async function waitFor(cond: () => boolean, ms: number, what: string): Promise<v
 const CHANNELS = [
   'ql_list', 'ql_save', 'ql_delete', 'ql_terminals', 'ql_start', 'ql_stop',
   'ql_write', 'ql_resize', 'ql_states', 'ql_pick_exe', 'clipboard_read', 'clipboard_write',
+  'ql_set_palette', // spec #12 / 票 #13：终端配色窄通道（只改 terminal_palette 一个键）
 ] as const;
 
 let realCwd = '';
@@ -246,7 +248,7 @@ afterAll(async () => {
 });
 
 describe('C 段 · 通道注册（check C1-C11 / E2 / F1 / F4）', () => {
-  it('规格 §8 的 12 个通道全部注册', () => {
+  it('规格 §8 的 12 个通道 + 票 #13 的窄通道全部注册', () => {
     for (const name of CHANNELS) expect(cap.handlers.has(name), 'missing channel: ' + name).toBe(true);
   });
 
@@ -282,6 +284,55 @@ describe('C1/C2/C3 · ql_list / ql_save / ql_delete', () => {
     expect(invoke('ql_delete', id)).toBeUndefined();
     expect((invoke('ql_list') as { items: Record<string, unknown> }).items[id]).toBeUndefined();
     await expect(invokeRejects('ql_delete', id)).rejects.toThrow(/^VALIDATION:/);
+  });
+});
+
+// ── spec #12 / 票 #13 · ql_set_palette（终端配色的窄通道）──────────────────────────────
+// 与 ql_save 的分工（spec 的 Implementation Decisions 逐字）：ql_save 是**整条覆盖**，会把弹窗里尚未保存的
+// 其它表单值一并写回该条目；配色只在工具条 / 弹窗那一格上改，因此走这条只改一键的窄通道。
+// 两条门都要钉：落盘侧只动一个键（字节级），非法 id 在 **IPC 边界**就 return（照 main.ts:265 的 set_language）。
+describe('票 #13 · ql_set_palette（只改 terminal_palette 一个键 + 非法 id 在边界 return）', () => {
+  const rawNow = (): string => readFileSync(join(workDir, 'configs', 'quick_launch.yaml'), 'utf8');
+  const itemsNow = (): Record<string, Record<string, unknown>> => (invoke('ql_list') as { items: Record<string, Record<string, unknown>> }).items;
+  // 字节级比对口径：摘掉 terminal_palette 那一行后，其余每一行逐字不变（既不重排、不丢键，也不碰别的条目）
+  const withoutPaletteKey = (s: string): string[] => s.split('\n').filter((l) => !/^\s*terminal_palette:/.test(l));
+
+  it('合法 id → 返回 undefined、只改那一键，其余字节与另一条目都不动', async () => {
+    const shellId = String(await invoke('ql_save', 'qlpal00001', { name: '配色门', type: 'shell', shell: 'cmd', cmd: 'echo HI' }));
+    const exeId = String(await invoke('ql_save', 'qlpal00002', { name: '配色门 exe', type: 'exe', exe: ['notepad.exe'] }));
+    const before = rawNow();
+    expect(invoke('ql_set_palette', shellId, 'warm-night')).toBeUndefined();
+    const after = rawNow();
+    expect(after).toMatch(/^ {2}terminal_palette: warm-night$/m);
+    expect(withoutPaletteKey(after)).toEqual(withoutPaletteKey(before));
+    expect(itemsNow()[shellId].terminal_palette).toBe('warm-night');
+    expect(itemsNow()[exeId]).not.toHaveProperty('terminal_palette'); // exe 条目没有配色（GLOSSARY:19）
+    invoke('ql_delete', shellId);
+    invoke('ql_delete', exeId);
+  });
+
+  it('非法 id（表外值 / 大小写 / 非字符串）→ 不抛、不落盘，配置里还是默认档', async () => {
+    const id = String(await invoke('ql_save', 'qlpal00003', { name: '非法配色', type: 'shell', shell: 'cmd', cmd: 'echo HI' }));
+    const before = rawNow();
+    for (const bad of ['neon-pink', 'PAPER', '', 3, null, undefined]) {
+      expect(invoke('ql_set_palette', id, bad)).toBeUndefined();
+    }
+    expect(rawNow()).toBe(before); // 逐字节不动 = 没有写盘
+    expect(itemsNow()[id].terminal_palette).toBe('paper');
+    invoke('ql_delete', id);
+  });
+
+  it('exe 条目 → 一个字节都不写（配色只属于 shell 条目）', async () => {
+    const id = String(await invoke('ql_save', 'qlpal00004', { name: 'exe 配色门', type: 'exe', exe: ['notepad.exe'] }));
+    const before = rawNow();
+    expect(invoke('ql_set_palette', id, 'charcoal')).toBeUndefined();
+    expect(rawNow()).toBe(before);
+    expect(itemsNow()[id]).not.toHaveProperty('terminal_palette');
+    invoke('ql_delete', id);
+  });
+
+  it('条目不存在 → VALIDATION:（与 ql_delete 同一口径，渲染端自行 catch）', async () => {
+    await expect(invokeRejects('ql_set_palette', 'qlnosuchid', 'paper')).rejects.toThrow(/^VALIDATION:/);
   });
 });
 
