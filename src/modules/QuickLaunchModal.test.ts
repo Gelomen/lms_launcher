@@ -11,6 +11,9 @@ import { mount, flushPromises as flush } from '@vue/test-utils';
 import QuickLaunchModal from './QuickLaunchModal.vue';
 import QuickLaunch from './QuickLaunch.vue';
 import { t } from '../i18n';
+import { TERM_PALETTES } from './term-palettes';                       // 票 #15：色块的颜色表（渲染端真源）
+// 票 #15：id 与缺省的真源在主进程那一份（与 TerminalTabView.vue:15 同一先例；测试侧引运行时值是安全的）
+import { TERM_PALETTE_DEFAULT, TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palettes';
 import type { QuickLaunchEntry, QuickLaunchList } from '../src-main/quick-launch-config';
 import type { TerminalInfo } from '../src-main/quick-launch-terminals';
 
@@ -1550,6 +1553,265 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
     expect(html, '列表行里出现了「管理员」标记').not.toContain(t('ql.modal.admin'));
     expect(rows[0].text(), '列表行文本里出现了「管理员」').not.toContain(t('ql.modal.admin'));
     w.unmount();
+  });
+
+  // ===== 票 #15（spec #12 / issue #15）：条目编辑弹窗里的 [配色] 一行 =====
+  // 形状：这一行是 .flag-grid 的一对「标签 + 控件格」，控件格 = .palette-cell（与 .cmd-cell / .exe-cell 同一族），
+  // 里面一行 .row-cell：六个 .palette-swatch 按钮（底色 + 四格 ANSI 微条，颜色只从 src/modules/term-palettes.ts 取）
+  // + 当前档一句话说明（.palette-hint）。位置 = [终端]+[管理员] 那一行之后、命令那一行之前；exe 态整行不渲染。
+  // 只有点击才改表单（随 ql_save 整条落盘）；hover 只把预览冒给上层（有无页签由 App 判），本弹窗 hover 期间零写调用。
+  const paletteCellEl = (): HTMLElement | null => document.querySelector('.modal-box .palette-cell');
+  const swatchEls = (): HTMLElement[] =>
+    [...document.querySelectorAll('.modal-box .palette-cell .palette-swatch')] as HTMLElement[];
+  const swatchOf = (id: string): HTMLElement | null =>
+    swatchEls().find((el) => el.getAttribute('data-palette') === id) ?? null;
+  const hintEl = (): HTMLElement | null => document.querySelector('.modal-box .palette-hint');
+  const PAL_IDS: TermPaletteId[] = [...TERM_PALETTE_IDS];
+  // 测试侧走动态 key 是安全的：key-coverage.test.ts 只扫源码里的字面量 t() 调用点（测试文件本就不在它的范围内）。
+  // 组件侧必须是六个字面量 —— 那里改成拼接，那条覆盖门就会红，所以测试不必跟着抄字面量。
+  const palName = (id: string): string => t('ql.palette.' + id);
+  const palHint = (id: string): string => t('ql.palette.' + id + '.hint');
+  const hoverIn = (el: HTMLElement): Promise<void> => { el.dispatchEvent(new MouseEvent('mouseenter')); return flush(); };
+  const hoverOut = (el: HTMLElement): Promise<void> => { el.dispatchEvent(new MouseEvent('mouseleave')); return flush(); };
+  // 「不落盘」的判据 = 两条写通道都没动：ql_save（整条，弹窗唯一的落盘口）与 ql_set_palette（窄通道，弹窗不许走）
+  const writeCalls = (): Calls => calls.filter((c) => c.cmd === 'ql_save' || c.cmd === 'ql_set_palette');
+
+  // 验收 1：六色块渲染 —— 顺序 = TERM_PALETTE_IDS、每个色块的底色 + 四格 ANSI 全部取自颜色表那一行，
+  // 位置钉在 [终端]+[管理员] 之后、命令之前，并带当前档一句话说明。
+  it('palette_row_renders_six_swatches_after_the_terminal_row_with_colors_from_the_table', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    const kids = [...grid.children];
+    const paletteLabel = labelByText(t('ql.modal.palette')) as HTMLElement;
+    const termCell = controlOf(t('ql.modal.terminal')) as HTMLElement;
+    const cmdLabel = labelByText(t('ql.modal.cmd')) as HTMLElement;
+    expect(paletteLabel, '弹窗里没有「配色」标签').not.toBe(null);
+    expect(termCell, '终端那一行的控件格取不到').not.toBe(null);
+    expect(kids.indexOf(paletteLabel), '「配色」标签不是 .flag-grid 的直接子节点（不是网格的一行）').toBeGreaterThanOrEqual(0);
+    expect(kids.indexOf(paletteLabel), '「配色」行不在 [终端]+[管理员] 那一行之后').toBeGreaterThan(kids.indexOf(termCell));
+    expect(kids.indexOf(paletteLabel), '「配色」行不在「命令」那一行之前').toBeLessThan(kids.indexOf(cmdLabel));
+    // 控件格是标签的相邻兄弟（controlOf 的既有前提），且用 .field-cell 那一族（报错 / 纵向容器的口径不变）
+    expect(controlOf(t('ql.modal.palette')), '「配色」标签没有相邻控件格').toBe(paletteCellEl());
+    expect((paletteCellEl() as HTMLElement).classList.contains('field-cell'), '配色那一格不是 .field-cell').toBe(true);
+
+    const sw = swatchEls();
+    expect(sw.map((el) => el.getAttribute('data-palette')), '色块不是六档，或顺序不是 TERM_PALETTE_IDS').toEqual(PAL_IDS);
+    for (const id of PAL_IDS) {
+      const el = swatchOf(id) as HTMLElement;
+      const swatchBox = el.querySelector('.term-palette-swatch') as HTMLElement;
+      expect(swatchBox, '色块 ' + id + ' 里没有 .term-palette-swatch（票 #14 的色块盒子在 style.css，别再造一份）').not.toBe(null);
+      expect(swatchBox.style.background, '色块 ' + id + ' 的底色不是表里的 theme.background')
+        .toBe(TERM_PALETTES[id].theme.background);
+      const cells = [...el.querySelectorAll('.term-palette-cell')] as HTMLElement[];
+      expect(cells.length, '色块 ' + id + ' 的 ANSI 微条不是四格').toBe(4);
+      expect(cells.map((c) => c.style.background), '色块 ' + id + ' 的四格不是表里那四个槽')
+        .toEqual([TERM_PALETTES[id].theme.foreground, TERM_PALETTES[id].theme.red,
+          TERM_PALETTES[id].theme.green, TERM_PALETTES[id].theme.magenta]);
+    }
+
+    // 当前档说明：没动过 = 表里的默认档（termPaletteOf 的回落，与页签那条同一张嘴）
+    const hint = hintEl() as HTMLElement;
+    expect(hint, '配色行里没有当前档说明').not.toBe(null);
+    expect(hint.textContent, '当前档说明不是默认档那一档的档名 + 说明')
+      .toContain(palName(TERM_PALETTE_DEFAULT) + palHint(TERM_PALETTE_DEFAULT));
+    w.unmount();
+  });
+
+  // 验收 2：选中态 —— 当前档那颗有色标类 + aria-current，其余五颗没有；说明里带着这一档的档名与说明。
+  it('current_palette_is_marked_on_its_swatch_and_in_the_hint', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, terminal_palette: 'warm-paper' } });
+    await flush();
+
+    const cur = swatchOf('warm-paper') as HTMLElement;
+    expect(cur, '暖纸那颗色块不在').not.toBe(null);
+    expect(cur.classList.contains('is-current'), '当前档的色块没有选中态样式类').toBe(true);
+    expect(cur.getAttribute('aria-current'), '当前档的色块没有 aria-current（与票 #14 的浮层同一口径）').toBe('true');
+    for (const id of PAL_IDS.filter((x) => x !== 'warm-paper')) {
+      const el = swatchOf(id) as HTMLElement;
+      expect(el.classList.contains('is-current'), '非当前档 ' + id + ' 却带选中态样式类').toBe(false);
+      expect(el.getAttribute('aria-current'), '非当前档 ' + id + ' 却带 aria-current').toBeNull();
+    }
+    const hint = hintEl() as HTMLElement;
+    expect(hint.textContent, '说明里没有当前档的档名').toContain(palName('warm-paper'));
+    expect(hint.textContent, '说明里没有当前档那一档的说明').toContain(palHint('warm-paper'));
+    w.unmount();
+  });
+
+  // 验收 3：点击色块 → 选中态当场挪过去，payload 带 terminal_palette（shell 态总是显式写这一键，与 admin 同一口径）。
+  it('clicking_a_swatch_moves_the_marker_and_writes_terminal_palette_into_the_shell_payload', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlnew0001'); } });
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, '暖纸项');
+    await setInput(inputOf(t('ql.modal.cmd'))!, 'ping -n 1 127.0.0.1');
+    (swatchOf('warm-paper') as HTMLElement).click();
+    await flush();
+    expect((swatchOf('warm-paper') as HTMLElement).classList.contains('is-current'), '点击之后选中态没挪过去').toBe(true);
+    expect(swatchOf(TERM_PALETTE_DEFAULT)!.classList.contains('is-current'), '点击之后旧档还挂着选中态').toBe(false);
+    saveBtn().click();
+    await flush();
+
+    expect(writeCalls().length, '保存没走 ql_save 整条（弹窗这票不走窄通道）').toBe(1);
+    expect(calls.filter((c) => c.cmd === 'ql_set_palette').length, '弹窗里改配色却走了窄通道 ql_set_palette').toBe(0);
+    expect(sent, '没发出 ql_save').not.toBeNull();
+    expect(sent!.entry.terminal_palette, 'payload 里没有 terminal_palette').toBe('warm-paper');
+    expect(sent!.entry).toEqual({
+      name: '暖纸项', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1', admin: false, terminal_palette: 'warm-paper',
+    });
+    w.unmount();
+
+    // 一次都没点 = 表里的默认档，照样显式写（主进程 normalizeEntry 对 shell 条目总是归一出这一键）
+    sent = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlnew0002'); } });
+    const w2 = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await setInput(inputOf(t('ql.modal.name'))!, '默认档项');
+    await setInput(inputOf(t('ql.modal.cmd'))!, 'dir');
+    saveBtn().click();
+    await flush();
+    expect(sent!.entry.terminal_palette, '没点色块时没写默认档').toBe(TERM_PALETTE_DEFAULT);
+    w2.unmount();
+  });
+
+  // 验收 4：exe 态 —— 整行不渲染（标签、控件格、色块、说明都没有），payload 不带 terminal_palette；
+  // 切回 shell 态这一行回来且选过的档还在（表单态不因类型切换丢档）。
+  it('exe_type_renders_no_palette_row_and_omits_terminal_palette_from_the_payload', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ pick: 'D:\Tools\notepad.exe', save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlyyyyyyyy'); } });
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    // shell 态先选一档，再切到 exe：这一行必须整行消失
+    (swatchOf('campbell') as HTMLElement).click();
+    await flush();
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
+    expect(labelByText(t('ql.modal.palette')), 'exe 态仍渲染「配色」标签').toBe(null);
+    expect(paletteCellEl(), 'exe 态仍渲染配色那一格').toBe(null);
+    expect(swatchEls().length, 'exe 态仍渲染色块').toBe(0);
+    expect(hintEl(), 'exe 态仍渲染当前档说明').toBe(null);
+
+    await setInput(inputOf(t('ql.modal.name'))!, '记事本');
+    (controlOf(t('ql.modal.exe'))!.querySelector('button') as HTMLButtonElement).click();
+    await flush();
+    saveBtn().click();
+    await flush();
+    expect(sent, '没发出 ql_save').not.toBeNull();
+    expect('terminal_palette' in sent!.entry, 'exe 的 payload 带了 terminal_palette（exe 没有终端，因而没有配色）').toBe(false);
+    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: ['D:\Tools\notepad.exe'], admin: false });
+
+    // 切回命令行态：这一行回来，刚选的那一档没丢
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.shell'));
+    expect(swatchEls().length, '切回命令行态之后色块没了').toBe(6);
+    expect((swatchOf('campbell') as HTMLElement).classList.contains('is-current'), '切回命令行态之后丢了选过的档').toBe(true);
+    w.unmount();
+  });
+
+  // 验收 5：fill() 回填 —— 条目上的 terminal_palette 决定选中态与说明；保存时原样带回去（不改色块也带）。
+  // 缺这一键的旧夹具 = 表里的默认档（与主进程 termPaletteOr 的回落同一口径，不判非法）。
+  it('fill_refills_terminal_palette_from_the_entry', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qla1b2c3d4'); } });
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, terminal_palette: 'campbell' } });
+    await flush();
+    expect((swatchOf('campbell') as HTMLElement).classList.contains('is-current'), '没按条目的 terminal_palette 回填选中态').toBe(true);
+    expect(hintEl()!.textContent, '没按条目的 terminal_palette 回填说明').toContain(palHint('campbell'));
+    saveBtn().click();
+    await flush();
+    expect(sent!.entry.terminal_palette, '没动色块就没回填 / 没带这一键').toBe('campbell');
+    w.unmount();
+
+    // 缺字段（旧配置 / 旧夹具）= 默认档：与 admin 那条「缺字段 = 关」同一手法，不崩也不空着
+    sent = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlb2c3d4e5'); } });
+    const w2 = mountModal({ open: true, id: 'qlb2c3d4e5', entry: { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' } });
+    await flush();
+    expect(swatchOf(TERM_PALETTE_DEFAULT)!.classList.contains('is-current'), '缺 terminal_palette 时没落到默认档').toBe(true);
+    saveBtn().click();
+    await flush();
+    expect(sent!.entry.terminal_palette, '缺字段时没写默认档').toBe(TERM_PALETTE_DEFAULT);
+    w2.unmount();
+  });
+
+  // 验收 6（hover 口径）：hover 色块 → 只冒预览事件给上层（有无页签由 App 判），说明换成被 hover 那一档；
+  // 本弹窗一次写调用都不发、选中态不动；移开 → 冒 null（上层还原）、说明回到当前档。
+  // 新建态（id = null）没有对应页签 → 不冒预览，只换说明（AC「无页签则只显说明」在弹窗这一侧的那一半）。
+  it('hovering_a_swatch_previews_without_writing_and_restores_the_hint', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, terminal_palette: 'paper' } });
+    await flush();
+
+    const campbell = swatchOf('campbell') as HTMLElement;
+    await hoverIn(campbell);
+    expect(w.emitted('paletteHover'), 'hover 没有冒预览事件给上层（App 走已有链路换 theme）').toEqual([['qla1b2c3d4', 'campbell']]);
+    expect(hintEl()!.textContent, 'hover 时说明没换成被 hover 那一档').toContain(palName('campbell') + palHint('campbell'));
+    expect(writeCalls().length, 'hover 就落盘了（只有保存才写）').toBe(0);
+    expect(calls.filter((c) => c.cmd === 'ql_set_palette').length, 'hover 走了窄通道').toBe(0);
+    // hover 不动选中态（预览不是选中）
+    expect(swatchOf('paper')!.classList.contains('is-current'), 'hover 把选中态搬走了').toBe(true);
+    expect(campbell.classList.contains('is-current'), 'hover 的色块被当成当前档').toBe(false);
+
+    await hoverOut(campbell);
+    expect(w.emitted('paletteHover')!.at(-1), '移开色块没有冒 null 让上层还原').toEqual(['qla1b2c3d4', null]);
+    expect(hintEl()!.textContent, '移开之后说明没回到当前档').toContain(palName('paper') + palHint('paper'));
+    expect(writeCalls().length, '移开时补了一次写调用').toBe(0);
+    w.unmount();
+
+    // 新建态没有页签：不冒预览（App 那边没有可换 theme 的画布），但说明照常换
+    const w2 = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await hoverIn(swatchOf('charcoal') as HTMLElement);
+    expect(w2.emitted('paletteHover'), '新建态（id = null）却冒了预览').toBeUndefined();
+    expect(hintEl()!.textContent, '新建态 hover 没换成被 hover 那一档的说明').toContain(palHint('charcoal'));
+    w2.unmount();
+  });
+
+  // 负向门（与 card_list_row_shows_no_admin_marker 同款口径）：配色只在弹窗里，列表行不出现这一行的任何文案
+  it('card_list_row_shows_no_palette_texts', async () => {
+    const store: QuickLaunchList = {
+      items: { a: { ...SHELL_ENTRY, terminal_palette: 'warm-paper' } }, invalid: [],
+    };
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]): Promise<unknown> => {
+        if (cmd === 'ql_list') return Promise.resolve(JSON.parse(JSON.stringify(store)));
+        return Promise.resolve(null);
+      },
+    };
+    const w = mount(QuickLaunch, { attachTo: document.body, props: { states: {} } });
+    await flush();
+    const rows = w.findAll('.tpl-row');
+    expect(rows.length, '卡片没有渲染出列表行').toBe(1);
+    const rowEl = rows[0].element as HTMLElement;
+    const text = rows[0].text();
+    // 形状这一半走选择器而不是 outerHTML 子串：本卡的模板里带着取证注释（QuickLaunch.vue:213-214 那句里
+    // 就有「配色」二字），Vue 在测试构建里保留模板注释 → 拿 HTML 子串当判据会假红（管理员那条门用词没撞上而已）
+    expect(rowEl.querySelector('.palette-cell, .palette-swatch, .term-palette-swatch, .term-palette-cell, .palette-hint'),
+      '列表行里出现了配色控件').toBe(null);
+    expect(text, '列表行文本里出现了「配色」').not.toContain(t('ql.modal.palette'));
+    for (const id of PAL_IDS) {
+      expect(text, '列表行文本里出现了档名「' + id + '」').not.toContain(palName(id));
+      expect(text, '列表行文本里出现了说明「' + id + '」').not.toContain(palHint(id));
+    }
+    w.unmount();
+  });
+
+  // 结构性门（TerminalTabView.test.ts:266-268 同一口径，不给弹窗开特例）：配色只能从颜色表取，
+  // 组件的 script / template 里不得出现 hex 字面量。<style scoped> 那一段只动外壳配色（#fff / #C7CCD4 是既有的），
+  // 不在本门范围内 —— 本门扫的是「能画出色块」的那两段。
+  it('palette_colors_come_from_the_table_not_from_hex_in_the_component', async () => {
+    const src = fs.readFileSync(path.join(process.cwd(), 'src', 'modules', 'QuickLaunchModal.vue'), 'utf8');
+    const head = src.split('<style scoped>')[0];
+    expect(head, 'QuickLaunchModal 的 script / template 里出现了 hex —— 色块一律从 src/modules/term-palettes.ts 取')
+      .not.toMatch(/#[0-9A-Fa-f]{3,8}\b/);
+    expect(head, '色块没有从 TERM_PALETTES 取色').toContain('TERM_PALETTES[');
+    // 命名口径：本仓一律 palette，不留 termTheme / TERM_THEME_* 那批过期名字（原型留档在 .scratch 里）
+    expect(head, '出现了过期的 termTheme / TERM_THEME 命名').not.toMatch(/termTheme|TERM_THEME/);
   });
 });
 
