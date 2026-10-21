@@ -47,7 +47,9 @@ const props = defineProps<{
 // stop(id) / restart(id)：与 QuickLaunch 列表行的 [停止] / [启动] 一一对应，一路冒泡到
 // App.doQlStop / doQlStart（invoke('ql_stop') / invoke('ql_start')）；
 // 本组件不碰 IPC（进程所有权在 App，规格 §9.2），只报「这条页签要停 / 要重启」。
-const emit = defineEmits<{ stop: [id: string]; restart: [id: string] }>();
+// palette(id, 档)（票 #13 留的接缝）：票 #14 的工具条浮层、票 #15 的弹窗色块选定一档时经这里冒给 App；
+// 落盘（窄通道 ql_set_palette）与改页签快照都在 App.onTerminalPalette，本组件不判缺省也不落盘。
+const emit = defineEmits<{ stop: [id: string]; restart: [id: string]; palette: [id: string, paletteId: TermPaletteId] }>();
 
 // 当前档（id → 颜色表那一行）：theme / 查找 decorations / 画布描边**三样都从这里取**，
 // 于是换一次档三处一起换（spec 的结构性同源门在 TerminalTabView.test.ts：源码里不得再出现硬编码 hex）。

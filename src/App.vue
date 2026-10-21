@@ -11,6 +11,7 @@ import { LOG_TABS, QL_TAB_PREFIX, qlTabId, type LogTabId, type LogTabItem } from
 import { truncateByWidth } from './util/truncate';
 // 类型只有一份真源（主进程配置层），与 QuickLaunch.vue:13 同一先例：import type 在构建期被擦除
 import type { QuickLaunchEntry, QuickLaunchList } from './src-main/quick-launch-config';
+import type { TermPaletteId } from '../src-main/term-palettes'; // 同上：只取类型（构建期擦除），id 真源在 src-main/term-palettes.ts
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import UpdateModal from './modules/UpdateModal.vue';
 import SettingsModal from './modules/SettingsModal.vue';
@@ -337,7 +338,9 @@ function onExitClose(): void {
 interface QlProcState { running: boolean; stopping: boolean }
 // name：建页签当时的那份配置名（修复轮 B · Minor 2）。页签文案此前每次回查 qlConfigs 只读镜像，
 // 条目被删除（已停止的条目可以删）后镜像里没有它 → 页签名退化成配置 id。名字因此随页签存一份。
-interface QlTabRef { id: string; configId: string; name: string }
+// palette：同一条语义的第二份快照（票 #13 / ADR:14）——建页签那一刻取一次条目当前的 terminal_palette，
+// 此后不回查镜像：条目被删后仍开着的页签沿用创建时的配色，不跳回默认档。没有该键 = 渲染端按表回落。
+interface QlTabRef { id: string; configId: string; name: string; palette?: TermPaletteId }
 interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void }
 
 const qlTabs = ref<QlTabRef[]>([]);
@@ -382,6 +385,8 @@ const logTabItems = computed<LogTabItem[]>(() => {
       stopping: !!s && s.stopping,
       restartDisabled: !qlConfigs.value[tab.configId],
       configId: tab.configId,
+      // 配色取页签自己的那份快照（QlTabRef.palette），不回查镜像 → 删条目不跳档（ADR:14）
+      palette: tab.palette,
     };
   });
   return [...statics, ...terminals];
@@ -397,8 +402,11 @@ function openTerminalTab(configId: string): boolean {
   if (!restart) {
     // 名字来源 = qlConfigs 只读镜像（卡片 changed 时刷新；restoreTerminals 先刷镜像再建页签）。
     // 镜像此刻缺项只影响这一份文案的兜底（= 配置 id），此后不再随镜像变化（Minor 2）。
-    const name = qlConfigs.value[configId]?.name ?? configId;
-    qlTabs.value = [...qlTabs.value, { id: qlTabId(configId), configId, name }];
+    const entry = qlConfigs.value[configId];
+    const name = entry?.name ?? configId;
+    // 配色快照与名字同一处、同一语义（票 #13）：只在这里读一次。restoreTerminals 先刷镜像再走这条路，
+    // 所以「窗口重载复原」出来的页签也从条目当前配置取档（条目上是什么档就是什么档，不回放历史输出）。
+    qlTabs.value = [...qlTabs.value, { id: qlTabId(configId), configId, name, palette: entry?.terminal_palette }];
   }
   activeTabId.value = qlTabId(configId);
   return restart;
@@ -534,6 +542,19 @@ function onTerminalRestart(tabId: string): void {
   void doQlStart(tab.configId);
 }
 
+// 工具条浮层 / 弹窗色块选了一档（票 #14 / #15 经 LogPanel 的 palette 事件到这里）：一处做完两件事。
+// ① 落盘走**窄通道** ql_set_palette(configId, 档)——只改该条目的 terminal_palette 一键；不用 ql_save，
+//    它是整条覆盖，会把弹窗里别的尚未保存的表单值一并写回去（spec #12 的 Implementation Decisions 逐字）。
+// ② 页签快照同步改掉：页签归 App 所有，快照变了 prop 才变，TerminalTabView 才把 theme 整对象换掉（不重建终端）。
+// 顺序 = 先改快照（spec「选中即时生效」，用户当场看见），落盘失败只 catch 不回滚（与 ql_write / ql_resize 同一口径；
+// 表外档在 IPC 边界就被 return —— main.ts 的 ql_set_palette，渲染端传不出非法值）。
+function onTerminalPalette(tabId: string, palette: TermPaletteId): void {
+  const tab = qlTabs.value.find((t) => t.id === tabId);
+  if (!tab) return;
+  qlTabs.value = qlTabs.value.map((t) => (t.id === tabId ? { ...t, palette } : t));
+  invoke('ql_set_palette', tab.configId, palette).catch(() => { /* 落盘失败：页签保持新配色，配置文件里仍是旧档 */ });
+}
+
 // 窗口重载复原（规格 §7.6）：主进程仍持有 PTY → 为运行中的配置重建**空**页签（历史不回放，F5）。
 // 先取 ql_list 再取 ql_states：running 里混着 exe 配置（索引 K11(5) / M7），只给 shell 建页签。
 async function restoreTerminals(): Promise<void> {
@@ -619,7 +640,8 @@ function onQlChanged(): void {
       <LogPanel :tabs="logTabItems" :buckets="logBuckets" v-model:active="activeTabId"
         :register="registerTerminalSink" :unregister="unregisterTerminalSink"
         :on-input="onTerminalInput" :on-resize="onTerminalResize"
-        @clear="onLogClear" @close="onTerminalClose" @stop="onTerminalStop" @restart="onTerminalRestart" />
+        @clear="onLogClear" @close="onTerminalClose" @stop="onTerminalStop" @restart="onTerminalRestart"
+        @palette="onTerminalPalette" />
     </section>
     <!-- §D 共用退出确认：托盘「退出」(exit_app) 与 更新 ready 后「重启应用」(run_update) 共享；exitAction 分流 -->
     <ConfirmDialog :open="exitConfirm" :title="t('app.exit.title')" :message="t('app.exit.message')" tone="primary"

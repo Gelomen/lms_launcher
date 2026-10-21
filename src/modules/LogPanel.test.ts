@@ -11,6 +11,8 @@ import { describe, it, expect } from 'vitest';
 import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import LogPanel from './LogPanel.vue';
+import TerminalTabView from './TerminalTabView.vue';
+import { TERM_PALETTES } from './term-palettes';
 // 任务 10 追加（页签条两种页签 + [x] + 横向滚动）：假 xterm 打桩与 CSS 规则取证所需，见文件末段。
 import { vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -203,7 +205,9 @@ const xh = vi.hoisted(() => {
   class FakeTerminal {
     cols = 80; rows = 24; disposed = false; written: string[] = [];
     dataCb: ((d: string) => void) | null = null;
-    constructor() { state.terms.push(this); }
+    // options 挂出来（票 #13）：换配色走的是 term.options.theme = 整对象赋值，假 xterm 不给这个槽就炸
+    options: Record<string, unknown> = {};
+    constructor(options?: unknown) { state.terms.push(this); this.options = { ...((options ?? {}) as object) }; }
     open(): void { /* 真实渲染不在范围 */ }
     loadAddon(addon: any): void { if (addon && typeof addon.activate === 'function') addon.activate(this); }
     write(d: string): void { this.written.push(d); }
@@ -406,6 +410,29 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     expect(gone.attributes('disabled')).toBeDefined();
     w.unmount();
   });
+
+  // ── 票 #13 · 终端配色的两段透传（LogPanel 只做搬运：不判缺省、不落盘、不建终端）：
+  // ① 页签条目上的 palette 快照 → TerminalTabView 的 prop；② 工具条那颗（票 #14 的浮层）选的档 → 原样冒给 App。
+  it('palette_snapshot_is_forwarded_down_and_palette_events_bubble_up', async () => {
+    const w = mount(LogPanel, {
+      props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), termTab('ql:demo', { palette: 'campbell' })] },
+    });
+    const child = w.findComponent(TerminalTabView);
+    expect(child.props('palette')).toBe('campbell');
+    child.vm.$emit('palette', 'ql:demo', 'warm-night');
+    expect(w.emitted('palette')).toEqual([['ql:demo', 'warm-night']]);
+    // 构造那一次就用上了快照（配色不止停在 prop 上）
+    expect((xh.state.terms[0].options as { theme: unknown }).theme).toEqual(TERM_PALETTES['campbell'].theme);
+    // 换档 = App 改掉那条页签的快照后重传 prop。两条观察点：
+    //   ① 没有新建终端（重建 = 杀 PTY + 丢滚动缓冲，票 #13 禁止）；② 同一个实例上的 theme 被**整对象**换成新档。
+    const termsBefore = xh.state.terms.length;
+    await w.setProps({ tabs: [textTab('launcher'), termTab('ql:demo', { palette: 'charcoal' })] });
+    expect(w.findComponent(TerminalTabView).props('palette')).toBe('charcoal');
+    expect(xh.state.terms.length).toBe(termsBefore);
+    expect((xh.state.terms[0].options as { theme: unknown }).theme).toEqual(TERM_PALETTES['charcoal'].theme);
+    w.unmount();
+  });
+
 
   // 2026-10-20 用户实机截图：那颗进程态按钮的 tooltip 比同排其他按钮高 4px。
   // 致错写法 = 让它吃 .icon-btn 的默认 32×32 盒：::after 的 bottom: calc(100% + 6px) 以盒顶为基准，
