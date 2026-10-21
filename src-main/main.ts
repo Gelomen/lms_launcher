@@ -16,7 +16,8 @@ import { checkLlamaInstall, installCheckMessage } from './llama-check';
 import { execSync, spawnSync } from 'node:child_process';
 import { homedir } from 'node:os';
 // 快捷启动卡片（2026-10-10-quick-launch-card 任务 6）：配置层（任务 3）/ 探测层（任务 4）/ 进程管理层（任务 5）→ IPC
-import { qlLoad, qlSave, qlDelete, type QuickLaunchEntry, type QuickLaunchList, type TerminalId } from './quick-launch-config';
+import { qlLoad, qlSave, qlDelete, qlSetPalette, type QuickLaunchEntry, type QuickLaunchList, type TerminalId } from './quick-launch-config';
+import { isTermPaletteId, type TermPaletteId } from './term-palettes';
 import { detectTerminals, type TerminalInfo } from './quick-launch-terminals';
 // 2026-10-16-quick-launch-terminal-icons §6.3 / 索引 K1：探测层不填 icon，补字段的是提取层（仍走 ql_terminals 一条通道，不新增 IPC）。
 import { withTerminalIcons } from './ql-terminal-icons';
@@ -1146,6 +1147,15 @@ ipcMain.handle('ql_save', async (_e, id: string | null, entry: QuickLaunchEntry)
 // id 不存在 → VALIDATION:（quick-launch-config.ts:159 的 qlDelete 自带，占位符 {id}）
 ipcMain.handle('ql_delete', (_e, id: string): void => {
   qlDelete(qlYamlPath(), id);
+});
+// 终端配色的窄通道（spec #12 / 票 #13 / ADR 0001）：只改该条 shell 条目的 terminal_palette **一个键**
+// （quick-launch-config.ts 的 qlSetPalette：readRawMap → 改一键 → 整表写回，坏条目不会被抹掉）。
+// **不复用 ql_save**：它是整条覆盖，会把弹窗里尚未保存的其它表单值一并写回该条目（spec 逐字）。
+// 非法 id 在这里直接 return（照 :265 的 set_language：渲染端 devtools 可传任意值 → 边界拒、不抛，
+// 渲染端因此不需要失败态）；落盘侧另有回落（normalizeEntry / validateEntry 把表外值规整为 paper），两道门都在。
+ipcMain.handle('ql_set_palette', (_e, id: string, palette: TermPaletteId): void => {
+  if (!isTermPaletteId(palette)) return;
+  qlSetPalette(qlYamlPath(), id, palette);
 });
 // 规格 §6.1：每次调用实时探测、不跨调用缓存；handler 必须异步（索引 K10-3，最坏 ≈9s）
 // 规格 §6.3 / §8-K1 / 索引 K24（最终审查 I-1）：**补图标只在这一处** —— 探测 → withTerminalIcons

@@ -6,6 +6,7 @@ import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import LogTabView from './LogTabView.vue';
 import TerminalTabView from './TerminalTabView.vue';
 import { LOG_TABS, type LogTabId, type LogTabItem } from './log-tabs';
+import type { TermPaletteId } from '../../src-main/term-palettes'; // 只取类型（构建期擦除）：id 真源在 src-main/term-palettes.ts
 import { t } from '../i18n';
 
 // 标签条 + 激活切换；行数据由 App 分桶后按 tab 下发，视图状态全在 LogTabView 实例内。
@@ -33,7 +34,12 @@ const props = defineProps<{
 //   （2026-10-20 用户要求：终端工具条那颗不再是 [x]，close 只有页签条一个来源。）
 // stop(id) / restart(id)（2026-10-20）：终端工具条那颗进程态按钮 → App.doQlStop / doQlStart
 //   （= 列表行 [停止] / [启动] 同一条路），本组件只透传 id、不碰进程。
-const emit = defineEmits<{ (e: 'clear', id: LogTabId): void; (e: 'close', id: string): void; (e: 'stop', id: string): void; (e: 'restart', id: string): void; (e: 'update:active', id: string): void }>();
+// palette(id, paletteId)（票 #13 接线 / 票 #14 触发）：工具条浮层选了一档 → 交给 App 走窄通道 ql_set_palette；
+//   本组件不判缺省、不落盘、也不改页签快照（快照的所有权在 App）。
+const emit = defineEmits<{ (e: 'clear', id: LogTabId): void; (e: 'close', id: string): void; (e: 'stop', id: string): void; (e: 'restart', id: string): void; (e: 'palette', id: string, palette: TermPaletteId): void; (e: 'update:active', id: string): void }>();
+
+// 子组件的 palette(id, paletteId) 原样转发（多参事件在模板里没法用 $event 取第二个参数，故走这个具名处理器）
+function onTabPalette(id: string, palette: TermPaletteId): void { emit('palette', id, palette); }
 
 // 缺省 = 静态两页签（LOG_TABS 仍是 id 与顺序的单一真源）；label === fullLabel ⇒ 不挂 title（E7 / 索引 K26(2)）。
 const fallbackTabs: LogTabItem[] = LOG_TABS.map((tab) => ({
@@ -249,8 +255,9 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
       <TerminalTabView v-else v-show="item.id === active"
         :id="item.id" :label="item.label" :full-label="item.fullLabel"
         :running="item.running" :stopping="item.stopping" :restart-disabled="item.restartDisabled"
+        :palette="item.palette"
         :register="pipeRegister" :unregister="pipeUnregister" :on-input="pipeInput" :on-resize="pipeResize"
-        @stop="emit('stop', $event)" @restart="emit('restart', $event)" />
+        @stop="emit('stop', $event)" @restart="emit('restart', $event)" @palette="onTabPalette" />
     </template>
     <!-- 长名 tooltip：仓内既有 .dd-tip 视口浮层（深灰底白字/12px/圆角/z-30，position:fixed 避开
          .tab-bar overflow-x 裁切），坐标由 onTabEnter/placeTip 写内联；挂页签右侧垂直居中，

@@ -8,10 +8,13 @@ import { t } from './i18n';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 import { suggestConfigId, validateConfigId } from './config';
+import { TERM_PALETTE_DEFAULT, isTermPaletteId, type TermPaletteId } from './term-palettes';
 
 export type TerminalId = 'pwsh' | 'powershell' | 'cmd' | 'wsl';
 export type QuickLaunchKind = 'shell' | 'exe';
-export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string[]; admin?: boolean }
+// terminal_palette（spec #12 / ADR 0001）：**只有 shell 条目有它**（exe 没有终端，因而没有配色 —— GLOSSARY:19）。
+// 读盘与保存两侧都把它规整成六档之一（缺键 / 表外值 → paper），且它不参与 VALIDATION:（与 admin 同一口径）。
+export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string[]; admin?: boolean; terminal_palette?: TermPaletteId }
 export type QuickLaunchMap = Record<string, QuickLaunchEntry>;
 export interface QuickLaunchList { items: QuickLaunchMap; invalid: string[] }
 
@@ -31,6 +34,12 @@ const FILE_LABEL = 'quick_launch.yaml';
 
 function isTerminalId(value: unknown): value is TerminalId {
   return typeof value === 'string' && (TERMINAL_IDS as readonly string[]).includes(value);
+}
+
+// 配色规整（ADR:3「缺键或非法值一律回落 paper，不判该条目非法」）：六档 id 的清单在 src-main/term-palettes.ts，
+// 这里只回落、不抛错 —— 「非法值不得进落盘」那道拒绝门在 IPC 边界（main.ts 的 ql_set_palette，照 set_language）。
+function termPaletteOr(value: unknown): TermPaletteId {
+  return isTermPaletteId(value) ? value : TERM_PALETTE_DEFAULT;
 }
 
 // 顶层必须是映射：解析失败 / 顶层非对象（含数组、标量、null）→ YAML:（规格 §5.2）
@@ -83,7 +92,7 @@ function normalizeEntry(raw: unknown): QuickLaunchEntry | null {
     const shell = e['shell'];
     const cmd = typeof e['cmd'] === 'string' ? (e['cmd'] as string).trim() : '';
     if (!isTerminalId(shell) || cmd.length === 0) return null;
-    return { name, type: 'shell', shell, cmd, admin: e['admin'] === true };
+    return { name, type: 'shell', shell, cmd, admin: e['admin'] === true, terminal_palette: termPaletteOr(e['terminal_palette']) };
   }
   if (e['type'] === 'exe') {
     const exe = normalizeExeList(e['exe']);
@@ -106,7 +115,7 @@ function validateEntry(entry: QuickLaunchEntry, available: readonly TerminalId[]
     }
     const cmd = typeof e.cmd === 'string' ? e.cmd.trim() : '';
     if (cmd.length === 0) throw new Error('VALIDATION: ' + t('err.ql.cmdRequired'));
-    return { name, type: 'shell', shell: e.shell, cmd, admin: e.admin === true };
+    return { name, type: 'shell', shell: e.shell, cmd, admin: e.admin === true, terminal_palette: termPaletteOr(e.terminal_palette) };
   }
   if (e.type === 'exe') {
     const exe = normalizeExeList(e.exe);
@@ -153,6 +162,25 @@ export function qlSave(path: string, id: string | null, entry: QuickLaunchEntry,
   map[finalId] = clean;
   writeFileSync(path, dump(map)); // 整表写回（config.ts:142 同一写法）
   return finalId;
+}
+
+/**
+ * 窄通道落盘（spec #12 的 Implementation Decisions / 票 #13）：只改一条 shell 条目的 terminal_palette **一个键**。
+ * 走法 = 读原始表 → 改一键 → 整表写回（与 qlSave:142 / qlDelete:160 同一形状，qlLoad 判为 invalid 的条目不会被抹掉）。
+ * **不复用 qlSave**：它是整条覆盖，会把弹窗里别的尚未保存的表单值一并写回该条目。
+ * id 不在表里 → VALIDATION:（照 :159 的 qlDelete，复用词典 err.ql.notFound）；
+ * 该条不是 shell（exe 没有终端、因而没有配色，GLOSSARY:19）或非映射形态 → 一个字节都不写、也不抛。
+ * 「表外 id 不得进落盘」由 IPC 边界的 isTermPaletteId 挡（main.ts 的 ql_set_palette，照 set_language），
+ * 所以这里的参数类型已经是 TermPaletteId。
+ */
+export function qlSetPalette(path: string, id: string, palette: TermPaletteId): void {
+  const map = readRawMap(path);
+  if (!Object.prototype.hasOwnProperty.call(map, id)) throw new Error('VALIDATION: ' + t('err.ql.notFound', { id }));
+  const entry = map[id];
+  if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return; // 非映射形态的条目（读盘即 invalid）：没有可改的键
+  if ((entry as Record<string, unknown>)['type'] !== 'shell') return; // exe 条目不写配色键（与 normalizeEntry / validateEntry 同一口径）
+  (entry as Record<string, unknown>)['terminal_palette'] = palette;
+  writeFileSync(path, dump(map));
 }
 
 /** 删除（规格 §8）：id 不存在 → VALIDATION:（文件不存在同样是「不存在」，不是 MISSING）。 */

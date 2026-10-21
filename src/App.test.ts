@@ -10,6 +10,8 @@ import { mount, flushPromises as flush } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import App from './App.vue';
 import QuickLaunch from './modules/QuickLaunch.vue'; // 修复轮 B：按组件取卡片实例，驱动它的 changed → App.refreshQlConfigs
+import LogPanel from './modules/LogPanel.vue';
+import { TERM_PALETTES } from './modules/term-palettes';
 
 const invoke = vi.fn();
 // §4.6：托盘「退出」→ 确认对话框（ConfirmDialog）。测试捕获最新注册的回调以模拟托盘事件。
@@ -1167,7 +1169,9 @@ const xh = vi.hoisted(() => {
   };
   class FakeTerminal {
     cols = 80; rows = 24; written: string[] = []; focusCalls = 0; disposed = false;
-    constructor(_options: unknown) { state.terms.push(this); }
+    // 构造参数挂到实例（票 #13）：配色快照是否真的落到终端上，要看 new Terminal 的 theme
+    options: Record<string, unknown> = {};
+    constructor(options: unknown) { state.terms.push(this); this.options = { ...(options as object) }; }
     open(): void { /* 真实渲染不在范围 */ }
     loadAddon(addon: any): void { if (addon && typeof addon.activate === 'function') addon.activate(this); }
     write(data: string): void { this.written.push(data); }
@@ -1559,6 +1563,66 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     expect(tabLabel(w, 'ql:c1')).toBe('我的终端');   // 不是 'c1'
     w.unmount();
   });
+
+  // ── 票 #13 · 终端配色（tracer bullet 在 App 层的门）──
+  // yaml 里 terminal_palette: charcoal 的条目 → 建页签时取一次快照 → 一路落到那块终端。
+  // 两个观察点：① App 造给 LogPanel 的页签条目带 palette（透传链）；② 假 xterm 的构造参数 theme
+  // 就是表里 charcoal 那一行（配色真的着色到画布，不是只停在 prop 上）。
+  it('terminal_palette_snapshot_from_the_config_reaches_the_terminal', async () => {
+    const { w } = mountQl({ items: { c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'charcoal' }, c2: QL_ITEMS.c2 } });
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签（此刻取快照）
+    await flush();
+    const tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(tabs.find((t) => t.id === 'ql:c1')?.palette).toBe('charcoal');
+    expect(xh.state.terms.length).toBe(1);
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['charcoal'].theme);
+    w.unmount();
+  });
+
+  // ADR:14「条目被删后仍开着的页签沿用创建时的配色快照，不跳变」——与上面那条页签名用例同一手法：
+  // 删配置 → 卡片冒泡 changed → App 的只读镜像刷空，但页签的快照不动（快照不是回查镜像的 computed）。
+  it('tab_keeps_its_palette_snapshot_after_the_config_is_deleted', async () => {
+    const { w } = mountQl({ items: { c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'charcoal' }, c2: QL_ITEMS.c2 } });
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(xh.state.terms.length).toBe(1);
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: {}, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+    const tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    const tab = tabs.find((t) => t.id === 'ql:c1');
+    expect(tab?.palette).toBe('charcoal');            // 不是回落到 paper（那需要回查已刷空的镜像）
+    expect(tab?.restartDisabled).toBe(true);          // 对照：镜像确实已经查不到这条了
+    expect(xh.state.terms.length).toBe(1);            // 换 prop 不重建终端：仍是那一个实例
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme.background).toBe(TERM_PALETTES['charcoal'].theme.background);
+    w.unmount();
+  });
+
+  // 页签工具条 / 弹窗选档（票 #14 / #15 的触发点）→ LogPanel 冒泡 palette(id, 档) → App 两件事：
+  // 走窄通道 ql_set_palette（configId + 档，**不是** ql_save），并把这一条页签的快照改掉（prop 变 → 整对象换 theme）。
+  it('palette_event_from_a_tab_writes_the_narrow_channel_and_updates_that_tab_snapshot', async () => {
+    const { w } = mountQl(); // 夹具不带 terminal_palette → 快照 = 表里默认档（termPaletteOf 的回落）
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    const lp = w.findComponent(LogPanel);
+    expect((lp.props('tabs') as Array<Record<string, unknown>>).find((t) => t.id === 'ql:c1')?.palette).toBeUndefined();
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['paper'].theme);
+    lp.vm.$emit('palette', 'ql:c1', 'campbell');
+    await flush();
+    expect(qlInvokes('ql_set_palette')).toEqual([['c1', 'campbell']]); // 只发窄通道这一条
+    expect(qlInvokes('ql_save')).toEqual([]);                          // 不得用整条覆盖的 ql_save 改配色
+    const tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(tabs.find((t) => t.id === 'ql:c1')?.palette).toBe('campbell');
+    expect(xh.state.terms.length).toBe(1);                             // 仍是同一个终端实例
+    w.unmount();
+  });
+
 
   // E9（索引 M8 / K34(5)）：不可写的配置一律不发 ql_write / ql_resize。三种不可写：
   // ① 没有终端页签（未启动 / 页签已关）② exe 配置（ql_start 返回 tabId = null，运行态在也没有页签）

@@ -8,6 +8,7 @@ import {
   qlLoad,
   qlSave,
   qlDelete,
+  qlSetPalette,
   validateQuickLaunchName,
   type QuickLaunchEntry,
   type TerminalId,
@@ -79,7 +80,7 @@ describe('quick-launch-config.ts', () => {
     const list = qlLoad(p);
     expect(list.invalid).toEqual([]);
     expect(Object.keys(list.items)).toEqual(['qlx1a2b3c4', 'qlp9q8r7s6']);
-    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
+    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false, terminal_palette: 'paper' });
     expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: false });
     rm(p);
   });
@@ -101,7 +102,7 @@ describe('quick-launch-config.ts', () => {
     ));
     const list = qlLoad(p);
     expect(Object.keys(list.items)).toEqual(['good01']);
-    expect(list.items['good01']).toEqual({ name: '好的', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
+    expect(list.items['good01']).toEqual({ name: '好的', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false, terminal_palette: 'paper' });
     expect(list.invalid).toEqual(['bad01']);
     rm(p);
   });
@@ -329,7 +330,7 @@ describe('quick-launch-config.ts', () => {
     const rawShell = readText(p);
     expect(rawShell).toMatch(/^ql[0-9a-z]+:$/m);
     expect(rawShell).not.toMatch(/^\s*exe:/m); // 字节级：exe 键没有落盘
-    expect(qlLoad(p).items[shellId]).toEqual({ name: 'sh', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
+    expect(qlLoad(p).items[shellId]).toEqual({ name: 'sh', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false, terminal_palette: 'paper' });
     expect(qlLoad(p).items[shellId]).not.toHaveProperty('exe');
     rm(p);
     const exeId = qlSave(p, null, {
@@ -427,7 +428,7 @@ describe('quick-launch-config.ts', () => {
     ));
     const list = qlLoad(p);
     expect(list.invalid).toEqual([]);
-    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false });
+    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false, terminal_palette: 'paper' });
     expect(list.items['qlp9q8r7s6']).toEqual({ name: 'LM Studio', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: false });
     rm(p);
   });
@@ -440,11 +441,11 @@ describe('quick-launch-config.ts', () => {
     const exeId = qlSave(p, null, { name: '提权 exe', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: true }, []);
     const list = qlLoad(p);
     expect(list.invalid).toEqual([]);
-    expect(list.items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true });
+    expect(list.items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true, terminal_palette: 'paper' });
     expect(list.items[exeId]).toEqual({ name: '提权 exe', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'], admin: true });
     // 编辑回填再保存：validateEntry 的规整不得把 true 丢掉（任务 8 弹窗回填靠的就是这个值）
     expect(qlSave(p, shellId, list.items[shellId], ['cmd'])).toBe(shellId);
-    expect(qlLoad(p).items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true });
+    expect(qlLoad(p).items[shellId]).toEqual({ name: '提权 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: true, terminal_palette: 'paper' });
     rm(p);
   });
 
@@ -478,7 +479,7 @@ describe('quick-launch-config.ts', () => {
     // 保存路径同样只认字面量 true
     const id = qlSave(p, 'bool01', { name: 'b', type: 'shell', shell: 'cmd', cmd: 'x', admin: 'yes' as unknown as boolean }, ['cmd']);
     expect(id).toBe('bool01');
-    expect(qlLoad(p).items['bool01']).toEqual({ name: 'b', type: 'shell', shell: 'cmd', cmd: 'x', admin: false });
+    expect(qlLoad(p).items['bool01']).toEqual({ name: 'b', type: 'shell', shell: 'cmd', cmd: 'x', admin: false, terminal_palette: 'paper' });
     rm(p);
   });
 
@@ -494,6 +495,143 @@ describe('quick-launch-config.ts', () => {
     const rawOn = readText(p);
     expect(rawOn).toMatch(/^ {2}admin: true$/m);
     expect(qlLoad(p).items[onId].admin).toBe(true);
+    rm(p);
+  });
+
+  // ── spec #12 / 票 #13：terminal_palette 字段（ADR 0001「缺键或非法值一律回落 paper，不判该条目非法」）──
+
+  // tracer bullet：手工把某条 shell 条目的 yaml 写成 terminal_palette: charcoal → 读回就是 charcoal，
+  // 再原样保存一次值不掉（弹窗的编辑回填走的就是这条路）。断法照 :322-343 的「字节级 + 对象」双保险。
+  it('shell_entry_with_a_terminal_palette_round_trips', () => {
+    const p = tmpPath('ql_palette_round_trip.yaml');
+    rm(p);
+    writeText(p, lines(
+      'qlx1a2b3c4:',
+      '  name: 启动 webui',
+      '  type: shell',
+      '  shell: pwsh',
+      '  cmd: python -m webui',
+      '  terminal_palette: charcoal',
+    ));
+    const list = qlLoad(p);
+    expect(list.invalid).toEqual([]);
+    expect(list.items['qlx1a2b3c4']).toEqual({ name: '启动 webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false, terminal_palette: 'charcoal' });
+    expect(qlSave(p, 'qlx1a2b3c4', list.items['qlx1a2b3c4'], ['pwsh'])).toBe('qlx1a2b3c4');
+    expect(readText(p)).toMatch(/^ {2}terminal_palette: charcoal$/m); // 字节级：该键显式落盘（照 admin 先例）
+    expect(qlLoad(p).items['qlx1a2b3c4'].terminal_palette).toBe('charcoal');
+    rm(p);
+  });
+
+  // ADR:3「缺键回落 paper」+「落盘时显式写」（照 admin 的 E4）：老配置一行都不改，照样读回默认档
+  it('missing_terminal_palette_defaults_to_paper_and_is_written_explicitly', () => {
+    const p = tmpPath('ql_palette_absent.yaml');
+    rm(p);
+    writeText(p, lines(
+      'qlx1a2b3c4:',
+      '  name: 启动 webui',
+      '  type: shell',
+      '  shell: pwsh',
+      '  cmd: python -m webui',
+    ));
+    expect(qlLoad(p).items['qlx1a2b3c4'].terminal_palette).toBe('paper');
+    const id = qlSave(p, null, { name: '新的', type: 'shell', shell: 'pwsh', cmd: 'echo HI' }, ['pwsh']);
+    expect(readText(p)).toMatch(/^ {2}terminal_palette: paper$/m); // 调用方没写，落盘仍显式写默认值
+    expect(qlLoad(p).items[id].terminal_palette).toBe('paper');
+    rm(p);
+  });
+
+  // 非法值：读盘侧回落 paper 且**不判该条目非法**；保存侧同样规整（两处白名单门都要登记）
+  it('illegal_terminal_palette_falls_back_to_paper_on_both_paths_without_invalidating', () => {
+    const p = tmpPath('ql_palette_illegal.yaml');
+    rm(p);
+    writeText(p, lines(
+      'bad01:',
+      '  name: 野值',
+      '  type: shell',
+      '  shell: pwsh',
+      '  cmd: echo HI',
+      '  terminal_palette: neon-pink',
+      'bad02:',
+      '  name: 大小写',
+      '  type: shell',
+      '  shell: pwsh',
+      '  cmd: echo HI',
+      '  terminal_palette: PAPER',
+      'bad03:',
+      '  name: 非字符串',
+      '  type: shell',
+      '  shell: pwsh',
+      '  cmd: echo HI',
+      '  terminal_palette: 3',
+    ));
+    const list = qlLoad(p);
+    expect(list.invalid).toEqual([]); // 配色不参与 VALIDATION:（与 admin 同一口径）
+    for (const id of ['bad01', 'bad02', 'bad03']) expect(list.items[id].terminal_palette, id).toBe('paper');
+    // 保存路径：渲染端传进一个表外的值，落盘的必须是默认值，而不是原样写进去
+    const id = qlSave(p, 'save01', { name: '保存侧野值', type: 'shell', shell: 'pwsh', cmd: 'x', terminal_palette: 'nope' as never }, ['pwsh']);
+    expect(id).toBe('save01');
+    expect(readText(p)).toMatch(/^ {2}terminal_palette: paper$/m);
+    expect(qlLoad(p).items['save01'].terminal_palette).toBe('paper');
+    rm(p);
+  });
+
+  // exe 条目没有终端，因而没有配色（GLOSSARY:19）：读盘与保存两侧都不落该键（照 :323 的白名单负向门）
+  it('exe_entries_never_carry_the_terminal_palette_key', () => {
+    const p = tmpPath('ql_palette_exe.yaml');
+    rm(p);
+    writeText(p, lines(
+      'qlexe00001:',
+      '  name: LM Studio',
+      '  type: exe',
+      '  exe:',
+      '    - D:\\Tools\\LM Studio.exe',
+      '  terminal_palette: charcoal',
+    ));
+    expect(qlLoad(p).items['qlexe00001']).not.toHaveProperty('terminal_palette');
+    rm(p); // 换一张空表再保存：整表写回会原样留着**未触碰**的条目，字节级断言只针对本次写进去的那条
+    const id = qlSave(p, null, { name: '记事本', type: 'exe', exe: ['notepad.exe'], terminal_palette: 'charcoal' as never }, []);
+    const raw = readText(p);
+    expect(raw).toMatch(/^ {2}admin: false$/m);            // 对照组：exe 条目显式写 admin
+    expect(raw).not.toMatch(/^\s*terminal_palette:/m);     // 字节级：配色键没有落盘
+    expect(qlLoad(p).items[id]).not.toHaveProperty('terminal_palette');
+    rm(p);
+  });
+
+  // 窄通道 qlSetPalette（spec #12「只改这一个键：readRawMap → 改一键 → 整表写回；不复用 ql_save」）：
+  // 字节级门 = 除 terminal_palette 那一行外，文件里的每一个字节都不动，坏条目也不被顺手抹掉。
+  it('ql_set_palette_changes_only_that_one_key_and_preserves_everything_else', () => {
+    const p = tmpPath('ql_palette_narrow.yaml');
+    rm(p);
+    const shellId = qlSave(p, 'qlpal00001', { name: '甲', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: true }, ['pwsh']);
+    const exeId = qlSave(p, 'qlpal00002', { name: '乙', type: 'exe', exe: ['D:\\Tools\\LM Studio.exe'] }, []);
+    writeText(p, readText(p) + lines('bad01:', '  name: 坏的', '  shell: pwsh')); // 坏条目：走 qlSave 的整表写回会被静默抹掉的那一类
+    const before = readText(p);
+    qlSetPalette(p, shellId, 'charcoal');
+    const raw = readText(p);
+    expect(raw).toMatch(/^ {2}terminal_palette: charcoal$/m);
+    // 字节级：把被改的那一键摘掉后，其余每一行逐字不变（既不重排、也不丢键）
+    const withoutPaletteKey = (s: string): string[] => s.split(NL).filter((l) => !/^\s*terminal_palette:/.test(l));
+    expect(withoutPaletteKey(raw)).toEqual(withoutPaletteKey(before));
+    // 另一条条目与坏条目的整块原文都还在（ql_set_palette 与 ql_save 的区别正在这里）
+    expect(raw).toContain(exeId + ':\n  name: 乙\n  type: exe\n  exe:\n    - D:\\Tools\\LM Studio.exe\n  admin: false\n');
+    const list = qlLoad(p);
+    expect(list.invalid).toEqual(['bad01']);
+    expect(list.items[shellId]).toEqual({ name: '甲', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: true, terminal_palette: 'charcoal' });
+    expect(list.items[exeId]).not.toHaveProperty('terminal_palette');
+    rm(p);
+  });
+
+  // exe 条目没有终端、因而没有配色（GLOSSARY:19）→ 不写键也不抛；id 不在表里 → VALIDATION:（照 :159 的 qlDelete）
+  it('ql_set_palette_skips_exe_entries_and_throws_validation_for_an_unknown_id', () => {
+    const p = tmpPath('ql_palette_narrow_guards.yaml');
+    rm(p);
+    const exeId = qlSave(p, 'qlpalexe01', { name: '记事本', type: 'exe', exe: ['notepad.exe'] }, []);
+    const before = readText(p);
+    qlSetPalette(p, exeId, 'charcoal');
+    expect(readText(p)).toBe(before); // 逐字节不动
+    expect(qlLoad(p).items[exeId]).not.toHaveProperty('terminal_palette');
+    expect(() => qlSetPalette(p, 'no-such-id', 'paper')).toThrow(/^VALIDATION:/);
+    expect(readText(p)).toBe(before); // 抛错那次同样没有落盘
     rm(p);
   });
 });

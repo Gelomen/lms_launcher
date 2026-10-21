@@ -1,5 +1,6 @@
 // 日志 tab 注册表 —— id 与显示顺序的单一真源（App 分桶 / LogPanel 标签条共用）。
 // 新增应用 = 追加一行条目 + 渲染端路由（见 docs/superpowers/specs/2026-08-27-log-panel-tabs-design.md）。
+import type { TermPaletteId } from '../../src-main/term-palettes'; // 只取类型（构建期擦除），id 真源在 src-main/term-palettes.ts
 export type LogTabId = 'launcher' | 'llama-server';
 
 export interface LogTab { id: LogTabId; label: string }
@@ -30,6 +31,8 @@ export type LogTabKind = 'text' | 'terminal';
  * 终端工具条最右那颗（2026-10-20 用户要求，替换原 [x]）据此给三态——运行中 = [停止]、在途 = 「...」禁用、
  * 未运行 = [重新启动]（同日第二轮要求：停完不用回列表找那一行）。
  * restartDisabled = 该条配置已不在 ql_list（App 的只读镜像 qlConfigs 查不到）→ [重新启动] 禁用。
+ * palette（票 #13 / ADR 0001）= 该页签**创建当时**的终端配色快照，之后不随配置镜像变化（条目被删也不跳回默认档）；
+ * 缺省 = 表里的默认档（termPaletteOf 的回落）。只有终端页签有它，text 页签没有终端、也就没有配色。
  */
 export interface LogTabItem {
   id: string;
@@ -42,4 +45,5 @@ export interface LogTabItem {
   stopping: boolean;
   restartDisabled: boolean;
   configId?: string;
+  palette?: TermPaletteId;
 }
