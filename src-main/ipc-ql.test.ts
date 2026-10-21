@@ -267,7 +267,8 @@ describe('C1/C2/C3 · ql_list / ql_save / ql_delete', () => {
     expect(String(id)).toMatch(/^ql[0-9a-z]+$/);
     const list = invoke('ql_list') as { items: Record<string, unknown>; invalid: string[] };
     expect(list.invalid).toEqual([]);
-    expect(list.items[String(id)]).toEqual({ name: '形状门 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: false });
+    // shell 条目现在总是显式带 terminal_palette（quick-launch-config.ts 的白名单，照 admin 先例）
+    expect(list.items[String(id)]).toEqual({ name: '形状门 cmd', type: 'shell', shell: 'cmd', cmd: 'echo HI', admin: false, terminal_palette: 'paper' });
   });
 
   it('ql_save 空名 → VALIDATION:（前缀只用索引 G7 的五种）', async () => {

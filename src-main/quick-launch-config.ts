@@ -8,10 +8,13 @@ import { t } from './i18n';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { parse, stringify as dump } from 'yaml';
 import { suggestConfigId, validateConfigId } from './config';
+import { TERM_PALETTE_DEFAULT, isTermPaletteId, type TermPaletteId } from './term-palettes';
 
 export type TerminalId = 'pwsh' | 'powershell' | 'cmd' | 'wsl';
 export type QuickLaunchKind = 'shell' | 'exe';
-export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string[]; admin?: boolean }
+// terminal_palette（spec #12 / ADR 0001）：**只有 shell 条目有它**（exe 没有终端，因而没有配色 —— GLOSSARY:19）。
+// 读盘与保存两侧都把它规整成六档之一（缺键 / 表外值 → paper），且它不参与 VALIDATION:（与 admin 同一口径）。
+export interface QuickLaunchEntry { name: string; type: QuickLaunchKind; shell?: TerminalId; cmd?: string; exe?: string[]; admin?: boolean; terminal_palette?: TermPaletteId }
 export type QuickLaunchMap = Record<string, QuickLaunchEntry>;
 export interface QuickLaunchList { items: QuickLaunchMap; invalid: string[] }
 
@@ -31,6 +34,12 @@ const FILE_LABEL = 'quick_launch.yaml';
 
 function isTerminalId(value: unknown): value is TerminalId {
   return typeof value === 'string' && (TERMINAL_IDS as readonly string[]).includes(value);
+}
+
+// 配色规整（ADR:3「缺键或非法值一律回落 paper，不判该条目非法」）：六档 id 的清单在 src-main/term-palettes.ts，
+// 这里只回落、不抛错 —— 「非法值不得进落盘」那道拒绝门在 IPC 边界（main.ts 的 ql_set_palette，照 set_language）。
+function termPaletteOr(value: unknown): TermPaletteId {
+  return isTermPaletteId(value) ? value : TERM_PALETTE_DEFAULT;
 }
 
 // 顶层必须是映射：解析失败 / 顶层非对象（含数组、标量、null）→ YAML:（规格 §5.2）
@@ -83,7 +92,7 @@ function normalizeEntry(raw: unknown): QuickLaunchEntry | null {
     const shell = e['shell'];
     const cmd = typeof e['cmd'] === 'string' ? (e['cmd'] as string).trim() : '';
     if (!isTerminalId(shell) || cmd.length === 0) return null;
-    return { name, type: 'shell', shell, cmd, admin: e['admin'] === true };
+    return { name, type: 'shell', shell, cmd, admin: e['admin'] === true, terminal_palette: termPaletteOr(e['terminal_palette']) };
   }
   if (e['type'] === 'exe') {
     const exe = normalizeExeList(e['exe']);
@@ -106,7 +115,7 @@ function validateEntry(entry: QuickLaunchEntry, available: readonly TerminalId[]
     }
     const cmd = typeof e.cmd === 'string' ? e.cmd.trim() : '';
     if (cmd.length === 0) throw new Error('VALIDATION: ' + t('err.ql.cmdRequired'));
-    return { name, type: 'shell', shell: e.shell, cmd, admin: e.admin === true };
+    return { name, type: 'shell', shell: e.shell, cmd, admin: e.admin === true, terminal_palette: termPaletteOr(e.terminal_palette) };
   }
   if (e.type === 'exe') {
     const exe = normalizeExeList(e.exe);
