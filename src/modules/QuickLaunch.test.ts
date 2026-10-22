@@ -179,6 +179,20 @@ describe('QuickLaunch card', () => {
     w2.unmount();
   });
 
+  // 票 #15（spec #12 / issue #15）：[复制] 走的是 { ...src, name } 整条 spread（:99-122），
+  // 所以 terminal_palette 天生跟着走 —— 不加任何特殊处理，也不该加。这里钉住「复制不会把配色丢掉」，
+  // 免得日后有人给 spread 加白名单式过滤。另一侧的门在 QuickLaunchModal.test.ts（exe 的 payload 不带这一键）。
+  it('copy_carries_terminal_palette_from_the_source_entry', async () => {
+    const saves: SaveCall[] = [];
+    const w = mountCard({ items: { a: { ...SHELL, terminal_palette: 'warm-paper' }, b: entry('other') }, invalid: [] }, {}, { saves, newId: 'qlcopy03' });
+    await flush();
+    await buttonWithTip(w.findAll('.tpl-row')[0], t('ql.btn.copy')).trigger('click');
+    await flush();
+    expect(saves.length).toBe(1);
+    expect(saves[0].entry).toEqual({ name: 'webui - copy', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', terminal_palette: 'warm-paper' });
+    w.unmount();
+  });
+
   // 2026-10-19 用户反馈：[可执行程序] 行点 [复制] 复制失败，提示 "An object could not be cloned."；
   // 同一行的 [编辑] 保存同样的 exe 数组却正常。成因不在卡片，而在出口：列表挂在 ref 上 = Vue 深层响应式，
   // onCopy 里那句 { ...src, name } 只拆最外层，exe 那个数组仍是 Proxy；而 ipcRenderer.invoke 用结构化克隆
