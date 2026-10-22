@@ -174,7 +174,7 @@ export const dict = {
     // key 一律字面量（key-coverage.test.ts 只认字面量 key），档名与 GLOSSARY/ADR 的六档逐字对齐。
     'ql.terminal.palette': '配色',
     'ql.palette.paper': '纯白',
-    'ql.palette.console': '浅灰画布',
+    'ql.palette.console': '浅灰',
     'ql.palette.warm-paper': '暖纸',
     'ql.palette.charcoal': '炭黑',
     'ql.palette.campbell': '控制台深黑',
@@ -184,7 +184,7 @@ export const dict = {
     // 票 #15（spec #12）：条目编辑弹窗里 [配色] 那一行 —— 字段标签 + 六档各一句话说明。
     // 弹窗里的说明只解释「这一档是什么底色」，档名沿用票 #14 那六条 ql.palette.<id>，不另立一套。
     'ql.palette.paper.hint': '与日志页签同底同字色，切页签零跳变',
-    'ql.palette.console.hint': '浅灰画布带描边，ANSI 忠于真机控制台',
+    'ql.palette.console.hint': '浅灰底带描边，ANSI 忠于真机控制台',
     'ql.palette.warm-paper.hint': '暖色纸底配大地色，久看不刺眼',
     'ql.palette.charcoal.hint': '与日志页签同族的暗底，切页签零跳变',
     'ql.palette.campbell.hint': '外部控制台经典的深黑 ANSI',
@@ -548,7 +548,7 @@ export const dict = {
     'ql.terminal.restart': 'Restart',
     'ql.terminal.palette': 'Palette',
     'ql.palette.paper': 'Paper white',
-    'ql.palette.console': 'Light grey canvas',
+    'ql.palette.console': 'Light grey',
     'ql.palette.warm-paper': 'Warm paper',
     'ql.palette.charcoal': 'Charcoal',
     'ql.palette.campbell': 'Console black',
@@ -557,7 +557,7 @@ export const dict = {
     'ql.palette.group.dark': 'Dark',
     // Ticket #15 (spec #12): one hint per palette for the [Palette] row in the entry editor.
     'ql.palette.paper.hint': 'Same canvas as the log tabs, no jump when switching',
-    'ql.palette.console.hint': 'Light grey canvas with a border, faithful ANSI',
+    'ql.palette.console.hint': 'Light grey with a border, faithful ANSI',
     'ql.palette.warm-paper.hint': 'Warm paper canvas with earth tones, easy on the eyes',
     'ql.palette.charcoal.hint': 'Dark canvas from the same family as the log tabs',
     'ql.palette.campbell.hint': 'Classic dark console ANSI',

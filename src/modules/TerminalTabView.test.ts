@@ -269,6 +269,31 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     w.unmount();
   });
 
+  // 换档要把**已有的**查找高亮按新档那一行的 decorations 重铺：装饰的颜色是建装饰那一刻烘进 overlay 的，
+  // 只换 theme 不会重绘 —— 审查轮（spec 轴 (c)2）实测：paper 换到暗底，旧那档淡紫还留在屏上，
+  // 正是「theme / 描边 / 查找高亮同源」这道门要防的现象。真机侧计数不清零由 TerminalTabView.search.test.ts 钉。
+  it('palette_switch_repaints_existing_search_highlight_with_the_new_row', async () => {
+    const { w } = mountTab({ palette: 'paper' });
+    await w.find('.log-search-input').setValue('abc');
+    expect(h.state.searches.length).toBe(1);
+    const before = h.state.clearDecorations;
+    const term0 = h.state.terms[0];
+    await w.setProps({ palette: 'charcoal' });
+    expect(h.state.clearDecorations).toBe(before + 1);        // 旧档那批装饰先清掉
+    expect(h.state.searches.length).toBe(2);                   // 再按新档铺一遍
+    expect((h.state.searches[1].opts as { decorations: Record<string, string> }).decorations)
+      .toEqual(TERM_PALETTES['charcoal'].decorations);
+    expect(h.state.terms[0]).toBe(term0);                      // 仍是同一个终端实例（ADR:15）
+    w.unmount();
+  });
+
+  it('palette_switch_issues_no_extra_search_when_nothing_is_being_searched', async () => {
+    const { w } = mountTab({ palette: 'paper' });
+    await w.setProps({ palette: 'charcoal' });
+    expect(h.state.searches.length).toBe(0);                   // 没在查找就别凭空发一次查找
+    w.unmount();
+  });
+
 
   it('sink_writes_terminal_output_into_the_terminal_instance', () => {
     const { register, w } = mountTab();
@@ -595,7 +620,7 @@ describe('票 #14 · 工具条配色浮层', () => {
     expect(pop.findAll('.term-palette-group-label').map((g) => g.text())).toEqual(['明底', '暗底']);
     // 行序 = id 真源（三明三暗），不在此处重排
     expect(rows.map((r) => r.attributes('data-palette'))).toEqual([...TERM_PALETTE_IDS]);
-    expect(rows.map((r) => r.find('.term-palette-name').text())).toEqual(['纯白', '浅灰画布', '暖纸', '炭黑', '控制台深黑', '暖夜']);   // 当前档那一行还挂一个 ✓，故取名字那一截
+    expect(rows.map((r) => r.find('.term-palette-name').text())).toEqual(['纯白', '浅灰', '暖纸', '炭黑', '控制台深黑', '暖夜']);   // 当前档那一行还挂一个 ✓，故取名字那一截（档名不得含 GLOSSARY _Avoid_ 的词，门在 term-palettes.test.ts）
     const current = pop.findAll('.term-palette-row.is-current');
     expect(current.length).toBe(1);
     expect(current[0].attributes('data-palette')).toBe('warm-night');

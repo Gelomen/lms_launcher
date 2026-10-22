@@ -346,8 +346,9 @@ interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void
 const qlTabs = ref<QlTabRef[]>([]);
 const qlStates = ref<Record<string, QlProcState>>({});
 // 票 #15：弹窗 [配色] 一行的 hover 预览 = configId → 那一档。它**不是**快照的一部分：
-// 只在指针停在色块上那几秒存在（移开 / 关窗 / 换页签都清掉），期间挂到对应那条页签上，
-// 由 TerminalTabView 整对象换 theme（不重建终端、不改快照、不落盘）。键序无关，整对象换一次。
+// 只在指针停在色块上那几秒存在：移开 / 弹窗关闭（票 #12 补：[x] 与背板也撤）/ 落盘 / 关掉那条页签都清掉。
+// 换页签**不**清——预览按 configId 存，另一条页签读不到它，清与不清对用户不可见；清早了反而会在回到那条页签时丢预览。
+// 期间挂到对应那条页签上，由 TerminalTabView 整对象换 theme（不重建终端、不改快照、不落盘）。键序无关，整对象换一次。
 const qlPalettePreview = ref<Record<string, TermPaletteId>>({});
 const terminalSinks = new Map<string, (data: string) => void>();
 // 页签文案的构造方是 App（索引 K26(2)：截断归构造方，LogPanel 不二次截断），所以这里要配置名；

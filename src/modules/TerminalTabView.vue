@@ -66,7 +66,8 @@ watch(() => props.palette, () => {
   // 快照变了（票 #14 选定一档后 App 改的就是这份快照）：本地预览一并清掉，别让 hover 残留盖过落盘结果。
   previewId.value = null;
   // 生效的那一档仍走 shownPalette：外部预览（票 #15）若还挂着就仍是那一档，没挂着就是新快照。
-  term.options.theme = { ...shownPaletteOf.value.theme };
+  // theme 赋值与查找高亮重铺都收在 applyTheme 一处（三处换档入口共用，别再各写一遍）。
+  applyTheme(shownPalette.value);
 });
 
 const view = ref<HTMLElement | null>(null);
@@ -123,6 +124,19 @@ const paletteLabels: Record<TermPaletteId, () => string> = {
 function applyTheme(id: TermPaletteId | null | undefined): void {
   if (!term) return;
   term.options.theme = { ...termPaletteOf(id).theme };
+  // 查找高亮跟着重铺：装饰的颜色是建装饰那一刻烘进 overlay 的，只换 theme 不会重绘已有的高亮 ——
+  // 从 paper 换到暗底，旧那档淡紫会留在屏上，正是「theme / 描边 / 查找高亮同源」要防的现象（审查轮 spec 轴 (c)2）。
+  refreshSearchDecorations();
+}
+
+// 换档后重铺查找装饰：先清旧的一批，再按当前查询用**新档那一行**的 decorations 铺一遍。
+// 代价写清楚：重铺会重跑一次增量查找，所以「当前第几个匹配」可能挪一位、计数跟着刷新；
+// 真机侧「计数不被抹成 0 / 0」由 TerminalTabView.search.test.ts 的 palette_switch_keeps_the_search_count_alive 钉。
+function refreshSearchDecorations(): void {
+  if (!searchAddon) return;
+  searchAddon.clearDecorations();
+  const q = query.value.trim();
+  if (q) searchAddon.findNext(q, { ...searchOptions(), incremental: true });
 }
 
 // hover 与键盘 focus 共用这对处理器：Tab 进浮层也能预览，且预览态只有一份
@@ -163,8 +177,10 @@ function onOutsideMouseDown(e: MouseEvent): void {
   closePalettePop();
 }
 
-// 浮层定位 = position: fixed + JS（本仓浮层同一族做法：.dd-tip / .tpl-tip / .flag-tip，见 style.css:468-493 与 :595-607
-// 那几段注释——absolute 会被容器裁切）。锚在按钮下缘 + 6px；先渲染再量宽，贴右缘时整体左移，不把宽度抄成第二个魔法数。
+// 浮层定位 = position: fixed + JS（与本仓 .dd-tip / .tpl-tip / .flag-tip 同一定位手法，理由在 style.css 那几段自己的注释里——
+// absolute 会被容器裁切）。锚在按钮下缘 +6px：0px 会让浮层顶边与工具条读成贴死一体，留一条能看见的缝。
+// 先渲染再量宽（不抄宽度当第二个真源）；贴右缘时整体左移，右侧留 4px 与「不贴死窗边」的下限一致，
+// 窗极窄时 Math.max(4, …) 兜住左边界，不把浮层推出窗外（两个 4 是同一个下限的两半，不是各自拍的）。
 async function openPalettePop(): Promise<void> {
   // 条目配置已删（restartDisabled）：没有可写 terminal_palette 的条目，按钮禁用、浮层也开不出，
   // 页签继续用创建时那份快照（ADR:14；App.test.ts 钉着「删条目不跳档」）。

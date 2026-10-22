@@ -30,7 +30,12 @@ spec 与 ticket 都放在这里——仓库里不再有单独的 spec / plan 目
 
 - **仓库**：GitHub `Gelomen/lms_launcher`，**public**，Issues 已开启；当前分支 `feat/quick-launch`（2026-10-18 由 `feat/quick_launch-matt` 改名，旧名已不存在）。
 - **标签**：五个分级标签已建好并投入使用（映射见 [triage-labels.md](./triage-labels.md)）。
-- **在飞工作**：无。spec #8「页签条溢出时可横滚与翻页：滚轮横滚 + 两端翻页箭头」连同它的三条子票已于 2026-10-19 全部关闭。
+- **在飞工作**：spec #12「快捷启动条目各自的终端配色（六档预设，两处入口）」——三条实现子票 #13（配色表 + 条目字段 `terminal_palette` + 窄通道 `ql_set_palette` + 页签快照）、#14（终端页签工具条的配色浮层）、#15（条目编辑弹窗的 [配色] 一行）已关闭并入 `feat/quick-launch`；**#12 仍开放，差的只有用户的真机门 #17（R1–R9）**。
+  - 代理侧取证已交：六档各一张真 app 截图 + 逐槽像素核对（六档的底色与 16 个 ANSI 槽逐值等于 `src/modules/term-palettes.ts`；`campbell` 的 `black` 与底色同值 → 隐形，按底色核）、换档不重启进程（同一 `pid` 与同一屏历史）、弹窗一行真 app 实测（六块顺序 + `aria-current` + `.modal-box` = 261.0）。两轴审查轮修掉四处（换档重铺查找高亮 / campbell `selectionBackground` 取官方 `#FFFFFF` / 档名去掉 GLOSSARY _Avoid_ 里的「画布」/ 弹窗关窗撤 hover 预览），执行记录与未修裁决：https://github.com/Gelomen/lms_launcher/issues/12#issuecomment-6347782918
+  - 门的读数：全量 `vitest run` **1046/1046**（56 文件，本轮新增 5 条）、`npm run build` 绿、`tsc -p tsconfig.main.json` 绿；真机门载体 = 打包产物 `dist-release\win-unpacked\lms_launcher.exe`（2026-10-23 01:45 构建）。
+  - 取证台与被挡住的那一半：脚本与截图在 `%TEMP%\ql-palette-shots\`（`run.ps1` / `drive.cjs` / `slots.cjs` / `drive-modal.cjs` / `measure.cjs` / `run-measure.ps1`）。本机自 2026-10-22 23:32 那次 `build.bat` 之后，从会话里起 Electron 一律以 `0x80000003` 退出（`electron.exe --version` 同象，`ELECTRON_RUN_AS_NODE` 正常；加 `--no-sandbox` 能过初始化但 Chromium 在 `%TEMP%` 里写不出 singleton lock）→ 代理侧再取证待换机或重启，**不影响用户跑 #17**。
+  - 注释里的取证缺口：`.temp/ql-modal-palette-row/`（票 #15 的定高探针）在本机已不存在，那组 260.7 / 37.3 / 34.3 当下不可复核——已在注释里如实登记并留重测口径（本轮真 app 独立量得 `.modal-box` = 261.0 作旁证）。
+- spec #8「页签条溢出时可横滚与翻页：滚轮横滚 + 两端翻页箭头」连同它的三条子票已于 2026-10-19 全部关闭。
   - **2026-10-19 收口复核口径**：`gh issue list --state open` 返回 `[]`；当前分支 `feat/quick-launch` @ `65631e9`（本条收口提交紧随其后），与 `origin/feat/quick-launch` 同步。分级标签在位不变。
   - **已关闭**：#9（页签条滚轮直接横滚）与 #10（两端翻页箭头）为同一实现提交 `7c9f662`（两条票改同一批文件；切片独立性由测试边界保证），逐票执行记录与取证（新增 11 条测试、全量 973/973 绿、build 门绿）在各票评论；#11 真机门（R1–R6 **全部通过、无不满足项**，载体 = 打包产物 `dist-release\win-unpacked\lms_launcher.exe`（19:28 构建）——用户原话「验收通过」，记录：https://github.com/Gelomen/lms_launcher/issues/11#issuecomment-6266404579 ）。spec 收口评论：https://github.com/Gelomen/lms_launcher/issues/8#issuecomment-6266406006
   - 实现备忘（留给以后改这块的票）：页签条底部灰线、z-index 与 -16px 延伸挂在 `.tab-bar-wrap`（翻页箭头段上也连续）；`.tab-bar-wrap .tab-bar` 后代规则必须写在 `.tab-bar` 主规则之后——测试的 cssRule 助手按第一次出现取规则（style.css 注释里同条警示）。

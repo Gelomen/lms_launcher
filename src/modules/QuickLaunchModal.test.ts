@@ -1269,7 +1269,9 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
   // 2026-10-13（用户反馈：[类型] 切到「可执行程序」时弹窗变窄）：弹窗高度固定，以「命令行」态为准。
   // 261px 的构成（票 #15 重推；无头 Chromium 实测取证 .temp/ql-modal-palette-row/：真组件挂载导出四态 markup
   // + 真 src/style.css + 本组件 <style scoped> 原文 + FA 自生成 CSS + 真 Chromium 1400×900：
-  // 命令行态 .modal-box = 260.7（zh / en 同高）、可执行程序态 = 218.0（自然内容高 209.3，被地板盖住））：
+  // 命令行态 .modal-box = 260.7（zh / en 同高）、可执行程序态 = 218.0（自然内容高 209.3，被地板盖住））。
+  // 票 #12 审查轮登记：那个探针目录在本机已被清掉（.temp 不进仓）→ 这组数当下不可复核，重测口径就是上面那句；
+  // 本轮真应用侧另有一份独立读数是 .modal-box 高 = **261.0**（CDP 量得，见票 #12 评论），与这个定高值对得上。
   //   .card 上下边框 2 + .modal-head 32
   //   + .modal-body（padding 16×2 + .flag-grid margin-top 12 + 4 行控件 32 + 32 + 37.3 + 32 + 3 行距 × 6 = 151.3）
   //   + .modal-actions 32 = 261.3 → 取整向上 261（实测 260.7，0.6px 是网格行高的亚像素）
@@ -1784,6 +1786,20 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
     w2.unmount();
   });
 
+  // 审查轮（标准轴顺手发现的小缺陷）：预览只在指针停在色块上那几秒存在。用 [x] / 背板关窗时指针可能还压在
+  // 色块上、mouseleave 不一定发得到 → close() 必须把预览一并撤掉，否则身后那条页签停在预览那一档直到下次落盘。
+  it('closing_the_modal_while_a_swatch_is_hovered_withdraws_the_preview', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, terminal_palette: 'paper' } });
+    await flush();
+    await hoverIn(swatchOf('campbell') as HTMLElement);
+    expect(w.emitted('paletteHover')!.at(-1)).toEqual(['qla1b2c3d4', 'campbell']);
+    (document.querySelector('.modal-close') as HTMLButtonElement).click();
+    await flush();
+    expect(w.emitted('paletteHover')!.at(-1), '关窗没撤 hover 预览：身后页签会停在预览那一档').toEqual(['qla1b2c3d4', null]);
+    w.unmount();
+  });
+
   // 负向门（与 card_list_row_shows_no_admin_marker 同款口径）：配色只在弹窗里，列表行不出现这一行的任何文案
   it('card_list_row_shows_no_palette_texts', async () => {
     const store: QuickLaunchList = {
@@ -1833,7 +1849,8 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
 //   a) 面板浮出表单网格（面板底缘 > .flag-grid 底缘）—— 当年把面板塞回流程里，就是把 .modal-body 顶出滚动条的那条线；
 //   b) 弹窗自身不滚动（.modal-box overflow-y: hidden）= 「塞回流程」必然被裁切的前提没有被拆掉；
 //   c) 定高门（261px）与 .modal-body 的滚动容器没有被拆掉来「绕过」滚动条。
-// 夹具矩形 = **票 #15 之后**命令行态的实测几何（探针 .temp/ql-modal-palette-row/measure.json，真 Chromium：
+// 夹具矩形 = **票 #15 之后**命令行态的实测几何（探针 .temp/ql-modal-palette-row/measure.json，真 Chromium；
+// 票 #12 审查轮登记：该目录本机已未留档，这组数是当时的实测，重测口径见上面 261px 那段注释）：
 //   .modal-box y 291.3 / 高 260.7；.flag-grid y 352 / 高 151.3 → 底缘 503.3；终端那一格 390..422 → 触发按钮 32 高）。
 // 锚点从「弹窗底缘」换到「网格底缘」的原因写清楚：定高从 218 涨到 261（涨了 43）之后，触发按钮下缘到弹窗底缘
 // 有 130.0px ≥ 面板 116px，面板不再越过弹窗底缘 —— 那条断言在新几何下成了永真式，换锚点而不是删掉它。

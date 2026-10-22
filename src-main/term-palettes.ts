@@ -14,7 +14,7 @@ export const TERM_PALETTE_IDS: readonly TermPaletteId[] = ['paper', 'console', '
 // 所以缺省值只在这里定义一次：落盘侧缺键/非法值回落到它，渲染端未知 id 也回落到它。
 export const TERM_PALETTE_DEFAULT: TermPaletteId = 'paper';
 
-/** id 校验（形状照 quick-launch-config.ts:32 的 isTerminalId）：非字符串 / 表外值一律 false。 */
+/** id 校验（形状照 quick-launch-config.ts 里那个导出的 isTerminalId，不按行号锚——本仓加代码会把行号推偏）：非字符串 / 表外值一律 false。 */
 export function isTermPaletteId(value: unknown): value is TermPaletteId {
   return typeof value === 'string' && (TERM_PALETTE_IDS as readonly string[]).includes(value);
 }

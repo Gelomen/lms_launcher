@@ -116,6 +116,22 @@ describe('TerminalTabView 查找（真 xterm 集成）', () => {
     w.unmount();
   });
 
+  // 换配色会把旧档那批查找装饰清掉并按新档重铺（打桩套件钉「按哪一档铺」），这里钉真机侧的另一半：
+  // 重铺不能把计数抹成「0 / 0」—— 用户看得见高亮换了颜色，看不见「匹配凭空消失」。
+  it('palette_switch_keeps_the_search_count_alive', async () => {
+    const { w, sink } = await mountReal({ palette: 'paper' });
+    sink('line one wsl here\r\nline two filler\r\nline three wsl again\r\n');
+    await settle();
+    await w.find('.log-search-input').setValue('wsl');
+    await flushPromises();
+    expect(countText(w)).toBe('1 / 2');
+    await w.setProps({ palette: 'charcoal' });
+    await flushPromises();
+    expect(countText(w)).not.toBe('0 / 0');
+    expect(w.find('.btn-search-next').attributes('disabled')).toBeUndefined();
+    w.unmount();
+  });
+
   it('text_absent_from_the_terminal_reports_zero_and_disables_navigation', async () => {
     const { w, sink } = await mountReal();
     sink(dirOutput('.wslconfig'));

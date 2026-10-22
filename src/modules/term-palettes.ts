@@ -51,7 +51,7 @@ const paper: TermPalette = {
   decorations: { matchBackground: '#E9D5FF', activeMatchBackground: '#C4B5FD', matchOverviewRuler: '#8B5CF6', activeMatchColorOverviewRuler: '#8B5CF6' },
 };
 
-/** console：浅灰画布（= 应用已有的 hover/页签灰），画布靠描边坐实。16 槽按浅底重新配过，只有部分与 campbell 同值。 */
+/** console：浅灰底（= 应用已有的 hover/页签灰），画布靠描边坐实。16 槽按浅底重新配过，只有部分与 campbell 同值。档名不叫「画布」——GLOSSARY 那词条的 _Avoid_ 里「画布」不指这六档。 */
 const consolePalette: TermPalette = {
   id: 'console', dark: false, canvasBorder: 'var(--border)',
   theme: {
@@ -100,16 +100,17 @@ const charcoal: TermPalette = {
 
 /**
  * campbell：Windows Terminal 默认配色（Campbell）逐值照搬——外部控制台什么样，这里就什么样。
- * 逐值一致的范围 = 16 个 ANSI 槽 + background/foreground + cursor（官方 cursorColor 也是 #FFFFFF）；
- * cursorAccent / selectionBackground / selectionForeground / decorations / canvasBorder 是本仓自定
- * （官方块没有这些槽），断言只覆盖前者，见 term-palettes.test.ts。
+ * 逐值一致的范围 = 16 个 ANSI 槽 + background/foreground + cursor + selectionBackground
+ * （官方 Campbell 块还带 cursorColor #FFFFFF 与 selectionBackground #FFFFFF 两槽，审查轮据此把表里的
+ * #EDEDED 改回 #FFFFFF —— 之前那行注释误称「官方块没有 selectionBackground」）；
+ * 只有 cursorAccent / selectionForeground / decorations / canvasBorder 是本仓自定（官方块没有），不进那条门。
  */
 const campbell: TermPalette = {
   id: 'campbell', dark: true, canvasBorder: '#3B3B3B',
   theme: {
     background: '#0C0C0C', foreground: '#CCCCCC',
     cursor: '#FFFFFF', cursorAccent: '#0C0C0C',
-    selectionBackground: '#EDEDED', selectionForeground: '#0C0C0C',
+    selectionBackground: '#FFFFFF', selectionForeground: '#0C0C0C',
     black: '#0C0C0C', red: '#C50F1F', green: '#13A10E', yellow: '#C19C00',
     blue: '#0037DA', magenta: '#881798', cyan: '#3A96DD', white: '#CCCCCC',
     brightBlack: '#767676', brightRed: '#E74856', brightGreen: '#16C60C', brightYellow: '#F9F1A5',

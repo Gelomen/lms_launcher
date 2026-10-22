@@ -261,13 +261,18 @@ body {
    副作用一并记录：本行高度随最宽子项由 32 → 24（终端页签的工具条更紧，终端可视区多 8px）。 */
 .log-pane .btn-term-state { width: 24px; height: 24px; }
 .log-pane .btn-term-clear { width: 24px; height: 24px; }
-.log-pane .btn-term-palette { width: 24px; height: 24px; }   /* 票 #14：与同排那几颗同尺寸（上面 :252-261 那段取证注释的理由，一条不改） */
+.log-pane .btn-term-palette { width: 24px; height: 24px; }   /* 票 #14：与同排那几颗同尺寸（上面那段 24px 族的取证注释，理由一条不改） */
 /* 票 #14：工具条那颗配色按钮点开的六行浮层。position: fixed + JS 定位（left/top 由组件按按钮盒算、贴右缘时左移），
-   与本仓 .dd-tip / .tpl-tip / .flag-tip 同一族（见 :468-493、:595-607 的注释）：absolute 会被容器裁切，而把浮层
-   塞进工具条那一排就等于把布局重新押回那一排——那一排的 24px 是三轮实机截图换来的定版（:252-261）。
+   与本仓 .dd-tip / .tpl-tip / .flag-tip 用的是同一定位手法（见那几段自己的注释，不按行号锚）：absolute 会被容器裁切，
+   而把浮层塞进工具条那一排就等于把布局重新押回那一排——那一排的 24px 是三轮实机截图换来的定版（上面 :252-261 那段）。
    z-index 30 与 tooltip 同层（高于 .dropdown-panel 的 20，与 .icon-btn::after 那条理由一致）。
    浮层自身是**界面**：浅色主题、取应用既有令牌，不跟着配色档一起变暗（ADR 0001——配色只作用终端那块画布）。
-   宽度 208px 只在这里定一次：组件先渲染再用 offsetWidth 量它，不把这个数抄成第二个真源。 */
+   阴影 0 6px 18px/rgba(0,0,0,.12) 比 .dropdown-panel 的 0 4px 12px/rgba(16,24,40,.12) 更深一档：浮层压在真终端画布上、
+   海拔比贴着字段的下拉更高。这是有意的差别，不是「同族同值」（先前那句「同一族」容易读成同值，故写明白）。
+   宽度 208px 是预算推出来的、只在这里定一次（组件先渲染再用 offsetWidth 量它，不把这个数抄成第二个真源）：
+   浮层 padding 8（4×2）+ 行 padding 12（6×2）+ 色块 35（四格 7px + 三条 1px 缝 + 1px padding×2 + 1px 边框×2，
+   见下面 .term-palette-cell / .term-palette-swatch）+ 两处 gap 16 + ✓ 约 10 → 剩约 127px 给档名；
+   zh 最长档名「控制台深黑」与 en 最长 'Console black' 都在额度内，定宽还让浮层不随语言/档名长短抖。 */
 .term-palette-pop {
   position: fixed; z-index: 30;
   width: 208px;
@@ -283,7 +288,7 @@ body {
   padding: 4px 6px; border: 0; border-radius: 6px; background: transparent;
   font-size: var(--fs-label); line-height: 1.4; color: inherit; text-align: left; cursor: pointer;
 }
-.term-palette-row:hover, .term-palette-row:focus-visible { background: #F6F7F8; }   /* 与 .icon-btn:hover（:531）同一个灰 */
+.term-palette-row:hover, .term-palette-row:focus-visible { background: #F6F7F8; }   /* 与同文件 .icon-btn:hover 那条同一个灰（不按行号锚） */
 .term-palette-row.is-current { font-weight: 600; }
 /* 三格微条 = 底色 + 字色 + 两个 ANSI 槽（red / magenta），hex 全部来自 src/modules/term-palettes.ts 那一行；
    本文件只给尺寸与外框——预览与落盘的色都由组件内联，CSS 里不留第二份可漂移的色值。 */

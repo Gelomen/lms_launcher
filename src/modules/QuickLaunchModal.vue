@@ -367,7 +367,12 @@ function truncDeleteName(n: string): string {
 const deleteMsgName = computed(() => truncDeleteName(deleteFullName.value));
 const deleteTruncated = computed(() => visualWidth(deleteFullName.value) > NAME_BUDGET + 2);
 const deleteMessage = computed(() => t('ql.modal.delete.message', { name: deleteMsgName.value }));
-function close(): void { emit('close'); }
+// 预览只在指针压在色块上那几秒存在（票 #15）。关窗走 [x] / 背板时指针可能还压在色块上、mouseleave 发不到，
+// 所以 close() 里把这一条的预览一并撤掉：App.onQlPaletteHover 那条「本来就没有预览要撤」的 return 会吸收多余的一次 null，无副作用。
+function close(): void {
+  if (props.id !== null) emit('paletteHover', props.id, null);
+  emit('close');
+}
 </script>
 <template>
   <Teleport to="body">
@@ -440,7 +445,9 @@ function close(): void { emit('close'); }
                    hover / 键盘 focus 只把预览冒给上层（App 判有没有对应终端页签，有就整对象换 theme）+ 换这一行的说明文案，本弹窗不落盘。
                    说明文案走**第二行**而不是与色块挤在同一行（不是审美，是溢出）：六块色块实测占 6×34.3 + 5×6 = 235.8，
                    控制列实测 452.7（zh）/ 421.6（en，标签列随 'Program path' 变宽），剩下的 216.9 / 185.8 装不下
-                   「档名 + 说明」这一对（zh 最长 264.0 = 浅灰画布 / en 最长 360.0 = Warm paper）。硬排一行实测
+                   「档名 + 说明」这一对（当时 zh 最长 264.0、en 最长 360.0；票 #12 把档名「浅灰画布」改成「浅灰」之后
+                   最长那对的身份变成由说明文案主导，但说明文案没缩短 → 这一对更短、结论「一行装不下」不变）。
+                   硬排一行实测
                    .flag-grid 的 scrollWidth 探出 clientWidth：zh +28.0、en 最多 +124.0（同一探针的 pairs.json）
                    → 就是 2026-10-17 登记过的坑（东西探出网格 → .modal-body 顶出横向滚动条 → 定高门与两态同高全被带歪）。 -->
               <label class="label flag-label palette-label">{{ t('ql.modal.palette') }}</label>
@@ -580,6 +587,11 @@ function close(): void { emit('close'); }
    定高以「命令行」态为准 = **261px**（票 #15 加了 [配色] 一行之前是 218px）。取值来自无头 Chromium 实测——
    探针 .temp/ql-modal-palette-row/（量法照抄 .temp/ql-exe-rows-probe/：真组件挂载导出四态 .modal-box 的
    outerHTML → 真 src/style.css + 本文件 scoped 样式块原文 + FA 自生成 CSS + 真 Chromium 1400×900）：
+   ⚠ 审查轮（票 #12）登记：那个探针目录在本机已被清掉——.temp 是 gitignore 的本地取证区、不进仓，
+   所以这组数**当下不可复核**（同目录的 ql-exe-rows-probe 等旧探针还在，是留档习惯的旁证）。
+   重测口径就是上面那句（四态 markup + 同一份样式 + 1400×900），下次真机门顺手补回；
+   预期结论不变：[配色] 这一格的高由「色块行 + 行距 + 说明行」决定，与档名长短无关，
+   而票 #12 那次把档名「浅灰画布」改成「浅灰」只动宽度不动行高 → 37.3 / 260.7 不受影响。
      命令行态 .modal-box = 520 × 260.7（zh / en 四现场同高）
      可执行程序态        = 520 × 218.0（自然内容高 209.3，被地板盖住）
    命令行态的构成：
@@ -600,7 +612,7 @@ function close(): void { emit('close'); }
 .modal-box {
   width: 90%;
   max-width: 520px;
-  min-height: 261px;            /* = 命令行态实测高度（260.7 → 取整向上），见上方推导与 .temp/ql-modal-palette-row/ */
+  min-height: 261px;            /* = 命令行态实测高度（260.7 → 取整向上）；构成见上方推导（探针未留档，重测口径在那段里） */
   max-height: 85vh;             /* 窗口很矮时的收缩兜底（定高之后它是唯一收缩门），.modal-body 内部滚动 */
   display: flex;
   flex-direction: column;
@@ -707,9 +719,10 @@ function close(): void { emit('close'); }
 .cmd-cell, .exe-cell { display: flex; flex-direction: column; gap: 6px; }
 /* 票 #15：[配色] 那一行。控件格纵向两行（六块色块 + 当前档说明），.flag-grid 的网格行仍是一对
    「标签 + 控件格」→ test.ts 的 controlCells 计数器按态数到 4（shell）/ 3（exe），定高随 shell 态实测重算。
-   盒子尺寸复用 style.css:290-291 的 .term-palette-swatch / .term-palette-cell（四格 7×12 + 1px 间距 +
+   盒子尺寸复用 style.css 里 .term-palette-swatch / .term-palette-cell 那两条（四格 7×12 + 1px 间距 +
    1px 内衬 + 1px 描边），本段只管按钮壳与两行的排布，不复抄尺寸、更不带 hex。
-   实测（.temp/ql-modal-palette-row/measure.json）：色块 34.3 × 15.3、色块行 15.3、说明行 18 → 这一格 37.3；
+   实测（原探针 .temp/ql-modal-palette-row/measure.json，本机已未留档，见上面定高注释那条登记）：
+   色块 34.3 × 15.3、色块行 15.3、说明行 18 → 这一格 37.3；
    「配色」标签顶对齐之后标签中线 437.0 / 色块行中线 435.7（差 1.3px），所以这一条**不加** name/cmd/exe 那 8px。 */
 .palette-cell { display: flex; flex-direction: column; gap: 4px; }
 .palette-cell .row-cell { gap: 6px; }
