@@ -345,6 +345,10 @@ interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void
 
 const qlTabs = ref<QlTabRef[]>([]);
 const qlStates = ref<Record<string, QlProcState>>({});
+// 票 #15：弹窗 [配色] 一行的 hover 预览 = configId → 那一档。它**不是**快照的一部分：
+// 只在指针停在色块上那几秒存在（移开 / 关窗 / 换页签都清掉），期间挂到对应那条页签上，
+// 由 TerminalTabView 整对象换 theme（不重建终端、不改快照、不落盘）。键序无关，整对象换一次。
+const qlPalettePreview = ref<Record<string, TermPaletteId>>({});
 const terminalSinks = new Map<string, (data: string) => void>();
 // 页签文案的构造方是 App（索引 K26(2)：截断归构造方，LogPanel 不二次截断），所以这里要配置名；
 // 复原时还要按 type 过滤（索引 K11(5)：ql_states 的 running 不区分 shell/exe）。
@@ -387,6 +391,9 @@ const logTabItems = computed<LogTabItem[]>(() => {
       configId: tab.configId,
       // 配色取页签自己的那份快照（QlTabRef.palette），不回查镜像 → 删条目不跳档（ADR:14）
       palette: tab.palette,
+      // 票 #15：那份临时预览（没有 = 键不在表里 → prop 为 undefined → 组件用快照）。改名是因为它
+      // 与上面的 palette 是两回事：一个「当前落盘的档」，一个「指针正指着哪一档」
+      palettePreview: qlPalettePreview.value[tab.configId],
     };
   });
   return [...statics, ...terminals];
@@ -394,6 +401,18 @@ const logTabItems = computed<LogTabItem[]>(() => {
 
 function hasTerminalTab(configId: string): boolean {
   return qlTabs.value.some((t) => t.id === qlTabId(configId));
+}
+
+// 票 #15：弹窗色块 hover（卡片原样透传上来）。**判据在这里**：只有存在该配置的终端页签，预览才有落点；
+// 没有页签（exe 条目 / 页签没建或已关 / 新建条目模式）就整条 return —— 弹窗那一行自己的说明文案是它唯一的反馈，
+// 也不会给不存在的页签造预览态。预览既不写快照也不发 ql_*：落盘仍然只有「保存」与「工具条浮层点击」两条路。
+function onQlPaletteHover(configId: string, palette: TermPaletteId | null): void {
+  if (!hasTerminalTab(configId)) return;
+  if (qlPalettePreview.value[configId] === undefined && palette === null) return; // 本来就没有预览要撤
+  const next = { ...qlPalettePreview.value };
+  if (palette === null) delete next[configId];
+  else next[configId] = palette;
+  qlPalettePreview.value = next;
 }
 
 // 建页签（已存在则不重复建）+ 自动激活（规格 §9.2）。返回值 = 是不是「同一页签再次启动」
@@ -523,6 +542,12 @@ function onTerminalClose(tabId: string): void {
   if (s && (s.running || s.stopping)) return;
   qlTabs.value = qlTabs.value.filter((t) => t.id !== tabId);
   unregisterTerminalSink(tabId); // 页签卸载时也会注销，这里不依赖卸载时机
+  // 票 #15：页签没了 → 那份临时预览也没有落点了，顺手清掉（否则下次给同一配置建页签时会带着旧预览进来）
+  if (qlPalettePreview.value[tab.configId] !== undefined) {
+    const next = { ...qlPalettePreview.value };
+    delete next[tab.configId];
+    qlPalettePreview.value = next;
+  }
 }
 
 // 工具条那颗进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完再变 [重新启动]）。
@@ -552,6 +577,13 @@ function onTerminalPalette(tabId: string, palette: TermPaletteId): void {
   const tab = qlTabs.value.find((t) => t.id === tabId);
   if (!tab) return;
   qlTabs.value = qlTabs.value.map((t) => (t.id === tabId ? { ...t, palette } : t));
+  // 快照已经改成这一档 → 那条 configId 的临时预览一并撤掉，别让残留的 hover 预览盖住刚落盘的结果
+  // （票 #15 之后两份预览可以并存：工具条浮层那边与弹窗那边）
+  if (qlPalettePreview.value[tab.configId] !== undefined) {
+    const next = { ...qlPalettePreview.value };
+    delete next[tab.configId];
+    qlPalettePreview.value = next;
+  }
   invoke('ql_set_palette', tab.configId, palette).catch(() => { /* 落盘失败：页签保持新配色，配置文件里仍是旧档 */ });
 }
 
@@ -629,7 +661,8 @@ function onQlChanged(): void {
       <div class="card"><TemplateModule :running-config-id="runningConfigId" @changed="onTemplateChanged" /></div>
       <!-- 快捷启动（2026-10-10）：第 3 列，GPU 卡顺移到第 4 列（规格 §4）。卡片自持列表与弹窗（索引 K29），
            App 只下发运行态 states、接 start/stop/changed —— 进程与页签的所有权在 App（规格 §9.2） -->
-      <div class="card"><QuickLaunch :states="qlStates" @start="doQlStart" @stop="doQlStop" @changed="onQlChanged" /></div>
+      <div class="card"><QuickLaunch :states="qlStates" @start="doQlStart" @stop="doQlStop" @changed="onQlChanged"
+          @paletteHover="onQlPaletteHover" /></div>
       <!-- 系统 GPU（2026-09 挪位）：模板卡片右侧的独立列，与模板卡顶对齐 -->
       <!-- card--gpu：裁切容器，切卡动画屏外层内容裁在卡片边框处（用户 2026-09-10 指定） -->
       <div class="card card--gpu"><GpuModule /></div>

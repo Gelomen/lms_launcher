@@ -255,7 +255,7 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
       <TerminalTabView v-else v-show="item.id === active"
         :id="item.id" :label="item.label" :full-label="item.fullLabel"
         :running="item.running" :stopping="item.stopping" :restart-disabled="item.restartDisabled"
-        :palette="item.palette"
+        :palette="item.palette" :palette-preview="item.palettePreview"
         :register="pipeRegister" :unregister="pipeUnregister" :on-input="pipeInput" :on-resize="pipeResize"
         @stop="emit('stop', $event)" @restart="emit('restart', $event)" @palette="onTabPalette" />
     </template>

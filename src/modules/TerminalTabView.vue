@@ -39,6 +39,10 @@ const props = defineProps<{
   // （条目被删后仍开着的页签沿用创建时的快照，不会跳回默认档 —— ADR:14）。缺省 = 表里的默认档（termPaletteOf 的回落）。
   // 换档由上层改这个 prop（票 #14 的浮层 / 票 #15 的色块走窄通道 ql_set_palette 后把快照改掉），本组件不碰落盘。
   palette?: TermPaletteId;
+  // 票 #15：弹窗 [配色] 一行 hover 上来的**临时预览**（一路从 App 的页签条目搬过来，LogPanel 只做搬运）。
+  // 它不是快照的一部分：只在指针停在色块上那几秒存在，撤掉（undefined / null）就回到快照那一份。
+  // 本组件对它只做一件事——把 theme（连同描边 / 查找高亮那三样同源的）换成那一档；不改 palette、不落盘、不重建终端。
+  palettePreview?: TermPaletteId | null;
   register: (id: string, sink: (d: string) => void) => void;
   unregister: (id: string) => void;
   onInput: (id: string, data: string) => void;
@@ -59,9 +63,10 @@ const paletteOf = computed(() => termPaletteOf(props.palette));
 // 改 term.options.theme.background 这类内部属性不生效，所以必须赋一个新对象。终端还没建时（v-show 隐藏 / 未挂载）不做事。
 watch(() => props.palette, () => {
   if (!term) return;
-  // 快照变了（票 #14 选定一档后 App 改的就是这份快照）：预览态一并清掉，别让 hover 残留盖过落盘结果。
+  // 快照变了（票 #14 选定一档后 App 改的就是这份快照）：本地预览一并清掉，别让 hover 残留盖过落盘结果。
   previewId.value = null;
-  term.options.theme = { ...termPaletteOf(props.palette).theme };
+  // 生效的那一档仍走 shownPalette：外部预览（票 #15）若还挂着就仍是那一档，没挂着就是新快照。
+  term.options.theme = { ...shownPaletteOf.value.theme };
 });
 
 const view = ref<HTMLElement | null>(null);
@@ -85,6 +90,15 @@ const popLeft = ref(0);
 const popTop = ref(0);
 // 正在预览的那一档（null = 没有预览）。它是本组件的局部态：不写回 prop、不落盘，浮层一关就清零。
 const previewId = ref<TermPaletteId | null>(null);
+// 票 #15：两份预览并存时的优先级 —— **本地浮层预览 > 外部（弹窗色块）预览 > 页签快照**。
+// 本地优先的理由：用户正在工具条浮层里逐档扫，这时候弹窗那边的 hover 不该把这一屏换掉（同一屏只能有一档）。
+// 三处「当前档」的读数（theme / 画布描边 / 查找高亮 decorations）一律走这一份 = spec #12 的「同源」结构门；
+// 浮层里那六个勾选标记（is-current / aria-current）不走它——它标的是**落盘那份快照**，预览不该改选中标。
+const shownPalette = computed<TermPaletteId | null | undefined>(() => previewId.value ?? props.palettePreview ?? props.palette);
+const shownPaletteOf = computed(() => termPaletteOf(shownPalette.value));
+// 外部预览变了（App 挂上 / 撤掉）→ 同一个实例上把 theme 换成那一档；不重建、不改快照。
+// 构造那一次不带预览（预览只在 hover 期间存在），所以 new Terminal 的 theme 走下面 shownPaletteOf 那份。
+watch(() => props.palettePreview, () => applyTheme(shownPalette.value));
 const paletteBtn = ref<HTMLElement | null>(null);
 const popRef = ref<HTMLElement | null>(null);
 
@@ -116,7 +130,8 @@ function onPaletteHover(id: TermPaletteId): void { previewId.value = id; applyTh
 function onPaletteLeave(): void {
   if (previewId.value === null) return;
   previewId.value = null;
-  applyTheme(props.palette);
+  // 还原的目标 = shownPalette（此刻本地那份已清）：有外部预览就回到那一档，没有才回到快照
+  applyTheme(shownPalette.value);
 }
 function onPalettePick(id: TermPaletteId): void {
   // 先清预览态再冒事件：屏幕就停在选中的那一档，等 App 把快照 prop 改成同一档。
@@ -134,8 +149,8 @@ function closePalettePop(): void {
   if (!paletteOpen.value) return;
   paletteOpen.value = false;
   detachPopListeners();
-  // 关浮层不留预览：屏幕回到那份快照档（ESC / 点外部都走这里，与 onPaletteLeave 同一个还原口径）
-  if (previewId.value !== null) { previewId.value = null; applyTheme(props.palette); }
+  // 关浮层不留预览：屏幕回到 shownPalette（外部预览还在就那档，否则快照）——与 onPaletteLeave 同一个还原口径
+  if (previewId.value !== null) { previewId.value = null; applyTheme(shownPalette.value); }
 }
 function onPopKeyDown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return;
@@ -243,7 +258,7 @@ const queryEmpty = computed(() => query.value.length === 0);
 // 四值取自**当前配色的那一行**（与 theme 同一张表 = term-palettes.ts）：这四值曾在本组件里硬编码成两档淡紫，
 // 换配色时高亮不换、暗底上几乎看不见，因此 spec #12 把「theme 与查找 decorations 同源」定成结构性门。
 function searchOptions(): { decorations: Record<string, string> } {
-  return { decorations: { ...paletteOf.value.decorations } };
+  return { decorations: { ...shownPaletteOf.value.decorations } };
 }
 
 // 查找状态复位：清掉高亮装饰 + 计数归零（空查询与「清空终端」共用同一条路径）
@@ -305,7 +320,7 @@ onMounted(() => {
   // 「You must set the allowProposedApi option to true to use proposed API」；抛出点在 _highlightAllMatches 内、
   // 早于 _fireResults，故计数事件从不触发 → 输入终端里存在的文本也恒显「0 / 0」且无上/下一个可用。
   // 打桩套件看不见这条真机契约（假 addon 无条件发结果事件），由 TerminalTabView.search.test.ts 钉住。
-  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, theme: { ...paletteOf.value.theme } });
+  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, theme: { ...shownPaletteOf.value.theme } });
   fitAddon = new FitAddon();
   searchAddon = new SearchAddon();
   term.loadAddon(fitAddon);
@@ -426,6 +441,6 @@ defineExpose({
     <!-- xterm 挂载点：沿用 .log-view 的 flex:1 高度链，只把它的 overflow-y 关掉（xterm 自带视口滚动）。
          描边取当前档的 canvasBorder（票 #13）：浅灰 / 暖纸那两档与卡片只差一档明度，靠描边才读作「有意另起一块台面」；
          暗底两档存的是字面 hex，paper / charcoal 存 transparent（不画）。outline 不占布局，故网格尺寸不受影响。 -->
-    <div ref="view" class="log-view term-view" :style="{ overflow: 'hidden', minHeight: '0', outline: '1px solid ' + paletteOf.canvasBorder, outlineOffset: '-1px' }" @contextmenu.prevent="onContextMenu"></div>
+    <div ref="view" class="log-view term-view" :style="{ overflow: 'hidden', minHeight: '0', outline: '1px solid ' + shownPaletteOf.canvasBorder, outlineOffset: '-1px' }" @contextmenu.prevent="onContextMenu"></div>
   </div>
 </template>

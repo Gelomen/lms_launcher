@@ -33,6 +33,9 @@ export type LogTabKind = 'text' | 'terminal';
  * restartDisabled = 该条配置已不在 ql_list（App 的只读镜像 qlConfigs 查不到）→ [重新启动] 禁用。
  * palette（票 #13 / ADR 0001）= 该页签**创建当时**的终端配色快照，之后不随配置镜像变化（条目被删也不跳回默认档）；
  * 缺省 = 表里的默认档（termPaletteOf 的回落）。只有终端页签有它，text 页签没有终端、也就没有配色。
+ * palettePreview（票 #15 / spec #12）= 弹窗 [配色] 一行 hover 上来的**临时**档，与 palette 是两回事：
+ * 它只在指针停在色块上那几秒存在（App 判过「这条配置有没有终端页签」才挂上来，移开 / 关窗 / 关页签都撤掉），
+ * 期间那块终端按它换 theme，但**不改快照、不落盘**。没有预览 = 键不在（undefined），组件用快照。
  */
 export interface LogTabItem {
   id: string;
@@ -46,4 +49,5 @@ export interface LogTabItem {
   restartDisabled: boolean;
   configId?: string;
   palette?: TermPaletteId;
+  palettePreview?: TermPaletteId;
 }

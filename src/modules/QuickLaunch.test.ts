@@ -201,12 +201,17 @@ describe('QuickLaunch card', () => {
     await flush();
     await buttonWithTip(w.findAll('.tpl-row')[0], t('ql.btn.edit')).trigger('click');
     await flush();
-    const sw = w.find('.palette-swatch[data-palette="campbell"]');
-    expect(sw.exists(), '弹窗里的色块没渲染出来').toBe(true);
-    await sw.trigger('mouseenter');
-    await sw.trigger('mouseleave');
+    // 弹窗内容经 Teleport 渲染到 body（同 QuickLaunchModal.test.ts:4 那条口径），所以这一条在 document 层级找。
+    const sw = document.querySelector('.palette-swatch[data-palette="campbell"]') as HTMLButtonElement | null;
+    expect(sw, '弹窗里的色块没渲染出来').not.toBeNull();
+    sw!.dispatchEvent(new MouseEvent('mouseenter'));
+    await flush();
+    sw!.dispatchEvent(new MouseEvent('mouseleave'));
+    await flush();
     expect(w.emitted('paletteHover'), 'hover 预览没原样冒给上层（或卡片自己吞掉了）').toEqual([['a', 'campbell'], ['a', null]]);
+    // 卡片自己不动任何终端、也不落盘：这一次交互没有多出一个 ql_* 调用（mockLms 装的 invoke 计数在别处钉）
     w.unmount();
+    document.body.innerHTML = '';   // Teleport 挂在 body 上，卸载组件不清它 → 显式清干净，别漏给下一条用例
   });
 
   // 2026-10-19 用户反馈：[可执行程序] 行点 [复制] 复制失败，提示 "An object could not be cloned."；
