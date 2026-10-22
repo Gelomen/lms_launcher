@@ -619,6 +619,41 @@ describe('票 #14 · 工具条配色浮层', () => {
     w.unmount();
   });
 
+  // ── 票 #15 · 弹窗 [配色] 一行的 hover 预览 ──
+  // 「这条配置有没有终端页签」由 App 判（hasTerminalTab 在那边），传下来的是一份**临时预览** prop（palettePreview）。
+  // 三条边界与上面票 #14 那条本地预览一字同口径：① 换的是同一个终端实例的 theme 整对象（不重建、ADR:15）；
+  // ② 本组件一个 ql_* 都不发、也不冒 palette —— 落盘只在「点击」那条路上，预览态永不落盘、也永不改 prop；
+  // ③ 预览撤掉就回到快照 prop。
+  it('an_external_palette_preview_swaps_the_theme_on_the_same_terminal_and_never_writes', async () => {
+    const { w } = mountTab({ palette: 'paper' });
+    const term = h.state.terms[0];
+    expect(term.options.theme).toEqual(TERM_PALETTES['paper'].theme);
+    await w.setProps({ palettePreview: 'campbell' });
+    expect(h.state.terms.length).toBe(1);                                        // 预览不重建终端
+    expect(term.options.theme).toEqual(TERM_PALETTES['campbell'].theme);
+    expect(term.options.theme).not.toBe(TERM_PALETTES['campbell'].theme);         // 整对象替换（ADR:15）
+    expect(w.emitted('palette'), '预览态冒了「选了一档」= 会走落盘的窄通道').toBeUndefined();
+    expect(invoke.mock.calls.filter((c) => String(c[0]).startsWith('ql_'))).toEqual([]);
+    await w.setProps({ palettePreview: null });
+    expect(term.options.theme).toEqual(TERM_PALETTES['paper'].theme);             // 撤掉预览 = 回到快照
+    w.unmount();
+  });
+
+  // 两份预览同时在场时**本地优先**：用户正在工具条浮层里挑那一档，弹窗那边的 hover 不能盖掉它
+  // （同一屏只能有一档）。本地那份让位之后，外部那份仍然生效 —— 不是直接跳回快照。
+  it('a_local_popover_preview_wins_over_an_external_one_until_it_leaves', async () => {
+    const { w } = mountTab({ palette: 'paper' });
+    await w.find('.btn-term-palette').trigger('click');
+    await w.find('.term-palette-row[data-palette="warm-night"]').trigger('mouseenter');
+    await w.setProps({ palettePreview: 'campbell' });
+    expect(h.state.terms[0].options.theme).toEqual(TERM_PALETTES['warm-night'].theme);
+    await w.find('.term-palette-row[data-palette="warm-night"]').trigger('mouseleave');
+    expect(h.state.terms[0].options.theme).toEqual(TERM_PALETTES['campbell'].theme);
+    await w.setProps({ palettePreview: null });
+    expect(h.state.terms[0].options.theme).toEqual(TERM_PALETTES['paper'].theme);
+    w.unmount();
+  });
+
   it('clicking_a_row_emits_the_choice_closes_the_popover_and_persists_nothing_itself', async () => {
     const { w } = mountTab({ palette: 'paper' });
     await w.find('.btn-term-palette').trigger('click');

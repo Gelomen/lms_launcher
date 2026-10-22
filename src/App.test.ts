@@ -1623,6 +1623,54 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
+  // ── 票 #15 · 弹窗 [配色] 一行的 hover 预览（App 才是决策者）──
+  // 弹窗只报「这条配置正在预览哪一档 / 移开了(null)」；App 判有没有对应的终端页签：
+  // 有 → 把临时预览挂到**那条页签**上（一路落到 theme），没有 → 什么都不做（弹窗那一行自己显示说明文案）。
+  // 全程不落盘：预览期间零 ql_set_palette / ql_save（落盘只有「保存」与「浮层点击」两条路，票 #13/#14 的门不变）。
+  it('modal_palette_hover_previews_on_the_matching_terminal_tab_only', async () => {
+    const { w } = mountQl({ items: { c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'paper' }, c2: QL_ITEMS.c2 } });
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');   // 启动 → 建页签 ql:c1（快照 = paper）
+    await flush();
+    expect(xh.state.terms.length).toBe(1);
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['paper'].theme);
+    const ql = w.findComponent(QuickLaunch);
+    ql.vm.$emit('paletteHover', 'c1', 'campbell');
+    await flush();
+    let tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(tabs.find((x) => x.id === 'ql:c1')?.palettePreview, '预览没挂到那条页签上').toBe('campbell');
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['campbell'].theme);
+    expect(xh.state.terms.length).toBe(1);                       // 预览不重建终端（ADR:15）
+    expect(qlInvokes('ql_set_palette'), 'hover 预览去写盘了').toEqual([]);
+    expect(qlInvokes('ql_save'), 'hover 预览走了整条覆盖的 ql_save').toEqual([]);
+    ql.vm.$emit('paletteHover', 'c1', null);
+    await flush();
+    tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(tabs.find((x) => x.id === 'ql:c1')?.palettePreview, '移开之后预览残留盖在页签上').toBeUndefined();
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['paper'].theme);
+    expect(tabs.find((x) => x.id === 'ql:c1')?.palette, '预览把那条页签的快照改了（预览不改快照）').toBe('paper');
+    w.unmount();
+  });
+
+  // 没有终端页签的配置（exe 条目、或页签还没建 / 已关）：hover 什么都不改 —— 不给不存在的页签造预览态，
+  // 也不刷任何一条既有页签（弹窗那一行照常显示说明文案，这是它的唯一反馈）。
+  it('modal_palette_hover_without_a_terminal_tab_changes_nothing', async () => {
+    const { w } = mountQl({ states: {} });   // 不启动 → 只有两个静态文本页签，没有 ql: 页签
+    await flush();
+    const before = JSON.stringify(w.findComponent(LogPanel).props('tabs'));
+    const ql = w.findComponent(QuickLaunch);
+    ql.vm.$emit('paletteHover', 'c1', 'campbell');   // 有这条配置，但没有它的终端页签
+    ql.vm.$emit('paletteHover', 'c2', 'charcoal');   // exe 条目：压根没有终端
+    ql.vm.$emit('paletteHover', 'no-such-config', 'warm-night');
+    await flush();
+    const tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(JSON.stringify(tabs), '没有终端页签的 hover 改了页签条目').toBe(before);
+    expect(tabs.some((x) => 'palettePreview' in x), '给没有终端的页签造了预览字段').toBe(false);
+    expect(qlInvokes('ql_set_palette')).toEqual([]);
+    expect(qlInvokes('ql_save')).toEqual([]);
+    w.unmount();
+  });
+
 
   // E9（索引 M8 / K34(5)）：不可写的配置一律不发 ql_write / ql_resize。三种不可写：
   // ① 没有终端页签（未启动 / 页签已关）② exe 配置（ql_start 返回 tabId = null，运行态在也没有页签）

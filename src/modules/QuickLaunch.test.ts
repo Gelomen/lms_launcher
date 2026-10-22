@@ -193,6 +193,22 @@ describe('QuickLaunch card', () => {
     w.unmount();
   });
 
+  // 票 #15（spec #12）：弹窗色块的 hover 预览 —— 卡片只是**透传**：判不判「这条配置有没有终端页签」在 App
+  // （那边才有 hasTerminalTab / 页签表），卡片既不自己换任何终端、也不落盘（这里连 invoke 都没多一次）。
+  // 冒上去的是 (configId, 档 | null)：null = 移开 / 关窗，上层据此还原。
+  it('modal_palette_hover_bubbles_through_the_card_untouched', async () => {
+    const w = mountCard({ items: { a: { ...SHELL, terminal_palette: 'paper' } }, invalid: [] });
+    await flush();
+    await buttonWithTip(w.findAll('.tpl-row')[0], t('ql.btn.edit')).trigger('click');
+    await flush();
+    const sw = w.find('.palette-swatch[data-palette="campbell"]');
+    expect(sw.exists(), '弹窗里的色块没渲染出来').toBe(true);
+    await sw.trigger('mouseenter');
+    await sw.trigger('mouseleave');
+    expect(w.emitted('paletteHover'), 'hover 预览没原样冒给上层（或卡片自己吞掉了）').toEqual([['a', 'campbell'], ['a', null]]);
+    w.unmount();
+  });
+
   // 2026-10-19 用户反馈：[可执行程序] 行点 [复制] 复制失败，提示 "An object could not be cloned."；
   // 同一行的 [编辑] 保存同样的 exe 数组却正常。成因不在卡片，而在出口：列表挂在 ref 上 = Vue 深层响应式，
   // onCopy 里那句 { ...src, name } 只拆最外层，exe 那个数组仍是 Proxy；而 ipcRenderer.invoke 用结构化克隆
