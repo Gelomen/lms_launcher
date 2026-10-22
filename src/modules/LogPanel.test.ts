@@ -433,6 +433,23 @@ describe('LogPanel 页签关闭按钮与溢出（E3/E4/E5/E7）', () => {
     w.unmount();
   });
 
+  // 票 #15：hover 预览链的中间一段。App 把临时预览挂在**页签条目**上（palettePreview），LogPanel 只做搬运：
+  // 有预览的原样交给 TerminalTabView，没预览的页签 prop 就是 undefined（不判缺省、不自己造一档、不建额外终端）。
+  it('palette_preview_field_is_forwarded_down_without_inventing_anything', async () => {
+    const w = mount(LogPanel, {
+      props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), termTab('ql:demo', { palette: 'paper', palettePreview: 'campbell' }), termTab('ql:other', { palette: 'paper' })] },
+    });
+    const kids = w.findAllComponents(TerminalTabView);
+    expect(kids.length).toBe(2);
+    expect(kids[0].props('palettePreview'), '页签条目上的临时预览没搬到组件').toBe('campbell');
+    expect(kids[1].props('palettePreview'), '没有预览的页签被凭空造出一档预览').toBeUndefined();
+    const termsBefore = xh.state.terms.length;
+    await w.setProps({ tabs: [textTab('launcher'), termTab('ql:demo', { palette: 'paper' }), termTab('ql:other', { palette: 'paper' })] });
+    expect(w.findAllComponents(TerminalTabView)[0].props('palettePreview'), '预览撤掉之后 prop 还留着').toBeUndefined();
+    expect(xh.state.terms.length, '搬个预览字段就把终端重建了').toBe(termsBefore);
+    w.unmount();
+  });
+
 
   // 2026-10-20 用户实机截图：那颗进程态按钮的 tooltip 比同排其他按钮高 4px。
   // 致错写法 = 让它吃 .icon-btn 的默认 32×32 盒：::after 的 bottom: calc(100% + 6px) 以盒顶为基准，

@@ -14,6 +14,13 @@ import ConfirmDialog from '../components/ConfirmDialog.vue';
 // ——与 QuickLaunch.vue:11-12 同一先例。
 import type { QuickLaunchEntry, QuickLaunchKind, TerminalId } from '../src-main/quick-launch-config';
 import type { TerminalInfo } from '../src-main/quick-launch-terminals';
+// 票 #15（spec #12 / ADR 0001）：[配色] 那一行的取色来源两份各有真源——
+//   id 与缺省 = src-main/term-palettes.ts（TERM_PALETTE_IDS 行序 / TERM_PALETTE_DEFAULT / TermPaletteId），
+//   颜色 = src/modules/term-palettes.ts 的 TERM_PALETTES[id]（底色 + 四格 ANSI 微条都从这一行取）。
+// 运行时引主进程那份的先例是 TerminalTabView.vue:14-15（票 #14）；组件源码里不得出现任何 hex，
+// 这条由 QuickLaunchModal.test.ts 的源码扫描门钉（与 TerminalTabView.test.ts:266-268 同一口径，不开特例）。
+import { TERM_PALETTES, termPaletteOf } from './term-palettes';
+import { TERM_PALETTE_DEFAULT, TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palettes';
 
 // 新建 / 编辑共用的启动项弹窗（规格 2026-10-10-quick-launch-card §9.4 / §5.3 / §6.1 / §8）。
 // 外壳照抄 TemplateModal 的类名（modal-overlay / modal-box / modal-head / modal-body / modal-actions /
@@ -45,10 +52,15 @@ const props = withDefaults(defineProps<{
   entry: QuickLaunchEntry | null;
   running?: boolean;
 }>(), { running: false });
+// paletteHover(configId, 档 | null)（票 #15）：hover 色块时的预览意图，原样冒给卡片再冒到 App
+// （QuickLaunch.vue → App.onQlPaletteHover）。**只有 configId 有对应终端页签时 App 才换 theme**，
+// 换法是 TerminalTabView 里「整对象换 theme、不改 prop、不落盘」那一套（票 #14 定下的口径）。
+// 本弹窗自己不落盘也不改 formPalette：null = 移开、请上层还原。
 const emit = defineEmits<{
   (e: 'saved'): void;
   (e: 'deleted', id: string): void;
   (e: 'close'): void;
+  (e: 'paletteHover', configId: string, palette: TermPaletteId | null): void;
 }>();
 
 const isEdit = computed(() => props.id !== null);
@@ -107,6 +119,15 @@ const exeCell = ref<HTMLElement | null>(null);
 // 任务 8（规格 §6.2 / §4-1）：「管理员」= 条目上的 admin 字段（§6.1，可选布尔）。
 // 只有字面量 true 算真（与主进程 normalizeEntry 同一口径），所以回填写 === true 而不是 ?? false。
 const formAdmin = ref(false);
+// 票 #15：条目上的 terminal_palette（**只有 shell 条目有**：exe 没有终端，因而没有配色 —— GLOSSARY / ADR 0001）。
+// formPalette 存的永远是**已定的那一档**（真 id，不是 undefined）：fill() 用 termPaletteOf 回落，
+// 缺字段 = 表里的默认档（与主进程 termPaletteOr / quick-launch-config.ts:95 的归一同一张嘴）；
+// 保存时 shell 分支总是显式带上这一键（与 admin 的「落盘总是显式写」同一口径，见 quick-launch-config.ts:118）。
+// 落盘走 ql_save 整条，**不走** ql_set_palette 窄通道——窄通道是页签工具条那颗的通道（票 #14），
+// 它会把弹窗里尚未保存的其它表单值一并跳过、只改一键，与「随表单一起保存」的口径相反。
+const formPalette = ref<TermPaletteId>(TERM_PALETTE_DEFAULT);
+// hover 预览态 = 「正在看哪一档」，不是选中态：只换说明文案 + 冒给上层，不改 formPalette、不落盘。
+const hoverPalette = ref<TermPaletteId | null>(null);
 const terminals = ref<TerminalInfo[]>([]);
 const terminalsLoading = ref(false);
 const saveError = ref<string | null>(null);
@@ -164,6 +185,44 @@ const terminalOptions = computed(() => terminals.value.map((info) => ({
   imageUrl: info.icon,
 })));
 
+// ---------- 票 #15：[配色] 一行 ----------
+// 六档名与一句话说明：六个 key 各写一次字面量 t()（key-coverage.test.ts:39-41 只认字面量调用点，
+// 拼接式取键进不了那道门）——与上面 TERM_LABEL 六个键、TerminalTabView.vue:98-105 的 paletteLabels 同一手法。
+// 档名复用票 #14 那六条 ql.palette.<id>，这里只新增说明那六条 ql.palette.<id>.hint（词典两侧齐全）。
+const paletteLabels: Record<TermPaletteId, () => string> = {
+  paper: () => t('ql.palette.paper'),
+  console: () => t('ql.palette.console'),
+  'warm-paper': () => t('ql.palette.warm-paper'),
+  charcoal: () => t('ql.palette.charcoal'),
+  campbell: () => t('ql.palette.campbell'),
+  'warm-night': () => t('ql.palette.warm-night'),
+};
+const paletteHints: Record<TermPaletteId, () => string> = {
+  paper: () => t('ql.palette.paper.hint'),
+  console: () => t('ql.palette.console.hint'),
+  'warm-paper': () => t('ql.palette.warm-paper.hint'),
+  charcoal: () => t('ql.palette.charcoal.hint'),
+  campbell: () => t('ql.palette.campbell.hint'),
+  'warm-night': () => t('ql.palette.warm-night.hint'),
+};
+// 说明这一行显示的那一档：hover 时是被 hover 的档，其余时候是已选的那一档。
+// 「无对应终端页签则只显说明」（AC 逐字）在弹窗这一侧就是这一条：说明永远在换，画布换不换归 App 判。
+const shownPalette = computed<TermPaletteId>(() => hoverPalette.value ?? formPalette.value);
+
+// 点击 = 选中（改表单），落盘等到保存那一刻随整条 entry 走（ql_save）。
+function onPalettePick(id: TermPaletteId): void { formPalette.value = id; }
+// hover / 键盘 focus 共用一对处理器（与票 #14 的浮层同一口径：预览不是选中，移开就还原）。
+// 新建态（props.id = null）没有 configId，也就没有可能存在的页签 → 不冒预览，只换说明文案。
+function onPaletteHover(id: TermPaletteId): void {
+  hoverPalette.value = id;
+  if (props.id !== null) emit('paletteHover', props.id, id);
+}
+function onPaletteLeave(): void {
+  if (hoverPalette.value === null) return;
+  hoverPalette.value = null;
+  if (props.id !== null) emit('paletteHover', props.id, null);
+}
+
 function fill(): void {
   attemptedSave.value = false;
   saveError.value = null;
@@ -175,6 +234,10 @@ function fill(): void {
   formCmdRows.value = splitCmdRows(e?.cmd);
   formExeRows.value = splitExeRows(e?.exe);
   formAdmin.value = e?.admin === true;
+  // 票 #15：配色回填走 termPaletteOf（缺字段 / 表外值都回落默认档，与主进程同一判据），
+  // 所以这一行永远有一档是「当前」，不会出现空选中态。hover 预览不跨弹窗留残留。
+  formPalette.value = termPaletteOf(e?.terminal_palette).id;
+  hoverPalette.value = null;
   terminals.value = [];
 }
 
@@ -195,7 +258,12 @@ async function loadTerminals(): Promise<void> {
 }
 
 // open 变 true：回填表单 + 拉终端（check C3 / D3）。immediate 兜住「挂载时就是打开的」。
-watch(() => props.open, (open) => { if (open) { fill(); void loadTerminals(); } }, { immediate: true });
+// 关窗时顺手清掉 hover 预览（不清的话：鼠标停在某个色块上按 ESC / 点保存关掉弹窗，
+// 身后那块画布会一直停在预览档，等不到 mouseleave）。fill() 里也清一次，两处都是同一口径。
+watch(() => props.open, (open) => {
+  if (open) { fill(); void loadTerminals(); }
+  else onPaletteLeave();
+}, { immediate: true });
 
 function onTypeChange(v: string): void { formType.value = v === 'exe' ? 'exe' : 'shell'; }
 function onShellChange(v: string): void { formShell.value = v; }
@@ -247,9 +315,13 @@ async function save(): Promise<void> {
   const name = formName.value.trim();
   // admin 交**真布尔**（不是 'true' / 1）：主进程按 e.admin === true 分流（任务 7），
   // 配置层把非布尔规整成 false（任务 1 / §8-K4「落盘总是显式写」）——两态都带这个字段。
+  // 票 #15：terminal_palette 只在 shell 分支带（§5.3-6「只发该类型的字段」的另一半：exe 不带配色，
+  // 主进程 validateEntry 的 exe 分支也不会留这一键）。值永远是真 id（formPalette 回落过），
+  // 所以不需要条件 spread，也不会把 undefined 送进 IPC。
   const entry: QuickLaunchEntry = formType.value === 'exe'
     ? { name, type: 'exe', exe: exeLines.value, admin: formAdmin.value }
-    : { name, type: 'shell', shell: formShell.value as TerminalId, cmd: cmdLines.value.join('\n'), admin: formAdmin.value };
+    : { name, type: 'shell', shell: formShell.value as TerminalId, cmd: cmdLines.value.join('\n'), admin: formAdmin.value,
+        terminal_palette: formPalette.value };
   saving.value = true;
   try {
     await invoke('ql_save', props.id, entry);
@@ -338,7 +410,8 @@ function close(): void { emit('close'); }
               <!-- 任务 8（规格 §6.2 / §8-K8；用户澄清原话「[终端] 那一行分为两列，左列是 [终端] 和它的下拉，
                    右边是 [管理员] 开关」）：这一行**不新增网格行** —— 控件格仍用被测试计数器认识的 .field-cell，
                    内部 .row-cell 两段：终端下拉（.term-field 吃掉行内余下宽度）在前、「管理员」+ 开关在后。
-                   两态因此都是 3 行控件，218px 的定高推导不变（见上方注释与 test.ts 的 controlCells 门）。 -->
+                   当时两态因此都是 3 行控件、218px 的定高推导不变。票 #15 之后命令行态多出行[配色] = 4 格
+                   （可执行程序态仍 3 格），定高随命令行态实测重推为 261px —— 见下方 .palette-cell 与定高注释。 -->
               <div class="field-cell">
                 <div class="row-cell">
                   <div class="dropdown term-field">
@@ -359,11 +432,43 @@ function close(): void { emit('close'); }
                   </div>
                 </div>
               </div>
+              <!-- 票 #15（spec #12 / issue #15）：[配色] 一行，位置 = [终端]+[管理员] 那一行之后、「命令」之前。
+                   行序 = TERM_PALETTE_IDS（弹窗这一行不做明底/暗底分组：一行装得下六块，页签那颗的浮层才需要两组）。
+                   色块盒子复用票 #14 的 .term-palette-swatch / .term-palette-cell（style.css:290-291 = 尺寸的一份真源），
+                   颜色全部内联自 TERM_PALETTES[id] 那一行：底色 = theme.background，四格 ANSI 微条 = foreground / red / green / magenta。
+                   选中态 = .is-current + aria-current="true"（与浮层那六行同一口径）；点击只改表单，落盘等保存那次随整条 entry 走 ql_save。
+                   hover / 键盘 focus 只把预览冒给上层（App 判有没有对应终端页签，有就整对象换 theme）+ 换这一行的说明文案，本弹窗不落盘。
+                   说明文案走**第二行**而不是与色块挤在同一行（不是审美，是溢出）：六块色块实测占 6×34.3 + 5×6 = 235.8，
+                   控制列实测 452.7（zh）/ 421.6（en，标签列随 'Program path' 变宽），剩下的 216.9 / 185.8 装不下
+                   「档名 + 说明」这一对（zh 最长 264.0 = 浅灰画布 / en 最长 360.0 = Warm paper）。硬排一行实测
+                   .flag-grid 的 scrollWidth 探出 clientWidth：zh +28.0、en 最多 +124.0（同一探针的 pairs.json）
+                   → 就是 2026-10-17 登记过的坑（东西探出网格 → .modal-body 顶出横向滚动条 → 定高门与两态同高全被带歪）。 -->
+              <label class="label flag-label palette-label">{{ t('ql.modal.palette') }}</label>
+              <div class="field-cell palette-cell">
+                <div class="row-cell">
+                  <button v-for="id in TERM_PALETTE_IDS" :key="id" type="button" class="palette-swatch"
+                    :class="{ 'is-current': id === formPalette }" :data-palette="id"
+                    :aria-label="paletteLabels[id]()" :aria-current="id === formPalette ? 'true' : undefined"
+                    @mouseenter="onPaletteHover(id)" @mouseleave="onPaletteLeave()"
+                    @focus="onPaletteHover(id)" @blur="onPaletteLeave()"
+                    @click="onPalettePick(id)">
+                    <span class="term-palette-swatch" :style="{ background: TERM_PALETTES[id].theme.background }">
+                      <span class="term-palette-cell" :style="{ background: TERM_PALETTES[id].theme.foreground }"></span>
+                      <span class="term-palette-cell" :style="{ background: TERM_PALETTES[id].theme.red }"></span>
+                      <span class="term-palette-cell" :style="{ background: TERM_PALETTES[id].theme.green }"></span>
+                      <span class="term-palette-cell" :style="{ background: TERM_PALETTES[id].theme.magenta }"></span>
+                    </span>
+                  </button>
+                </div>
+                <!-- 两个 span 之间不留空白：换行会变成 textContent 里的空白，用例钉的是「档名紧跟说明」 -->
+                <span class="label palette-hint"><span class="palette-hint__name">{{ paletteLabels[shownPalette]() }}</span><span class="palette-hint__text">{{ paletteHints[shownPalette]() }}</span></span>
+              </div>
               <label class="label flag-label cmd-label">{{ t('ql.modal.cmd') }}</label>
               <!-- 命令为空的报错在命令那一格内（.field-cell，与 .name-cell 同一手法），不进弹窗顶部错误区。
                    多行命令（2026-10-17 用户改口径）：所有行都在**同一个 .field-cell** 里纵向排布，
-                   不新增 .flag-grid 的网格行 —— 测试的 controlCells 计数器仍数到 3，218px 的定高推导一字不改
-                   （见下方 .cmd-cell 注释与 .temp/ql-cmd-rows-newline/）。 -->
+                   不新增 .flag-grid 的网格行 —— 当时测试的 controlCells 计数器数到 3、定高 218px 一字不改
+                   （见下方 .cmd-cell 注释与 .temp/ql-cmd-rows-newline/）。本行今天仍是**一个** .field-cell：
+                   票 #15 加的配色行是**另一对**网格行，与多行命令无关（两态格数由此变成 4 / 3，见 .palette-cell）。 -->
               <div ref="cmdCell" class="field-cell cmd-cell">
                 <div v-for="(row, i) in formCmdRows" :key="row.id" class="row-cell">
                   <input class="input" :class="{ error: attemptedSave && cmdError !== null }" v-model="row.text" />
@@ -387,8 +492,9 @@ function close(): void { emit('close'); }
             <!-- 可执行程序：路径 + 选择按钮（规格 §2 非目标：不加启动参数 / 工作目录） -->
             <template v-else>
               <!-- 任务 8（规格 §6.2；用户原话「[程序路径] 上方添加 [管理员权限] checkbox」）：
-                   新增一行「管理员」，位置在「程序路径」那一行**之前**。行数 2 → 3 = 与命令行态同一个行数，
-                   218px 的定高在两态同时成立（可执行程序态原本 38px 的留白被这一行填掉）。 -->
+                   新增一行「管理员」，位置在「程序路径」那一行**之前**。当时行数 2 → 3 = 与命令行态同一个行数，
+                   218px 的定高在两态同时成立（可执行程序态原本 38px 的留白被这一行填掉）。
+                   票 #15 之后命令行态多一行配色 = 4 行，本态仍 3 行，两态同一个定高 261（见 <style> 里的定高注释）。 -->
               <label class="label flag-label admin-label">{{ t('ql.modal.admin') }}</label>
               <div class="field-cell">
                 <div class="row-cell">
@@ -407,7 +513,7 @@ function close(): void { emit('close'); }
               <!-- 路径为空的报错在路径那一格内（同上），选择按钮仍在输入行右侧。
                    多行程序路径（票 #3 / spec #1「弹窗」段）：行模型与上面的命令行多行同构——
                    所有行都在**同一个 .field-cell**（.exe-cell）里纵向排布，不新增 .flag-grid 的网格行，
-                   因此「3 个控件格」计数门与 218px 的定高推导一字不改（见下方 .exe-cell 注释）。
+                   因此可执行程序态的「3 个控件格」计数门不因多行而变（票 #15 之后命令行态 4 格、定高 261，见 .exe-cell 注释）。
                    差别两处（与 script 里 ExeRow 的注释同一份）：每行保留自己的 [选择文件]（AC-4）、落盘是有序数组。
                    行内顺序仍是输入框 → [选择文件] → [+]（默认行）/ [-]（追加行）：
                    默认行**作为输入格**一字未改（同样的高度、单行不换行、[选择文件] 在输入框右侧），
@@ -471,23 +577,30 @@ function close(): void { emit('close'); }
    本弹窗没有 VRAM 指示 / flag tooltip，故不带那几段；「开关行」是 2026-10-15 任务 8 才加的
    （.bool-switch 三段从 TemplateModal.vue:567-588 逐字复制，见本文件末尾，§8-K15）。 */
 /* 弹窗高度固定（2026-10-13 用户反馈 + 截图：[类型] 切到「可执行程序」时弹窗变窄）：
-   定高以「命令行」态为准 = 218px。取值来自无头 Chromium 实测（真实 style.css + 本组件 scoped 样式 +
-   两态静态复刻）：命令行态 .modal-box = 218 / 可执行程序态 = 180，差 38 = 一行控件 32 + 一个行距 6。构成：
+   定高以「命令行」态为准 = **261px**（票 #15 加了 [配色] 一行之前是 218px）。取值来自无头 Chromium 实测——
+   探针 .temp/ql-modal-palette-row/（量法照抄 .temp/ql-exe-rows-probe/：真组件挂载导出四态 .modal-box 的
+   outerHTML → 真 src/style.css + 本文件 scoped 样式块原文 + FA 自生成 CSS + 真 Chromium 1400×900）：
+     命令行态 .modal-box = 520 × 260.7（zh / en 四现场同高）
+     可执行程序态        = 520 × 218.0（自然内容高 209.3，被地板盖住）
+   命令行态的构成：
      .card 上下边框 2
    + .modal-head 32
-   + .modal-body：padding 16×2 + .flag-grid margin-top 12 + 3 行 × var(--h-control)32 + 2 行距 × 6 = 152
+   + .modal-body：padding 16×2 + .flag-grid margin-top 12 + 4 行控件（32 + 32 + **37.3** + 32）+ 3 行距 × 6 = 151.3
    + .modal-actions 32
-   = 218。2026-10-15 任务 8（规格 §6.2 / §8-K8）在可执行程序态的「程序路径」上方加了一行「管理员」，
-   两态都是 3 行控件：原本那 38px 留白被这一行填掉，218 这个数与 min-height 一字未改。
+   = 261.3 → 实测 260.7（差的 0.6px 是网格行高的亚像素，与当年「3 行 = 217.3 → 定高 218」同一口径，取整数向上）
+   其中新那一格实测 37.3 = 色块行 15.3 + .palette-cell 的行距 4 + 说明行 18（见下方 .palette-cell 注释）。
+   2026-10-15 任务 8 之后两态一度都是 3 行控件；票 #15 之后**两态格数不再相同**：
+   命令行 4 格（名字 / 终端+管理员 / 配色 / 命令）、可执行程序 3 格（名字 / 管理员 / 程序路径）。
+   定高仍是**同一个值**——地板在可执行程序态那边显形，这正是「切类型不跳尺寸」这条门的原意。
    用 min-height 而不是 height（用户 2026-10-13 决定）：保存失败的主进程文案 / 名字·命令·路径「不能为空」
    的字段级提示出现时，弹窗自然长高（实测报错态 236px，正文区 bodyScroll == bodyClient = 不出滚动条、
    内容不被裁），不把命令输入框顶掉。
    行数变了这个数就要重算——QuickLaunchModal.test.ts 的 modal_height_is_fixed_to_the_shell_form_height_in_both_types
-   钉着「两态各 3 行控件」（两态各数一遍 controlCells）与「两态同一个定高值」。 */
+   钉着「命令行 4 格 / 可执行程序 3 格」（两态各数一遍 controlCells）与「两态同一个定高值 = 命令行态实测」。 */
 .modal-box {
   width: 90%;
   max-width: 520px;
-  min-height: 218px;            /* = 命令行态实测高度，见上方推导 */
+  min-height: 261px;            /* = 命令行态实测高度（260.7 → 取整向上），见上方推导与 .temp/ql-modal-palette-row/ */
   max-height: 85vh;             /* 窗口很矮时的收缩兜底（定高之后它是唯一收缩门），.modal-body 内部滚动 */
   display: flex;
   flex-direction: column;
@@ -567,17 +680,17 @@ function close(): void { emit('close'); }
 .name-cell { min-width: 0; }
 /* 命令 / 可执行程序路径的报错格（2026-10-13 用户直接改）：与 .name-cell 同一手法——
    纵向容器包住「输入行 + 报错」，报错不占 .flag-grid 的网格列（否则会把下一行的标签挤到报错同一行）。
-   两态下它都是表单最后一格，所以不影响 218px 的定高推导（报错出现时按 min-height 自然长高）。 */
+   两态下它都是表单最后一格，所以不影响定高推导（报错出现时按 min-height 自然长高；数值 218 → 261 随票 #15 重推）。 */
 .field-cell { min-width: 0; }
 /* 多行命令（2026-10-17 用户改口径）：全部命令行在同一个 .field-cell 内纵向排布，不新增 .flag-grid 的网格行
-   → QuickLaunchModal.test.ts 的 controlCells 计数器仍数到 3，218px 的定高推导一字不改（min-height 是地板不是天花板）。
+   → controlCells 计数器不因多行而 +1（票 #15 之后命令行态数到 4 / 可执行程序态 3；min-height 是地板不是天花板）。
    实测（.temp/ql-cmd-rows-probe/：真组件导出的 markup + 真 style.css + 真 Chromium 量取）：
      1 行 = 218.0（min-height 地板，与改动前逐像素一致，body 无滚动条）
      3 行 = 293.3（每加一行 = 32 控件 + 6 行距 = 38，与 .flag-grid 的 gap 同口径；0.7px 是网格行高的亚像素，
                     1 行态的内容高本来就是 217.3，被 218 的地板盖住了）
    默认行那个输入框的高度与「不换行」一字未改 —— 用户口径逐字：「不改变输入框高度, 也不需要自动换行」。 */
 /* 多行程序路径（票 #3 落地，票 #4 实测）：与 .cmd-cell 共用这一条规则、同一个 6px 间距口径（= .flag-grid 的 gap），
-   所有行在同一个 .field-cell 内纵向排布 → 「3 个控件格」计数门不变，定高是同一套算术（每行 +32 +6 = 38）。
+   所有行在同一个 .field-cell 内纵向排布 → 控件格计数门不因多行而变，定高是同一套算术（每行 +32 +6 = 38）。
    可执行程序态也真机量过了（票 #4 的 .temp/ql-exe-rows-probe/：同一套探针，把命令行态两态当对照组重跑，
    一字不差复现了上面「多行命令（2026-10-17 用户改口径）」那段注释里的 218.0 / 293.3 → 这组探针可信。
    （那段的数字属于命令行态；本态的 3 行数不同，原因见下面那条——别把两态的绝对值互相照搬。）
@@ -592,6 +705,20 @@ function close(): void { emit('close'); }
    所以「每行 +38」两态通用，「3 行 = 293.3」那个绝对值只属于命令行态，别照搬。
    默认行的输入框与 [选择文件] 一字未改，只是那一行右边多出一个 36px 的 [+]（票 #3 AC-1）。 */
 .cmd-cell, .exe-cell { display: flex; flex-direction: column; gap: 6px; }
+/* 票 #15：[配色] 那一行。控件格纵向两行（六块色块 + 当前档说明），.flag-grid 的网格行仍是一对
+   「标签 + 控件格」→ test.ts 的 controlCells 计数器按态数到 4（shell）/ 3（exe），定高随 shell 态实测重算。
+   盒子尺寸复用 style.css:290-291 的 .term-palette-swatch / .term-palette-cell（四格 7×12 + 1px 间距 +
+   1px 内衬 + 1px 描边），本段只管按钮壳与两行的排布，不复抄尺寸、更不带 hex。
+   实测（.temp/ql-modal-palette-row/measure.json）：色块 34.3 × 15.3、色块行 15.3、说明行 18 → 这一格 37.3；
+   「配色」标签顶对齐之后标签中线 437.0 / 色块行中线 435.7（差 1.3px），所以这一条**不加** name/cmd/exe 那 8px。 */
+.palette-cell { display: flex; flex-direction: column; gap: 4px; }
+.palette-cell .row-cell { gap: 6px; }
+.palette-swatch { flex: none; padding: 0; border: 0; background: transparent; cursor: pointer; border-radius: 4px; }
+/* 选中态 = 一圈主色（与 .bool-switch--on / [保存] 同一主操作色语言）；aria-current 是可测的那一半 */
+.palette-swatch.is-current { box-shadow: 0 0 0 2px var(--primary); }
+.palette-swatch:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+.palette-hint { display: flex; gap: 6px; color: var(--muted); white-space: nowrap; }
+.palette-hint__name { color: var(--text); font-weight: 600; }
 /* [+] / [-] 的盒子：与 .file-btn 同一族（.btn 给边框 / 圆角 / --h-control 高），只是定宽成 36px 方块
    （36px = 本文件 .modal-close / .btn-delete 已经在用的点击区口径）。flex: none 让它不被输入框挤窄。 */
 .row-cell .row-btn { flex: none; width: 36px; padding: 0; }
@@ -600,6 +727,10 @@ function close(): void { emit('close'); }
    = (32px 控件高 − 17px 行高) / 2，有无报错都对齐输入框的中线。
    命令 / 路径两格现在也会因报错变高，同一处理（.cmd-label / .exe-label）。 */
 .flag-grid .name-label, .flag-grid .cmd-label, .flag-grid .exe-label { align-self: start; padding-top: 8px; }
+/* [配色] 标签同样顶对齐，但**不加**那 8px：8px = (32 控件高 − 17 行高)/2 是给 32px 控件准备的，
+   而色块行实测只有 15.3 高（四格 12 + 上下 1 内衬 + 上下 1 描边）→ 顶对齐就是中线对齐：
+   实测标签 428.0→446.0（中线 437.0）、色块行 428.0→443.3（中线 435.7），差 1.3px（探针 measure.json）。 */
+.flag-grid .palette-label { align-self: start; }
 .row-cell .type-label { flex: none; white-space: nowrap; }
 .row-cell .type-field { flex: none; width: 180px; }
 .file-btn {

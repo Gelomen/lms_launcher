@@ -35,11 +35,15 @@ const byPrefixAndName = {
 
 const props = defineProps<{ states: Record<string, { running: boolean; stopping: boolean }> }>();
 
-// emits 只有三个（规格 §9.4 / check C2）：新建与编辑不开新事件，弹窗归卡片自己持有（索引 K29）
+// emits：三个业务事件（规格 §9.4 / check C2）——新建与编辑不开新事件，弹窗归卡片自己持有（索引 K29）。
+// 票 #15 加了第四个：paletteHover = 弹窗色块的 hover 预览意图，卡片**只透传**（原样转给 App）。
+// 判据不在卡片：哪条配置有没有终端页签只有 App 知道（页签表在那边，App.vue:hasTerminalTab），
+// 卡片这里既不碰任何终端、也不发一条 ql_*（QuickLaunch.test.ts 的 modal_palette_hover_bubbles_through… 钉这条）。
 const emit = defineEmits<{
   (e: 'start', configId: string): void;
   (e: 'stop', configId: string): void;
   (e: 'changed'): void;
+  (e: 'paletteHover', configId: string, palette: TermPaletteId | null): void;
 }>();
 
 const list = ref<QuickLaunchList | null>(null);
@@ -228,7 +232,8 @@ onMounted(() => { void reload(); });
          saved / deleted → 重拉列表 + changed；close → 只关窗 -->
     <!-- running：见上面 editingRunning()（I-1）——运行中的条目在弹窗里禁用 [删除] -->
     <QuickLaunchModal :open="modalOpen" :id="editingId" :entry="entryFor(editingId)" :running="editingRunning()"
-      @saved="onModalSaved" @deleted="onModalDeleted" @close="modalOpen = false" />
+      @saved="onModalSaved" @deleted="onModalDeleted" @close="modalOpen = false"
+      @paletteHover="(c: string, p: TermPaletteId | null) => emit('paletteHover', c, p)" />
   </section>
 </template>
 

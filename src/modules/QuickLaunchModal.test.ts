@@ -11,6 +11,9 @@ import { mount, flushPromises as flush } from '@vue/test-utils';
 import QuickLaunchModal from './QuickLaunchModal.vue';
 import QuickLaunch from './QuickLaunch.vue';
 import { t } from '../i18n';
+import { TERM_PALETTES } from './term-palettes';                       // 票 #15：色块的颜色表（渲染端真源）
+// 票 #15：id 与缺省的真源在主进程那一份（与 TerminalTabView.vue:15 同一先例；测试侧引运行时值是安全的）
+import { TERM_PALETTE_DEFAULT, TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palettes';
 import type { QuickLaunchEntry, QuickLaunchList } from '../src-main/quick-launch-config';
 import type { TerminalInfo } from '../src-main/quick-launch-terminals';
 
@@ -32,7 +35,10 @@ const TERMS: TerminalInfo[] = [
 
 // 任务 8（规格 §6.2）：夹具带 admin: false —— 弹窗的 payload 现在总是显式带这个字段（§8-K4「落盘总是显式写」），
 // :383 的 args 断言用 SHELL_ENTRY 逐字比对，所以夹具与 payload 必须同一取值。
-const SHELL_ENTRY: QuickLaunchEntry = { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false };
+// 票 #15（spec #12）：terminal_palette 同理 —— shell 条目总是显式带这一键（quick-launch-config.ts:95 / :118 两处
+// 都过 termPaletteOr 归一），所以夹具带上缺省值 paper：这样「payload 与夹具逐字相等」这条既有的硬断言
+// 在票 #15 之后仍然咬得住（缺省值而不是某个特殊档，避免把这条门变成自证）。
+const SHELL_ENTRY: QuickLaunchEntry = { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', admin: false, terminal_palette: 'paper' };
 
 interface MockOpts {
   /** 数组 = 直接返回；Promise = 探测中（E3 用它钉「加载中禁用」） */
@@ -66,7 +72,7 @@ function mountModal(props: { open: boolean; id: string | null; entry: QuickLaunc
 
 // 真实 CSS 注入（同 QuickLaunch.test.ts:259-264 的手法）：Vitest 默认不处理 CSS，
 // 读 computed style 必须自己把真样式灌进 document。两份都要：
-//   src/style.css —— .card 的 1px 边框 / .input / .select-trigger 的 --h-control 高（218 的组成部分）；
+//   src/style.css —— .card 的 1px 边框 / .input / .select-trigger 的 --h-control 高（定高数字的组成部分）；
 //   QuickLaunchModal.vue 的 <style scoped> 原文 —— 定高数字就在这一段里。
 // 原文里没有 [data-v-] 属性选择器（scoped 属性是编译期加的），所以直接灌裸文本即可命中 DOM。
 function injectRealCss(): void {
@@ -349,12 +355,12 @@ describe('QuickLaunchModal', () => {
     expect(cmdRows().length, '点 [-] 没有删掉那一行').toBe(2);
     expect(cmdRowInputs().map((i) => i.value), '删错了行，或删行把后面几行的值串位了（:key 用了 index）').toEqual(['', 'B']);
 
-    // 多行不新增 .flag-grid 的网格行 → 218px 定高门（controlCells = 3）不被带歪，定高地板一字不改
+    // 多行不新增 .flag-grid 的网格行 → 定高门（命令行态 controlCells = 4）不被带歪，定高地板一字不改
     const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
     const controlCells = [...grid.children].filter((el) =>
       el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
-    expect(controlCells.length, '多行命令把 .flag-grid 的控件行数带变了，218px 的推导要重算').toBe(3);
-    expect(getComputedStyle(box() as Element).minHeight, '多行命令改掉了弹窗的定高地板').toBe('218px');
+    expect(controlCells.length, '多行命令把 .flag-grid 的控件行数带变了，261px 的推导要重算').toBe(4);
+    expect(getComputedStyle(box() as Element).minHeight, '多行命令改掉了弹窗的定高地板').toBe('261px');
     w.unmount();
   });
 
@@ -379,7 +385,8 @@ describe('QuickLaunchModal', () => {
     const entry = saveCalls()[0].args[1] as QuickLaunchEntry;
     expect(entry.cmd, '多行没有以 \n 连接，或空行没被丢掉').toBe('ping -n 1 127.0.0.1\ndir');
     expect(entry, '多行改动顺带改了 payload 形状').toEqual({
-      name: 'webui', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1\ndir', admin: false,
+      // 票 #15：shell 的 payload 多一个 terminal_palette（这里没点色块 = 缺省档），多行仍是一条 \n 连接的字符串
+      name: 'webui', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1\ndir', admin: false, terminal_palette: 'paper',
     });
     w.unmount();
   });
@@ -495,7 +502,7 @@ describe('QuickLaunchModal', () => {
   });
 
   // AC-2：点 [+] 在下方追加一行空路径**并聚焦它**；追加行只有 [-]、没有 [+]；默认行的 [+] 照旧还在。
-  // 顺带钉住票 #3 的硬约束：多行不新增 .flag-grid 的网格行 → 控件格计数门与 218px 定高门一字不改。
+  // 顺带钉住票 #3 的硬约束：多行不新增 .flag-grid 的网格行 → 控件格计数门（可执行程序态 3）与定高门一字不改。
   it('plus_appends_an_exe_path_row_below_and_focuses_it', async () => {
     injectRealCss();
     mockLms();
@@ -526,7 +533,7 @@ describe('QuickLaunchModal', () => {
     // 每一行都有自己的 [选择文件]（AC-4 的形状部分）
     expect(pickBtnOf(exeRows()[1]), '追加行没有自己的 [选择文件]').not.toBe(null);
 
-    // 再加一行 → 三行。这两条断言（控件格计数 = 3 / minHeight = 218px）**逐字照抄**既有的定高门与
+    // 再加一行 → 三行。这两条断言（可执行程序态控件格计数 = 3 / minHeight = 261px）**逐字照抄**既有的定高门与
     // 控件格计数门（上面的 only_the_default_cmd_row_has_plus… 与下面的 modal_height_is_fixed… 各钉一次）：
     // 同一段断言、同一个期望值，这里只是把它们在**新的状态**下再跑一次——可执行程序态 + 三行路径。
     // 票 #3 的硬约束就是「四张既有门一字不动照样绿」，所以这里不改它们的断言，只换现场；删掉这两行
@@ -537,8 +544,8 @@ describe('QuickLaunchModal', () => {
     const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
     const controlCells = [...grid.children].filter((el) =>
       el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
-    expect(controlCells.length, '多行程序路径把 .flag-grid 的控件行数带变了，218px 的推导要重算').toBe(3);
-    expect(getComputedStyle(box() as Element).minHeight, '多行程序路径改掉了弹窗的定高地板').toBe('218px');
+    expect(controlCells.length, '多行程序路径把 .flag-grid 的控件行数带变了，261px 的推导要重算').toBe(3);
+    expect(getComputedStyle(box() as Element).minHeight, '多行程序路径改掉了弹窗的定高地板').toBe('261px');
     // 只数「网格子节点」挡不住一种走偏：把每行做成 .flag-grid 的独立行（格数变了，上面的门会红）；
     // 也挡不住把 .exe-cell 的纵向排布规则删掉（行仍在一个格内，但 flex 列没了 → 真机上会横排 / 贴死）。
     // 这里钉的是同一条 CSS 契约（同 type_field_is_widened_to_180px 的手法，injectRealCss 已注入真样式）：
@@ -852,7 +859,8 @@ describe('QuickLaunchModal', () => {
     expect(sent).not.toBeNull();
     expect(sent!.id).toBeNull();
     // 未开关 = admin: false（真布尔，不是 'false' / 缺字段：§8-K4 + 任务 7 的 e.admin === true 分流）
-    expect(sent!.entry).toEqual({ name: '新建项', type: 'shell', shell: 'cmd', cmd: 'ping -n 1 127.0.0.1', admin: false });
+    // 票 #15：shell 的 payload 也总是显式带 terminal_palette（没点色块 = 表里的缺省档 paper）
+    expect(sent!.entry).toEqual({ name: '新建项', type: 'shell', shell: 'cmd', cmd: 'ping -n 1 127.0.0.1', admin: false, terminal_palette: 'paper' });
     expect(w.emitted('saved')).toEqual([[]]);
     w.unmount();
 
@@ -1259,13 +1267,17 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
 });
 
   // 2026-10-13（用户反馈：[类型] 切到「可执行程序」时弹窗变窄）：弹窗高度固定，以「命令行」态为准。
-  // 218px 的构成（无头 Chromium 实测取证：真实 style.css + 本组件 scoped 样式 + 两态静态复刻；
-  // 命令行态 .modal-box = 218 / 可执行程序态 = 180，差 38 = 一行 32 + 一个行距 6）：
+  // 261px 的构成（票 #15 重推；无头 Chromium 实测取证 .temp/ql-modal-palette-row/：真组件挂载导出四态 markup
+  // + 真 src/style.css + 本组件 <style scoped> 原文 + FA 自生成 CSS + 真 Chromium 1400×900：
+  // 命令行态 .modal-box = 260.7（zh / en 同高）、可执行程序态 = 218.0（自然内容高 209.3，被地板盖住））：
   //   .card 上下边框 2 + .modal-head 32
-  //   + .modal-body（padding 16×2 + .flag-grid margin-top 12 + 3 行 × 32 + 2 行距 × 6 = 152）
-  //   + .modal-actions 32 = 218
+  //   + .modal-body（padding 16×2 + .flag-grid margin-top 12 + 4 行控件 32 + 32 + 37.3 + 32 + 3 行距 × 6 = 151.3）
+  //   + .modal-actions 32 = 261.3 → 取整向上 261（实测 260.7，0.6px 是网格行高的亚像素）
+  // 口径与 2026-10-13 / 15 / 18 三次一致：定高值来自**实测**，不是猜数；两态各数一遍 controlCells；两态同一个值。
   // 落点 = min-height（用户 2026-10-13 决定）：两种类型的常态高度严格一致；
   // 保存失败 / 空名的报错文案出现时允许自然长高一行，不出滚动条、不顶掉输入框。
+  // 票 #15 之后两态格数不再相同（命令行 4 / 可执行程序 3）：这一条门因此改成钉「4 / 3 + 同一个定高」，
+  // **没有**放宽 —— 原来钉的是「3 / 3 + 同一个定高」，两态各数一遍这条手法一字未改。
   it('modal_height_is_fixed_to_the_shell_form_height_in_both_types', async () => {
     injectRealCss();
     mockLms();
@@ -1274,35 +1286,36 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
 
     const style = () => getComputedStyle(box() as Element);
     // 定高值 = 命令行态实测高度（写在 <style scoped> 的 .modal-box 上）
-    expect(style().minHeight, '弹窗未定高到命令行态的 218px').toBe('218px');
+    expect(style().minHeight, '弹窗未定高到命令行态实测的 261px').toBe('261px');
     // 不用 height 钉死：报错文案（顶部的主进程文案 / 名字·命令·路径的字段级提示）出现时弹窗自然长高（用户决定 A）
     expect(style().height, '用 height 钉死会把报错文案下方的输入框顶出可视区并出滚动条').not.toMatch(/^\d/);
     // 小窗口兜底不变：max-height 仍在（定高之后它是唯一的收缩门）。
     // 不断具体值：happy-dom 会把 85vh 按自己的视口换算成 px（本环境 768 → 652.8px），断字面量等于把用例绑到测试环境的视口高。
     expect(style().maxHeight, 'max-height 兜底被去掉：窗口很矮时弹窗不再收缩').not.toBe('');
 
-    // 定高数字的依据 = 命令行态的 3 行控件。行数变了 218 就是旧数字，必须同步改（防陈旧门）
+    // 定高数字的依据 = 命令行态的 4 行控件（票 #15 加了 [配色] 一行）。行数变了 261 就是旧数字，必须同步改（防陈旧门）
     const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
     // 控件格 = 网格第二列里的纵向容器：.name-cell（名字 + 空名报错）、.dropdown（终端下拉）、
     // .field-cell（命令 / 路径 + 各自的报错，2026-10-13 把报错挪到输入框下方时引入）。
     // .row-cell 现在是这些容器的子节点、不再是网格直接子节点，故不在这里数。
     const controlCells = [...grid.children].filter((el) =>
       el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
-    expect(controlCells.length, '命令行态的表单行数变了，218px 的推导要重算').toBe(3);
+    expect(controlCells.length, '命令行态的表单行数变了，261px 的推导要重算（名字 / 终端+管理员 / 配色 / 命令）').toBe(4);
 
     // 切到可执行程序：同一个 .modal-box、同一个定高值（不得按类型给 .modal-box 再加一条高度规则）
     await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
     expect(labelByText(t('ql.modal.terminal'))).toBeNull(); // 表单确实已切到 exe 形态
-    expect(style().minHeight, '切到可执行程序后定高值变了（弹窗又会变窄）').toBe('218px');
+    expect(style().minHeight, '切到可执行程序后定高值变了（弹窗又会变窄）').toBe('261px');
     expect(style().height).not.toMatch(/^\d/);
 
-    // 任务 8（规格 §6.2 / §8-K8 / E6）：可执行程序态也必须是 3 个控件格 —— 新增的「管理员」行
-    // 填掉原本 38px 的留白，两态行数一致，218px 的推导在两态同时成立。
+    // 任务 8（规格 §6.2 / §8-K8 / E6）+ 票 #15：可执行程序态是 3 个控件格（名字 / 管理员 / 程序路径）——
+    // [配色] 一行**不渲染**（exe 没有终端，因而没有配色），所以它不进入这一态的计数，也不影响同一个定高：
+    // 261 对它是地板（实测内容高 209.3 < 261），对命令行态是内容高本身。
     // 计数器一字不改（只数网格直接子节点里的 .field-cell / .dropdown / .name-cell）：
     // 开关所在的控件格用的就是 .field-cell，所以它天然被数到。
     const exeCells = [...grid.children].filter((el) =>
       el.classList.contains('field-cell') || el.classList.contains('dropdown') || el.classList.contains('name-cell'));
-    expect(exeCells.length, '可执行程序态的表单行数不是 3，218px 的推导要重算').toBe(3);
+    expect(exeCells.length, '可执行程序态的表单行数不是 3（[配色] 一行漏进来了？），261px 的推导要重算').toBe(3);
     w.unmount();
   });
 
@@ -1416,7 +1429,8 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
     await flush();
 
     const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
-    expect([...grid.children].filter((el) => el.tagName === 'LABEL').length, '命令行态的标签行数变了').toBe(3);
+    // 票 #15：命令行态的标签 3 → 4（名字 / 终端 / 配色 / 命令）：这一行的标签正是新增的那一个
+    expect([...grid.children].filter((el) => el.tagName === 'LABEL').length, '命令行态的标签行数变了').toBe(4);
     expect([...grid.children].some((el) => el.classList.contains('switch-cell')), '开关自己成了网格的一行').toBe(false);
 
     const cell = controlOf(t('ql.modal.terminal')) as HTMLElement;
@@ -1511,7 +1525,8 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
     expect(sent).not.toBeNull();
     expect(typeof sent!.entry.admin, 'payload 的 admin 不是真布尔').toBe('boolean');
     expect(sent!.entry.admin).toBe(true);
-    expect(sent!.entry).toEqual({ name: '提权项', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1', admin: true });
+    // 票 #15：同一组断言里 shell 带 terminal_palette（没动色块 = 缺省档），exe 那条不带（§5.3-6）
+    expect(sent!.entry).toEqual({ name: '提权项', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1', admin: true, terminal_palette: 'paper' });
     w.unmount();
 
     // 可执行程序态：同一个 formAdmin，payload 同样带 admin: true
@@ -1551,15 +1566,278 @@ it('trigger_labels_after_an_icon_absorb_the_free_space', async () => {
     expect(rows[0].text(), '列表行文本里出现了「管理员」').not.toContain(t('ql.modal.admin'));
     w.unmount();
   });
+
+  // ===== 票 #15（spec #12 / issue #15）：条目编辑弹窗里的 [配色] 一行 =====
+  // 形状：这一行是 .flag-grid 的一对「标签 + 控件格」，控件格 = .palette-cell（与 .cmd-cell / .exe-cell 同一族），
+  // 里面一行 .row-cell：六个 .palette-swatch 按钮（底色 + 四格 ANSI 微条，颜色只从 src/modules/term-palettes.ts 取）
+  // + 当前档一句话说明（.palette-hint）。位置 = [终端]+[管理员] 那一行之后、命令那一行之前；exe 态整行不渲染。
+  // 只有点击才改表单（随 ql_save 整条落盘）；hover 只把预览冒给上层（有无页签由 App 判），本弹窗 hover 期间零写调用。
+  const paletteCellEl = (): HTMLElement | null => document.querySelector('.modal-box .palette-cell');
+  const swatchEls = (): HTMLElement[] =>
+    [...document.querySelectorAll('.modal-box .palette-cell .palette-swatch')] as HTMLElement[];
+  const swatchOf = (id: string): HTMLElement | null =>
+    swatchEls().find((el) => el.getAttribute('data-palette') === id) ?? null;
+  const hintEl = (): HTMLElement | null => document.querySelector('.modal-box .palette-hint');
+  const PAL_IDS: TermPaletteId[] = [...TERM_PALETTE_IDS];
+  // 测试侧走动态 key 是安全的：key-coverage.test.ts 只扫源码里的字面量 t() 调用点（测试文件本就不在它的范围内）。
+  // 组件侧必须是六个字面量 —— 那里改成拼接，那条覆盖门就会红，所以测试不必跟着抄字面量。
+  const palName = (id: string): string => t('ql.palette.' + id);
+  const palHint = (id: string): string => t('ql.palette.' + id + '.hint');
+  const hoverIn = (el: HTMLElement): Promise<void> => { el.dispatchEvent(new MouseEvent('mouseenter')); return flush(); };
+  const hoverOut = (el: HTMLElement): Promise<void> => { el.dispatchEvent(new MouseEvent('mouseleave')); return flush(); };
+  // 「不落盘」的判据 = 两条写通道都没动：ql_save（整条，弹窗唯一的落盘口）与 ql_set_palette（窄通道，弹窗不许走）
+  const writeCalls = (): Calls => calls.filter((c) => c.cmd === 'ql_save' || c.cmd === 'ql_set_palette');
+
+  // 验收 1：六色块渲染 —— 顺序 = TERM_PALETTE_IDS、每个色块的底色 + 四格 ANSI 全部取自颜色表那一行，
+  // 位置钉在 [终端]+[管理员] 之后、命令之前，并带当前档一句话说明。
+  it('palette_row_renders_six_swatches_after_the_terminal_row_with_colors_from_the_table', async () => {
+    injectRealCss();
+    mockLms();
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    const grid = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    const kids = [...grid.children];
+    const paletteLabel = labelByText(t('ql.modal.palette')) as HTMLElement;
+    const termCell = controlOf(t('ql.modal.terminal')) as HTMLElement;
+    const cmdLabel = labelByText(t('ql.modal.cmd')) as HTMLElement;
+    expect(paletteLabel, '弹窗里没有「配色」标签').not.toBe(null);
+    expect(termCell, '终端那一行的控件格取不到').not.toBe(null);
+    expect(kids.indexOf(paletteLabel), '「配色」标签不是 .flag-grid 的直接子节点（不是网格的一行）').toBeGreaterThanOrEqual(0);
+    expect(kids.indexOf(paletteLabel), '「配色」行不在 [终端]+[管理员] 那一行之后').toBeGreaterThan(kids.indexOf(termCell));
+    expect(kids.indexOf(paletteLabel), '「配色」行不在「命令」那一行之前').toBeLessThan(kids.indexOf(cmdLabel));
+    // 控件格是标签的相邻兄弟（controlOf 的既有前提），且用 .field-cell 那一族（报错 / 纵向容器的口径不变）
+    expect(controlOf(t('ql.modal.palette')), '「配色」标签没有相邻控件格').toBe(paletteCellEl());
+    expect((paletteCellEl() as HTMLElement).classList.contains('field-cell'), '配色那一格不是 .field-cell').toBe(true);
+
+    const sw = swatchEls();
+    expect(sw.map((el) => el.getAttribute('data-palette')), '色块不是六档，或顺序不是 TERM_PALETTE_IDS').toEqual(PAL_IDS);
+    for (const id of PAL_IDS) {
+      const el = swatchOf(id) as HTMLElement;
+      const swatchBox = el.querySelector('.term-palette-swatch') as HTMLElement;
+      expect(swatchBox, '色块 ' + id + ' 里没有 .term-palette-swatch（票 #14 的色块盒子在 style.css，别再造一份）').not.toBe(null);
+      expect(swatchBox.style.background, '色块 ' + id + ' 的底色不是表里的 theme.background')
+        .toBe(TERM_PALETTES[id].theme.background);
+      const cells = [...el.querySelectorAll('.term-palette-cell')] as HTMLElement[];
+      expect(cells.length, '色块 ' + id + ' 的 ANSI 微条不是四格').toBe(4);
+      expect(cells.map((c) => c.style.background), '色块 ' + id + ' 的四格不是表里那四个槽')
+        .toEqual([TERM_PALETTES[id].theme.foreground, TERM_PALETTES[id].theme.red,
+          TERM_PALETTES[id].theme.green, TERM_PALETTES[id].theme.magenta]);
+    }
+
+    // 当前档说明：没动过 = 表里的默认档（termPaletteOf 的回落，与页签那条同一张嘴）
+    const hint = hintEl() as HTMLElement;
+    expect(hint, '配色行里没有当前档说明').not.toBe(null);
+    expect(hint.textContent, '当前档说明不是默认档那一档的档名 + 说明')
+      .toContain(palName(TERM_PALETTE_DEFAULT) + palHint(TERM_PALETTE_DEFAULT));
+    w.unmount();
+  });
+
+  // 验收 2：选中态 —— 当前档那颗有色标类 + aria-current，其余五颗没有；说明里带着这一档的档名与说明。
+  it('current_palette_is_marked_on_its_swatch_and_in_the_hint', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, terminal_palette: 'warm-paper' } });
+    await flush();
+
+    const cur = swatchOf('warm-paper') as HTMLElement;
+    expect(cur, '暖纸那颗色块不在').not.toBe(null);
+    expect(cur.classList.contains('is-current'), '当前档的色块没有选中态样式类').toBe(true);
+    expect(cur.getAttribute('aria-current'), '当前档的色块没有 aria-current（与票 #14 的浮层同一口径）').toBe('true');
+    for (const id of PAL_IDS.filter((x) => x !== 'warm-paper')) {
+      const el = swatchOf(id) as HTMLElement;
+      expect(el.classList.contains('is-current'), '非当前档 ' + id + ' 却带选中态样式类').toBe(false);
+      expect(el.getAttribute('aria-current'), '非当前档 ' + id + ' 却带 aria-current').toBeNull();
+    }
+    const hint = hintEl() as HTMLElement;
+    expect(hint.textContent, '说明里没有当前档的档名').toContain(palName('warm-paper'));
+    expect(hint.textContent, '说明里没有当前档那一档的说明').toContain(palHint('warm-paper'));
+    w.unmount();
+  });
+
+  // 验收 3：点击色块 → 选中态当场挪过去，payload 带 terminal_palette（shell 态总是显式写这一键，与 admin 同一口径）。
+  it('clicking_a_swatch_moves_the_marker_and_writes_terminal_palette_into_the_shell_payload', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlnew0001'); } });
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    await setInput(inputOf(t('ql.modal.name'))!, '暖纸项');
+    await setInput(inputOf(t('ql.modal.cmd'))!, 'ping -n 1 127.0.0.1');
+    (swatchOf('warm-paper') as HTMLElement).click();
+    await flush();
+    expect((swatchOf('warm-paper') as HTMLElement).classList.contains('is-current'), '点击之后选中态没挪过去').toBe(true);
+    expect(swatchOf(TERM_PALETTE_DEFAULT)!.classList.contains('is-current'), '点击之后旧档还挂着选中态').toBe(false);
+    saveBtn().click();
+    await flush();
+
+    expect(writeCalls().length, '保存没走 ql_save 整条（弹窗这票不走窄通道）').toBe(1);
+    expect(calls.filter((c) => c.cmd === 'ql_set_palette').length, '弹窗里改配色却走了窄通道 ql_set_palette').toBe(0);
+    expect(sent, '没发出 ql_save').not.toBeNull();
+    expect(sent!.entry.terminal_palette, 'payload 里没有 terminal_palette').toBe('warm-paper');
+    expect(sent!.entry).toEqual({
+      name: '暖纸项', type: 'shell', shell: 'powershell', cmd: 'ping -n 1 127.0.0.1', admin: false, terminal_palette: 'warm-paper',
+    });
+    w.unmount();
+
+    // 一次都没点 = 表里的默认档，照样显式写（主进程 normalizeEntry 对 shell 条目总是归一出这一键）
+    sent = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlnew0002'); } });
+    const w2 = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await setInput(inputOf(t('ql.modal.name'))!, '默认档项');
+    await setInput(inputOf(t('ql.modal.cmd'))!, 'dir');
+    saveBtn().click();
+    await flush();
+    expect(sent!.entry.terminal_palette, '没点色块时没写默认档').toBe(TERM_PALETTE_DEFAULT);
+    w2.unmount();
+  });
+
+  // 验收 4：exe 态 —— 整行不渲染（标签、控件格、色块、说明都没有），payload 不带 terminal_palette；
+  // 切回 shell 态这一行回来且选过的档还在（表单态不因类型切换丢档）。
+  it('exe_type_renders_no_palette_row_and_omits_terminal_palette_from_the_payload', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ pick: 'D:\\Tools\\notepad.exe', save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlyyyyyyyy'); } });
+    const w = mountModal({ open: true, id: null, entry: null });
+    await flush();
+
+    // shell 态先选一档，再切到 exe：这一行必须整行消失
+    (swatchOf('campbell') as HTMLElement).click();
+    await flush();
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.exe'));
+    expect(labelByText(t('ql.modal.palette')), 'exe 态仍渲染「配色」标签').toBe(null);
+    expect(paletteCellEl(), 'exe 态仍渲染配色那一格').toBe(null);
+    expect(swatchEls().length, 'exe 态仍渲染色块').toBe(0);
+    expect(hintEl(), 'exe 态仍渲染当前档说明').toBe(null);
+
+    await setInput(inputOf(t('ql.modal.name'))!, '记事本');
+    (controlOf(t('ql.modal.exe'))!.querySelector('button') as HTMLButtonElement).click();
+    await flush();
+    saveBtn().click();
+    await flush();
+    expect(sent, '没发出 ql_save').not.toBeNull();
+    expect('terminal_palette' in sent!.entry, 'exe 的 payload 带了 terminal_palette（exe 没有终端，因而没有配色）').toBe(false);
+    expect(sent!.entry).toEqual({ name: '记事本', type: 'exe', exe: ['D:\\Tools\\notepad.exe'], admin: false });
+
+    // 切回命令行态：这一行回来，刚选的那一档没丢
+    await pickOption(dropdownOf(t('ql.modal.type'))!, t('ql.modal.type.shell'));
+    expect(swatchEls().length, '切回命令行态之后色块没了').toBe(6);
+    expect((swatchOf('campbell') as HTMLElement).classList.contains('is-current'), '切回命令行态之后丢了选过的档').toBe(true);
+    w.unmount();
+  });
+
+  // 验收 5：fill() 回填 —— 条目上的 terminal_palette 决定选中态与说明；保存时原样带回去（不改色块也带）。
+  // 缺这一键的旧夹具 = 表里的默认档（与主进程 termPaletteOr 的回落同一口径，不判非法）。
+  it('fill_refills_terminal_palette_from_the_entry', async () => {
+    let sent: { id: unknown; entry: QuickLaunchEntry } | null = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qla1b2c3d4'); } });
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, terminal_palette: 'campbell' } });
+    await flush();
+    expect((swatchOf('campbell') as HTMLElement).classList.contains('is-current'), '没按条目的 terminal_palette 回填选中态').toBe(true);
+    expect(hintEl()!.textContent, '没按条目的 terminal_palette 回填说明').toContain(palHint('campbell'));
+    saveBtn().click();
+    await flush();
+    expect(sent!.entry.terminal_palette, '没动色块就没回填 / 没带这一键').toBe('campbell');
+    w.unmount();
+
+    // 缺字段（旧配置 / 旧夹具）= 默认档：与 admin 那条「缺字段 = 关」同一手法，不崩也不空着
+    sent = null;
+    mockLms({ save: (id, entry) => { sent = { id, entry }; return Promise.resolve('qlb2c3d4e5'); } });
+    const w2 = mountModal({ open: true, id: 'qlb2c3d4e5', entry: { name: 'webui', type: 'shell', shell: 'pwsh', cmd: 'python -m webui' } });
+    await flush();
+    expect(swatchOf(TERM_PALETTE_DEFAULT)!.classList.contains('is-current'), '缺 terminal_palette 时没落到默认档').toBe(true);
+    saveBtn().click();
+    await flush();
+    expect(sent!.entry.terminal_palette, '缺字段时没写默认档').toBe(TERM_PALETTE_DEFAULT);
+    w2.unmount();
+  });
+
+  // 验收 6（hover 口径）：hover 色块 → 只冒预览事件给上层（有无页签由 App 判），说明换成被 hover 那一档；
+  // 本弹窗一次写调用都不发、选中态不动；移开 → 冒 null（上层还原）、说明回到当前档。
+  // 新建态（id = null）没有对应页签 → 不冒预览，只换说明（AC「无页签则只显说明」在弹窗这一侧的那一半）。
+  it('hovering_a_swatch_previews_without_writing_and_restores_the_hint', async () => {
+    mockLms();
+    const w = mountModal({ open: true, id: 'qla1b2c3d4', entry: { ...SHELL_ENTRY, terminal_palette: 'paper' } });
+    await flush();
+
+    const campbell = swatchOf('campbell') as HTMLElement;
+    await hoverIn(campbell);
+    expect(w.emitted('paletteHover'), 'hover 没有冒预览事件给上层（App 走已有链路换 theme）').toEqual([['qla1b2c3d4', 'campbell']]);
+    expect(hintEl()!.textContent, 'hover 时说明没换成被 hover 那一档').toContain(palName('campbell') + palHint('campbell'));
+    expect(writeCalls().length, 'hover 就落盘了（只有保存才写）').toBe(0);
+    expect(calls.filter((c) => c.cmd === 'ql_set_palette').length, 'hover 走了窄通道').toBe(0);
+    // hover 不动选中态（预览不是选中）
+    expect(swatchOf('paper')!.classList.contains('is-current'), 'hover 把选中态搬走了').toBe(true);
+    expect(campbell.classList.contains('is-current'), 'hover 的色块被当成当前档').toBe(false);
+
+    await hoverOut(campbell);
+    expect(w.emitted('paletteHover')!.at(-1), '移开色块没有冒 null 让上层还原').toEqual(['qla1b2c3d4', null]);
+    expect(hintEl()!.textContent, '移开之后说明没回到当前档').toContain(palName('paper') + palHint('paper'));
+    expect(writeCalls().length, '移开时补了一次写调用').toBe(0);
+    w.unmount();
+
+    // 新建态没有页签：不冒预览（App 那边没有可换 theme 的画布），但说明照常换
+    const w2 = mountModal({ open: true, id: null, entry: null });
+    await flush();
+    await hoverIn(swatchOf('charcoal') as HTMLElement);
+    expect(w2.emitted('paletteHover'), '新建态（id = null）却冒了预览').toBeUndefined();
+    expect(hintEl()!.textContent, '新建态 hover 没换成被 hover 那一档的说明').toContain(palHint('charcoal'));
+    w2.unmount();
+  });
+
+  // 负向门（与 card_list_row_shows_no_admin_marker 同款口径）：配色只在弹窗里，列表行不出现这一行的任何文案
+  it('card_list_row_shows_no_palette_texts', async () => {
+    const store: QuickLaunchList = {
+      items: { a: { ...SHELL_ENTRY, terminal_palette: 'warm-paper' } }, invalid: [],
+    };
+    (window as any).lms = {
+      invoke: (cmd: string, ...args: unknown[]): Promise<unknown> => {
+        if (cmd === 'ql_list') return Promise.resolve(JSON.parse(JSON.stringify(store)));
+        return Promise.resolve(null);
+      },
+    };
+    const w = mount(QuickLaunch, { attachTo: document.body, props: { states: {} } });
+    await flush();
+    const rows = w.findAll('.tpl-row');
+    expect(rows.length, '卡片没有渲染出列表行').toBe(1);
+    const rowEl = rows[0].element as HTMLElement;
+    const text = rows[0].text();
+    // 形状这一半走选择器而不是 outerHTML 子串：本卡的模板里带着取证注释（QuickLaunch.vue:213-214 那句里
+    // 就有「配色」二字），Vue 在测试构建里保留模板注释 → 拿 HTML 子串当判据会假红（管理员那条门用词没撞上而已）
+    expect(rowEl.querySelector('.palette-cell, .palette-swatch, .term-palette-swatch, .term-palette-cell, .palette-hint'),
+      '列表行里出现了配色控件').toBe(null);
+    expect(text, '列表行文本里出现了「配色」').not.toContain(t('ql.modal.palette'));
+    for (const id of PAL_IDS) {
+      expect(text, '列表行文本里出现了档名「' + id + '」').not.toContain(palName(id));
+      expect(text, '列表行文本里出现了说明「' + id + '」').not.toContain(palHint(id));
+    }
+    w.unmount();
+  });
+
+  // 结构性门（TerminalTabView.test.ts:266-268 同一口径，不给弹窗开特例）：配色只能从颜色表取，
+  // 组件的 script / template 里不得出现 hex 字面量。<style scoped> 那一段只动外壳配色（#fff / #C7CCD4 是既有的），
+  // 不在本门范围内 —— 本门扫的是「能画出色块」的那两段。
+  it('palette_colors_come_from_the_table_not_from_hex_in_the_component', async () => {
+    const src = fs.readFileSync(path.join(process.cwd(), 'src', 'modules', 'QuickLaunchModal.vue'), 'utf8');
+    const head = src.split('<style scoped>')[0];
+    expect(head, 'QuickLaunchModal 的 script / template 里出现了 hex —— 色块一律从 src/modules/term-palettes.ts 取')
+      .not.toMatch(/#[0-9A-Fa-f]{3,8}\b/);
+    expect(head, '色块没有从 TERM_PALETTES 取色').toContain('TERM_PALETTES[');
+    // 命名口径：本仓一律 palette，不留 termTheme / TERM_THEME_* 那批过期名字（原型留档在 .scratch 里）
+    expect(head, '出现了过期的 termTheme / TERM_THEME 命名').not.toMatch(/termTheme|TERM_THEME/);
+  });
 });
 
-// ---- 2026-10-13（用户反馈 + 截图）：打开 [终端] 下拉时，面板不得把 .modal-body 撑出滚动条、也不得被 .modal-box 底缘裁掉。
+// ---- 2026-10-13（用户反馈 + 截图）：打开 [终端] 下拉时，面板不得把 .modal-body 撑出滚动条、也不得被 .modal-box 裁掉。
 // 机制 = 面板是视口浮层（position:fixed + 内联坐标来自触发按钮矩形），组件级断言在 Dropdown.test.ts 的
-// 'Dropdown panel is a viewport float' 里钉；本用例只钉弹窗这一侧的两件事：
-//   a) 面板浮出弹窗（面板底缘 > 弹窗底缘），且
-//   b) 定高门（218px）与 .modal-body 的滚动容器没有被拆掉来「绕过」滚动条。
-// 像素事实（面板矩形超出 .modal-box、.modal-body scrollHeight == clientHeight = 不出滚动条）由无头 Electron 实测取证：
-//   .temp/ql-dropdown-float/measure.html（同 .temp/ql-modal-fixed-height/ 的手法）。
+// 'Dropdown panel is a viewport float' 里钉；本用例只钉弹窗这一侧的三件事：
+//   a) 面板浮出表单网格（面板底缘 > .flag-grid 底缘）—— 当年把面板塞回流程里，就是把 .modal-body 顶出滚动条的那条线；
+//   b) 弹窗自身不滚动（.modal-box overflow-y: hidden）= 「塞回流程」必然被裁切的前提没有被拆掉；
+//   c) 定高门（261px）与 .modal-body 的滚动容器没有被拆掉来「绕过」滚动条。
+// 夹具矩形 = **票 #15 之后**命令行态的实测几何（探针 .temp/ql-modal-palette-row/measure.json，真 Chromium：
+//   .modal-box y 291.3 / 高 260.7；.flag-grid y 352 / 高 151.3 → 底缘 503.3；终端那一格 390..422 → 触发按钮 32 高）。
+// 锚点从「弹窗底缘」换到「网格底缘」的原因写清楚：定高从 218 涨到 261（涨了 43）之后，触发按钮下缘到弹窗底缘
+// 有 130.0px ≥ 面板 116px，面板不再越过弹窗底缘 —— 那条断言在新几何下成了永真式，换锚点而不是删掉它。
+// （原像素事实的取证：.temp/ql-dropdown-float/measure.html，同 .temp/ql-modal-fixed-height/ 的手法。）
 describe('QuickLaunchModal terminal dropdown floats out of the modal', () => {
   afterEach(() => { document.body.innerHTML = ''; });
 
@@ -1576,23 +1854,29 @@ describe('QuickLaunchModal terminal dropdown floats out of the modal', () => {
 
     const dd = dropdownOf(t('ql.modal.terminal')) as HTMLElement;
     expect(dd, '终端下拉不存在').not.toBe(null);
-    // 夹具矩形：弹窗 520px 宽、顶 291、定高 218 -> 底缘 509；终端行触发按钮 顶 397 / 高 32（--h-control）
-    const BOX_TOP = 291, BOX_H = 218;
-    stubRect(box() as HTMLElement, 252, 520, BOX_TOP, BOX_H);
+    // 夹具矩形 = 票 #15 之后的实测几何：弹窗 520 宽、顶 291.3、定高 261 → 底缘 552.3；
+    // .flag-grid 顶 352 / 高 151.3 → 底缘 503.3；终端那一格 390..422 → 触发按钮顶 390 / 高 32（--h-control）
+    const GRID_TOP = 352, GRID_H = 151.3;
+    stubRect(box() as HTMLElement, 252, 520, 291, 261);
+    const gridEl = document.querySelector('.modal-box .flag-grid') as HTMLElement;
+    stubRect(gridEl, 268, 486.7, GRID_TOP, GRID_H);
     const trigger = dd.querySelector('.select-trigger') as HTMLElement;
-    stubRect(trigger, 300, 418, 397, 32);
+    stubRect(trigger, 300, 418, 390, 32);
     (trigger as HTMLButtonElement).click();
     await flush();
 
     const panel = dd.querySelector('ul.dropdown-panel') as HTMLElement;
     expect(panel, '终端下拉面板未渲染').not.toBe(null);
     expect(getComputedStyle(panel).position, '面板不是视口浮层：会被 .modal-box 裁切并撑高 .modal-body').toBe('fixed');
-    expect(panel.style.top, '面板顶 = 触发按钮下缘 + 2px').toBe('431px');
-    // 面板 max-height 116px -> 底缘 547 > 弹窗底缘 509：超出弹窗 38px，即「浮出弹窗外」
-    expect(431 + 116, '面板没有超出弹窗底缘').toBeGreaterThan(BOX_TOP + BOX_H);
+    expect(panel.style.top, '面板顶 = 触发按钮下缘 + 2px').toBe('424px');
+    // 面板 max-height 116px → 底缘 540 > 网格底缘 503.3：超出表单网格 36.7px，即「浮到表单之外」。
+    // 面板必须走视口浮层，否则要么被下面那条 overflow 裁切、要么把 .modal-body 顶出滚动条（票 #10 的两种坏法）。
+    expect(424 + 116, '面板没有浮出表单网格之外（又被塞回流程里了？）').toBeGreaterThan(GRID_TOP + GRID_H);
+    // 「塞回流程就会被裁切」的前提仍在：弹窗自己不滚动
+    expect(getComputedStyle(box() as Element).overflowY, '.modal-box 的 overflow 兜底被拆 = 这条门失去意义').toBe('hidden');
 
     // 不是靠拆掉定高 / 拆掉 .modal-body 的滚动容器来「绕过」滚动条的
-    expect(getComputedStyle(box() as Element).minHeight).toBe('218px');
+    expect(getComputedStyle(box() as Element).minHeight).toBe('261px');
     expect(getComputedStyle(document.querySelector('.modal-body') as Element).overflowY, '.modal-body 不再是滚动容器 = 定高兜底被拆').toBe('auto');
     w.unmount();
   });

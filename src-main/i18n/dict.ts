@@ -181,6 +181,14 @@ export const dict = {
     'ql.palette.warm-night': '暖夜',
     'ql.palette.group.light': '明底',
     'ql.palette.group.dark': '暗底',
+    // 票 #15（spec #12）：条目编辑弹窗里 [配色] 那一行 —— 字段标签 + 六档各一句话说明。
+    // 弹窗里的说明只解释「这一档是什么底色」，档名沿用票 #14 那六条 ql.palette.<id>，不另立一套。
+    'ql.palette.paper.hint': '与日志页签同底同字色，切页签零跳变',
+    'ql.palette.console.hint': '浅灰画布带描边，ANSI 忠于真机控制台',
+    'ql.palette.warm-paper.hint': '暖色纸底配大地色，久看不刺眼',
+    'ql.palette.charcoal.hint': '与日志页签同族的暗底，切页签零跳变',
+    'ql.palette.campbell.hint': '外部控制台经典的深黑 ANSI',
+    'ql.palette.warm-night.hint': '暗底配低饱和大地色，夜间柔和',
     'ql.modal.newTitle': '新建启动项',
     'ql.modal.editTitle': '编辑启动项',
     'ql.modal.name': '名字',
@@ -192,6 +200,7 @@ export const dict = {
     'ql.modal.cmd': '命令',
     'ql.modal.exe': '程序路径',
     'ql.modal.admin': '管理员',
+    'ql.modal.palette': '配色',   // 票 #15：与页签工具条那颗 ql.terminal.palette 同一份文案，两个入口同一术语
     'ql.modal.btn.pick': '选择文件',
     // 命令行的多行编辑（2026-10-17 用户改口径）：默认行的 [+] 与追加行的 [-]，aria-label 与 tooltip 共用这一份。
     'ql.modal.btn.addCmd': '新增命令行',
@@ -546,6 +555,13 @@ export const dict = {
     'ql.palette.warm-night': 'Warm night',
     'ql.palette.group.light': 'Light',
     'ql.palette.group.dark': 'Dark',
+    // Ticket #15 (spec #12): one hint per palette for the [Palette] row in the entry editor.
+    'ql.palette.paper.hint': 'Same canvas as the log tabs, no jump when switching',
+    'ql.palette.console.hint': 'Light grey canvas with a border, faithful ANSI',
+    'ql.palette.warm-paper.hint': 'Warm paper canvas with earth tones, easy on the eyes',
+    'ql.palette.charcoal.hint': 'Dark canvas from the same family as the log tabs',
+    'ql.palette.campbell.hint': 'Classic dark console ANSI',
+    'ql.palette.warm-night.hint': 'Dark canvas with low-saturation earth tones',
     'ql.modal.newTitle': 'New quick launch entry',
     'ql.modal.editTitle': 'Edit quick launch entry',
     'ql.modal.name': 'Name',
@@ -557,6 +573,7 @@ export const dict = {
     'ql.modal.cmd': 'Command',
     'ql.modal.exe': 'Program path',
     'ql.modal.admin': 'Admin',
+    'ql.modal.palette': 'Palette',   // ticket #15: same wording as the tab toolbar entry (ql.terminal.palette)
     'ql.modal.btn.pick': 'Select file',
     'ql.modal.btn.addCmd': 'Add command line',
     'ql.modal.btn.removeCmd': 'Remove this line',

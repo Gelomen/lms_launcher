@@ -179,6 +179,41 @@ describe('QuickLaunch card', () => {
     w2.unmount();
   });
 
+  // 票 #15（spec #12 / issue #15）：[复制] 走的是 { ...src, name } 整条 spread（:99-122），
+  // 所以 terminal_palette 天生跟着走 —— 不加任何特殊处理，也不该加。这里钉住「复制不会把配色丢掉」，
+  // 免得日后有人给 spread 加白名单式过滤。另一侧的门在 QuickLaunchModal.test.ts（exe 的 payload 不带这一键）。
+  it('copy_carries_terminal_palette_from_the_source_entry', async () => {
+    const saves: SaveCall[] = [];
+    const w = mountCard({ items: { a: { ...SHELL, terminal_palette: 'warm-paper' }, b: entry('other') }, invalid: [] }, {}, { saves, newId: 'qlcopy03' });
+    await flush();
+    await buttonWithTip(w.findAll('.tpl-row')[0], t('ql.btn.copy')).trigger('click');
+    await flush();
+    expect(saves.length).toBe(1);
+    expect(saves[0].entry).toEqual({ name: 'webui - copy', type: 'shell', shell: 'pwsh', cmd: 'python -m webui', terminal_palette: 'warm-paper' });
+    w.unmount();
+  });
+
+  // 票 #15（spec #12）：弹窗色块的 hover 预览 —— 卡片只是**透传**：判不判「这条配置有没有终端页签」在 App
+  // （那边才有 hasTerminalTab / 页签表），卡片既不自己换任何终端、也不落盘（这里连 invoke 都没多一次）。
+  // 冒上去的是 (configId, 档 | null)：null = 移开 / 关窗，上层据此还原。
+  it('modal_palette_hover_bubbles_through_the_card_untouched', async () => {
+    const w = mountCard({ items: { a: { ...SHELL, terminal_palette: 'paper' } }, invalid: [] });
+    await flush();
+    await buttonWithTip(w.findAll('.tpl-row')[0], t('ql.btn.edit')).trigger('click');
+    await flush();
+    // 弹窗内容经 Teleport 渲染到 body（同 QuickLaunchModal.test.ts:4 那条口径），所以这一条在 document 层级找。
+    const sw = document.querySelector('.palette-swatch[data-palette="campbell"]') as HTMLButtonElement | null;
+    expect(sw, '弹窗里的色块没渲染出来').not.toBeNull();
+    sw!.dispatchEvent(new MouseEvent('mouseenter'));
+    await flush();
+    sw!.dispatchEvent(new MouseEvent('mouseleave'));
+    await flush();
+    expect(w.emitted('paletteHover'), 'hover 预览没原样冒给上层（或卡片自己吞掉了）').toEqual([['a', 'campbell'], ['a', null]]);
+    // 卡片自己不动任何终端、也不落盘：这一次交互没有多出一个 ql_* 调用（mockLms 装的 invoke 计数在别处钉）
+    w.unmount();
+    document.body.innerHTML = '';   // Teleport 挂在 body 上，卸载组件不清它 → 显式清干净，别漏给下一条用例
+  });
+
   // 2026-10-19 用户反馈：[可执行程序] 行点 [复制] 复制失败，提示 "An object could not be cloned."；
   // 同一行的 [编辑] 保存同样的 exe 数组却正常。成因不在卡片，而在出口：列表挂在 ref 上 = Vue 深层响应式，
   // onCopy 里那句 { ...src, name } 只拆最外层，exe 那个数组仍是 Proxy；而 ipcRenderer.invoke 用结构化克隆
