@@ -1391,27 +1391,29 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
-  // restartDisabled（App 的 qlConfigs 只读镜像查不到该条 = 配置已删）：那颗禁用，
-  // 对着不存在的配置点重启不该发出 ql_start（页签只剩 [x] 可关）
-  it('restart_is_disabled_once_the_config_is_deleted', async () => {
+  // restartDisabled（App 的 qlConfigs 只读镜像查不到该条）：那颗禁用，对着不存在的配置点重启
+  // 不该发出 ql_start。票 #16 之后「删掉已停止的条目」直接关掉页签，这条只剩真实可达的那扇窗：
+  // 条目从镜像里消失、进程还在跑 → R3 不关页签（关了会留孤儿 PTY）；进程退出后页签照 §7.5 保留，
+  // 那颗转成 [重新启动] 并被禁用。删配置这件事本身仍只有「已停止」才做得到（弹窗 [删除] 禁用）。
+  it('restart_is_disabled_when_the_config_disappears_under_a_running_process', async () => {
     const { w } = mountQl();
     const route = invoke.getMockImplementation()!;
     await flush();
     await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签
     await flush();
-    await qlRowBtn(w, 0).trigger('click'); // 停止 → 未运行
-    await flush();
-    expect(tabState(w, 'ql:c1').attributes('aria-label')).toBe('重新启动');
-    expect(tabState(w, 'ql:c1').attributes('disabled')).toBeUndefined();
-    // 删掉这条配置：ql_list 变空 + 卡片冒泡 changed → App 的只读镜像刷掉它（与页签名那条用例同一手法）
+    // 条目从只读镜像里消失（ql_list 变空 + 卡片冒泡 changed），进程仍在跑
     invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
       cmd === 'ql_list' ? Promise.resolve({ items: {}, invalid: [] }) : route(cmd, ...args));
     w.findComponent(QuickLaunch).vm.$emit('changed');
     await flush();
     await flush();
+    expect(tabIds(w)).toContain('ql:c1');                    // R3：运行中不关页签（票 #16 的守卫）
+    qlExitHandlers.at(-1)!({ configId: 'c1', code: 0 });      // 进程自己退出 → 页签保留（§7.5）
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
     const btn = tabState(w, 'ql:c1');
     expect(btn.attributes('aria-label')).toBe('重新启动');
-    expect(btn.attributes('disabled')).toBeDefined();
+    expect(btn.attributes('disabled')).toBeDefined();         // 镜像里已查不到这条
     await btn.trigger('click');
     expect(qlInvokes('ql_start')).toEqual([['c1']]);           // 只有开头那次，重启没发出
     w.unmount();
@@ -1459,6 +1461,113 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     qlDataHandlers.at(-1)!({ tabId: 'ql:c1', data: 'after-close' });
     await flush();
     expect(termWrites().length).toBe(before); // sink 已注销
+    w.unmount();
+  });
+
+  // 票 #16：删除条目 → 它的终端页签连带关闭。旧行为 = 页签留在原地、带着 restartDisabled
+  // 变成「再也启动不了的东西」（changed 只刷配置镜像）。两条对照一起钉：
+  // ① 停止 ≠ 删除 —— 页签仍保留（§7.5「进程退出 → 页签保留」的用户决策不变）；
+  // ② 关的是那条页签本身：它的 sink 注销，迟到的 ql_data 没有落点。
+  it('deleting_the_config_closes_its_terminal_tab', async () => {
+    const { w } = mountQl();
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
+    await qlRowBtn(w, 0).trigger('click'); // 停止 → 页签保留（对照：不是任何状态变化都关页签）
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');
+    // 卡片那条删除路径：弹窗 [确认] → ql_delete → reload → changed → App 的镜像里查不到 c1
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: { c2: QL_ITEMS.c2 }, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+    expect(tabIds(w)).not.toContain('ql:c1');   // 页签连带关闭
+    const before = termWrites().length;
+    qlDataHandlers.at(-1)!({ tabId: 'ql:c1', data: 'late output' });
+    await flush();
+    expect(termWrites().length).toBe(before);   // 走的仍是 [x] 那条既有路径：sink 已注销
+    w.unmount();
+  });
+
+  // 票 #16 的对照面：关掉的是「镜像里查不到」那一条，而不是每次 changed 就清场。
+  // 两条 shell 各开一块终端 → 删掉其中一条 → 另一条的页签、终端实例、sink 全都不动。
+  it('deleting_one_config_leaves_the_other_terminal_tabs_alone', async () => {
+    const items = {
+      c1: { name: '甲终端', type: 'shell', shell: 'cmd', cmd: 'cmd' },
+      c3: { name: '乙终端', type: 'shell', shell: 'cmd', cmd: 'cmd' },
+    };
+    const { w, setStartTabId } = mountQl({ items, startTabId: 'ql:c1' });
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 c1 → 建页签
+    await flush();
+    setStartTabId('ql:c3');
+    await qlRowBtn(w, 1).trigger('click'); // 启动 c3 → 建另一块
+    await flush();
+    expect(tabIds(w)).toEqual(['launcher', 'llama-server', 'ql:c1', 'ql:c3']);
+    await qlRowBtn(w, 0).trigger('click'); // 停止 c1（只有已停止的条目删得掉）
+    await flush();
+    await qlRowBtn(w, 1).trigger('click'); // 停止 c3
+    await flush();
+    expect(xh.state.terms.length).toBe(2);
+    // 只删 c1：ql_list 里从此只剩 c3
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: { c3: items.c3 }, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+    expect(tabIds(w)).toEqual(['launcher', 'llama-server', 'ql:c3']); // 只关被删那条
+    const before = termWrites().length;
+    qlDataHandlers.at(-1)!({ tabId: 'ql:c3', data: 'still here' });
+    await flush();
+    expect(termWrites().length).toBe(before + 1);                     // 另一块的 sink 仍在线
+    expect(xh.state.terms.length).toBe(2);                            // 也没被重建（终端实例不动）
+    w.unmount();
+  });
+
+  // 票 #16 的守卫面：一次 ql_list 失败不等于「条目被删」。镜像刷不动 → 页签也不动
+  // （否则主进程抖一下就把用户正在看的终端关掉）
+  it('a_failed_ql_list_refresh_closes_no_terminal_tab', async () => {
+    const { w } = mountQl();
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 停止 → 页签保留、可删
+    await flush();
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.reject(new Error('IO: 读取失败')) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+    expect(tabIds(w)).toContain('ql:c1');   // 读取失败：既没刷掉镜像，也就没关掉页签
+    w.unmount();
+  });
+
+  // 票 #16 的界面门：删掉的正是「当前在看」的那块终端 → 面板不留空白。
+  // 激活态归 App（受控 v-model:active），回落靠 LogPanel 的 watch(items) 冒 update:active ——
+  // 本用例钉的是这条链在「非点击、由 App 自己摘掉页签」时同样生效。
+  it('deleting_the_active_tab_falls_the_panel_back_to_the_first_tab', async () => {
+    const { w } = mountQl();
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click'); // 启动 → 建页签 + 自动激活
+    await flush();
+    expect(w.find('.log-tab[data-tab-id="ql:c1"]').classes()).toContain('active');
+    await qlRowBtn(w, 0).trigger('click'); // 停止 → 这条才删得掉
+    await flush();
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: { c2: QL_ITEMS.c2 }, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+    expect(tabIds(w)).not.toContain('ql:c1');
+    const actives = w.findAll('.log-tab').filter((b: any) => b.classes().includes('active'));
+    expect(actives.length).toBe(1);
+    expect(actives[0].attributes('data-tab-id')).toBe('launcher'); // 回落第一页签，不留空白面板
     w.unmount();
   });
 
@@ -1541,9 +1650,11 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
   });
 
   // Minor 2（修复轮 B）：页签名在建页签时随页签存一份，不再每次回查 qlConfigs 只读镜像。
-  // 旧实现（App.vue:359 `qlConfigs[id]?.name || tab.configId`）在「删除已停止的条目」后把页签名
-  // 退化成配置 id。这里走真实路径：启动 → 卡片冒泡 changed → App.refreshQlConfigs 把镜像刷空。
-  it('tab_label_keeps_the_entry_name_after_the_config_is_deleted', async () => {
+  // 旧实现（`qlConfigs[id]?.name || tab.configId`）在镜像查不到该项时把页签名退化成配置 id。
+  // 票 #16 之后这条只在「进程还在跑」那扇窗里可观察：删掉已停止的条目会连带关掉页签（见上面那条
+  // deleting_… 用例），运行中的条目本来就删不掉，所以这里钉的是条目从镜像里消失、页签因 R3 留着时，
+  // 文案仍是建页签那一刻存下的那份。手法不变：卡片冒泡 changed → App.refreshQlConfigs 把镜像刷空。
+  it('tab_label_keeps_the_entry_name_when_the_config_disappears', async () => {
     const { w } = mountQl();
     const route = invoke.getMockImplementation()!;
     await flush();
@@ -1552,14 +1663,14 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     expect(tabIds(w)).toContain('ql:c1');
     expect(tabLabel(w, 'ql:c1')).toBe('我的终端');
 
-    // 删除该条目：ql_list 变空 + 卡片冒泡 changed → App 的只读镜像里不再有 c1
+    // 条目从只读镜像里消失：ql_list 变空 + 卡片冒泡 changed
     invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
       cmd === 'ql_list' ? Promise.resolve({ items: {}, invalid: [] }) : route(cmd, ...args));
     w.findComponent(QuickLaunch).vm.$emit('changed');
     await flush();
     await flush();
 
-    expect(tabIds(w)).toContain('ql:c1');            // 页签仍在（App 拥有页签，删配置不关页签）
+    expect(tabIds(w)).toContain('ql:c1');            // 进程在跑 → R3 不关页签（票 #16 的守卫）
     expect(tabLabel(w, 'ql:c1')).toBe('我的终端');   // 不是 'c1'
     w.unmount();
   });
@@ -1580,9 +1691,10 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
-  // ADR:14「条目被删后仍开着的页签沿用创建时的配色快照，不跳变」——与上面那条页签名用例同一手法：
-  // 删配置 → 卡片冒泡 changed → App 的只读镜像刷空，但页签的快照不动（快照不是回查镜像的 computed）。
-  it('tab_keeps_its_palette_snapshot_after_the_config_is_deleted', async () => {
+  // ADR:14「页签沿用创建时的配色快照，不跳变」——与上面那条页签名用例同一手法：条目从镜像里消失
+  // （changed → 镜像刷空）→ 页签的快照不动（快照不是回查镜像的 computed）。票 #16 之后「删掉已停止的
+  // 条目」会连带关页签，所以这里同样取进程还在跑、R3 不关页签的那扇窗。
+  it('tab_keeps_its_palette_snapshot_when_the_config_disappears', async () => {
     const { w } = mountQl({ items: { c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'charcoal' }, c2: QL_ITEMS.c2 } });
     const route = invoke.getMockImplementation()!;
     await flush();
