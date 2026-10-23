@@ -337,9 +337,11 @@ function onExitClose(): void {
 // 进程与页签的所有权在 App：卡片只接收 states（任务 11 的 props），ql-data / ql-exit 也只订阅一次。
 interface QlProcState { running: boolean; stopping: boolean }
 // name：建页签当时的那份配置名（修复轮 B · Minor 2）。页签文案此前每次回查 qlConfigs 只读镜像，
-// 条目被删除（已停止的条目可以删）后镜像里没有它 → 页签名退化成配置 id。名字因此随页签存一份。
+// 镜像里没有那一项时页签名退化成配置 id。名字因此随页签存一份。
+// （票 #16：删掉已停止的条目会连带关掉它的页签，所以「镜像查不到但页签还在」今天只剩
+//  进程还在跑那一扇窗 —— 见下面的 pruneOrphanTerminalTabs 与 R3 守卫。）
 // palette：同一条语义的第二份快照（票 #13 / ADR:14）——建页签那一刻取一次条目当前的 terminal_palette，
-// 此后不回查镜像：条目被删后仍开着的页签沿用创建时的配色，不跳回默认档。没有该键 = 渲染端按表回落。
+// 此后不回查镜像：条目那一侧改名 / 换档，已开着的页签都不跳变。没有该键 = 渲染端按表回落。
 interface QlTabRef { id: string; configId: string; name: string; palette?: TermPaletteId }
 interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void }
 
@@ -367,8 +369,10 @@ const TAB_LABEL_BUDGET = 16; // 规格 §11-1：页签的宽度预算 16（列�
 // running / stopping 同源于 qlStates，下发给终端页签工具条那颗进程态按钮（2026-10-20 用户要求：
 // 那颗先由 [x] 改 [停止]，同日第二轮改成「运行中 [停止] / 停完 [重新启动]」）——三态判据与 QuickLaunch
 // 列表行完全一致（QuickLaunch.vue:stateOf），两处按钮因此永远同步。
-// restartDisabled 取 qlConfigs 只读镜像（Minor 2 那份）：条目被删 → 镜像里没有它 → [重新启动] 禁用，
-// 页签只剩 [x] 可关（对着一条已不存在的配置发 ql_start 只会拿回一条失败）。
+// restartDisabled 取 qlConfigs 只读镜像（Minor 2 那份）：镜像里没有它 → [重新启动] 禁用
+// （对着一条已不存在的配置发 ql_start 只会拿回一条失败）。票 #16 之后「删掉已停止的条目」会连带
+// 关掉它的页签，于是这里只剩进程还在跑、页签因 R3 不能关那一扇窗：条目消失 → 那颗禁用，
+// 进程退出后页签按 §7.5 留着，那颗仍然是禁用的 [重新启动]。
 const logTabItems = computed<LogTabItem[]>(() => {
   const statics: LogTabItem[] = LOG_TABS.map((tab) => ({
     id: tab.id, label: tab.label, fullLabel: tab.label, kind: 'text',
@@ -483,11 +487,27 @@ function onTerminalResize(tabId: string, cols: number, rows: number): void {
   invoke('ql_resize', configId, cols, rows).catch(() => { /* 下一次 fit 会补报 */ });
 }
 
+// 票 #16：条目被删 → 它的终端页签连带关闭。旧行为 = 页签留在原地，restartDisabled 把它永久钉成
+// 「再也启动不了的一块东西」（卡片 changed 只刷配置镜像、页签不动）。判据 = 刷新后的只读镜像里
+// 查不到该 configId；关闭复用 [x] 那条既有路径（onTerminalClose：过滤 qlTabs + unregisterTerminalSink
+// + 撤临时预览），不新增机制 —— onTerminalClose 自带的 running || stopping 守卫因此一并生效
+// （R3：那时关掉会留孤儿 PTY），何况运行中的条目本来就删不掉（弹窗 [删除] 禁用）。
+// 「进程退出 / 停止 → 页签保留」（规格 §7.5 的用户决策）不受影响：那时条目仍在镜像里。
+function pruneOrphanTerminalTabs(): void {
+  for (const tab of [...qlTabs.value]) {
+    if (qlConfigs.value[tab.configId]) continue; // 条目还在 → 页签不动（改名 / 改档都不关页签）
+    onTerminalClose(tab.id);
+  }
+}
+
 // 页签文案 / type 镜像：卡片 changed（保存 / 删除 / 复制）后刷新；失败只影响文案（用配置 id 兜底）
+// 票 #16：刷完镜像顺手关掉「镜像里已经查不到这条」的页签。只在成功分支做 —— ql_list 失败时镜像不动，
+// 页签也不动（不能把一次读取失败当成「条目被删」）
 async function refreshQlConfigs(): Promise<void> {
   try {
     const list = await invoke<QuickLaunchList>('ql_list');
     qlConfigs.value = list?.items ?? {};
+    pruneOrphanTerminalTabs();
   } catch { /* ql_list 正常不抛（规格 §5.2），真错误由卡片自己的错误区显示 */ }
 }
 
