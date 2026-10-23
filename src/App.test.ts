@@ -1691,9 +1691,10 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
-  // ADR:14「页签沿用创建时的配色快照，不跳变」——与上面那条页签名用例同一手法：条目从镜像里消失
-  // （changed → 镜像刷空）→ 页签的快照不动（快照不是回查镜像的 computed）。票 #16 之后「删掉已停止的
-  // 条目」会连带关页签，所以这里同样取进程还在跑、R3 不关页签的那扇窗。
+  // ADR 0002 三分口径的第三瓣「条目被删 → 页签冻结在最后一档、不回落默认档」——与上面那条页签名用例同一
+  // 手法：条目从镜像里消失（changed → 镜像刷空）→ 页签那份配色不动（对齐只处理「镜像里还在」的条目）。
+  // 对照 = 票 #18 的 saved_palette_change_reaches_the_open_terminal_tab：条目**还在**、只换了一档。
+  // 票 #16 之后「删掉已停止的条目」会连带关页签，所以这里同样取进程还在跑、R3 不关页签的那扇窗。
   it('tab_keeps_its_palette_snapshot_when_the_config_disappears', async () => {
     const { w } = mountQl({ items: { c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'charcoal' }, c2: QL_ITEMS.c2 } });
     const route = invoke.getMockImplementation()!;
@@ -1783,6 +1784,83 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
+  // ── 票 #18 · 条目落盘的档变了 → 该条目正开着的页签当场跟着换（读侧对齐）──
+  // 用户 2026-10-23 的直觉：「这条条目的配色 = 这条条目的终端的样子」。旧行为 = 页签那份档是建页签
+  // 那一刻的快照，弹窗 [保存] 之后只有关掉页签或 F5 才跟上（就地 [重新启动] 也不换）。
+  // 手法沿用上面两条：卡片冒泡 changed → App.refreshQlConfigs 重读 ql_list；差别是这次镜像里**还在**
+  // 那条条目、只换了 terminal_palette 一档（对照：条目从镜像里消失那一扇窗见 tab_keeps_its_palette_snapshot）。
+  // 一次钉死四条判据：① 页签条目的 palette 变新档；② 那块画布真的换色（theme 逐值 = 新档那一行）；
+  // ③ 终端与进程都不动（同一个实例、屏上历史还在、ql_start 只发过最初那一次 —— ADR 0001:15）；
+  // ④ 读侧对齐不写盘（零 ql_save / ql_set_palette）。
+  it('saved_palette_change_reaches_the_open_terminal_tab', async () => {
+    const CHARCOAL = { c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'charcoal' }, c2: QL_ITEMS.c2 };
+    const { w } = mountQl({ items: CHARCOAL });
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');   // 启动 → 建页签（此刻 charcoal）
+    await flush();
+    expect(xh.state.terms.length).toBe(1);
+    const term0 = xh.state.terms[0];
+    qlDataHandlers.at(-1)!({ tabId: 'ql:c1', data: '换档前屏上已有的输出' }); // 屏上历史（换档不得丢）
+    await flush();
+
+    // 条目落盘换成 warm-night：弹窗 [保存] 之后卡片 reload 读到的就是这一档，于是冒泡 changed
+    const WARM = { c1: { ...CHARCOAL.c1, terminal_palette: 'warm-night' }, c2: QL_ITEMS.c2 };
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: WARM, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+
+    const tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(tabs.find((t) => t.id === 'ql:c1')?.palette, '条目落盘的档变了、页签还是旧档（票 #18 的症状）').toBe('warm-night');
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme, '画布没跟着换档')
+      .toEqual(TERM_PALETTES['warm-night'].theme);
+    expect(xh.state.terms[0], '换档把终端重建了（ADR 0001:15 要求整对象换 theme、不重建）').toBe(term0);
+    expect(xh.state.terms[0].written, '换档丢了屏上已有的输出').toContain('换档前屏上已有的输出');
+    expect(qlInvokes('ql_start'), '换档顺带重启了进程').toEqual([['c1']]);
+    expect(qlInvokes('ql_save'), '读侧对齐顺带写了盘').toEqual([]);
+    expect(qlInvokes('ql_set_palette'), '读侧对齐顺带写了盘').toEqual([]);
+    w.unmount();
+  });
+
+  // 对齐不得盖掉正在进行的 hover 预览：优先级仍是「本地浮层预览 > 外部弹窗预览 > 条目落盘档」
+  // （TerminalTabView 的 shownPalette）。弹窗指针还压在 campbell 色块上时该条目落盘换成 warm-night →
+  // 画布仍停在 campbell；指针移开（paletteHover null）才落到刚落盘的 warm-night。
+  it('palette_alignment_keeps_the_inflight_hover_preview_ahead_of_it', async () => {
+    const PAPER = { c1: { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'paper' }, c2: QL_ITEMS.c2 };
+    const { w } = mountQl({ items: PAPER });
+    const route = invoke.getMockImplementation()!;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');   // 启动 → 建页签（此刻 paper）
+    await flush();
+    const ql = w.findComponent(QuickLaunch);
+    ql.vm.$emit('paletteHover', 'c1', 'campbell'); // 弹窗里指针压在 campbell 上（未落盘）
+    await flush();
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['campbell'].theme);
+
+    const WARM = { c1: { ...PAPER.c1, terminal_palette: 'warm-night' }, c2: QL_ITEMS.c2 };
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> =>
+      cmd === 'ql_list' ? Promise.resolve({ items: WARM, invalid: [] }) : route(cmd, ...args));
+    w.findComponent(QuickLaunch).vm.$emit('changed');
+    await flush();
+    await flush();
+
+    let tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(tabs.find((x) => x.id === 'ql:c1')?.palette, '落盘的新档没对齐到页签上').toBe('warm-night');
+    expect(tabs.find((x) => x.id === 'ql:c1')?.palettePreview, '对齐把 hover 预览撤掉了（预览归弹窗那侧管）').toBe('campbell');
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme, '对齐把正在进行的 hover 预览盖掉了')
+      .toEqual(TERM_PALETTES['campbell'].theme);
+
+    ql.vm.$emit('paletteHover', 'c1', null);  // 移开指针 → 落到刚落盘那一档
+    await flush();
+    tabs = w.findComponent(LogPanel).props('tabs') as Array<Record<string, unknown>>;
+    expect(tabs.find((x) => x.id === 'ql:c1')?.palettePreview).toBeUndefined();
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['warm-night'].theme);
+    expect(qlInvokes('ql_save'), '读侧对齐顺带写了盘').toEqual([]);
+    expect(qlInvokes('ql_set_palette'), '读侧对齐顺带写了盘').toEqual([]);
+    w.unmount();
+  });
 
   // E9（索引 M8 / K34(5)）：不可写的配置一律不发 ql_write / ql_resize。三种不可写：
   // ① 没有终端页签（未启动 / 页签已关）② exe 配置（ql_start 返回 tabId = null，运行态在也没有页签）
