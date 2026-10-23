@@ -340,8 +340,11 @@ interface QlProcState { running: boolean; stopping: boolean }
 // 镜像里没有那一项时页签名退化成配置 id。名字因此随页签存一份。
 // （票 #16：删掉已停止的条目会连带关掉它的页签，所以「镜像查不到但页签还在」今天只剩
 //  进程还在跑那一扇窗 —— 见下面的 pruneOrphanTerminalTabs 与 R3 守卫。）
-// palette：同一条语义的第二份快照（票 #13 / ADR:14）——建页签那一刻取一次条目当前的 terminal_palette，
-// 此后不回查镜像：条目那一侧改名 / 换档，已开着的页签都不跳变。没有该键 = 渲染端按表回落。
+// palette：建页签那一刻从镜像取一次（票 #13），此后由 alignTerminalTabPalettes 在每次刷新镜像后
+// 对齐条目**落盘**的那一档（票 #18 / ADR 0002）：弹窗 [保存] 之后已开着的页签当场换档。
+// 与上面 name 那条语义**分道**了：改名仍不跳变（文案仍是创建时那份），换档跟着变。
+// 条目已从镜像里消失 → 不再对齐，页签冻结在最后一档、不回落默认档（ADR 0001:14 的这半边不动）。
+// 没有该键 = 渲染端按表回落（termPaletteOf）。
 interface QlTabRef { id: string; configId: string; name: string; palette?: TermPaletteId }
 interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void }
 
@@ -394,7 +397,8 @@ const logTabItems = computed<LogTabItem[]>(() => {
       stopping: !!s && s.stopping,
       restartDisabled: !qlConfigs.value[tab.configId],
       configId: tab.configId,
-      // 配色取页签自己的那份快照（QlTabRef.palette），不回查镜像 → 删条目不跳档（ADR:14）
+      // 配色取页签自己那一份（QlTabRef.palette）：它在每次刷新镜像后对齐条目落盘档（票 #18），
+      // 但条目消失时不再对齐 → 那块画布冻结在最后一档、不跳回默认档（ADR 0002）。
       palette: tab.palette,
       // 票 #15：那份临时预览（没有 = 键不在表里 → prop 为 undefined → 组件用快照）。改名是因为它
       // 与上面的 palette 是两回事：一个「当前落盘的档」，一个「指针正指着哪一档」
@@ -428,8 +432,11 @@ function openTerminalTab(configId: string): boolean {
     // 镜像此刻缺项只影响这一份文案的兜底（= 配置 id），此后不再随镜像变化（Minor 2）。
     const entry = qlConfigs.value[configId];
     const name = entry?.name ?? configId;
-    // 配色快照与名字同一处、同一语义（票 #13）：只在这里读一次。restoreTerminals 先刷镜像再走这条路，
+    // 配色与名字同一处从镜像取一次（票 #13）。此后两者分道：名字不再回查（Minor 2），配色由
+    // alignTerminalTabPalettes 在每次刷新镜像后对齐（票 #18）。restoreTerminals 先刷镜像再走这条路，
     // 所以「窗口重载复原」出来的页签也从条目当前配置取档（条目上是什么档就是什么档，不回放历史输出）。
+    // 就地 [重新启动] 走下面 restart 分支、不在这里重取，但它前面必有 refreshQlConfigs（弹窗 [保存] →
+    // changed），所以那条路自然拿到新档，这里不需要特殊处理。
     qlTabs.value = [...qlTabs.value, { id: qlTabId(configId), configId, name, palette: entry?.terminal_palette }];
   }
   activeTabId.value = qlTabId(configId);
@@ -495,18 +502,41 @@ function onTerminalResize(tabId: string, cols: number, rows: number): void {
 // 「进程退出 / 停止 → 页签保留」（规格 §7.5 的用户决策）不受影响：那时条目仍在镜像里。
 function pruneOrphanTerminalTabs(): void {
   for (const tab of [...qlTabs.value]) {
-    if (qlConfigs.value[tab.configId]) continue; // 条目还在 → 页签不动（改名 / 改档都不关页签）
+    if (qlConfigs.value[tab.configId]) continue; // 条目还在 → 页签不动（改名 / 改档都不关页签；改档由 alignTerminalTabPalettes 换色）
     onTerminalClose(tab.id);
   }
+}
+
+// 票 #18：条目**落盘**的那一档 = 那块画布的唯一真源。刷新完镜像后，把「镜像里还在」的每条页签的
+// palette 对齐条目当前的 terminal_palette → 弹窗 [保存] 之后，该条目正开着的终端当场换档，
+// 不必关掉页签也不必 F5（旧行为 = 快照只在建页签那一刻取，用户 2026-10-23 反馈「保存了但看不见」）。
+// 三条边界：
+// ① 只在成功分支做（与 pruneOrphanTerminalTabs 同一口径）：读侧对齐一律不写盘，一次 ql_* 都不发。
+// ② 门 = 同一道查表：镜像里查不到那条条目 → **不**对齐，页签冻结在最后一档、不回落默认档
+//    （ADR 0001:14 的这半边不动；App.test.ts 的 tab_keeps_its_palette_snapshot_when_the_config_disappears 钉着）。
+// ③ 换档的落地路径不变：prop 变 → TerminalTabView 的 watch → applyTheme 整对象换 theme + 重铺查找装饰，
+//    不重建终端（ADR 0001:15）→ 进程不重启、屏上历史不丢；正在进行的 hover 预览仍然优先于它（shownPalette）。
+// 工具条浮层那条窄通道（onTerminalPalette）已经先改过这一份，再对齐一次是幂等的（磁盘就是那一档）。
+function alignTerminalTabPalettes(): void {
+  let changed = false;
+  const next = qlTabs.value.map((tab) => {
+    const entry = qlConfigs.value[tab.configId];
+    if (!entry || entry.terminal_palette === tab.palette) return tab; // 条目没了 / 档没变 → 原样
+    changed = true;
+    return { ...tab, palette: entry.terminal_palette };
+  });
+  if (changed) qlTabs.value = next; // 整表换一次（与 qlTabs 既有写法一致）；没变则不触发重渲染
 }
 
 // 页签文案 / type 镜像：卡片 changed（保存 / 删除 / 复制）后刷新；失败只影响文案（用配置 id 兜底）
 // 票 #16：刷完镜像顺手关掉「镜像里已经查不到这条」的页签。只在成功分支做 —— ql_list 失败时镜像不动，
 // 页签也不动（不能把一次读取失败当成「条目被删」）
+// 票 #18：同一处还把仍开着的页签的配色对齐到刚读回来的落盘档（见上面 alignTerminalTabPalettes）
 async function refreshQlConfigs(): Promise<void> {
   try {
     const list = await invoke<QuickLaunchList>('ql_list');
     qlConfigs.value = list?.items ?? {};
+    alignTerminalTabPalettes();
     pruneOrphanTerminalTabs();
   } catch { /* ql_list 正常不抛（规格 §5.2），真错误由卡片自己的错误区显示 */ }
 }

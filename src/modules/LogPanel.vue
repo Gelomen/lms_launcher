@@ -35,7 +35,7 @@ const props = defineProps<{
 // stop(id) / restart(id)（2026-10-20）：终端工具条那颗进程态按钮 → App.doQlStop / doQlStart
 //   （= 列表行 [停止] / [启动] 同一条路），本组件只透传 id、不碰进程。
 // palette(id, paletteId)（票 #13 接线 / 票 #14 触发）：工具条浮层选了一档 → 交给 App 走窄通道 ql_set_palette；
-//   本组件不判缺省、不落盘、也不改页签快照（快照的所有权在 App）。
+//   本组件不判缺省、不落盘、也不改那份配色（它的所有权在 App：票 #18 起由 App 对齐条目落盘档）。
 const emit = defineEmits<{ (e: 'clear', id: LogTabId): void; (e: 'close', id: string): void; (e: 'stop', id: string): void; (e: 'restart', id: string): void; (e: 'palette', id: string, palette: TermPaletteId): void; (e: 'update:active', id: string): void }>();
 
 // 子组件的 palette(id, paletteId) 原样转发（多参事件在模板里没法用 $event 取第二个参数，故走这个具名处理器）

@@ -35,9 +35,10 @@ const props = defineProps<{
   running: boolean;
   stopping: boolean;
   restartDisabled: boolean;
-  // 终端配色快照（票 #13 / ADR 0001）：App 在**建页签那一刻**从 ql_list 只读镜像里取一次，此后不随镜像变化
-  // （条目被删后仍开着的页签沿用创建时的快照，不会跳回默认档 —— ADR:14）。缺省 = 表里的默认档（termPaletteOf 的回落）。
-  // 换档由上层改这个 prop（票 #14 的浮层 / 票 #15 的色块走窄通道 ql_set_palette 后把快照改掉），本组件不碰落盘。
+  // 终端配色（票 #13 / ADR 0001 + 0002）：建页签那一刻 App 从 ql_list 只读镜像取一次，此后由它在每次刷新
+  // 镜像后对齐条目**落盘**的那一档（票 #18：弹窗 [保存] → 已开着的页签当场换档）；条目已从配置里消失时
+  // 不再对齐 = 冻结在最后一档、不跳回默认档。缺省 = 表里的默认档（termPaletteOf 的回落）。
+  // 换档一律由上层改这个 prop（票 #14 浮层 / 票 #15 色块走窄通道，或票 #18 的对齐），本组件不碰落盘。
   palette?: TermPaletteId;
   // 票 #15：弹窗 [配色] 一行 hover 上来的**临时预览**（一路从 App 的页签条目搬过来，LogPanel 只做搬运）。
   // 它不是快照的一部分：只在指针停在色块上那几秒存在，撤掉（undefined / null）就回到快照那一份。
@@ -63,7 +64,7 @@ const paletteOf = computed(() => termPaletteOf(props.palette));
 // 改 term.options.theme.background 这类内部属性不生效，所以必须赋一个新对象。终端还没建时（v-show 隐藏 / 未挂载）不做事。
 watch(() => props.palette, () => {
   if (!term) return;
-  // 快照变了（票 #14 选定一档后 App 改的就是这份快照）：本地预览一并清掉，别让 hover 残留盖过落盘结果。
+  // 这一份变了（票 #14 选定一档 / 票 #18 对齐条目落盘档，改的都是它）：本地预览一并清掉，别让 hover 残留盖过落盘结果。
   previewId.value = null;
   // 生效的那一档仍走 shownPalette：外部预览（票 #15）若还挂着就仍是那一档，没挂着就是新快照。
   // theme 赋值与查找高亮重铺都收在 applyTheme 一处（三处换档入口共用，别再各写一遍）。
@@ -183,7 +184,7 @@ function onOutsideMouseDown(e: MouseEvent): void {
 // 窗极窄时 Math.max(4, …) 兜住左边界，不把浮层推出窗外（两个 4 是同一个下限的两半，不是各自拍的）。
 async function openPalettePop(): Promise<void> {
   // 条目配置已删（restartDisabled）：没有可写 terminal_palette 的条目，按钮禁用、浮层也开不出，
-  // 页签继续用创建时那份快照（ADR:14；App.test.ts 钉着「删条目不跳档」）。
+  // 页签继续用它最后一份配色（App 在条目消失后不再对齐 —— ADR 0002；App.test.ts 钉着「删条目不跳档」）。
   if (props.restartDisabled) return;
   const el = paletteBtn.value;
   if (!el || paletteOpen.value) return;
@@ -403,7 +404,7 @@ defineExpose({
       </div>
       <!-- 配色入口（票 #14）：盒 24×24 与同排其余几颗一致（style.css 里那一族收盒的定版理由同样适用，
            见 :252-263 那段取证注释）——盒顶一变 tooltip 就跟着高一截，那颗按钮已经被这件事返工过三轮。
-           restartDisabled（条目配置已删）时禁用：没有条目就没有可写的 terminal_palette，页签沿用创建时那份快照。 -->
+           restartDisabled（条目配置已删）时禁用：没有条目就没有可写的 terminal_palette，页签停在它最后一份配色。 -->
       <button ref="paletteBtn" type="button" class="icon-btn icon-btn--noborder btn-term-palette"
         :aria-label="t('ql.terminal.palette')" :data-tooltip="t('ql.terminal.palette')"
         :disabled="restartDisabled" :aria-expanded="paletteOpen ? 'true' : 'false'" @click="openPalettePop">
