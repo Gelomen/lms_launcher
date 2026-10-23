@@ -1862,6 +1862,60 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
+  // ── 票 #19 · 反方向：页签工具条改的档必须反映到 [编辑] 弹窗（读侧陈旧）──
+  // 用户 2026-10-23 的原话症状：浮层点 campbell（画布当场变深、窄通道 ql_set_palette 已落盘）→ 打开该行
+  // [编辑]，[配色] 一行的选中标与那一句话说明**仍是纯白**；不动任何色块直接 [保存] → ql_save 整条覆盖
+  // 把配色**写回 paper** —— 这是实打实的数据回退（刚选的那一档被无声抹掉，画布 = campbell 而 yaml = paper）。
+  // 根因在读侧：窄通道只改了页签那一份 + 发 IPC，既不刷 App 的只读镜像、也不让卡片重拉 ql_list，
+  // 而 [编辑] 走 openEdit 不 reload，直接把卡片缓存里那一档交给弹窗回填（QuickLaunchModal.fill）。
+  // 手法 = 真链：卡片行 [编辑] → 真弹窗（Teleport 进 body，选择器与 QuickLaunchModal.test.ts 同一套）。
+  it('palette_picked_on_the_tab_is_what_the_edit_modal_shows_and_saves', async () => {
+    const PAPER = { name: '我的终端', type: 'shell', shell: 'cmd', cmd: 'cmd', admin: false, terminal_palette: 'paper' };
+    const { w } = mountQl({ items: { c1: PAPER, c2: QL_ITEMS.c2 } });
+    const route = invoke.getMockImplementation()!;
+    const CAMPBELL = { ...PAPER, terminal_palette: 'campbell' };
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');   // 启动 → 页签（paper）
+    await flush();
+    // 页签工具条浮层点 campbell：LogPanel 冒 palette 就是那一条路 → 窄通道落盘 + 画布当场换档
+    w.findComponent(LogPanel).vm.$emit('palette', 'ql:c1', 'campbell');
+    await flush();
+    expect(qlInvokes('ql_set_palette')).toEqual([['c1', 'campbell']]);
+    expect((xh.state.terms[0].options as { theme: Record<string, string> }).theme).toEqual(TERM_PALETTES['campbell'].theme);
+    // 窄通道确实落了盘：此后 ql_list 读回来就是 campbell（夹具跟着磁盘的真读数走）
+    invoke.mockImplementation((cmd: string, ...args: unknown[]): Promise<unknown> => {
+      if (cmd === 'ql_list') return Promise.resolve({ items: { c1: CAMPBELL, c2: QL_ITEMS.c2 }, invalid: [] });
+      if (cmd === 'ql_terminals') return Promise.resolve([{ id: 'cmd', path: 'C:\\WINDOWS\\System32\\cmd.exe' }]);
+      return route(cmd, ...args);
+    });
+
+    // 该行 [编辑]（行内按钮序 = [复制][编辑][启动/停止]）→ 弹窗回填必须 = 该条目当前落盘档
+    await w.findAll('.module-quick .tpl-row')[0].findAll('.tpl-row__actions button')[1].trigger('click');
+    await flush();
+    await flush();
+    // 选择器锁到 QuickLaunchModal 自己那一块：弹窗都 Teleport 进 body 且共用 .modal-box / .modal-save
+    // 这套类名，而更早的用例会在文档里留下没 unmount 的 Teleport 残留（实测有一块 SettingsModal 的
+    // .modal-box 排在我们前面）→ 按文档顺序取第一块会点到别人的 [保存]。判据 = 带 [配色] 那一行的那块。
+    const boxes = [...document.querySelectorAll('.modal-box')].filter((m) => m.querySelector('.palette-swatch'));
+    expect(boxes.length, '文档里有不止一块带 [配色] 行的弹窗（这里的选择器会拿错那一份）').toBe(1);
+    const box = boxes[0];
+    const cur = box.querySelector('.palette-swatch.is-current') as HTMLElement | null;
+    expect(cur?.dataset.palette, '弹窗回填的还是窄通道之前的旧档（票 #19 的症状）').toBe('campbell');
+    expect(box.querySelector('.palette-hint')?.textContent, '那一句话说明仍是旧档')
+      .toContain(i18nText('ql.palette.campbell'));
+
+    // 不动任何色块直接 [保存]：payload 必须带当前落盘档，不得把 campbell 写回 paper
+    (box.querySelector('.modal-save') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    const saves = qlInvokes('ql_save');
+    expect(saves.length, '[保存] 没走到 ql_save').toBe(1);
+    expect((saves[0][1] as { terminal_palette: string }).terminal_palette, '[保存] 把配色写回了窄通道之前的旧档（数据回退）')
+      .toBe('campbell');
+    expect(qlInvokes('ql_set_palette').length, '弹窗那条路去走窄通道了（口径不变：弹窗落盘只随 ql_save）').toBe(1);
+    w.unmount();
+  });
+
   // E9（索引 M8 / K34(5)）：不可写的配置一律不发 ql_write / ql_resize。三种不可写：
   // ① 没有终端页签（未启动 / 页签已关）② exe 配置（ql_start 返回 tabId = null，运行态在也没有页签）
   // ③ 页签在但状态 = stopping（PTY 已 kill）。正例同测：可写时两个入口各发一次，否则「永远不发」也能过。
