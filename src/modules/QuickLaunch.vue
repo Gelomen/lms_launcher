@@ -55,7 +55,18 @@ const copying = ref(false);
 const modalOpen = ref(false);
 const editingId = ref<string | null>(null);
 function openNew(): void { editingId.value = null; modalOpen.value = true; }
-function openEdit(id: string): void {
+// 票 #19：开窗前先重拉一次 ql_list —— 弹窗回填的必须是该条目**当前落盘**那一档（以及其余字段），
+// 而不是卡片缓存里窄通道之前的那一份。窄通道 ql_set_palette（页签工具条那颗）只改页签那一份 + 发 IPC，
+// 不做任何「读侧失效」广播，所以卡片缓存与 App 的只读镜像都可能停在旧档；[编辑] 过去直接把缓存喂给
+// fill()，于是出现「弹窗显示旧档 + 不动色块 [保存] 就把刚选的档写回去」的数据回退（画布 = campbell、
+// yaml = paper 各说一套）。口径 = ADR 0002 那句「条目落盘档 = 唯一真源，弹窗与页签都是它的镜像」：
+// 弹窗这侧的镜像在**开窗那一刻**读（页签那侧的对齐在 refreshQlConfigs = 票 #18；两处都不留第二份真源）。
+// 代价 = 每次开窗多一次 ql_list（该调用正常不抛、不探测终端，规格 §5.2）。
+// 没选票里推荐的「落盘后广播刷新」：那要给卡片加一条 reload 通道（新 prop + watch）并防刷新回环，
+// 收益与这里相同、机制更多；而且缓存刷新挡不住「配置文件被别处改了」那类外部变化，开窗即读一并覆盖。
+// reload 之后条目已经不在（别处删了）→ 不开窗，与旧代码那道守卫同一语义。
+async function openEdit(id: string): void {
+  await reload();
   if (!list.value || !list.value.items[id]) return;
   editingId.value = id;
   modalOpen.value = true;

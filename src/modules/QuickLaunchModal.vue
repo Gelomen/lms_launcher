@@ -236,6 +236,9 @@ function fill(): void {
   formAdmin.value = e?.admin === true;
   // 票 #15：配色回填走 termPaletteOf（缺字段 / 表外值都回落默认档，与主进程同一判据），
   // 所以这一行永远有一档是「当前」，不会出现空选中态。hover 预览不跨弹窗留残留。
+  // 票 #19：`props.entry` 是卡片在**开窗那一刻**重读回来的（QuickLaunch.openEdit 先 await reload()），所以这里
+  // 回填的就是该条目当前落盘那一档 —— 别再改成拿卡片缓存：页签工具条那颗（窄通道 ql_set_palette）改过之后，
+  // 缓存仍是旧档，选中标就会与身后那块画布各说一套，[保存] 还会把用户刚选的档写回去（ADR 0002：落盘档 = 唯一真源）。
   formPalette.value = termPaletteOf(e?.terminal_palette).id;
   hoverPalette.value = null;
   terminals.value = [];
