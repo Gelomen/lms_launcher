@@ -102,6 +102,16 @@ beforeEach(() => {
   traySettingsHandlers = [];
 });
 
+// 票 #20：弹窗一律 <Teleport to="body">，用例 mount 后不 unmount，就把自己那块弹窗留在 document 里给
+// 后面所有用例（四类弹窗共用 .modal-box / .modal-save 外壳 → 按文档顺序取第一块的用例会点到别人的
+// [保存]，形状 = 单跑绿、全量红）。这里只断言、不清理：漏 unmount 的用例当场红，而不是被 afterEach 悄悄扫干净。
+// afterEach 不在文件顶部的 import 里（沿 L1212 既有手法：按同一模块取函数引用，既有 import 一字不改）
+const { afterEach: afterEachNoTeleportResidue } = await import('vitest');
+afterEachNoTeleportResidue(() => {
+  const leftovers = [...document.querySelectorAll('.modal-overlay, .modal-box')];
+  expect(leftovers.length, 'document 里残留了上一用例的 Teleport 弹窗: ' + JSON.stringify(leftovers.map((el) => el.querySelector('.modal-title')?.textContent ?? '?'))).toBe(0);
+});
+
 function btn(w: import('@vue/test-utils').VueWrapper<any>): any {
   const all = w.findAll('.module-launch .btn');
   expect(all.length).toBe(2); // toggle + dropdown …
@@ -901,13 +911,15 @@ describe('App update modal (入口统一 + 共用退出确认 + 七态流转)', 
 // 设置（2026-10-01 update-proxy-settings）：托盘「设置」→ SettingsModal（纯 props 驱动，open 由 App 持有）
 describe('App tray settings', () => {
   it('tray-settings-request opens settings modal', async () => {
-    mountApp();
+    const { w } = mountApp();
     await flush();
     expect(traySettingsHandlers.length).toBeGreaterThan(0);
     traySettingsHandlers[0]();
     await flush();
     const title = document.querySelector('.modal-overlay .modal-title');
     expect(title?.textContent).toBe('设置');
+    // 弹窗 Teleport 进 body：不 unmount 就把这块 .modal-box 留给后面所有用例（票 #20）
+    w.unmount();
   });
 });
 
