@@ -17,7 +17,9 @@ import { TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palett
 // 终端页签（规格 2026-10-10-quick-launch-card-design §9.3）：一个 xterm 实例 = 一个 PTY。
 // 单向数据流：输出由上层按 tabId 派发进来（挂载时 register 交出的 sink），
 // 输入与尺寸经 props 的回调出去（对应 §8 的 ql_write / ql_resize）；本组件不订阅任何事件。
-// 外壳复用静态页签的尺寸链（style.css 的 .log-pane → .log-view，见 :262 那条高度链注释），不新增 CSS 类。
+// 外壳复用静态页签的尺寸链（style.css 的 .log-pane → .log-view，见 :262 那条高度链注释）。不自建尺寸类，根上只多挂一条
+// 例外修饰类 .log-pane--term（2026-10-24 两轮：第一轮去掉 pane 的 8px 下内边距，第二轮让画布横向也出血到边框内缘、
+// 下圆角改由画布自己画）——两条规则与逐段取证读数都在 style.css 里，本组件只负责挂类 + 挂那三样同源的着色。
 library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop, faArrowRotateRight, faPalette);
 
 // props 以计划 §任务 9 为准（索引 K2 / 本任务 A4）：含 label/fullLabel，不含 configId。
@@ -378,7 +380,7 @@ defineExpose({
 });
 </script>
 <template>
-  <div class="log-pane" :data-tab-id="id" :data-tab-label="label" :data-tab-full-label="fullLabel">
+  <div class="log-pane log-pane--term" :data-tab-id="id" :data-tab-label="label" :data-tab-full-label="fullLabel">
     <div style="display: flex; justify-content: flex-start; align-items: center;">
       <!-- [清空终端]：icon-only + aria-label，盒型复用既有 .icon-btn（同 LogTabView 的清空日志） -->
       <button type="button" class="icon-btn icon-btn--noborder btn-term-clear"
@@ -463,7 +465,15 @@ defineExpose({
     </div>
     <!-- xterm 挂载点：沿用 .log-view 的 flex:1 高度链，只把它的 overflow-y 关掉（xterm 自带视口滚动）。
          描边取当前档的 canvasBorder（票 #13）：浅灰 / 暖纸那两档与卡片只差一档明度，靠描边才读作「有意另起一块台面」；
-         暗底两档存的是字面 hex，paper / charcoal 存 transparent（不画）。outline 不占布局，故网格尺寸不受影响。 -->
-    <div ref="view" class="log-view term-view" :style="{ overflow: 'hidden', minHeight: '0', outline: '1px solid ' + shownPaletteOf.canvasBorder, outlineOffset: '-1px' }" @contextmenu.prevent="onContextMenu"></div>
+         暗底两档存的是字面 hex，paper / charcoal 存 transparent（不画）。outline 不占布局，故网格尺寸不受影响。
+         底色取同一档的 theme.background（2026-10-24 用户截图「黑色配色的终端底部有白色间隙」）：FitAddon 只能按整行取 rows，
+         画布底缘与本盒底缘之间恒剩 0–14px 属于**本盒自己的背景**——xterm 只给 .xterm-viewport 上色，本盒不上色就是卡片白。
+         取证台 .temp/term-bottom-gap 前后两份截图对照：本盒不涂底色时那段余量读成白缝（真机读数 view 高 302 / 画布 300 → 2px，
+         用户那张 150% 截图里是 8 CSS px），涂上同档底色后它与画布连成一块；另一半白缝（pane 的 8px 下内边距）由
+         .log-pane--term 去掉。theme / 描边 / 查找高亮 / 盒底四处同源，换档时不分家。
+         第二轮（「左右两侧的空隙也去掉，但保留左下和右下的圆角」）把左右 8px 也由 style.css 的 .log-pane--term .term-view 抵消掉，
+         于是这句 overflow:hidden 还兼一件事：它裁掉绝对定位的 xterm 子孙（screen / viewport），画布的两个下角落才跟着那条 7px 内弧走，
+         不会把字形的角顶出弧外——删掉这句，圆角就只剩背景是圆的。 -->
+    <div ref="view" class="log-view term-view" :style="{ overflow: 'hidden', minHeight: '0', background: shownPaletteOf.theme.background, outline: '1px solid ' + shownPaletteOf.canvasBorder, outlineOffset: '-1px' }" @contextmenu.prevent="onContextMenu"></div>
   </div>
 </template>

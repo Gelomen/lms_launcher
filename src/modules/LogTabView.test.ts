@@ -268,3 +268,16 @@ describe('LogTabView i18n', () => {
     });
   });
 });
+
+// 与终端页签的分界（2026-10-24 用户截图「黑色配色的终端底部有白色间隙」）：去下内边距只针对画布那一侧，
+// 靠的是 TerminalTabView 根上那条 .log-pane--term。静态日志页签不挂它 → 8px 下内边距与整块日志纸的留白一条不变。
+describe('LogTabView 外壳：不挂终端专属的修饰类', () => {
+  it('static_log_pane_does_not_carry_the_terminal_modifier_class', () => {
+    const w = mountTab([]);
+    const root = w.find('.log-pane');
+    expect(root.exists()).toBe(true);
+    expect(root.classes()).toContain('log-pane');
+    expect(root.classes(), '静态日志页签跟着去掉下内边距 = 越界：那条缝只在画布那侧').not.toContain('log-pane--term');
+    w.unmount();
+  });
+});

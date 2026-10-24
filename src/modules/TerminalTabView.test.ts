@@ -287,6 +287,60 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     w.unmount();
   });
 
+  // 2026-10-24 用户实机截图「黑色配色的终端底部有白色间隙」。那条白缝是两段拼的，两段各自量过（取证台 .temp/term-bottom-gap：
+  // 真 Chromium + 真 style.css + 真 @xterm/xterm + FitAddon 的前后两张截图 + 逐像素读数；另一半在用户那张 150% 截图上逐行数）：
+  // ① fit 余量：FitAddon 只能按整行取 rows（盒高 % 行高），画布底缘到 .term-view 底缘之间恒剩 0–14px，那块是**盒自己的背景**
+  //    （xterm 只给 .xterm-viewport 上色）→ 不涂色就露出卡片白。真机读数 view 高 302 / 画布 300（20 行 × 15px）= 余量 2px；
+  //    用户截图上那一段 = 12 物理 px = 8 CSS px（150% 缩放）。正解 = 盒底涂同一档的 theme.background，于是它与 theme / 描边 /
+  //    查找高亮并成四处同源，因此这条门挂在配色这组里；hover 预览换档时盒底也必须跟着走（屏上是一档、四周是另一档 = 同一类错）。
+  // ② pane 的 8px 下内边距：取证读数 belowView = 9 = 8px 内边距 + 1px 下边框 → 由根上那条 .log-pane--term 归零。
+  //    happy-dom 无布局，故按本仓既有口径（见下面 palette_button_is_the_rightmost_item_in_the_toolbar）断 style.css 的规则文本。
+  it('view_box_background_comes_from_the_same_palette_row_as_the_canvas', async () => {
+    const { w } = mountTab({ palette: 'warm-night' });
+    const viewStyle = () => (w.find('.term-view').attributes('style') ?? '').toLowerCase();
+    const hex = (id: TermPaletteId) => String(TERM_PALETTES[id].theme.background).toLowerCase();
+    expect(viewStyle(), '画布外那圈余量露白：盒底没涂当前档的底色').toContain(hex('warm-night'));
+    // hover 预览那一档时盒底一起换：预览只改屏上那一份档，白缝不该留在旧档的颜色上
+    await w.find('.btn-term-palette').trigger('click');
+    await w.find('.term-palette-row[data-palette="campbell"]').trigger('mouseenter');
+    expect(viewStyle()).toContain(hex('campbell'));
+    await w.find('.term-palette-row[data-palette="campbell"]').trigger('mouseleave');
+    expect(viewStyle()).toContain(hex('warm-night'));   // 移开指针回到快照那一档
+    w.unmount();
+  });
+
+  // 第二轮（同日用户两张截图：「左右两侧的空隙能否也去掉? 但要保留左下角和右下角的圆角」）。三半各钉一条，缺一半都不是那一句：
+  // ① 画布横向出血抵消 pane 的左右 8px（内边距本身留在 pane 上 —— 工具条那一排仍对着卡片左右缘，所以负外边距只能挂在 .term-view 上）；
+  // ② 两个下圆角交回画布自己画，半径 = 框的外弧 var(--radius-btn) 减那 1px 边框 = 内弧 7px（写死 7px 就把「与框同心」这条关系丢了）；
+  // ③ 组件那句 inline overflow:hidden 是这条弧生效的前提（xterm 的 screen / viewport 全是绝对定位子孙，只画圆角背景不裁子孙 = 字形的角顶出弧外）。
+  // 取证读数（.temp/term-bottom-gap/sides.cjs，真 Chromium 逐像素）：出血前 x=13..20 全白、x=21 才是画布描边；出血后 x=12 框边、x=13 描边、x=14 起画布底色；
+  // 左下角沿 x=13 的深色停在 y≈501 而 y=506 那行从 x≈19 才起深色 = 角上那条内弧。happy-dom 无布局 → 按本仓既有口径断规则文本。
+  it('terminal_canvas_bleeds_to_the_frame_and_keeps_the_bottom_corners_round', () => {
+    const { w } = mountTab();
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const viewRule = (css.match(/\.log-pane--term \.term-view \{[^}]*\}/) ?? [])[0] ?? '';
+    expect(viewRule, '画布没横向贴边：缺 .log-pane--term .term-view 的 margin: 0 -8px').toMatch(/margin:\s*0 -8px/);
+    expect(viewRule, '两个下圆角没交回画布（或半径写死、丢了「= 框的外弧 − 1px 边框」这条关系）')
+      .toMatch(/border-radius:\s*0 0 calc\(var\(--radius-btn\) - 1px\) calc\(var\(--radius-btn\) - 1px\)/);
+    // 负外边挂错地方 = 整块 pane 出血，工具条那一排会跟着贴到边框上（用户要的是只有画布贴边）
+    expect(css, '.log-pane 的左右内边距被顺手清零 = 越界：工具条那一排也要贴边了').not.toMatch(/\.log-pane \{[^}]*padding:\s*0/);
+    expect(css).toMatch(/\.log-pane \{[^}]*padding:\s*8px/);
+    // ③ 裁切前提：inline 那句 overflow:hidden 仍在（删掉它，圆角只剩背景是圆的）
+    expect(w.find('.term-view').element.style.overflow).toBe('hidden');
+    w.unmount();
+  });
+
+  it('terminal_pane_root_carries_the_modifier_that_drops_its_bottom_padding', () => {
+    const { w } = mountTab();
+    const root = w.find('.log-pane');
+    expect(root.classes()).toContain('log-pane');                 // 尺寸链仍复用静态页签那一套（.log-pane → .log-view）
+    expect(root.classes(), '终端页签的 pane 没挂 .log-pane--term：画布下方仍留 8px 卡片白').toContain('log-pane--term');
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css, '缺 .log-pane--term 的 padding-bottom:0 —— 只挂类不去内边距，那条缝还在')
+      .toMatch(/\.log-pane--term \{[^}]*padding-bottom:\s*0/);
+    w.unmount();
+  });
+
   it('palette_switch_issues_no_extra_search_when_nothing_is_being_searched', async () => {
     const { w } = mountTab({ palette: 'paper' });
     await w.setProps({ palette: 'charcoal' });
