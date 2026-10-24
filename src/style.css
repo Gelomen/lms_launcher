@@ -261,7 +261,13 @@ body {
    副作用一并记录：本行高度随最宽子项由 32 → 24（终端页签的工具条更紧，终端可视区多 8px）。 */
 .log-pane .btn-term-state { width: 24px; height: 24px; }
 .log-pane .btn-term-clear { width: 24px; height: 24px; }
-.log-pane .btn-term-palette { width: 24px; height: 24px; }   /* 票 #14：与同排那几颗同尺寸（上面那段 24px 族的取证注释，理由一条不改） */
+.log-pane .btn-term-palette { width: 24px; height: 24px; margin-left: auto; }
+/* 票 #14：盒与同排那几颗同尺寸（上面那段 24px 族的取证注释，理由一条不改）。
+   2026-10-24 用户两轮要求把 [配色] 挪到那一排最右：第一轮按「排内最后一颗」做 = 只改 DOM 顺序，那颗仍紧贴左边那一串；
+   同日用户截图澄清要的是**贴这一行的右缘**（行左端那一串与右缘之间留空）→ 这里加 margin-left:auto 吸掉行内剩余空间。
+   那一排是 display:flex + justify-content:flex-start（inline style 见 TerminalTabView.vue 的 <template>）：auto margin
+   在主轴对齐之前先把 free space 吃掉，所以 flex-start 不影响这个结果。盒尺寸与两颗之间的间距一条没动。
+   两半各有一条门钉着（排内最后一颗 + 这条 auto margin）：TerminalTabView.test.ts 的 palette_button_is_the_rightmost_item_in_the_toolbar。 */
 /* 票 #14：工具条那颗配色按钮点开的六行浮层。position: fixed + JS 定位（left/top 由组件按按钮盒算、贴右缘时左移），
    与本仓 .dd-tip / .tpl-tip / .flag-tip 用的是同一定位手法（见那几段自己的注释，不按行号锚）：absolute 会被容器裁切，
    而把浮层塞进工具条那一排就等于把布局重新押回那一排——那一排的 24px 是三轮实机截图换来的定版（上面 :252-261 那段）。

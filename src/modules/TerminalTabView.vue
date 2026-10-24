@@ -21,7 +21,7 @@ import { TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palett
 library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop, faArrowRotateRight, faPalette);
 
 // props 以计划 §任务 9 为准（索引 K2 / 本任务 A4）：含 label/fullLabel，不含 configId。
-// 2026-10-20 用户要求：工具条最右那颗由 [x]（关闭页签）换成 [停止]——它与页签条上的 [x] 重复，
+// 2026-10-20 用户要求：工具条那颗（当时它在最右）由 [x]（关闭页签）换成 [停止]——它与页签条上的 [x] 重复，
 // 而列表行的 [停止] 才是这里真正需要的动作（关页签前先停进程，两处 [x] 的 R3 守卫由此变得多余）。
 // 于是 closable / closeDisabled 不再进本组件（关闭只归页签条那颗 [x]，所有权在 LogPanel），
 // 改收 running / stopping：进程态的唯一来源仍是 App 的 qlStates（QuickLaunch 列表行同一份，C1 不变）。
@@ -309,7 +309,8 @@ function onClearTerminal(): void {
   resetSearchState();
 }
 
-// 工具条最右那颗 = 进程态按钮（2026-10-20 两步用户要求：先 [x] → [停止]，再 [停止] → 停完变 [重新启动]）。
+// 工具条那颗进程态按钮（2026-10-20 两步用户要求：先 [x] → [停止]，再 [停止] → 停完变 [重新启动]）。
+// 2026-10-24 用户要求把 [配色] 挪到那一排最右 → 它右边多一颗 [配色]，它不再是最后一颗（排内顺序见 <template>）。
 // 判据与 QuickLaunch 列表行的状态按钮同源同口径（QuickLaunch.vue 的 stateOf/onToggle 是同一份 qlStates）：
 // 运行中 → [停止]；未运行 → [重新启动]；在途（stopping，含 doQlStart 的启动探测在途）→ 「...」禁用。
 const stateLabel = computed(() => (props.running ? t('ql.btn.stop') : t('ql.terminal.restart')));
@@ -402,9 +403,33 @@ defineExpose({
           <FontAwesomeIcon :icon="['far', 'circle-down']" />
         </button>
       </div>
+      <!-- 进程态按钮（2026-10-20 替换原 [x]，同日第二轮加「停完变 [重新启动]」）：三态与列表行逐字同口径
+           （索引 K30(1)）——运行中 = [停止] 可点、在途 = 半角三点 + 禁用（与 LaunchBar.vue:129 /
+           QuickLaunch.vue:221 一致）、未运行 = [重新启动] 可点（页签保留，点它 = 列表行那颗 [启动]）。
+           restartDisabled（配置已删除）时禁用：没有配置就没有可启动的东西。
+           字号与盒都随本工具条同排，两处各由一条已定版的事实决定（取证台 .temp/term-toolbar-align，
+           headless Chrome 量真盒，两轮用户截图逐条对过）：
+           ① 字号不写 inline、继承 = 13.3333px（.icon-btn 不设字号 → UA 的 button{font:13.3333px}，
+              同排 [清空终端] + 查找三颗皆如此）；列表行那颗的 10px 属于 24px 红色圆按钮的语境
+              （QuickLaunch.vue 的 2026-10-15 定版），搬进这条工具条就是「比同排小一圈」= 第一轮截图。
+           ② 盒 = 24×24（style.css:257 .log-pane .btn-term-state，与 .log-search .icon-btn 同尺寸）：
+              tooltip 的 ::after 是 bottom: calc(100% + 6px)，锚在盒顶（style.css:607）——32px 盒顶 33
+              比同排 24px 盒顶 37 高 4px，tooltip 就跟着高 4px = 第二轮截图「Restart 比 Next match 高」。
+              收盒一并对齐 tooltip 起点、热区与盒心（行中心 49），不动 ::after、不加位移魔法数。
+           文案 = 既有 ql.btn.stop + 新增 ql.terminal.restart（zh「重新启动」/ en 'Restart'，词典两侧齐全）。 -->
+      <button type="button" class="icon-btn icon-btn--noborder btn-term-state"
+        :aria-label="stateLabel" :data-tooltip="stateLabel"
+        :disabled="stateDisabled" @click="onStateClick">
+        <span v-if="stopping">...</span><FontAwesomeIcon v-else-if="running" :icon="['fas', 'stop']" /><FontAwesomeIcon v-else :icon="['fas', 'arrow-rotate-right']" />
+      </button>
       <!-- 配色入口（票 #14）：盒 24×24 与同排其余几颗一致（style.css 里那一族收盒的定版理由同样适用，
            见 :252-263 那段取证注释）——盒顶一变 tooltip 就跟着高一截，那颗按钮已经被这件事返工过三轮。
-           restartDisabled（条目配置已删）时禁用：没有条目就没有可写的 terminal_palette，页签停在它最后一份配色。 -->
+           restartDisabled（条目配置已删）时禁用：没有条目就没有可写的 terminal_palette，页签停在它最后一份配色。
+           位置 = 那一行的最右侧（2026-10-24 用户两轮：第一轮「挪到最右」被做成排内最后一颗 = 仍紧贴左边那一串，同日截图
+           澄清要贴这一行的右缘 → style.css 那条 .log-pane .btn-term-palette 加 margin-left:auto 吸掉行内剩余空间；排内
+           顺序仍是 DOM 顺序，盒 24×24 与间距一条没动）。两半都由 TerminalTabView.test.ts 的
+           palette_button_is_the_rightmost_item_in_the_toolbar 钉住。副作用：那颗从此贴右缘，浮层每次都走既有的
+           「贴右缘整体左移、右边留 4px」分支（下面 openPalettePop 那段），不再从按钮右下方向右溢出。 -->
       <button ref="paletteBtn" type="button" class="icon-btn icon-btn--noborder btn-term-palette"
         :aria-label="t('ql.terminal.palette')" :data-tooltip="t('ql.terminal.palette')"
         :disabled="restartDisabled" :aria-expanded="paletteOpen ? 'true' : 'false'" @click="openPalettePop">
@@ -435,25 +460,6 @@ defineExpose({
           </button>
         </div>
       </div>
-      <!-- 进程态按钮（2026-10-20 替换原 [x]，同日第二轮加「停完变 [重新启动]」）：三态与列表行逐字同口径
-           （索引 K30(1)）——运行中 = [停止] 可点、在途 = 半角三点 + 禁用（与 LaunchBar.vue:129 /
-           QuickLaunch.vue:221 一致）、未运行 = [重新启动] 可点（页签保留，点它 = 列表行那颗 [启动]）。
-           restartDisabled（配置已删除）时禁用：没有配置就没有可启动的东西。
-           字号与盒都随本工具条同排，两处各由一条已定版的事实决定（取证台 .temp/term-toolbar-align，
-           headless Chrome 量真盒，两轮用户截图逐条对过）：
-           ① 字号不写 inline、继承 = 13.3333px（.icon-btn 不设字号 → UA 的 button{font:13.3333px}，
-              同排 [清空终端] + 查找三颗皆如此）；列表行那颗的 10px 属于 24px 红色圆按钮的语境
-              （QuickLaunch.vue 的 2026-10-15 定版），搬进这条工具条就是「比同排小一圈」= 第一轮截图。
-           ② 盒 = 24×24（style.css:257 .log-pane .btn-term-state，与 .log-search .icon-btn 同尺寸）：
-              tooltip 的 ::after 是 bottom: calc(100% + 6px)，锚在盒顶（style.css:607）——32px 盒顶 33
-              比同排 24px 盒顶 37 高 4px，tooltip 就跟着高 4px = 第二轮截图「Restart 比 Next match 高」。
-              收盒一并对齐 tooltip 起点、热区与盒心（行中心 49），不动 ::after、不加位移魔法数。
-           文案 = 既有 ql.btn.stop + 新增 ql.terminal.restart（zh「重新启动」/ en 'Restart'，词典两侧齐全）。 -->
-      <button type="button" class="icon-btn icon-btn--noborder btn-term-state"
-        :aria-label="stateLabel" :data-tooltip="stateLabel"
-        :disabled="stateDisabled" @click="onStateClick">
-        <span v-if="stopping">...</span><FontAwesomeIcon v-else-if="running" :icon="['fas', 'stop']" /><FontAwesomeIcon v-else :icon="['fas', 'arrow-rotate-right']" />
-      </button>
     </div>
     <!-- xterm 挂载点：沿用 .log-view 的 flex:1 高度链，只把它的 overflow-y 关掉（xterm 自带视口滚动）。
          描边取当前档的 canvasBorder（票 #13）：浅灰 / 暖纸那两档与卡片只差一档明度，靠描边才读作「有意另起一块台面」；

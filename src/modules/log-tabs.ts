@@ -28,7 +28,7 @@ export type LogTabKind = 'text' | 'terminal';
  * title 已换成仓内自绘 .dd-tip，见 LogPanel.vue 的 onTabEnter），不再二次截断（两处预算会互相抵消）。
  * closeDisabled = 该页签的终端仍在运行，[x] 禁用（计划 审查重点 3 / R3：运行中关掉页签会留下孤儿 PTY）。
  * running / stopping = 该页签的进程态（唯一来源 = App 的 qlStates，QuickLaunch 列表行同一份）：
- * 终端工具条最右那颗（2026-10-20 用户要求，替换原 [x]）据此给三态——运行中 = [停止]、在途 = 「...」禁用、
+ * 终端工具条那颗进程态按钮（2026-10-20 用户要求，替换原 [x]；2026-10-24 起它右边还有 [配色]）据此给三态——运行中 = [停止]、在途 = 「...」禁用、
  * 未运行 = [重新启动]（同日第二轮要求：停完不用回列表找那一行）。
  * restartDisabled = 该条配置已不在 ql_list（App 的只读镜像 qlConfigs 查不到）→ [重新启动] 禁用。
  * palette（票 #13 / ADR 0001 + 0002）= 该条页签当前生效的终端配色：建页签时从配置取一次，之后由 App 在

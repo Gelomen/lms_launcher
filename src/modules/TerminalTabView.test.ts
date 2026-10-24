@@ -513,7 +513,7 @@ describe('TerminalTabView 工具条进程态按钮（E6/E8/E10 · 2026-10-20 工
     w.unmount();
   });
 
-  // ===== 工具条最右那颗 = 进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完变 [重新启动]）=====
+  // ===== 工具条那颗进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完变 [重新启动]；2026-10-24 起那一排最右是 [配色]）=====
   // 三态判据与 QuickLaunch 列表行的状态按钮逐字同口径（索引 K30(1)）：运行中 [停止] / 在途「...」禁用 / 未运行 [重新启动]。
   it('running_state_button_shows_stop_and_emits_stop_with_tab_id', async () => {
     const { w } = mountTab({ running: true, stopping: false });
@@ -607,6 +607,23 @@ describe('票 #14 · 工具条配色浮层', () => {
     await gb.trigger('click');
     expect(gone.w.find('.term-palette-pop').exists()).toBe(false);
     gone.w.unmount();
+  });
+
+  // 2026-10-24 用户两轮要求 [配色] 落到那一行的最右侧：第一轮做成「排内最后一颗」（仍紧贴左边那一串），同日截图澄清 = 要贴这
+  // 一行的右缘（行左端那一串与右缘之间留空）。两半各钉一条，缺一半都不是用户要的那个位置：
+  // ① DOM 里它是那一排最后一颗按钮（进程态那颗退到它左边）；② style.css 给它 margin-left:auto 吸掉行内剩余空间。
+  // happy-dom 无布局 → ② 按本仓既有口径断 style.css 的规则文本（同 LogPanel.test.ts 那组 cssRule 断言）。
+  it('palette_button_is_the_rightmost_item_in_the_toolbar', () => {
+    const { w } = mountTab();
+    const row = w.find('.log-pane > div').element;   // 工具条那一排 = .log-pane 的第一个子 div（浮层未开 = 不渲染）
+    const order = Array.from(row.querySelectorAll('button')).map((b) => (b as HTMLElement).className);
+    expect(order.length, '工具条那颗数变了，这条钉顺序的门要一起改').toBe(6);
+    expect(order[order.length - 1]).toContain('btn-term-palette');
+    expect(order[order.length - 2]).toContain('btn-term-state');   // 进程态那颗退到它左边，不再是最后一颗
+    w.unmount();
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css, '那颗没贴到行右缘：缺 margin-left:auto（只排进最后一颗不算最右侧）')
+      .toMatch(/\.log-pane \.btn-term-palette \{[^}]*margin-left:\s*auto/);
   });
 
   it('the_popover_lists_six_rows_in_light_and_dark_groups_marking_current_palette', async () => {

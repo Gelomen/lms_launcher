@@ -1240,7 +1240,7 @@ function tabIds(w: any): string[] {
 function tabClose(w: any, id: string): any {
   return w.find(`.log-tab[data-tab-id="${id}"] .btn-close-tab`);
 }
-// 终端工具条最右那颗进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完变 [重新启动]）：
+// 终端工具条那颗进程态按钮（2026-10-20 用户要求两步：[x] → [停止]，停完变 [重新启动]；2026-10-24 起那一排最右换 [配色]）：
 // 挂在页签面板上，不是页签条上（页签条那颗是 tabClose）
 function tabState(w: any, id: string): any {
   return w.find(`.log-pane[data-tab-id="${id}"] .btn-term-state`);
@@ -1353,7 +1353,7 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
     w.unmount();
   });
 
-  // 2026-10-20 用户要求两步：工具条最右那颗由 [x] 换成 [停止]，停完之后就地变 [重新启动]，
+  // 2026-10-20 用户要求两步：工具条那颗由 [x] 换成 [停止]，停完之后就地变 [重新启动]，
   // 点它 = 列表行那颗 [启动]。钉住整条链：页签里 [停止] → ql_stop → 卡片行同步回落 [启动] → 页签保留 →
   // 那颗转成 [重新启动] → 点它 → ql_start → 行按钮同步变红、页签不重复建、页签 [x] 重新禁用（运行中）。
   it('toolbar_state_button_stops_then_becomes_restart_and_starts_again', async () => {
