@@ -537,6 +537,25 @@ describe('TerminalTabView 键盘与剪贴板（E5/E7，审查重点 5）', () =>
     w.unmount();
   });
 
+  // 审查轮补（票 #24 的口径不只属于 Ctrl+V）：Ctrl+Shift+V 在 Chromium 里同样是「粘贴为纯文本」，
+  // xterm 那块隐藏 textarea 一样会收到原生 paste 事件 → 与这条粘贴叠成两份。同一个动作的两半
+  // （带 Shift / 不带 Shift）必须做齐同样的两件事：挡原生粘贴事件 + 不进终端库的控制字符映射。
+  it('ctrl_shift_v_also_blocks_the_native_paste_event', async () => {
+    const { onInput, w } = mountTab();
+    const term = h.state.terms[0];
+    const preventDefault = vi.fn();
+    const handled = (term.keyHandler as (e: unknown) => boolean)({
+      type: 'keydown', key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: true, altKey: false, preventDefault,
+    });
+    expect(handled).toBe(false);                                    // 不进终端库 → 没有 ^V
+    expect(preventDefault, 'Ctrl+Shift+V 没挡浏览器原生粘贴事件 → 会粘两遍').toHaveBeenCalledTimes(1);
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_read');
+    expect(term.pasted).toEqual(['clip-text']);                     // 恰好一次
+    expect(onInput).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
   it('all_three_paste_entry_points_share_one_paste_path', async () => {
     // Ctrl+V / Ctrl+Shift+V / 无选区右键 —— 三条入口从同一份剪贴板读出同一结果、各粘恰好一次。
     // 这条不是重复三条粘贴用例，而是钉「收敛」本身：票 #25 的多行确认只加一条路，三个入口行为必须一致。
@@ -1065,6 +1084,25 @@ describe('票 #23 · 工具条选区提示', () => {
 describe('票 #25 · 多行粘贴二次确认', () => {
   const MULTI = 'git status\r\ngit push\r\n';                       // 两行 + 一个尾部换行
   const MULTI_MSG = '剪贴板里是 2 行内容，粘贴会把它们一次性写进终端，可能直接执行一批命令。';
+
+  // 审查轮补（口径写死）：行尾三种都算（LF / CRLF / 裸 CR）。「去掉一个尾部行尾」与「按行尾拆成几行」
+  // 必须是同一次拆行 —— 否则「弹不弹框」与「正文显示的行数」会各说一套。
+  it('bare_cr_line_breaks_also_wait_for_confirmation_and_report_the_same_line_count', async () => {
+    const CR_MULTI = 'git status\rgit push\r';                       // 两行 + 一个尾部裸 CR
+    invoke.mockImplementation(async (cmd: string) => (cmd === 'clipboard_read' ? CR_MULTI : undefined));
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(term.pasted).toEqual([]);                                 // 确认之前：零字节
+    const box = document.querySelector('.confirm-box');
+    expect(box, '裸 CR 分隔的两行没有走二次确认').not.toBeNull();
+    expect((document.querySelector('.confirm-msg') as HTMLElement).textContent).toBe(MULTI_MSG);   // 同样显示 2 行
+    (document.querySelector('.confirm-ok') as HTMLElement).click();
+    await flush();
+    expect(term.pasted).toEqual([CR_MULTI]);                         // 原样粘，不加工（user story 11）
+    w.unmount();
+  });
 
   it('multiline_paste_waits_in_a_themed_confirm_dialog_then_pastes_exactly_once', async () => {
     invoke.mockImplementation(async (cmd: string) => (cmd === 'clipboard_read' ? MULTI : undefined));
