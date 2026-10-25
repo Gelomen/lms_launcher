@@ -702,31 +702,35 @@ function onQlChanged(): void {
       </div>
   </header>
   <main class="layout">
-    <section class="grid">
-      <div class="stack">
-        <div class="card"><DirModule @validated="onDirValidated" /></div>
-        <div class="card">
-          <LaunchBar :state="state" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
+    <!-- 内容列（票 #28 / ADR 0004）：上区卡片与日志卡合成一条定宽竖列，整条在窗口里水平居中。
+         日志卡自此不再直接挂 .layout —— 它的宽度恒等于内容宽度，与上区左右缘永远对齐。 -->
+    <div class="content-column">
+      <section class="grid">
+        <div class="stack">
+          <div class="card"><DirModule @validated="onDirValidated" /></div>
+          <div class="card">
+            <LaunchBar :state="state" :configs-reload-key="configsReloadKey" @start="doStart" @stop="doStop" />
+          </div>
         </div>
-      </div>
-      <div class="card"><TemplateModule :running-config-id="runningConfigId" @changed="onTemplateChanged" /></div>
-      <!-- 快捷启动（2026-10-10）：第 3 列，GPU 卡顺移到第 4 列（规格 §4）。卡片自持列表与弹窗（索引 K29），
-           App 只下发运行态 states、接 start/stop/changed —— 进程与页签的所有权在 App（规格 §9.2） -->
-      <div class="card"><QuickLaunch :states="qlStates" @start="doQlStart" @stop="doQlStop" @changed="onQlChanged"
-          @paletteHover="onQlPaletteHover" /></div>
-      <!-- 系统 GPU（2026-09 挪位）：模板卡片右侧的独立列，与模板卡顶对齐 -->
-      <!-- card--gpu：裁切容器，切卡动画屏外层内容裁在卡片边框处（用户 2026-09-10 指定） -->
-      <div class="card card--gpu"><GpuModule /></div>
-    </section>
-    <section class="log-area">
-      <!-- 两种页签共存（规格 §9.1）：tabs 由 App 构造（含截断后的短名，索引 K26(2)）；
-           active 归 App（索引 K27(1)）→ v-model:active 真回写；四个透传口是终端的数据路由（规格 §9.2） -->
-      <LogPanel :tabs="logTabItems" :buckets="logBuckets" v-model:active="activeTabId"
-        :register="registerTerminalSink" :unregister="unregisterTerminalSink"
-        :on-input="onTerminalInput" :on-resize="onTerminalResize"
-        @clear="onLogClear" @close="onTerminalClose" @stop="onTerminalStop" @restart="onTerminalRestart"
-        @palette="onTerminalPalette" />
-    </section>
+        <div class="card"><TemplateModule :running-config-id="runningConfigId" @changed="onTemplateChanged" /></div>
+        <!-- 快捷启动（2026-10-10）：第 3 列，GPU 卡顺移到第 4 列（规格 §4）。卡片自持列表与弹窗（索引 K29），
+             App 只下发运行态 states、接 start/stop/changed —— 进程与页签的所有权在 App（规格 §9.2） -->
+        <div class="card"><QuickLaunch :states="qlStates" @start="doQlStart" @stop="doQlStop" @changed="onQlChanged"
+            @paletteHover="onQlPaletteHover" /></div>
+        <!-- 系统 GPU（2026-09 挪位）：模板卡片右侧的独立列，与模板卡顶对齐 -->
+        <!-- card--gpu：裁切容器，切卡动画屏外层内容裁在卡片边框处（用户 2026-09-10 指定） -->
+        <div class="card card--gpu"><GpuModule /></div>
+      </section>
+      <section class="log-area">
+        <!-- 两种页签共存（规格 §9.1）：tabs 由 App 构造（含截断后的短名，索引 K26(2)）；
+             active 归 App（索引 K27(1)）→ v-model:active 真回写；四个透传口是终端的数据路由（规格 §9.2） -->
+        <LogPanel :tabs="logTabItems" :buckets="logBuckets" v-model:active="activeTabId"
+          :register="registerTerminalSink" :unregister="unregisterTerminalSink"
+          :on-input="onTerminalInput" :on-resize="onTerminalResize"
+          @clear="onLogClear" @close="onTerminalClose" @stop="onTerminalStop" @restart="onTerminalRestart"
+          @palette="onTerminalPalette" />
+      </section>
+    </div><!-- /content-column -->
     <!-- §D 共用退出确认：托盘「退出」(exit_app) 与 更新 ready 后「重启应用」(run_update) 共享；exitAction 分流 -->
     <ConfirmDialog :open="exitConfirm" :title="t('app.exit.title')" :message="t('app.exit.message')" tone="primary"
       :confirm-text="t('common.exit')" @confirm="onExitConfirmed" @close="onExitClose" />

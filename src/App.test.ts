@@ -967,30 +967,89 @@ describe('App GPU card mount', () => {
   });
 });
 
-// 2026-10-13-grid-fill-width §4.1 + §7 修订（定宽）：网格宽度契约。happy-dom 不加载外部 CSS（先例 LogPanel.test.ts:365）
-// → 断 src/style.css 的规则文本 + src-main/main.ts 的默认窗口宽：两者合起来把「不留空」钉成算术。
-describe('App 网格宽度契约（2026-10-13-grid-fill-width）', () => {
-  const css = readFileSync(join(__dirname, 'style.css'), 'utf-8');
-  const gridRule = css.slice(css.indexOf('.grid {'), css.indexOf('.stack {'));
-  const tracksRaw = gridRule.match(/grid-template-columns:\s*([^;]+);/)![1].trim();
-  // 一条 track 一个 token（不按空白切：将来若出现 minmax(…) 内含空格会被切碎）
-  const tracks = tracksRaw.match(/(?:minmax\([^)]*\)|\d+px)/g)!;
-  const maxOf = (t: string): number => Math.max(...(t.match(/(\d+(?:\.\d+)?)px/g) ?? []).map((s) => parseFloat(s)));
+// 票 #28（spec #27 / ADR 0004）：内容宽度契约。2026-10-13 那道「不留空是算术」的门在此**等价改写**，不是删门：
+// 真相源收进令牌层两条 —— 卡片列宽（--card-col-w）与每行列数（--cols-per-row，票 #29 起随拆行档变）；
+// 内容宽度（--content-w）由它们派生，日志卡引用同一个派生值。happy-dom 不加载外部 CSS（先例 LogPanel.test.ts:365）
+// → 断 src/style.css 的规则文本 + src-main/main.ts 的默认窗口宽：两者合起来把「不留空」继续钉成算术。
+describe('票 #28 · 内容宽度契约（列宽同源 + 内容宽度派生）', () => {
+  const css = readFileSync(join(__dirname, 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const token = (name: string): string => {
+    const m = css.match(new RegExp('--' + name + ':\\s*([^;]+);'));
+    expect(m, ':root 里缺令牌 --' + name).not.toBeNull();
+    return m![1].trim();
+  };
+  const rule = (sel: string): string => {
+    const at = css.indexOf(sel + ' {');
+    if (at === -1) throw new Error('css 里找不到规则：' + sel);
+    return css.slice(at, css.indexOf('}', at));
+  };
 
-  it('四列全部定宽：第 3 列 = 380px，无 minmax / fr（规格 §7 修订 / §4.1-1、3）', () => {
-    expect(tracksRaw).toBe('280px 350px 380px 330px');
-    expect(tracks.length).toBe(4);
-    // 定宽语义（用户 2026-10-13 决定：与其它三列一致，不用 minmax）：任何一条 track 既无 minmax 也无 fr
-    expect(tracksRaw).not.toMatch(/minmax|\bfr\b/);
+  it('四张卡片列同源一个 --card-col-w = 335px：谁都不许再写回自己那条绝对宽度', () => {
+    expect(token('card-col-w'), '卡片列宽不是 ADR 0004 定的 335px').toBe('335px');
+    const items = rule('.grid > *');
+    expect(items, '卡片列没有引用同一个宽度令牌 --card-col-w').toMatch(/width:\s*var\(--card-col-w\)/);
+    // 定宽语义（2026-10-13 §7 保留的那一半 + ADR 0004）：不参与伸缩、不用 fr / minmax，也不得写回绝对值
+    expect(items, '卡片列参与 flex 伸缩 = 窗口一宽卡片就跟着变宽').toMatch(/flex:\s*none/);
+    expect(items).not.toMatch(/\d+px|minmax|\bfr\b/);
+    // 旧口径那四条各不相同的宽度（280 / 350 / 380 / 330）不得回来
+    expect(css, '上区又写回逐条各不相同的轨道宽度').not.toMatch(/grid-template-columns:\s*\d+px\s+\d+px/);
   });
 
-  it('四列上限 + 3×gap = 默认窗口可用宽度（不留空是算术，规格 §4.1-2）', () => {
+  it('内容宽度由令牌派生；四列档派生值 = 1376 = 默认窗口可用宽度（不留空仍是算术）', () => {
+    // 派生式引用的是两个令牌本身，不是把总宽再抄一遍数字（ADR 0004：两处硬编码迟早漂移成 1376 / 1377）
+    expect(token('content-w').replace(/\s+/g, '')).toBe('calc(var(--cols-per-row)*var(--card-col-w)+(var(--cols-per-row)-1)*var(--card-gap))');
+    const n = Number(token('cols-per-row'));
+    const colW = Number(token('card-col-w').slice(0, -2));
+    const gap = Number(token('card-gap').slice(0, -2));
+    expect(n, '每行列数这一档不是四列').toBe(4);
+    const contentW = n * colW + (n - 1) * gap;
+    expect(contentW, '四列档的内容宽度不是 1376').toBe(1376);
+    // 与主进程窗口层的默认宽对账：可用宽度 = 窗口宽 − 2×内边距（内边距 = --card-gap，见 .layout）
     const mainSrc = readFileSync(join(__dirname, '..', 'src-main', 'main.ts'), 'utf-8');
     const winW = Number(mainSrc.match(/width:\s*(\d+),\s*height:/)![1]);
-    const gap = Number(css.match(/--card-gap:\s*(\d+)px/)![1]);
-    // 前提：.layout 的内边距 = --card-gap（可用宽度 = 窗口宽 − 2×gap）
     expect(css.slice(css.indexOf('.layout {'), css.indexOf('.grid {'))).toMatch(/padding:\s*var\(--card-gap\)/);
-    expect(tracks.reduce((a, t) => a + maxOf(t), 0) + 3 * gap).toBe(winW - 2 * gap);
+    expect(contentW, '内容宽度与默认窗口可用宽度不再对齐：整块右侧又会出现留白').toBe(winW - 2 * gap);
+  });
+
+  it('内容列定宽 = 内容宽度，且居中只用自动外边距（交叉轴/主轴居中对齐一律禁止）', () => {
+    const col = rule('.content-column');
+    expect(col, '内容列的宽度不是派生出来的 --content-w').toMatch(/width:\s*var\(--content-w\)/);
+    expect(col, '窗口比内容列宽时富余不会按左右均分：缺 margin-inline:auto').toMatch(/margin-inline:\s*auto/);
+    // 防退化门（ADR 0004 的第一条 Considered Option）：align-items/justify-content: center 在内容比窗口宽时
+    // 会把居中的那一半跑到裁切边界左边 —— 左缘永远滚不回来。auto margin 才会在富余为负时自动退化成贴左。
+    for (const sel of ['.content-column', '.layout']) {
+      const r = rule(sel);
+      expect(r, sel + ' 改用 align-items:center 居中 = 窄窗口的左缘会被裁到不可达').not.toMatch(/align-items:\s*center/);
+      expect(r, sel + ' 改用 justify-content:center 居中 = 同上').not.toMatch(/justify-content:\s*center/);
+    }
+  });
+
+  it('日志卡的宽度引用同一个派生值：两处不得各写一遍总宽', () => {
+    const logArea = rule('.log-area');
+    expect(logArea, '日志卡没有引用 --content-w：它会重新独自撑满可用宽度（ADR 0004 明令重开的写法）')
+      .toMatch(/width:\s*var\(--content-w\)/);
+    // 派生式只此一处。内容宽度的字面值（四列 1376 / 三列 1029 / 两列 682，旧口径的四列之和 1340）
+    // 一旦以 px 出现，就是有人把总宽又抄了一遍 —— 两处迟早漂移成 1376 / 1377。
+    expect(css, 'style.css 里出现了写死的内容宽度：' + (css.match(/\b(?:1376|1340|1029|682)px\b/g) ?? []).join(', '))
+      .not.toMatch(/\b(?:1376|1340|1029|682)px\b/);
+  });
+});
+
+// ==== spec #27 / 票 #28 · 内容列（ContentColumn）====
+// 上区四张卡片与日志卡合成一条定宽竖列，整条在窗口里水平居中（ADR 0004 / GLOSSARY「内容列」「内容宽度」「日志卡」）。
+// happy-dom 无布局、也不加载外部样式表 → 沿本仓既有口径（上面「网格宽度契约」那组就是先例）：
+// 断的是挂载结构 + style.css 的规则文本，两半各钉一条，缺一半都不算这条契约成立。
+describe('票 #28 · 内容列（ContentColumn）', () => {
+  it('内容列把上区卡片与日志卡合成一条（两者是它的直接子级）', async () => {
+    const { w } = mountApp();
+    await flush();
+    const column = w.element.querySelector('.layout > .content-column') as HTMLElement | null;
+    expect(column, '渲染外壳没有 .content-column：上区卡片与日志卡没合成一条').not.toBeNull();
+    const kids = [...(column as HTMLElement).children].map((el) => el.classList.contains('grid') ? 'grid' : el.classList.contains('log-area') ? 'log-area' : el.className);
+    expect(kids, '内容列的直接子级不是上区卡片那一段加日志卡').toEqual(['grid', 'log-area']);
+    // 日志卡不再是 .layout 的直接子级：它一旦挂回外壳，宽度就重新独自随窗口走（ADR 0004 里明令「须明确重开」的写法）
+    expect(w.element.querySelector('.layout > .log-area'), '日志卡还挂在 .layout 上 = 内容列没包住它').toBeNull();
+    w.unmount();
   });
 });
 

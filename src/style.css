@@ -40,6 +40,12 @@
   --sb-w: 7px;               /* Windows Chromium 传统滚动条宽（.template-list 横向溢出修正用） */
   --card-gap: 12px;         /* 卡片间距 */
   --card-pad: 16px;         /* 卡片内边距 */
+
+  /* 内容列（ContentColumn，票 #28 / ADR 0004）的两个真相源：卡片列宽 + 每行列数。
+     内容宽度（ContentWidth）由它们派生，日志卡的宽度引用同一个派生值 —— 别在别处再写一遍总宽。 */
+  --card-col-w: 335px;      /* 卡片列（CardColumn）：四列等宽，卡片自己的宽高不随窗口变 */
+  --cols-per-row: 4;        /* 拆行档（WrapTier）：每行正好容纳 N 张（票 #29 起随窗口宽变档） */
+  --content-w: calc(var(--cols-per-row) * var(--card-col-w) + (var(--cols-per-row) - 1) * var(--card-gap));
 }
 
 /* 弹窗遮罩（全局共享：TemplateModal 与 VramDialog 均用 .modal-overlay；
@@ -73,15 +79,33 @@ body {
   padding: var(--card-gap);
   gap: var(--card-gap);
 }
-.grid {
-  display: grid;
-  /* 四列全部绝对固定宽度（左 424→280、模板 520→350、GPU 300→330，2026-09/10 定稿；
-     快捷启动 330→380 = 2026-10-13-grid-fill-width §7 修订）：四列之和 1340 + 3×12 = 1376 = 1400 − 2×12，
-     正好填满默认窗口的可用宽度，右侧不留白。
-     与其它三列一致取定宽、不用 minmax/fr（用户 2026-10-13 决定）：代价是窗口比 1400 窄时整行不缩、
-     出横向滚动条（该区间从 <1350 扩到 <1400）；比 1400 宽时富余留在 GPU 卡右侧。 */
-  grid-template-columns: 280px 350px 380px 330px;
+/* 内容列（票 #28 / ADR 0004）：上区卡片与日志卡合成一条竖列，两者之间的间距从 .layout 挪到这里。
+   宽度 = 内容宽度（--content-w，由每行列数与卡片列宽派生），居中只用 margin-inline: auto：
+   富余为正才吸（左右均分），为负自动退化成贴左 —— 左缘始终可达，不是被裁掉的一半。
+   一律禁止 align-items / justify-content: center（ADR 0004 第一条 Considered Option）：那种居中在内容比窗口宽时
+   把左半跑到裁切边界左边，窄窗口里左缘永远滚不回来。App.test.ts 那条防退化门钉着这两类写法不得回来。 */
+.content-column {
+  display: flex;
+  flex-direction: column;
   gap: var(--card-gap);
+  width: var(--content-w);
+  margin-inline: auto;
+}
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--card-gap);
+}
+/* 卡片列（CardColumn）四张等宽、全部定宽：宽度引用同一个令牌 --card-col-w，不参与伸缩。
+   每行正好放几张由**内容列的宽度**决定（--content-w = 每行列数 × 列宽 +（列数 − 1）× 间距），
+   所以「每行 N 张」不需要在这里再写一遍数字。
+   不用 fr / minmax（2026-10-13-grid-fill-width §7 保留的那一半，ADR 0004 只反转「富余留在 GPU 卡右侧」那一半）：
+   窗口放大时没有任何一张卡片跟着变宽，多出来的只有左右留白；卡片内的行宽预算、省略号截断、tooltip 锚点全部按定宽核过。
+   旧口径是四条各不相同的绝对宽度（280 / 350 / 380 / 330，四列之和 + 3×12 = 1376 = 1400 − 2×12）：
+   等宽之后四列之和 1340 不变（4×335），那道「不留空是算术」的门在 App.test.ts 里等价改写，没有删。 */
+.grid > * {
+  flex: none;
+  width: var(--card-col-w);
 }
 /* 左/右列堆叠容器：卡片间保持 --card-gap 间距 */
 .stack {
@@ -89,10 +113,14 @@ body {
   flex-direction: column;
   gap: var(--card-gap);
 }
+/* 日志卡（LogCard）：宽度引用与上区卡片同一个派生值 --content-w —— 与当前档最宽一行永远等宽、左右缘对齐。
+   这里刻意写 var() 而不是靠 .content-column 的交叉轴拉伸：契约要在 CSS 里看得见，
+   改一次 align-items 也不会把「日志卡 ≡ 内容宽度」这条悄悄破掉（ADR 0004）。 */
 .log-area {
   flex: 1 1 50%;
   min-height: 0;              /* 允许日志区收缩，滚动交给内部 */
   display: flex;
+  width: var(--content-w);
 }
 
 /* ---- 卡片 ---- */
