@@ -402,11 +402,28 @@ body {
    内边距本身留在 pane 上（工具条那一排仍靠它对着卡片左右缘），画布自己用等量负外边距抵消 = 只有画布出血，那一排一条不动。
    下圆角交回画布自己画：半径 = pane 的下圆角减它自身那 1px 边框（内弧 7px），两条弧才同心、弧间不夹白；
    这条弧生效的前提是组件 inline 那句 overflow:hidden —— xterm 的 screen / viewport 全是绝对定位的子孙，只画圆角背景不裁子孙，字形的角会顶出弧外。
-   静态日志页签不带这个类：内边距、留白、方角一条不变（反向门在 LogTabView.test.ts）。 */
-.log-pane--term { padding-bottom: 0; }
+   静态日志页签不带这个类：内边距、留白、方角一条不变（反向门在 LogTabView.test.ts）。
+   第三轮（2026-10-25 用户截图「终端里的文字与边框没有边距」）：前两轮把**画布那块**推到框内缘、这一轮要的是**字形**离边 10px，
+   两者不冲突 —— 深色块仍贴框（去白缝、两条下圆角一条没退），留白改在画布盒的内侧，见下面那条 .log-pane--term .term-view > .xterm 的 padding（值 = .log-pane--term 上的 --term-inset）。 */
+.log-pane--term {
+  --term-inset: 10px;    /* 字形离画布框四边的留白（第三轮定值 10px，用户：「先定 10px，改完先看效果，不好再调整」）→ 调值只改这一处 */
+  padding-bottom: 0;
+}
 .log-pane--term .term-view {
   margin: 0 -8px;        /* 这 8px 就是上面 .log-pane 的左右内边距，两处必须同值：画布正是靠它抵消才贴到 1px 边框的内缘 */
   border-radius: 0 0 calc(var(--radius-btn) - 1px) calc(var(--radius-btn) - 1px);   /* 外弧 8px − 边框 1px = 内弧 7px，与框的弧同心 */
+}
+/* 第三轮（2026-10-25 用户截图「终端里的文字与边框没有边距」）：留白挂在 xterm 的根元素上（term.open 直接挂进 .term-view 的那个 div）——
+   深色那块仍贴框，只有字形离边 --term-inset。挂这里不是随手挑的，是取证台 .temp/term-inset-10px 三个态量出来的（before = 无留白、parentpad = 留白挂容器、after = 留白挂 xterm 根元素）：
+   ① 挂在 .term-view 上不成立：FitAddon.proposeDimensions 读「.xterm 的父盒」的计算宽高，本仓全局 * { box-sizing: border-box }，三个态读到的父盒计算宽高都是
+      height 260px / width 1152px（含 padding 那一圈）—— 它不扣父盒的 padding，只扣**这一档**（term.element）的 padding-top/bottom/left/right（读数：out-*.json 里 debug.parentOfXtermElement 与 debug.fitReadsParentNotContainerPadding）。
+      于是 cols/rows 一格不变（17×149），.xterm-screen 底缘 y=308 越过 .term-view 底缘 y=303 → 最后一行被 inline 那句 overflow:hidden 裁在留白里。
+   ② 挂在这里才成立：可用高 = 父盒 260 − 上下留白 20 = 240 → 16 行；可用宽 = 1152 − 左右留白 20 − 滚动条 15 → 146 列（out-after.json 读数）。
+   颜色不断档：.xterm 只有 .xterm-screen 一个在流内的子元素，绝对定位的 .xterm-viewport 铺的是它的 padding box（xterm 给它上的正是该档 theme.background），
+   那一圈留白从此与画布同色；.xterm-screen（position:relative，字形画布在其中 abs 0,0）落在 content box → 字形四边各退 --term-inset。
+   行列命中测试不受影响：xterm 按 .xterm-screen 的位置算，留白只是把那块屏整体推进。 */
+.log-pane--term .term-view > .xterm {
+  padding: var(--term-inset);
 }
 
 /* ---- #13 自定义下拉弹层（卡片风格 + max-height 116px ≈3 行可滚动；#12 滚动条自动生效）---- */

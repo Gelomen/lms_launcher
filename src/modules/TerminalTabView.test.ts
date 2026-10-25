@@ -330,6 +330,33 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     w.unmount();
   });
 
+  // 第三轮（2026-10-25 用户截图：「终端里的文字与边框没有边距」）。要和前两轮同时成立：深色那块仍贴框（去白缝、两条下圆角一条没退），
+  // 只是**字形**离画布框四边各 --term-inset（先定 10px，用户：「改完先看效果，不好再调整」→ 值只有 .log-pane--term 上那一处）。
+  // 留白挂在 xterm 根元素而不是挂在 .term-view 上，是取证台 .temp/term-inset-10px 量出来的（真 Chromium + 真 style.css + 真 @xterm/xterm + FitAddon）：
+  // FitAddon.proposeDimensions 只从 term.element 那一档减 padding，父盒的计算宽高它原样用（本仓全局 box-sizing:border-box → 读数含 padding 那一圈）；
+  // 挂在 .term-view 上时 cols/rows 一格不变（17×149），.xterm-screen 底缘 y=308 越过 .term-view 底缘 y=303 = 最后一行裁进留白。故下面第二条既钉「挂对了」，也钉「没挂错地方」。
+  // happy-dom 无布局 → 按本仓既有口径断 style.css 的规则文本。
+  it('terminal_text_is_inset_from_the_canvas_frame_on_all_four_sides', () => {
+    const { w } = mountTab();
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const paneRule = (css.match(/\.log-pane--term \{[^}]*\}/) ?? [])[0] ?? '';
+    expect(paneRule, '留白没有单一出处：缺 .log-pane--term 上的 --term-inset（下次调值只改那一行）')
+      .toMatch(/--term-inset:\s*10px/);
+    const termRule = (css.match(/\.log-pane--term \.term-view > \.xterm \{[^}]*\}/) ?? [])[0] ?? '';
+    expect(termRule, '文字仍贴画布框：xterm 根元素上没有那一圈留白')
+      .toMatch(/padding:\s*var\(--term-inset\)/);
+    // 反向：留白挂回容器 = 已知不成立（FitAddon 不扣父盒的 padding，最后一行会被 overflow:hidden 裁进留白）→ 任何一条 .term-view 规则里都不许出现 padding
+    const viewRules = Array.from(css.matchAll(/\.log-pane--term \.term-view \{[^}]*\}/g), (m) => m[0]);
+    expect(viewRules.join('\n'), '留白挂回 .term-view = 已知不成立：FitAddon 不扣父盒的 padding，最后一行会被 overflow:hidden 裁进留白')
+      .not.toMatch(/padding:/);
+    const viewRule = viewRules[0] ?? '';
+    expect(viewRule, '画布没横向贴边：缺 .log-pane--term .term-view 的 margin: 0 -8px').toMatch(/margin:\s*0 -8px/);
+    // 挂到公共那两侧 = 越界：工具条那一排与静态日志页签会跟着内缩
+    expect(css, '.log-pane 的内边距被动过 = 越界：留白只在画布那一侧').toMatch(/\.log-pane \{[^}]*padding:\s*8px/);
+    expect(css, '.log-view 加了内边距 = 越界：静态日志页签也跟着内缩了').not.toMatch(/\.log-view \{[^}]*padding:/);
+    w.unmount();
+  });
+
   it('terminal_pane_root_carries_the_modifier_that_drops_its_bottom_padding', () => {
     const { w } = mountTab();
     const root = w.find('.log-pane');
