@@ -200,6 +200,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.ResizeObserver = realResizeObserver;
   setProtoBox(0, 0);
+  document.body.innerHTML = '';   // 票 #25 起本文件有 Teleport 到 body 的确认框：文件级兜底（票 #20 惯例，四个弹窗测试文件同款）
 });
 
 describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () => {
@@ -1052,5 +1053,101 @@ describe('票 #23 · 工具条选区提示', () => {
     ] as Array<[string, RegExp]>) {
       expect(re.test(body), '窄窗口径缺 ' + what).toBe(true);
     }
+  });
+});
+
+
+// ---- 票 #25（spec #21 / ADR 0003）· 多行粘贴二次确认 ----
+// 判定口径：去掉尾部换行之后仍含换行 = 多行（从日志复制一行命令、哪怕带一个回车，都不打断）。
+// 多行 → 复用主题化 ConfirmDialog（tone=primary、[粘贴] 自定义文案、[取消] 复用通用文案、点遮罩 = 取消），
+// 确认前写进终端的字节 = 0；取消/遮罩 = 丢弃；确认才粘恰好一次。三条粘贴入口共用同一条实现（票 #24 收敛），
+// 所以三条都要走这道确认，行为一致。确认框 Teleport 挂 body：用例在 body 里查节点，文件级 afterEach 兜底。
+describe('票 #25 · 多行粘贴二次确认', () => {
+  const MULTI = 'git status\r\ngit push\r\n';                       // 两行 + 一个尾部换行
+  const MULTI_MSG = '剪贴板里是 2 行内容，粘贴会把它们一次性写进终端，可能直接执行一批命令。';
+
+  it('multiline_paste_waits_in_a_themed_confirm_dialog_then_pastes_exactly_once', async () => {
+    invoke.mockImplementation(async (cmd: string) => (cmd === 'clipboard_read' ? MULTI : undefined));
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(term.pasted).toEqual([]);                                 // 确认之前：PTY 收不到任何字节
+    const box = document.querySelector('.confirm-box');
+    expect(box, '多行粘贴没有弹二次确认').not.toBeNull();
+    expect(box!.textContent).toContain('粘贴多行内容？');            // 词典 zh 侧标题（字面量 = 独立真源）
+    expect((document.querySelector('.confirm-msg') as HTMLElement).textContent).toBe(MULTI_MSG);   // 正文带行数
+    expect((document.querySelector('.confirm-ok') as HTMLElement).textContent).toBe('粘贴');        // 确认按钮自定义文案
+    expect((document.querySelector('.confirm-cancel') as HTMLElement).textContent).toBe('取消');    // 取消复用通用文案
+    (document.querySelector('.confirm-ok') as HTMLElement).click();
+    await flush();
+    expect(document.querySelector('.confirm-box')).toBeNull();       // 确认即关
+    expect(term.pasted).toEqual([MULTI]);                            // 恰好一次
+    w.unmount();
+  });
+
+  it('cancel_discards_the_multiline_paste', async () => {
+    invoke.mockImplementation(async (cmd: string) => (cmd === 'clipboard_read' ? MULTI : undefined));
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(document.querySelector('.confirm-box')).not.toBeNull();
+    (document.querySelector('.confirm-cancel') as HTMLElement).click();
+    await flush();
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    expect(term.pasted).toEqual([]);                                 // 取消 = 丢弃，之后也不会补粘
+    w.unmount();
+  });
+
+  it('overlay_click_discards_like_cancel', async () => {
+    invoke.mockImplementation(async (cmd: string) => (cmd === 'clipboard_read' ? MULTI : undefined));
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    (document.querySelector('.confirm-overlay') as HTMLElement).click();   // 点遮罩（@click.self）
+    await flush();
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    expect(term.pasted).toEqual([]);
+    w.unmount();
+  });
+
+  it('single_line_with_a_trailing_newline_pastes_immediately_no_dialog', async () => {
+    // 判定的「单行」那半边：从日志里复制一行命令，哪怕带一个尾部回车，也不被打断（user story 9）。
+    invoke.mockImplementation(async (cmd: string) => (cmd === 'clipboard_read' ? 'git status\r\n' : undefined));
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(document.querySelector('.confirm-box')).toBeNull();
+    expect(term.pasted).toEqual(['git status\r\n']);                 // 原样粘，不加工
+    w.unmount();
+  });
+
+  it('all_three_paste_entry_points_confirm_before_any_multiline_paste', async () => {
+    // 票 #24 收敛出来的那一条实现 + 这条门 = 多行确认只写了一遍，三条入口行为必须一致。
+    invoke.mockImplementation(async (cmd: string) => (cmd === 'clipboard_read' ? MULTI : undefined));
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    const key = (e: Record<string, unknown>) =>
+      (term.keyHandler as (ev: unknown) => boolean)({ type: 'keydown', ctrlKey: true, altKey: false, preventDefault: vi.fn(), ...e });
+    key({ key: 'v', code: 'KeyV', shiftKey: false });                // 入口 1：Ctrl+V
+    await flush();
+    expect(document.querySelector('.confirm-box'), 'Ctrl+V 多行没走确认').not.toBeNull();
+    (document.querySelector('.confirm-ok') as HTMLElement).click();
+    await flush();
+    key({ key: 'v', code: 'KeyV', shiftKey: true });                 // 入口 2：Ctrl+Shift+V
+    await flush();
+    expect(document.querySelector('.confirm-box'), 'Ctrl+Shift+V 多行没走确认').not.toBeNull();
+    (document.querySelector('.confirm-ok') as HTMLElement).click();
+    await flush();
+    await w.find('.term-view').trigger('contextmenu');               // 入口 3：无选区右键
+    await flush();
+    expect(document.querySelector('.confirm-box'), '右键多行没走确认').not.toBeNull();
+    (document.querySelector('.confirm-ok') as HTMLElement).click();
+    await flush();
+    expect(term.pasted).toEqual([MULTI, MULTI, MULTI]);              // 三入口各恰好一次
+    w.unmount();
   });
 });
