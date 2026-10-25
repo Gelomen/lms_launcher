@@ -9,6 +9,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import { invoke } from '../ipc';
 import { t } from '../i18n';
 import { TERM_PALETTES, termPaletteOf } from './term-palettes';
@@ -245,11 +246,36 @@ async function pasteClipboard(): Promise<void> {
   if (!term) return;
   try {
     const text = await invoke<string>('clipboard_read');
-    if (text) term.paste(text);
+    if (!text) return;
+    // 票 #25：多行 → 先过二次确认，确认之前这里一个字节都不写进终端；取消/点遮罩 = 丢弃。
+    if (isMultilinePaste(text)) { pendingPaste.value = text; return; }
+    term.paste(text);
   } catch {
     // 主进程读失败：无界面后果（与 open_external 同口径）
   }
 }
+
+// ---- 票 #25（spec #21 / ADR 0003）：多行粘贴二次确认 ----
+// 判定口径：去掉**一个**尾部换行之后仍含换行 = 多行 —— 从日志里复制一行命令（哪怕带一个回车）不打断（user story 9）。
+// 复用主题化 ConfirmDialog（tone=primary；[粘贴] 自定义文案；[取消] 复用 common.cancel；点遮罩 = 取消）。
+// 文案走响应式 t()：确认框开着切语言，标题/正文/[粘贴] 跟着重译（user story 15 / 真机读数⑧）。
+const pendingPaste = ref<string | null>(null);   // 待确认的粘贴内容（null = 没有确认框）
+function stripTrailingNewline(text: string): string { return text.replace(/(\r\n|\n|\r)$/, ''); }
+function isMultilinePaste(text: string): boolean {
+  const body = stripTrailingNewline(text);
+  return body.includes('\n') || body.includes('\r');
+}
+const pasteConfirmMessage = computed(() =>
+  t('ql.terminal.pasteConfirm.message', {
+    // 行数 = 去掉尾部换行后的正文行数（2 行的命令批处理就显示 2，不数那个尾部回车）
+    lines: pendingPaste.value === null ? 0 : stripTrailingNewline(pendingPaste.value).split(/\r\n|\n|\r/).length,
+  }));
+function onPasteConfirm(): void {
+  if (pendingPaste.value === null) return;
+  term?.paste(pendingPaste.value);   // 确认 → 写进终端，恰好一次
+  pendingPaste.value = null;
+}
+function onPasteCancel(): void { pendingPaste.value = null; }   // [取消] / 点遮罩：整批丢弃，之后也不会补粘
 
 // ---- 票 #22（spec #21 / ADR 0003）：选区口径 + 智能右键（SmartRightClick）----
 // 「鼠标选区」的唯一真源：由终端库的选区变化事件驱动，只认鼠标在画面上拉出的那一段。
@@ -527,6 +553,11 @@ defineExpose({
          第二轮（「左右两侧的空隙也去掉，但保留左下和右下的圆角」）把左右 8px 也由 style.css 的 .log-pane--term .term-view 抵消掉，
          于是这句 overflow:hidden 还兼一件事：它裁掉绝对定位的 xterm 子孙（screen / viewport），画布的两个下角落才跟着那条 7px 内弧走，
          不会把字形的角顶出弧外——删掉这句，圆角就只剩背景是圆的。 -->
+    <!-- 多行粘贴的二次确认（票 #25）：常驻挂载、:open 开关（Teleport 挂 body，与 App / QuickLaunchModal /
+         TemplateModal 那三处同一个 ConfirmDialog）。用例在 body 里查 .confirm-* 节点。 -->
+    <ConfirmDialog :open="pendingPaste !== null" :title="t('ql.terminal.pasteConfirm.title')"
+      :message="pasteConfirmMessage" tone="primary" :confirm-text="t('ql.terminal.pasteConfirm.paste')"
+      @confirm="onPasteConfirm" @close="onPasteCancel" />
     <div ref="view" class="log-view term-view" :style="{ overflow: 'hidden', minHeight: '0', background: shownPaletteOf.theme.background, outline: '1px solid ' + shownPaletteOf.canvasBorder, outlineOffset: '-1px' }" @contextmenu.prevent="onContextMenu"></div>
   </div>
 </template>

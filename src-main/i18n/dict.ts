@@ -173,6 +173,10 @@ export const dict = {
     // 票 #23（spec #21）：选区提示（工具条内联，仅「鼠标选区」存在时出现）。中英取值语义逐字对齐；
     // 走渲染端响应式 t()，切语言时已显示的提示当场重译。
     'ql.terminal.copyHint': 'Ctrl + Shift + C 或 鼠标右键 复制文本',
+    // 票 #25（spec #21）：多行粘贴二次确认。{lines} = 去掉尾部换行后的行数；[取消] 复用既有 common.cancel 不另立。
+    'ql.terminal.pasteConfirm.title': '粘贴多行内容？',
+    'ql.terminal.pasteConfirm.message': '剪贴板里是 {lines} 行内容，粘贴会把它们一次性写进终端，可能直接执行一批命令。',
+    'ql.terminal.pasteConfirm.paste': '粘贴',
     // 票 #14（spec #12）：终端页签工具条的配色入口 + 浮层里六档的可见档名与「明底 / 暗底」两组标题。
     // key 一律字面量（key-coverage.test.ts 只认字面量 key），档名与 GLOSSARY/ADR 的六档逐字对齐。
     'ql.terminal.palette': '配色',
@@ -550,6 +554,9 @@ export const dict = {
     'ql.terminal.count': '{cur} / {total}',
     'ql.terminal.restart': 'Restart',
     'ql.terminal.copyHint': 'Ctrl+Shift+C or right-click to copy',
+    'ql.terminal.pasteConfirm.title': 'Paste multiple lines?',
+    'ql.terminal.pasteConfirm.message': 'The clipboard holds {lines} lines. Pasting writes all of them into the terminal at once and may run a batch of commands.',
+    'ql.terminal.pasteConfirm.paste': 'Paste',
     'ql.terminal.palette': 'Palette',
     'ql.palette.paper': 'Paper white',
     'ql.palette.console': 'Light grey',
