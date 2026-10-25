@@ -509,7 +509,7 @@ describe('TerminalTabView 键盘与剪贴板（E5/E7，审查重点 5）', () =>
     const { w } = mountTab();
     const term = h.state.terms[0];
     const handled = (term.keyHandler as (e: unknown) => boolean)({
-      type: 'keydown', key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: true, altKey: false,
+      type: 'keydown', key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: true, altKey: false, preventDefault: vi.fn(),
     });
     expect(handled).toBe(false);
     await flush();

@@ -315,7 +315,10 @@ function onCustomKey(e: KeyboardEvent): boolean {
   const code = e.code ?? '';
   if (e.shiftKey) {
     if (key === 'c' || code === 'KeyC') { copySelection(); return false; }
-    if (key === 'v' || code === 'KeyV') { void pasteClipboard(); return false; }
+    // 审查轮：带 Shift 的这一支同样要 preventDefault —— 浏览器原生粘贴事件与是否带 Shift 无关
+    // （Chromium 里 Ctrl+Shift+V = 粘贴为纯文本，xterm 的隐藏 textarea 会自己收到 paste），
+    // 不挡就与 pasteClipboard 叠成「粘两遍」。见下面不带 Shift 那支的 ①②。
+    if (key === 'v' || code === 'KeyV') { e.preventDefault(); void pasteClipboard(); return false; }
     return true;
   }
   // 票 #24：Ctrl+V = 粘贴（不带 Shift）。拦截必须同时做两件事，少一件就出用户症状：
