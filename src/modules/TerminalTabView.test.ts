@@ -1028,6 +1028,21 @@ describe('票 #23 · 工具条选区提示', () => {
     w.unmount();
   });
 
+  // 票 #23 AC「点空白清选区 → 提示消失」里**可测的那一半**：界面上「点一下空白」= 终端库自己把选区清掉，
+  // 而库清选区一定经选区变化事件回来（与鼠标划选是同一条事件）→ 提示必须跟着这份态走，不需要组件另找时机。
+  // 不是红绿对偶：钉的是已实现的正确行为，防以后有人给提示加「缓存一次」的旁路。坐标级的点击留给票 #26 ⑤。
+  it('hint_disappears_when_the_terminal_clears_the_selection', async () => {
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    term.select('selected line');                       // 鼠标划出选区 → 提示出现
+    await flush();
+    expect(w.find('.term-copy-hint').exists()).toBe(true);
+    term.clearSelection();                              // 库自己清选区（等价于在空白处点一下）
+    await flush();
+    expect(w.find('.term-copy-hint').exists(), '选区已清、提示还留着').toBe(false);
+    w.unmount();
+  });
+
   it('hint_disappears_when_clearing_the_terminal_or_the_search', async () => {
     const { w } = mountTab();
     const term = h.state.terms[0];
