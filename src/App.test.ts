@@ -1194,6 +1194,11 @@ const xh = vi.hoisted(() => {
     onData(): { dispose: () => void } { return { dispose: () => {} }; }
     onResize(): { dispose: () => void } { return { dispose: () => {} }; }
     attachCustomKeyEventHandler(): void {}
+    // 票 #22 新增的终端面（选区事件 / 清选区 / 有无选区）：组件挂载即订阅，假终端不给槽就抛。
+    // App 级用例只测 IPC 与页签接线，选区不参与断言，故给中性空实现。
+    onSelectionChange(): { dispose: () => void } { return { dispose: () => {} }; }
+    clearSelection(): void {}
+    hasSelection(): boolean { return false; }
   }
   class FakeFitAddon {
     term: any = null;
