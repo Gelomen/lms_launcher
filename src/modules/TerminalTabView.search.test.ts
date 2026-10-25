@@ -11,7 +11,10 @@
 // 这条缝只能由真 xterm 覆盖，故本文件按真机装配。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils';
+import { Terminal } from '@xterm/xterm';
+import { SearchAddon } from '@xterm/addon-search';
 import TerminalTabView from './TerminalTabView.vue';
+import { TERM_PALETTES } from './term-palettes';
 import { applyLangLocal } from '../i18n';
 
 // happy-dom 无 ResizeObserver：组件挂载时会 new 一个（尺寸链用），这里给个空实现
@@ -130,6 +133,38 @@ describe('TerminalTabView 查找（真 xterm 集成）', () => {
     expect(countText(w)).not.toBe('0 / 0');
     expect(w.find('.btn-search-next').attributes('disabled')).toBeUndefined();
     w.unmount();
+  });
+
+  // ---- 票 #22（spec #21）：只有真终端库才看得见的两条契约 ----
+  it('the_real_search_addon_programmatically_selects_the_match_it_landed_on', async () => {
+    // 「选区只看鼠标来源」这条口径的前提 = 真 addon-search 命中后会**程序化 select() 那个匹配**
+    // （打桩套件的假 addon 如今模仿了这一动作，但「模仿得像不像」只有真库能裁 —— 前提若是假的，
+    // 组件那条同步守卫就是空转）。这里按真机装配：真 Terminal + 真 SearchAddon，不经过组件。
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const term = new Terminal({ scrollback: 100, allowProposedApi: true });
+    term.open(host);
+    term.write('alpha\r\nbeta gamma\r\n');
+    await settle();
+    const search = new SearchAddon();
+    term.loadAddon(search);
+    expect(search.findNext('gamma', { decorations: { ...TERM_PALETTES['paper'].decorations } })).toBe(true);
+    expect(term.getSelection()).toBe('gamma');   // 匹配被程序化选中 —— 不是鼠标划的
+    term.dispose();
+    host.remove();
+  });
+
+  it('right_click_selects_word_is_a_switch_the_real_terminal_library_recognizes', () => {
+    // 打桩套件钉的是「组件把 rightClickSelectsWord:false 递进构造参数」；真库这半边 = 这个名字
+    // 是库真认的开关（真 OptionsService 读得回来，不是被静默忽略的错拼 —— 库默认值按 isMac 走，
+    // 平台一变默认就翻，所以必须显式关）。如实登记的局限：坐标级「右键选不选词」在 happy-dom
+    // 复现不了（无布局 → 字格 0×0，coordsToCells 直接拒绝），不编造行为断言；两态的真行为由票 #26 真机读数②③钉。
+    const on = new Terminal({ rightClickSelectsWord: true });
+    const off = new Terminal({ rightClickSelectsWord: false });
+    expect(on.options.rightClickSelectsWord).toBe(true);
+    expect(off.options.rightClickSelectsWord).toBe(false);
+    on.dispose();
+    off.dispose();
   });
 
   it('text_absent_from_the_terminal_reports_zero_and_disables_navigation', async () => {

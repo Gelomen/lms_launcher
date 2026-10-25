@@ -59,6 +59,12 @@ const h = vi.hoisted(() => {
     dispose(): void { this.disposed = true; }
     getSelection(): string { return this.selection; }
     hasSelection(): boolean { return this.selection.length > 0; }
+    // 票 #22（spec #21）：选区变化事件与清空选区。「鼠标划出选区」在用例里由 select(...) 模拟
+    // = 设选区并触发同一条事件，与 spec Testing Decisions「划选通过选区变化事件模拟」同一口径。
+    selectionCb: (() => void) | null = null;
+    onSelectionChange(cb: () => void): { dispose: () => void } { this.selectionCb = cb; return { dispose: () => {} }; }
+    clearSelection(): void { this.selection = ''; this.selectionCb?.(); }
+    select(text: string): void { this.selection = text; this.selectionCb?.(); }
     onData(cb: (d: string) => void): { dispose: () => void } { this.dataCb = cb; return { dispose: () => {} }; }
     onResize(cb: (e: { cols: number; rows: number }) => void): { dispose: () => void } { this.resizeCb = cb; return { dispose: () => {} }; }
     attachCustomKeyEventHandler(cb: (e: unknown) => boolean): void { this.keyHandler = cb; }
@@ -85,12 +91,16 @@ const h = vi.hoisted(() => {
     }
     findNext(term: string, opts: unknown): boolean {
       state.searches.push({ dir: 'next', term, opts });
+      // 票 #22：真 addon-search 命中后会 select(col,row,size) 程序化选中匹配（真机契约由
+      // TerminalTabView.search.test.ts 钉）——假 addon 同一动作，「查找选中不算选区」那条门才不是空转。
+      this.term?.select(term);
       // 真实 xterm 只在带 decorations 时发结果事件 —— 计数依赖这条链路
       if (state.resultsCb && (opts as any)?.decorations) state.resultsCb({ resultIndex: 0, resultCount: 3 });
       return true;
     }
     findPrevious(term: string, opts: unknown): boolean {
       state.searches.push({ dir: 'prev', term, opts });
+      this.term?.select(term);
       if (state.resultsCb && (opts as any)?.decorations) state.resultsCb({ resultIndex: 1, resultCount: 3 });
       return true;
     }
@@ -213,7 +223,9 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     // F1 逐字：scrollback 5000 / fontSize 13 / fontFamily 是与 src/style.css:29 逐字同值的字面量栈（索引 K23(1)）
     // allowProposedApi：查找装饰（= 计数与高亮）依赖它，见 TerminalTabView.vue 构造处注释与
     // TerminalTabView.search.test.ts（真 xterm 集成，本套件的假 addon 看不见该真机契约）
-    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, theme: TERM_PALETTES['paper'].theme });
+    // rightClickSelectsWord=false（票 #22 / ADR 0003）：智能右键的前提 —— 终端库自带的「右键选词」
+    // 会在页签处理之前先选中光标下的词，「无选区」永远不成立，右键就退化成「只复制、永不粘贴」。
+    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, rightClickSelectsWord: false, theme: TERM_PALETTES['paper'].theme });
     expect(h.state.linkHandlers.length).toBe(1);   // WebLinksAddon 构造时拿到 open_external 处理器
     w.unmount();
   });
@@ -505,12 +517,112 @@ describe('TerminalTabView 键盘与剪贴板（E5/E7，审查重点 5）', () =>
     w.unmount();
   });
 
-  it('right_click_pastes_from_clipboard_read', async () => {
+  // ---- 票 #22 · 智能右键（SmartRightClick）：有选区 = 复制（复制完清空选区），无选区 = 粘贴（习惯保留）----
+  // 唯一真源 = 本组件那份「鼠标选区」局部态（spec #21 选区口径）：只认鼠标在画面上拉出的那一段，
+  // 查找（输入即查 / 上/下一个）程序化选中的匹配不算它；清空终端 / 清空查找 / 复制完成 / 卸载都复位。
+  // 只钉外部行为：右键 → 主进程剪贴板收到什么 / PTY 收到什么 / 选区在不在。那份态怎么存、叫什么名，不钉。
+  it('right_click_with_mouse_selection_copies_through_main_process_and_clears_the_selection', async () => {
+    const { onInput, w } = mountTab();
+    const term = h.state.terms[0];
+    term.select('selected line');                       // 鼠标划出选区（经选区变化事件）
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_write', 'selected line');   // 剪贴板仍走主进程通道（user story 22）
+    expect(invoke).not.toHaveBeenCalledWith('clipboard_read');                 // 不是粘贴
+    expect(term.pasted).toEqual([]);                                            // 没有粘贴动作
+    expect(onInput).not.toHaveBeenCalled();                                     // PTY 收不到任何字节（user story 2 / 18）
+    expect(term.selection).toBe('');                                            // 复制完选区自动清空（user story 16）
+    w.unmount();
+  });
+
+  it('right_click_without_selection_still_pastes_from_clipboard_read', async () => {
+    // 旧「右键 = 粘贴」那条按新语义改写（spec Testing Decisions）：无选区那一半保留原习惯。
     const { w } = mountTab();
     await w.find('.term-view').trigger('contextmenu');
     await flush();
     expect(invoke).toHaveBeenCalledWith('clipboard_read');
+    expect(invoke).not.toHaveBeenCalledWith('clipboard_write');
     expect(h.state.terms[0].pasted).toEqual(['clip-text']);
+    w.unmount();
+  });
+
+  it('right_click_after_a_right_click_copy_pastes_instead_of_copying_again', async () => {
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    term.select('copied once');
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_write', 'copied once');
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_read');
+    expect(term.pasted).toEqual(['clip-text']);         // 下一次右键直接是粘贴（user story 16 的后半）
+    w.unmount();
+  });
+
+  it('search_selected_match_is_not_a_selection_right_click_still_pastes', async () => {
+    // 查找命中会程序化选中匹配（假 addon 模仿真 addon-search 的 select —— 真机契约在 search.test.ts）。
+    // 这条钉住「选区只看鼠标来源」：匹配选中不算选区 → 右键仍是粘贴，不会把匹配词换进剪贴板（user story 12）。
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.log-search-input').setValue('warn');          // 输入即查：假 addon 已把匹配 select 上
+    expect(term.selection).toBe('warn');                          // 有选中 —— 但来源不是鼠标
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_read');
+    expect(invoke).not.toHaveBeenCalledWith('clipboard_write', 'warn');
+    expect(term.pasted).toEqual(['clip-text']);
+    await w.find('.btn-search-next').trigger('click');            // 上/下一个同样不算选区
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(term.pasted).toEqual(['clip-text', 'clip-text']);
+    expect(invoke).not.toHaveBeenCalledWith('clipboard_write');
+    w.unmount();
+  });
+
+  it('mouse_selection_during_an_active_search_still_counts_as_a_selection', async () => {
+    // 守卫只盖「查找动作那一下」的程序化选中；查找之后用户自己划的那一段仍是选区（口径不过头）。
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.log-search-input').setValue('warn');
+    term.select('dragged after search');                          // 查找之后再用鼠标划
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_write', 'dragged after search');
+    expect(term.pasted).toEqual([]);
+    w.unmount();
+  });
+
+  it('clearing_the_terminal_resets_the_mouse_selection', async () => {
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    term.select('picked before clear');
+    await w.find('.btn-term-clear').trigger('click');
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_read');        // 清空之后右键回到粘贴
+    expect(h.state.terms[0].pasted).toEqual(['clip-text']);
+    w.unmount();
+  });
+
+  it('clearing_the_search_resets_the_mouse_selection', async () => {
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    await w.find('.log-search-input').setValue('warn');
+    term.select('dragged during search');                         // 查找在途，鼠标划一段
+    await w.find('.btn-search-clear').trigger('click');           // 清空查找 = 复位
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_read');
+    expect(h.state.terms[0].pasted).toEqual(['clip-text']);
+    w.unmount();
+  });
+
+  it('right_click_word_select_is_disabled_at_construction', () => {
+    // 前提门（票 #22 AC）：由打桩终端的构造参数钉住「右键选词已关闭」。逐字那条已在
+    // terminal_is_created_with_spec_options_and_three_addons 里；这里单独立一条，理由写在这。
+    const { w } = mountTab();
+    expect(h.state.termOptions[0]).toMatchObject({ rightClickSelectsWord: false });
     w.unmount();
   });
 });
