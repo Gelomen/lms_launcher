@@ -239,6 +239,8 @@ function copySelection(): void {
   void invoke('clipboard_write', text).catch(() => {});
 }
 
+// 粘贴的**唯一**实现路径（票 #24 / ADR 0003）：三条入口（Ctrl+V、Ctrl+Shift+V、无选区右键）都收到这里，
+// 票 #25 的多行二次确认只加在这一条上 —— 别再给任何入口另写一遍粘贴。
 async function pasteClipboard(): Promise<void> {
   if (!term) return;
   try {
@@ -276,16 +278,26 @@ function onContextMenu(): void {
   void pasteClipboard();
 }
 
-// ---- 键盘（规格 §9.3 / 计划 审查重点 5）----
-// 返回 false = 这条按键不进终端；除两个 Ctrl+Shift 组合外一律返回 true，
-// 所以 Ctrl+C 原样交给终端（中断当前命令），不会被当成复制。
+// ---- 键盘（规格 §9.3 / 计划 审查重点 5；票 #24 起补 Ctrl+V = 粘贴）----
+// 返回 false = 这条按键不进终端。**Ctrl+C 完全不拦**（原样交给终端做中断 —— ADR 0003 第一处取舍，
+// 钉它的既有用例 ctrl_c_is_not_intercepted_and_reaches_the_terminal 保留不动）；
+// 拦截的只有三个组合键：Ctrl+Shift+C 复制、Ctrl+Shift+V 粘贴、Ctrl+V 粘贴。
 function onCustomKey(e: KeyboardEvent): boolean {
   if (e.type !== 'keydown') return true;
-  if (!e.ctrlKey || !e.shiftKey || e.altKey) return true;
+  if (!e.ctrlKey || e.altKey) return true;
   const key = (e.key ?? '').toLowerCase();
   const code = e.code ?? '';
-  if (key === 'c' || code === 'KeyC') { copySelection(); return false; }
-  if (key === 'v' || code === 'KeyV') { void pasteClipboard(); return false; }
+  if (e.shiftKey) {
+    if (key === 'c' || code === 'KeyC') { copySelection(); return false; }
+    if (key === 'v' || code === 'KeyV') { void pasteClipboard(); return false; }
+    return true;
+  }
+  // 票 #24：Ctrl+V = 粘贴（不带 Shift）。拦截必须同时做两件事，少一件就出用户症状：
+  // ① preventDefault 挡掉**浏览器原生粘贴事件** —— xterm 的隐藏 textarea 若自己收到 paste，
+  //    会与我们这次的粘贴叠成「粘两遍」；
+  // ② 返回 false 挡掉**终端库把 Ctrl+字母写成控制字符** —— 否则 ^V 先进了 PTY，跑着的程序收到脏字节。
+  // 注意没有 Ctrl+C 分支：它带着 Shift 之外的原语义一路畅通（user story 7 / 真机读数⑦）。
+  if (key === 'v' || code === 'KeyV') { e.preventDefault(); void pasteClipboard(); return false; }
   return true;
 }
 
