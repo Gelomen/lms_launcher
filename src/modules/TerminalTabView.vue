@@ -260,15 +260,17 @@ async function pasteClipboard(): Promise<void> {
 // 复用主题化 ConfirmDialog（tone=primary；[粘贴] 自定义文案；[取消] 复用 common.cancel；点遮罩 = 取消）。
 // 文案走响应式 t()：确认框开着切语言，标题/正文/[粘贴] 跟着重译（user story 15 / 真机读数⑧）。
 const pendingPaste = ref<string | null>(null);   // 待确认的粘贴内容（null = 没有确认框）
-function stripTrailingNewline(text: string): string { return text.replace(/(\r\n|\n|\r)$/, ''); }
-function isMultilinePaste(text: string): boolean {
-  const body = stripTrailingNewline(text);
-  return body.includes('\n') || body.includes('\r');
-}
+// 拆行只做一次（审查轮）：「是不是多行」与正文里显示的行数必须来自同一次拆行，否则改了其中一处就会出现
+// 「弹了框却写着 1 行」这类自相矛盾。三种行尾都认（LF / CRLF / 裸 CR），与既有判据口径一致。
+const LINE_BREAK = /\r\n|\n|\r/;
+const TRAILING_LINE_BREAK = new RegExp(LINE_BREAK.source + "$");
+// 去掉**一个**尾部行尾（user story 9）之后按行尾拆：两行的命令批处理 → 长度 2；一行命令带一个回车 → 长度 1。
+function pasteLines(text: string): string[] { return text.replace(TRAILING_LINE_BREAK, "").split(LINE_BREAK); }
+function isMultilinePaste(text: string): boolean { return pasteLines(text).length > 1; }
 const pasteConfirmMessage = computed(() =>
   t('ql.terminal.pasteConfirm.message', {
-    // 行数 = 去掉尾部换行后的正文行数（2 行的命令批处理就显示 2，不数那个尾部回车）
-    lines: pendingPaste.value === null ? 0 : stripTrailingNewline(pendingPaste.value).split(/\r\n|\n|\r/).length,
+    // 行数 = 去掉一个尾部行尾后的正文行数（2 行的命令批处理就显示 2，不数那个尾部回车）
+    lines: pendingPaste.value === null ? 0 : pasteLines(pendingPaste.value).length,
   }));
 function onPasteConfirm(): void {
   if (pendingPaste.value === null) return;
@@ -294,7 +296,7 @@ function withProgrammaticSelection(fn: () => void): void {
 
 // 智能右键（ADR 0003）：有鼠标选区 → 复制并清空选区（下一次右键直接粘贴）；无选区 → 粘贴（原习惯保留）。
 // 前提 = 构造时关掉 rightClickSelectsWord（见 onMounted 构造注释）：不关，「无选区」这一半永远不成立。
-// 粘贴只有一条实现路径（票 #3 把它收成三条入口共用）；多行确认（票 #4）也加在这一条上。
+// 粘贴只有一条实现路径（票 #24 把它收成三条入口共用）；多行确认（票 #25）也加在这一条上。
 function onContextMenu(): void {
   if (hasMouseSelection.value) {
     copySelection();
