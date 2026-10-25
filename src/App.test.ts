@@ -995,20 +995,12 @@ describe('票 #28 · 内容宽度契约（列宽同源 + 内容宽度派生）',
     expect(css, '上区又写回逐条各不相同的轨道宽度').not.toMatch(/grid-template-columns:\s*\d+px\s+\d+px/);
   });
 
-  it('内容宽度由令牌派生；四列档派生值 = 1376 = 默认窗口可用宽度（不留空仍是算术）', () => {
-    // 派生式引用的是两个令牌本身，不是把总宽再抄一遍数字（ADR 0004：两处硬编码迟早漂移成 1376 / 1377）
+  it('内容宽度只有一个派生式：引用两个令牌，不把总宽抄第二遍', () => {
+    // 派生式引用的是两个令牌本身，不是把总宽再抄一遍数字（ADR 0004：两处硬编码迟早漂移成 1376 / 1377）。
+    // 各档的算术对账（1376 / 1029 / 682 与主进程默认宽、最小宽）在下面的「票 #29 · 三档拆行」里。
     expect(token('content-w').replace(/\s+/g, '')).toBe('calc(var(--cols-per-row)*var(--card-col-w)+(var(--cols-per-row)-1)*var(--card-gap))');
-    const n = Number(token('cols-per-row'));
-    const colW = Number(token('card-col-w').slice(0, -2));
-    const gap = Number(token('card-gap').slice(0, -2));
-    expect(n, '每行列数这一档不是四列').toBe(4);
-    const contentW = n * colW + (n - 1) * gap;
-    expect(contentW, '四列档的内容宽度不是 1376').toBe(1376);
-    // 与主进程窗口层的默认宽对账：可用宽度 = 窗口宽 − 2×内边距（内边距 = --card-gap，见 .layout）
-    const mainSrc = readFileSync(join(__dirname, '..', 'src-main', 'main.ts'), 'utf-8');
-    const winW = Number(mainSrc.match(/width:\s*(\d+),\s*height:/)![1]);
-    expect(css.slice(css.indexOf('.layout {'), css.indexOf('.grid {'))).toMatch(/padding:\s*var\(--card-gap\)/);
-    expect(contentW, '内容宽度与默认窗口可用宽度不再对齐：整块右侧又会出现留白').toBe(winW - 2 * gap);
+    // 对账的前提留在这里：可用宽度 = 窗口宽 − 2×内边距，而内边距就是 --card-gap（见 .layout）
+    expect(css.slice(css.indexOf('.layout {'), css.indexOf('.content-column {'))).toMatch(/padding:\s*var\(--card-gap\)/);
   });
 
   it('内容列定宽 = 内容宽度，且居中只用自动外边距（交叉轴/主轴居中对齐一律禁止）', () => {
@@ -1032,6 +1024,68 @@ describe('票 #28 · 内容宽度契约（列宽同源 + 内容宽度派生）',
     // 一旦以 px 出现，就是有人把总宽又抄了一遍 —— 两处迟早漂移成 1376 / 1377。
     expect(css, 'style.css 里出现了写死的内容宽度：' + (css.match(/\b(?:1376|1340|1029|682)px\b/g) ?? []).join(', '))
       .not.toMatch(/\b(?:1376|1340|1029|682)px\b/);
+  });
+});
+// ==== spec #27 / 票 #29 · 三档拆行（WrapTier）====
+// 窗口变窄只改「每行放几张卡」，不改任何一张卡的尺寸，也不给上区另开横向滚动（ADR 0004）。
+// 三个内容宽度（1376 / 1029 / 682）与三条断点（窗口宽 ≥1400 / ≥1053 / 更窄）都登记在 spec #27 与 ADR 0004，
+// 这里是把它们钉成算术：档位来自样式文本，期望值是文档里的字面量，主进程窗口层（main.ts）单独对账。
+describe('票 #29 · 三档拆行（WrapTier）', () => {
+  const css = readFileSync(join(__dirname, 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const token = (name: string): string => {
+    const m = css.match(new RegExp('--' + name + ':\\s*([^;]+);'));
+    expect(m, ':root 里缺令牌 --' + name).not.toBeNull();
+    return m![1].trim();
+  };
+  const rule = (sel: string): string => {
+    const at = css.indexOf(sel + ' {');
+    if (at === -1) throw new Error('css 里找不到规则：' + sel);
+    return css.slice(at, css.indexOf('}', at));
+  };
+  const colW = Number(token('card-col-w').slice(0, -2));
+  const gap = Number(token('card-gap').slice(0, -2));
+  // 档位读数：没有媒体查询兜底的那一档 = 最窄档；往上每加一条 min-width 断点抬一档。
+  const base = Number((css.match(/:root\s*\{[^}]*--cols-per-row:\s*(\d+)/) ?? [null, ''])[1]);
+  const steps = [...css.matchAll(/@media\s*\(min-width:\s*(\d+)px\)\s*\{\s*:root\s*\{[^}]*--cols-per-row:\s*(\d+)/g)]
+    .map((m) => ({ bp: Number(m[1]), cols: Number(m[2]) }));
+
+  it('三档拆行：每行列数 4 / 3 / 2，断点分别落在窗口宽 1400 与 1053', () => {
+    expect(steps.length, '拆行档不是两跳三档').toBe(2);
+    expect([...steps.map((s) => s.cols), base].sort((a, b) => b - a), '每行列数不是 4 / 3 / 2 三档').toEqual([4, 3, 2]);
+    expect(base, '最窄一档不是两列（它是没有媒体查询时的兜底档）').toBe(2);
+    expect(steps.map((s) => s.bp).sort((a, b) => a - b), '三条断点少了两条 min-width').toEqual([1053, 1400]);
+    // 断点不是挑出来的数字，是「该档内容宽度 + 2×内边距」：把断点调大 = 白白让出富余，调小 = 把横向滚动条调回来
+    expect(steps.map((s) => s.bp).sort((a, b) => a - b), '断点没有落在该档内容宽度 + 2×--card-gap 上')
+      .toEqual([3 * colW + 2 * gap + 2 * gap, 4 * colW + 3 * gap + 2 * gap]);
+  });
+
+  it('每档的内容宽度 = 该档最宽一行的总宽：四列 1376、三列 1029、两列 682', () => {
+    const expected: Record<number, number> = { 4: 1376, 3: 1029, 2: 682 };   // spec #27 / ADR 0004 登记的三个数
+    for (const cols of [4, 3, 2]) {
+      const derived = cols * colW + (cols - 1) * gap;
+      expect(derived, cols + ' 列档的内容宽度不是文档登记的那个值').toBe(expected[cols]);
+    }
+    // 日志卡引用同一个派生值 → 三档下它的宽度就是这三个数，与当前档最宽一行永远等宽
+    expect(rule('.log-area')).toMatch(/width:\s*var\(--content-w\)/);
+  });
+
+  it('最窄一档仍然装得下：682 ≤ 主进程最小宽 − 2×间距，常规区间不再有横向滚动条', () => {
+    const mainSrc = readFileSync(join(__dirname, '..', 'src-main', 'main.ts'), 'utf-8');
+    const winW = Number(mainSrc.match(/width:\s*(\d+),\s*height:/)![1]);
+    const minW = Number(mainSrc.match(/minWidth:\s*(\d+)/)![1]);
+    // 四列档 = 默认窗口可用宽度（2026-10-13 那道「不留空是算术」的门，等价改写后仍是这一条）
+    expect(4 * colW + 3 * gap, '四列档与默认窗口可用宽度不再对齐').toBe(winW - 2 * gap);
+    // 两列档 ≤ 最小宽的可用宽度：这就是「常规区间（窗口宽 ≥760）不需要横向滚动」的理由，断点一改就会破
+    expect(2 * colW + gap, '最窄一档在最小宽窗口里装不下：760 宽的窗口会重新出横向滚动条').toBeLessThanOrEqual(minW - 2 * gap);
+    // 三列档在它自己的断点上刚好放得下（1029 = 1053 − 2×12）：这一条把「断点 = 算术」再钉一遍
+    expect(3 * colW + 2 * gap, '三列档在 1053 这一格装不下 = 断点写小了').toBeLessThanOrEqual(1053 - 2 * gap);
+  });
+
+  it('孤卡靠左：那一排不做行内居中（三列档第二行那张与上一行左缘成一条线）', () => {
+    const grid = rule('.grid');
+    // 防退化（不是红绿对偶）：flex-wrap 默认就是 flex-start，这里钉的是「别把它改成居中或两端散布」
+    expect(grid, '上区改成行内居中 = 孤卡不再与上一行左缘对齐').not.toMatch(/justify-content:\s*(center|space-|flex-end|end)/);
+    expect(grid).toMatch(/flex-wrap:\s*wrap/);
   });
 });
 
