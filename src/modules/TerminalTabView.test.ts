@@ -517,6 +517,43 @@ describe('TerminalTabView 键盘与剪贴板（E5/E7，审查重点 5）', () =>
     w.unmount();
   });
 
+  // ---- 票 #24（spec #21）：Ctrl+V = 粘贴，一次不多不少；拦截必须同时做两件事，少一件就出症状 ----
+  // ① 不拦浏览器原生粘贴 → xterm 的隐藏 textarea 自己收到 paste，与自己的粘贴叠成「粘两遍」；
+  // ② 不拦终端库的 Ctrl+字母 → 控制字符 ^V 先进了 PTY（跑着的程序收到不该收的字节）。
+  it('ctrl_v_pastes_exactly_once_and_never_reaches_the_terminal', async () => {
+    const { onInput, w } = mountTab();
+    const term = h.state.terms[0];
+    const preventDefault = vi.fn();
+    const handled = (term.keyHandler as (e: unknown) => boolean)({
+      type: 'keydown', key: 'v', code: 'KeyV', ctrlKey: true, shiftKey: false, altKey: false, preventDefault,
+    });
+    expect(handled).toBe(false);                 // 不进终端库 → 没有 ^V
+    expect(preventDefault).toHaveBeenCalledTimes(1); // 浏览器原生粘贴事件一并挡掉 → 不会粘两遍
+    await flush();
+    expect(invoke).toHaveBeenCalledWith('clipboard_read');
+    expect(term.pasted).toEqual(['clip-text']);  // 恰好一次
+    expect(onInput).not.toHaveBeenCalled();      // PTY 没收到任何字节（更不会有 ^V）
+    w.unmount();
+  });
+
+  it('all_three_paste_entry_points_share_one_paste_path', async () => {
+    // Ctrl+V / Ctrl+Shift+V / 无选区右键 —— 三条入口从同一份剪贴板读出同一结果、各粘恰好一次。
+    // 这条不是重复三条粘贴用例，而是钉「收敛」本身：票 #25 的多行确认只加一条路，三个入口行为必须一致。
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    const key = (e: Record<string, unknown>) =>
+      (term.keyHandler as (ev: unknown) => boolean)({ type: 'keydown', ctrlKey: true, altKey: false, preventDefault: vi.fn(), ...e });
+    expect(key({ key: 'v', code: 'KeyV', shiftKey: false })).toBe(false);
+    await flush();
+    expect(key({ key: 'v', code: 'KeyV', shiftKey: true })).toBe(false);
+    await flush();
+    await w.find('.term-view').trigger('contextmenu');
+    await flush();
+    expect(term.pasted).toEqual(['clip-text', 'clip-text', 'clip-text']);   // 三入口各恰好一次，没有哪个粘两遍
+    expect(invoke.mock.calls.filter((c) => c[0] === 'clipboard_read').length).toBe(3);
+    w.unmount();
+  });
+
   // ---- 票 #22 · 智能右键（SmartRightClick）：有选区 = 复制（复制完清空选区），无选区 = 粘贴（习惯保留）----
   // 唯一真源 = 本组件那份「鼠标选区」局部态（spec #21 选区口径）：只认鼠标在画面上拉出的那一段，
   // 查找（输入即查 / 上/下一个）程序化选中的匹配不算它；清空终端 / 清空查找 / 复制完成 / 卸载都复位。
