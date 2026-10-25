@@ -470,6 +470,13 @@ defineExpose({
         :disabled="stateDisabled" @click="onStateClick">
         <span v-if="stopping">...</span><FontAwesomeIcon v-else-if="running" :icon="['fas', 'stop']" /><FontAwesomeIcon v-else :icon="['fas', 'arrow-rotate-right']" />
       </button>
+      <!-- 选区复制提示（票 #23 / spec #21）：仅「鼠标选区」存在时渲染（v-if 不占位），而那份态与智能右键同源
+           → 「有提示」与「右键 = 复制」永不分歧（user story 13 / 23）。位置 = 进程态那颗之后、贴右缘的 [配色]
+           之前：那两颗的盒与 tooltip 锚点一条不动（排内顺序门 + margin-left:auto 门都继续绿）。
+           窄窗收缩省略号的规则在 style.css 的 .log-pane .term-copy-hint（24px 盒高同族、min-width:0 那条门）。
+           文案 = 词典字面量 key ql.terminal.copyHint（中英两侧同一批齐全）；响应式 t() → 切语言当场重译，
+           不需要重新划选区。 -->
+      <span v-if="hasMouseSelection" class="term-copy-hint">{{ t('ql.terminal.copyHint') }}</span>
       <!-- 配色入口（票 #14）：盒 24×24 与同排其余几颗一致（style.css 里那一族收盒的定版理由同样适用，
            见 :252-263 那段取证注释）——盒顶一变 tooltip 就跟着高一截，那颗按钮已经被这件事返工过三轮。
            restartDisabled（条目配置已删）时禁用：没有条目就没有可写的 terminal_palette，页签停在它最后一份配色。

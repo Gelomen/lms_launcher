@@ -995,7 +995,8 @@ describe('票 #23 · 工具条选区提示', () => {
     expect(w.find('.term-copy-hint').exists()).toBe(true);
     await w.find('.btn-term-clear').trigger('click');          // 清空终端 → 提示消失
     expect(w.find('.term-copy-hint').exists()).toBe(false);
-    term.select('again');
+    await w.find('.log-search-input').setValue('warn');       // 先输查询：清空查找那颗才可点（查询空时它是禁用的）
+    h.state.terms[0].select('again');                          // 查找命中不算选区；用户再划的那一段才算
     await w.vm.$nextTick();
     expect(w.find('.term-copy-hint').exists()).toBe(true);
     await w.find('.btn-search-clear').trigger('click');        // 清空查找 → 提示消失（复位口径同票 #22）
@@ -1038,16 +1039,16 @@ describe('票 #23 · 工具条选区提示', () => {
   it('hint_css_shrinks_to_ellipsis_without_leaving_the_24px_box_family', () => {
     // happy-dom 无布局 → 真「窄窗省略号」归真机读数⑥；这里钉规则的**存在与口径**：
     // 不换行、可收缩（min-width:0）、溢出省略、盒高与那一排 24px 族同口径。
-    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/ *\*[\s\S]*?\*\/ *\//g, '');
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
     const rule = css.match(/\.log-pane \.term-copy-hint \{([^}]*)\}/);
     expect(rule, 'style.css 里缺 .log-pane .term-copy-hint 规则').not.toBeNull();
     const body = rule![1];
     for (const [what, re] of [
-      ['white-space:nowrap（不换行）', /white-space:s*nowrap/],
-      ['text-overflow:ellipsis（省略号）', /text-overflow:s*ellipsis/],
-      ['overflow:hidden（收缩的前提）', /overflow:s*hidden/],
-      ['min-width:0（文本项可缩到内容宽度以下）', /min-width:s*0/],
-      ['height:24px（盒高与那一排同口径）', /height:s*24px/],
+      ['white-space:nowrap（不换行）', /white-space:\s*nowrap/],
+      ['text-overflow:ellipsis（省略号）', /text-overflow:\s*ellipsis/],
+      ['overflow:hidden（收缩的前提）', /overflow:\s*hidden/],
+      ['min-width:0（文本项可缩到内容宽度以下）', /min-width:\s*0/],
+      ['height:24px（盒高与那一排同口径）', /height:\s*24px/],
     ] as Array<[string, RegExp]>) {
       expect(re.test(body), '窄窗口径缺 ' + what).toBe(true);
     }

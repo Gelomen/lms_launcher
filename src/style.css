@@ -268,6 +268,20 @@ body {
    那一排是 display:flex + justify-content:flex-start（inline style 见 TerminalTabView.vue 的 <template>）：auto margin
    在主轴对齐之前先把 free space 吃掉，所以 flex-start 不影响这个结果。盒尺寸与两颗之间的间距一条没动。
    两半各有一条门钉着（排内最后一颗 + 这条 auto margin）：TerminalTabView.test.ts 的 palette_button_is_the_rightmost_item_in_the_toolbar。 */
+/* 票 #23（spec #21）：选区复制提示 —— 有「鼠标选区」才出现，无选区连壳都不渲染（v-if，不占位）。
+   盒高 24px = 与那一排五颗按钮同一族（上面那段收盒取证注释的理由一条不改：盒高一变，tooltip 锚跟着变，
+   那颗 [配色] 已经为这件事返工过三轮）。字号继承 body（同排那颗计数 .log-search-count 也是继承，不另立）。
+   窄窗口径：min-width:0 + overflow:hidden + ellipsis + nowrap —— 行被挤时只有它缩成省略号：查找输入框整组
+   本来就 flex:none（定宽 170px），那一排三颗独立盒由下面那条 flex-shrink:0 保住 24×24 与 tooltip 起点
+   （user story 13/14 的「一条都不动」；真机逐值读数归票 #26 ⑥，happy-dom 无布局只能钉规则存在——扫描门在
+   TerminalTabView.test.ts 的 hint_css_shrinks_to_ellipsis_without_leaving_the_24px_box_family）。 */
+.log-pane .term-copy-hint {
+  height: 24px; line-height: 24px; margin-left: 8px; color: var(--muted);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 那一排里不在 .log-search 组内的三颗不参与 flex 收缩（票 #23）：窄窗时省略号只落在提示身上，
+   五颗盒与它们的 tooltip 起点（盒顶）逐值不动。不改宽/高/间距任何一条，只挡收缩。 */
+.log-pane .btn-term-clear, .log-pane .btn-term-state, .log-pane .btn-term-palette { flex-shrink: 0; }
 /* 票 #14：工具条那颗配色按钮点开的六行浮层。position: fixed + JS 定位（left/top 由组件按按钮盒算、贴右缘时左移），
    与本仓 .dd-tip / .tpl-tip / .flag-tip 用的是同一定位手法（见那几段自己的注释，不按行号锚）：absolute 会被容器裁切，
    而把浮层塞进工具条那一排就等于把布局重新押回那一排——那一排的 24px 是三轮实机截图换来的定版（上面 :252-261 那段）。

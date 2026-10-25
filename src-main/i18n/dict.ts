@@ -170,6 +170,9 @@ export const dict = {
     'ql.terminal.searchNext': '下一个匹配',
     'ql.terminal.count': '{cur} / {total}',
     'ql.terminal.restart': '重新启动',
+    // 票 #23（spec #21）：选区提示（工具条内联，仅「鼠标选区」存在时出现）。中英取值语义逐字对齐；
+    // 走渲染端响应式 t()，切语言时已显示的提示当场重译。
+    'ql.terminal.copyHint': 'Ctrl + Shift + C 或 鼠标右键 复制文本',
     // 票 #14（spec #12）：终端页签工具条的配色入口 + 浮层里六档的可见档名与「明底 / 暗底」两组标题。
     // key 一律字面量（key-coverage.test.ts 只认字面量 key），档名与 GLOSSARY/ADR 的六档逐字对齐。
     'ql.terminal.palette': '配色',
@@ -546,6 +549,7 @@ export const dict = {
     'ql.terminal.searchNext': 'Next match',
     'ql.terminal.count': '{cur} / {total}',
     'ql.terminal.restart': 'Restart',
+    'ql.terminal.copyHint': 'Ctrl+Shift+C or right-click to copy',
     'ql.terminal.palette': 'Palette',
     'ql.palette.paper': 'Paper white',
     'ql.palette.console': 'Light grey',
