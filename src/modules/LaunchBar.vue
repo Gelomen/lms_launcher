@@ -70,10 +70,24 @@ function onToggle(): void {
 
 onMounted(load);
 
-// 配置下拉截断（2026-08-26 spec-truncate-by-visual-width）：按视觉宽度预算 16——CJK=2 / 拉丁=1；
-// 中文 ≤8 字不截断（与旧 TRUNC_AT=8 契约一致），英文/拉丁可显示约 15~16 字符再 + …(U+2026)；
+// 配置下拉截断（2026-08-26 spec-truncate-by-visual-width）：按视觉宽度预算 24——CJK=2 / 拉丁=1；
+// 中文 ≤12 字全量渲染（grace=2 内到 13 字），英文/拉丁可到 24 字符再 + …(U+2026)；
 // tooltip（.dd-tip 悬浮层 + trigger data-tooltip）显示完整名字。下拉面板仅截断不撑宽（max-height 116px）。
-const BUDGET = 16;
+// 预算取 24 不是挑数字，是按现在的卡片列（--card-col-w 335 / ADR 0004）反推的算术，与旧值 16 同一套口径
+// （「预算 + grace = 放得下全名的上限」、「预算 + … 本身 = 放得下截断串的上限」两条都成立，且都不越界）：
+//   卡片内容宽 = 335 − .card 边框 2 − padding 32 = 301
+//   状态按钮 = FA 图标 1.25em×16px=20 + .btn padding 28 + 边框 2 = 50（.btn-noshrink 定宽不缩）
+//   trigger  = 301 − 排内 gap 8 − 50 = 243
+//   label 可用 = 243 − 边框 2 − .btn padding 28 − 排内 gap 8 − .select-caret 15.75（1.25em×11px + padding-right 2） = 189px
+//   1 个宽度单位 ≈ 7px：14px 字号下一个汉字 = 1em = 14px、拉丁实测 6.8~7.4px（GDI 量 Segoe UI 14px，
+//     与截图里「abcdefg中文中文…」= 7 拉丁 + 4 汉字 + … 的 117px 逐字对得上）；「…」实测 10px ≈ 1.4 单位
+//   → 全名放得下 = 189/7 ≈ 27.0 单位（预算 24 + grace 2 = 26 ✓；13 个汉字 = 182px ≤ 189px 确实铺得下）
+//   → 前缀 + … 放得下 = (189−10)/7 ≈ 25.6 单位（24 + 1.4 = 25.4 ✓；取 26 就会越这条，截断串本身要 CSS 再裁一次）
+// 旧值 16 是同一算法在旧卡片列 280（ADR 0004 之前 .grid 第一列）上的读数：label 可用 134px → (134−10)/7 ≈ 17.7 → 16。
+// 卡片列 280→335 后这条预算没人重算（ADR 0004 的连带只写了「名字预算 30 不动」），于是 label 右半段白给
+// （2026-10-26 用户截图：「abcdefg中文中文…」只占掉 117/189px）。截图按 1.5 倍 DPI 复量与上面算术逐条对上：
+// trigger 外沿 244px、状态按钮 49px、label 起点 = trigger 左内边距 14px。再改宽度先重算这一串。
+const BUDGET = 24;
 function full(id: string): string {
   const c = configs.value?.[id];
   return (c?.name ?? '') || id;
