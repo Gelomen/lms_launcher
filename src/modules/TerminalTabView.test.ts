@@ -958,3 +958,98 @@ describe('票 #14 · 工具条配色浮层', () => {
     w.unmount();
   });
 });
+
+
+// ---- 票 #23（spec #21）· 工具条选区提示：仅「鼠标选区」存在时出现，文案走词典（中英两侧齐全）----
+// 与票 #22 的右键二态共用同一份「鼠标选区」真源：「有提示」与「右键是复制」永不分歧（user story 23）。
+// 位置 = 进程态那颗之后、贴右缘的 [配色] 之前（那两颗的盒与 tooltip 锚点一条不动）；
+// 窄窗省略号化由 style.css 的规则钉（happy-dom 无布局，量不了宽，规则文本进扫描门 + 真机读数⑥）。
+describe('票 #23 · 工具条选区提示', () => {
+  it('hint_absent_without_selection_and_appears_with_exact_dict_text_on_mouse_selection', async () => {
+    const { w } = mountTab();
+    expect(w.find('.term-copy-hint').exists()).toBe(false);   // 不占位（不渲染空壳）
+    const term = h.state.terms[0];
+    term.select('picked words');
+    await w.vm.$nextTick();
+    const hint = w.find('.term-copy-hint');
+    expect(hint.exists()).toBe(true);
+    // 文案逐字 = 词典 zh 侧（字面量是独立真源，不从词典反算 —— 防同义反复）
+    expect(hint.text()).toBe('Ctrl + Shift + C 或 鼠标右键 复制文本');
+    w.unmount();
+  });
+
+  it('hint_never_appears_for_a_search_selected_match', async () => {
+    // 与「查找命中右键仍是粘贴」同一份态：提示不出现 = 右键不是复制，两边永不各说一套。
+    const { w } = mountTab();
+    await w.find('.log-search-input').setValue('warn');
+    expect(h.state.terms[0].selection).toBe('warn');           // 确实有选中（程序化）
+    expect(w.find('.term-copy-hint').exists()).toBe(false);    // 但它不是「选区」
+    w.unmount();
+  });
+
+  it('hint_disappears_when_clearing_the_terminal_or_the_search', async () => {
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    term.select('words to drop');
+    await w.vm.$nextTick();
+    expect(w.find('.term-copy-hint').exists()).toBe(true);
+    await w.find('.btn-term-clear').trigger('click');          // 清空终端 → 提示消失
+    expect(w.find('.term-copy-hint').exists()).toBe(false);
+    term.select('again');
+    await w.vm.$nextTick();
+    expect(w.find('.term-copy-hint').exists()).toBe(true);
+    await w.find('.btn-search-clear').trigger('click');        // 清空查找 → 提示消失（复位口径同票 #22）
+    expect(w.find('.term-copy-hint').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('hint_sits_between_the_state_button_and_the_palette_button_and_is_not_a_button', async () => {
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    term.select('anchor me');
+    await w.vm.$nextTick();
+    const row = w.find('.log-pane > div').element;
+    const kids = Array.from(row.children).map((el) => el.className || el.tagName);
+    const iState = kids.findIndex((c) => String(c).includes('btn-term-state'));
+    const iHint = kids.findIndex((c) => String(c).includes('term-copy-hint'));
+    const iPalette = kids.findIndex((c) => String(c).includes('btn-term-palette'));
+    expect(iState).toBeGreaterThan(-1);
+    expect(iHint).toBe(iState + 1);                            // 紧跟进程态那颗
+    expect(iPalette).toBe(iHint + 1);                          // [配色] 仍是它右边那颗（贴右缘的门另有）
+    expect(row.querySelectorAll('.term-copy-hint button').length).toBe(0);  // 提示不是按钮，不吃那一排的盒规则
+    w.unmount();
+  });
+
+  it('language_switch_retranslates_a_visible_hint_without_new_selection', async () => {
+    // 提示走渲染端**响应式** t()：切语言时已在屏上的提示当场重译，不需要重新划选区（票 #23 硬性口径）。
+    const { w } = mountTab();
+    h.state.terms[0].select('keep this');
+    await w.vm.$nextTick();
+    expect(w.find('.term-copy-hint').text()).toBe('Ctrl + Shift + C 或 鼠标右键 复制文本');
+    applyLangLocal('en');
+    await w.vm.$nextTick();
+    expect(w.find('.term-copy-hint').text()).toBe('Ctrl+Shift+C or right-click to copy');
+    applyLangLocal('zh');
+    await w.vm.$nextTick();
+    expect(w.find('.term-copy-hint').text()).toBe('Ctrl + Shift + C 或 鼠标右键 复制文本');
+    w.unmount();
+  });
+
+  it('hint_css_shrinks_to_ellipsis_without_leaving_the_24px_box_family', () => {
+    // happy-dom 无布局 → 真「窄窗省略号」归真机读数⑥；这里钉规则的**存在与口径**：
+    // 不换行、可收缩（min-width:0）、溢出省略、盒高与那一排 24px 族同口径。
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/ *\*[\s\S]*?\*\/ *\//g, '');
+    const rule = css.match(/\.log-pane \.term-copy-hint \{([^}]*)\}/);
+    expect(rule, 'style.css 里缺 .log-pane .term-copy-hint 规则').not.toBeNull();
+    const body = rule![1];
+    for (const [what, re] of [
+      ['white-space:nowrap（不换行）', /white-space:s*nowrap/],
+      ['text-overflow:ellipsis（省略号）', /text-overflow:s*ellipsis/],
+      ['overflow:hidden（收缩的前提）', /overflow:s*hidden/],
+      ['min-width:0（文本项可缩到内容宽度以下）', /min-width:s*0/],
+      ['height:24px（盒高与那一排同口径）', /height:s*24px/],
+    ] as Array<[string, RegExp]>) {
+      expect(re.test(body), '窄窗口径缺 ' + what).toBe(true);
+    }
+  });
+});
