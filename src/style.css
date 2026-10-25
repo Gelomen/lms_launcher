@@ -164,8 +164,10 @@ body {
 .layout--log-fullscreen .content-column { width: auto; margin-inline: 0; }
 /* margin-inline 必须一起归零（2026-10-26 取证台实读：2560 / 1400 / 1200 / 1052 四格全屏后内容列只有 744px）：
    交叉轴上 margin:auto 会把拉伸关掉，width:auto 于是退化成「按内容收缩」，日志卡就没铺满内容区（user story 15）。
-   归零后它拿到的是外壳内容盒的宽度 = 窗口宽 − 2×--card-gap，与窗口的边距一条不变。760 那一格看不出差别（可用宽度本来就 736），
-   所以这条只有宽窗口才暴露 —— App.test.ts 的门钉规则文本，取证台复量宽度。 */
+   归零后它拿到的是外壳内容盒的宽度 = 窗口宽 − 2×--card-gap，与窗口的边距一条不变。
+   这个 bug 在 760 那一格看不出来：那一格可用宽度只有 736，比收缩出来的 744 还窄，两种写法都渲染成 736；只有 ≥1053 那三格才暴露（该读到 1028 / 1029）。
+   上面 2026-10-20 那段收盒注释里的「五颗盒」是当时的计数，本票起这一排六颗 —— 那条读的是历史取证，不跟着改。
+   App.test.ts 的门钉规则文本，取证台复量宽度。 */
 .layout--log-fullscreen .grid { display: none; }
 .layout--log-fullscreen .log-area { width: auto; }
 
@@ -351,18 +353,18 @@ body {
    （票 #31「三个页签都有、位置一致」）。两个面的工具条排同族，只有静态那一排缺 [配色]，故按 :not(.log-pane--term) 分流。 */
 .log-pane:not(.log-pane--term) .btn-log-fullscreen { margin-left: auto; }
 /* 票 #23（spec #21）：选区复制提示 —— 有「鼠标选区」才出现，无选区连壳都不渲染（v-if，不占位）。
-   盒高 24px = 与那一排五颗按钮同一族（上面那段收盒取证注释的理由一条不改：盒高一变，tooltip 锚跟着变，
+   盒高 24px = 与那一排六颗按钮同一族（票 #31 起多一颗 [全屏]；上面那段收盒取证注释的理由一条不改：盒高一变，tooltip 锚跟着变，
    那颗 [配色] 已经为这件事返工过三轮）。字号继承 body（同排那颗计数 .log-search-count 也是继承，不另立）。
    窄窗口径：min-width:0 + overflow:hidden + ellipsis + nowrap —— 行被挤时只有它缩成省略号：查找输入框整组
-   本来就 flex:none（定宽 170px），那一排三颗独立盒由下面那条 flex-shrink:0 保住 24×24 与 tooltip 起点
+   本来就 flex:none（定宽 170px），那一排四颗独立盒由下面那条 flex-shrink:0 保住 24×24 与 tooltip 起点
    （user story 13/14 的「一条都不动」；真机逐值读数归票 #26 ⑥，happy-dom 无布局只能钉规则存在——扫描门在
    TerminalTabView.test.ts 的 hint_css_shrinks_to_ellipsis_without_leaving_the_24px_box_family）。 */
 .log-pane .term-copy-hint {
   height: 24px; line-height: 24px; margin-left: 8px; color: var(--muted);
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* 那一排里不在 .log-search 组内的三颗不参与 flex 收缩（票 #23）：窄窗时省略号只落在提示身上，
-   五颗盒与它们的 tooltip 起点（盒顶）逐值不动。不改宽/高/间距任何一条，只挡收缩。 */
+/* 那一排里不在 .log-search 组内的四颗不参与 flex 收缩（票 #23 那三颗 + 票 #31 的 [全屏]）：窄窗时省略号只落在提示身上，
+   六颗盒与它们的 tooltip 起点（盒顶）逐值不动。不改宽/高/间距任何一条，只挡收缩。 */
 .log-pane .btn-term-clear, .log-pane .btn-term-state, .log-pane .btn-term-palette, .log-pane .btn-log-fullscreen { flex-shrink: 0; }
 /* 票 #14：工具条那颗配色按钮点开的六行浮层。position: fixed + JS 定位（left/top 由组件按按钮盒算、贴右缘时左移），
    与本仓 .dd-tip / .tpl-tip / .flag-tip 用的是同一定位手法（见那几段自己的注释，不按行号锚）：absolute 会被容器裁切，

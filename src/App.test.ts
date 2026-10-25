@@ -979,7 +979,9 @@ describe('票 #28 · 内容宽度契约（列宽同源 + 内容宽度派生）',
     return m![1].trim();
   };
   const rule = (sel: string): string => {
-    const at = css.indexOf(sel + ' {');
+    // 锚在行首：同一个类名现在会有两条规则（.log-area 与 .layout--log-fullscreen .log-area）——
+    // 不锚就等于「靠文件顺序才抓得对」，样式一重排门就会悄悄钉到另一条同名规则上。
+    const at = css.indexOf('\n' + sel + ' {');
     if (at === -1) throw new Error('css 里找不到规则：' + sel);
     return css.slice(at, css.indexOf('}', at));
   };
@@ -1038,7 +1040,9 @@ describe('票 #29 · 三档拆行（WrapTier）', () => {
     return m![1].trim();
   };
   const rule = (sel: string): string => {
-    const at = css.indexOf(sel + ' {');
+    // 锚在行首：同一个类名现在会有两条规则（.log-area 与 .layout--log-fullscreen .log-area）——
+    // 不锚就等于「靠文件顺序才抓得对」，样式一重排门就会悄悄钉到另一条同名规则上。
+    const at = css.indexOf('\n' + sel + ' {');
     if (at === -1) throw new Error('css 里找不到规则：' + sel);
     return css.slice(at, css.indexOf('}', at));
   };
@@ -1084,6 +1088,9 @@ describe('票 #29 · 三档拆行（WrapTier）', () => {
   it('孤卡靠左：那一排不做行内居中（三列档第二行那张与上一行左缘成一条线）', () => {
     const grid = rule('.grid');
     // 防退化（不是红绿对偶）：flex-wrap 默认就是 flex-start，这里钉的是「别把它改成居中或两端散布」
+    // 为什么这条只禁主轴那几个值：ADR 0004 禁的是「内容比窗口宽时左缘被裁到不可达」那种居中，而 .grid 是横向排的行容器 ——
+    // 危害只在主轴（justify-content）这一侧；交叉轴上的 align-items:center 只把每行的卡竖向居中，不会把左缘推到裁切边界外
+    //（内容列那一侧的交叉轴才是横向，禁它的是票 #28 那条门）。
     expect(grid, '上区改成行内居中 = 孤卡不再与上一行左缘对齐').not.toMatch(/justify-content:\s*(center|space-|flex-end|end)/);
     expect(grid).toMatch(/flex-wrap:\s*wrap/);
   });
@@ -1093,9 +1100,9 @@ describe('票 #29 · 三档拆行（WrapTier）', () => {
 // 订阅不丢）；跨页签保持、不跨启动记忆。happy-dom 无布局 → 「铺满 / 让位」在这里钉的是外壳类 + 挂载结构，
 // 真实读数（日志卡实宽 = 内容区可用宽度）归票 #32 的真机门。
 describe('票 #31 · 日志全屏（渲染外壳）', () => {
-  // 主进程里会落盘的那几条通道（main.ts 的 ipcMain.handle 名单）：日志全屏一律不碰，它就是「不跨启动记忆」。
-  const PERSIST = ['save_config', 'delete_config', 'ql_save', 'ql_delete', 'ql_set_palette', 'set_language',
-    'save_llama_dir', 'save_proxy', 'save_vram_total', 'set_llama_update_config'];
+  // 「不跨启动记忆」钉的是**一条 IPC 都不发**：这颗按钮除了翻 App 里那一份态，不该碰任何通道。
+  // 审查轮删掉了原来那份「落盘通道名单」：名单是从 main.ts 的 49 条 ipcMain.handle 里手抄的十项子集，
+  // 以后新增一条落盘通道不会自动进来，门会静默变弱 —— 强版本（fired 必须为空）反而没这个洞。
   const btn = (w: any) => w.find('.log-pane[data-tab-id="launcher"] .btn-log-fullscreen');
 
   it('点 [全屏] 让上区让位、那颗变 [恢复]；再点回原状', async () => {
@@ -1160,13 +1167,14 @@ describe('票 #31 · 日志全屏（渲染外壳）', () => {
     await btn(w).trigger('click');
     await flush();
     const fired = invoke.mock.calls.slice(mark).map((c) => String(c[0]));
-    expect(fired.filter((cmd) => PERSIST.includes(cmd)), '日志全屏发了落盘通道：' + fired.join(',')).toEqual([]);
+    expect(fired, '日志全屏发了 IPC（它只该翻外壳那一份态，什么都不发）：' + fired.join(',')).toEqual([]);
     w.unmount();
   });
 
   // 真机取证（2026-10-26，票 #31）在 2560 / 1400 / 1200 / 1052 读到过一次「全屏后内容列只有 744px」：
   // .content-column 的 margin-inline: auto 在交叉轴上把拉伸关掉，width:auto 于是退化成「按内容收缩」。
-  // 窗口 760 那一格反而看不出来（可用宽度本来就只有 736）—— 所以这条只能钉规则文本，钉完再用取证台复量宽度。
+  // 760 那一格反而看不出来：可用宽度只有 736，比收缩出来的 744 还窄，两种写法都渲染成 736 —— 这个 bug 只在 ≥1053 那几格暴露（该读到 1028 / 1029）。
+  // 结论：这条只能钉规则文本，钉完再用取证台复量宽度。
   it('让位后内容列拿的是可用宽度：width:auto 之外还要把自动外边距归零，边距一条不动', () => {
     const css = readFileSync(join(__dirname, 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
     const block = (sel: string): string => {
@@ -1230,6 +1238,10 @@ describe('票 #28 · 内容列（ContentColumn）', () => {
 // 卡片实高是一次性取证台的读数（2026-10-26，dpr 1.5 / zoom 1，2×2 档四张 = 237 / 237 / 226 / 226，取最高 237）：
 // 它与 style.css 里 2026-08-26 那条「固定 161px + h2 34 + padding 32 + border 2 = 卡 229–237（左列 .stack 实测 237）」互相印证 ——
 // 列表容器是定高的，卡片高不随配置 / 快捷启动条目数长，所以 237 可以当结构值用。其余每一项都从样式令牌取，不另立数字。
+// 那个「定高」不只是注释里的口头承诺：.template-list 的 height:161px 已有门钉着（QuickLaunch.test.ts 用注入真样式读计算值那条手法）。
+// 它一改，本票公式的输入 237 就作废 —— 门会红，逼下一个人重算最小高，而不是让 800 变成没人认账的魔法数。
+// 真哪天某张卡超过 237：日志卡的 min-height:220 先顶住，多出来的一跳会把卡片底部顶到窗口下缘之外（.layout 的 overflow-y:hidden 不许滚动）——
+// 那是**难看但看得见**的失效，不是静默裁切；票 #32 第 5 条读数（高缩到新最小高：日志卡 ≥220、全程无纵向滚动条）就是它的报警器。
 describe('票 #30 · 窗口最小高（纵向永不出滚动条）', () => {
   const css = readFileSync(join(__dirname, 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
   // 令牌取值不在这条缝里 assert —— describe 体在 collect 阶段就跑，缺令牌时整个文件会以「采集失败」的形式红，
