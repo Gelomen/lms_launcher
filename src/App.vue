@@ -362,6 +362,10 @@ const terminalSinks = new Map<string, (data: string) => void>();
 const qlConfigs = ref<Record<string, QuickLaunchEntry>>({});
 // 激活态归 App（索引 K27(1)）：经 v-model:active 下发；启动 / 新建 / 复原时置为对应终端页签
 const activeTabId = ref<string>(LOG_TABS[0].id);
+// 日志全屏（LogFullscreen，票 #31 / ADR 0004）：日志卡的显示态，唯一入口是那颗按钮（三个页签都有、位置一致）。
+// 跨页签保持：切页签不动它；不跨启动记忆：不进任何配置文件（App.test.ts 钉「进出全屏不发任何持久化写通道」）。
+// 让位是**样式**让位（style.css 的 .layout--log-fullscreen）：上区卡片不卸载，卡片内的状态与订阅照常活着。
+const logFullscreen = ref(false);
 const terminalViews = new Map<string, TerminalViewHandle>();
 const qlStarting = new Set<string>(); // 索引 K14(2)：ql_start 带最坏约 9s 的终端探测，重复点击只发一次
 
@@ -701,7 +705,7 @@ function onQlChanged(): void {
         <button class="winbtn winbtn--close" :aria-label="t('app.winbar.close')" @click="onWinClose"><FontAwesomeIcon :icon="['fas','xmark']" /></button>
       </div>
   </header>
-  <main class="layout">
+  <main class="layout" :class="{ 'layout--log-fullscreen': logFullscreen }">
     <!-- 内容列（票 #28 / ADR 0004）：上区卡片与日志卡合成一条定宽竖列，整条在窗口里水平居中。
          日志卡自此不再直接挂 .layout —— 它的宽度恒等于内容宽度，与上区左右缘永远对齐。 -->
     <div class="content-column">
@@ -727,6 +731,7 @@ function onQlChanged(): void {
         <LogPanel :tabs="logTabItems" :buckets="logBuckets" v-model:active="activeTabId"
           :register="registerTerminalSink" :unregister="unregisterTerminalSink"
           :on-input="onTerminalInput" :on-resize="onTerminalResize"
+        :fullscreen="logFullscreen" @toggle-fullscreen="logFullscreen = !logFullscreen"
           @clear="onLogClear" @close="onTerminalClose" @stop="onTerminalStop" @restart="onTerminalRestart"
           @palette="onTerminalPalette" />
       </section>

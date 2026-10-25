@@ -104,6 +104,13 @@ body {
   gap: var(--card-gap);
   width: var(--content-w);
   margin-inline: auto;
+  /* 竖向链条（票 #28，2026-10-26 真机取证抓到的回归）：.layout 定高 → 内容列沿**主轴**吃满 → 日志卡再吃掉这条列里剩下的。
+     合成一条列之前日志卡是 .layout 的直接子级，flex:1 1 50% 直接对着定高外壳生效；包进内容列后中间多了一层，
+     这一层默认 flex:0 1 auto（按内容长）—— 结果 1400×950 下日志卡实高只有 115px，窗口底部空出 500px。
+     min-height:0 那条同理：不写就等于「内容比窗口高时这层不收缩」，纵向滚动条又回来了（ADR 0004 明令禁止）。
+     App.test.ts 的「竖向链条」门钉着这两半。 */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .grid {
   display: flex;
@@ -136,6 +143,17 @@ body {
   display: flex;
   width: var(--content-w);
 }
+/* 日志全屏（LogFullscreen，票 #31 / ADR 0004）：日志卡铺满窗口的内容区 —— 与窗口的边距不变（.layout 的 padding
+   一条不动），只是内容列的宽度自此不再由每行列数决定；上区卡片整体让位但**不卸载**：卡片内的状态与订阅照常活着
+   （选中的配置、快捷启动列表、GPU 切到的那张都在），恢复后一切照旧 —— 所以这里用 display:none，不是 v-if。
+   唯一入口是那颗按钮（三个页签都有、位置一致），态归渲染外壳持有：跨页签保持、不跨启动记忆。 */
+.layout--log-fullscreen .content-column { width: auto; margin-inline: 0; }
+/* margin-inline 必须一起归零（2026-10-26 取证台实读：2560 / 1400 / 1200 / 1052 四格全屏后内容列只有 744px）：
+   交叉轴上 margin:auto 会把拉伸关掉，width:auto 于是退化成「按内容收缩」，日志卡就没铺满内容区（user story 15）。
+   归零后它拿到的是外壳内容盒的宽度 = 窗口宽 − 2×--card-gap，与窗口的边距一条不变。760 那一格看不出差别（可用宽度本来就 736），
+   所以这条只有宽窗口才暴露 —— App.test.ts 的门钉规则文本，取证台复量宽度。 */
+.layout--log-fullscreen .grid { display: none; }
+.layout--log-fullscreen .log-area { width: auto; }
 
 /* ---- 卡片 ---- */
 .card {
@@ -310,6 +328,14 @@ body {
    那一排是 display:flex + justify-content:flex-start（inline style 见 TerminalTabView.vue 的 <template>）：auto margin
    在主轴对齐之前先把 free space 吃掉，所以 flex-start 不影响这个结果。盒尺寸与两颗之间的间距一条没动。
    两半各有一条门钉着（排内最后一颗 + 这条 auto margin）：TerminalTabView.test.ts 的 palette_button_is_the_rightmost_item_in_the_toolbar。 */
+/* 票 #31（spec #27 / ADR 0004）：[全屏] 是这一行**新的**最右颗，[配色] 退为次右。盒 24×24 沿用上面那一族，
+   取证理由一条不改：盒高一变，.icon-btn::after 的 tooltip 锚点就跟着偏（[配色] 已为这件事返工过三轮）。
+   它自己不带 margin-left:auto —— 吸行内剩余空间那颗仍是 [配色]，两颗都吸会把留白对半分，位置就不是「贴右缘」了
+   （TerminalTabView.test.ts 的 fullscreen_button_is_the_new_rightmost… 同时钉这两半）。 */
+.log-pane .btn-log-fullscreen { width: 24px; height: 24px; }
+/* 静态日志页签那一排没有 [配色]（那一排本来没人吸行内剩余空间）→ 贴右缘由这颗自己做，位置与终端页签那颗一致
+   （票 #31「三个页签都有、位置一致」）。两个面的工具条排同族，只有静态那一排缺 [配色]，故按 :not(.log-pane--term) 分流。 */
+.log-pane:not(.log-pane--term) .btn-log-fullscreen { margin-left: auto; }
 /* 票 #23（spec #21）：选区复制提示 —— 有「鼠标选区」才出现，无选区连壳都不渲染（v-if，不占位）。
    盒高 24px = 与那一排五颗按钮同一族（上面那段收盒取证注释的理由一条不改：盒高一变，tooltip 锚跟着变，
    那颗 [配色] 已经为这件事返工过三轮）。字号继承 body（同排那颗计数 .log-search-count 也是继承，不另立）。
@@ -323,7 +349,7 @@ body {
 }
 /* 那一排里不在 .log-search 组内的三颗不参与 flex 收缩（票 #23）：窄窗时省略号只落在提示身上，
    五颗盒与它们的 tooltip 起点（盒顶）逐值不动。不改宽/高/间距任何一条，只挡收缩。 */
-.log-pane .btn-term-clear, .log-pane .btn-term-state, .log-pane .btn-term-palette { flex-shrink: 0; }
+.log-pane .btn-term-clear, .log-pane .btn-term-state, .log-pane .btn-term-palette, .log-pane .btn-log-fullscreen { flex-shrink: 0; }
 /* 票 #14：工具条那颗配色按钮点开的六行浮层。position: fixed + JS 定位（left/top 由组件按按钮盒算、贴右缘时左移），
    与本仓 .dd-tip / .tpl-tip / .flag-tip 用的是同一定位手法（见那几段自己的注释，不按行号锚）：absolute 会被容器裁切，
    而把浮层塞进工具条那一排就等于把布局重新押回那一排——那一排的 24px 是三轮实机截图换来的定版（上面 :252-261 那段）。

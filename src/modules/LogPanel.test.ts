@@ -919,5 +919,50 @@ describe('LogPanel 页签条翻页箭头（T2 #10）', () => {
     expect(btn).toMatch(/flex:\s*none/);
   });
 });
+// ==== 票 #31（spec #27 / ADR 0004）· 日志全屏（LogFullscreen）的入口 ====
+// 三个页签都有这颗、位置一致；这里只是**入口**，态本身归渲染外壳（App 持有，经 LogPanel 下发回来）。
+// 日志卡这条缝能同时看到两个面：静态页签 = LogTabView、终端页签 = TerminalTabView（按钮在两个面各写一份，
+// 沿用「查找那组按钮在两个面各写一份」的先例，不抽新组件）。happy-dom 无布局 → 位置照旧断 style.css 规则文本。
+describe('票 #31 · 日志全屏那颗按钮（三个页签、一个态）', () => {
+  const PANES = ['.log-pane[data-tab-id="launcher"]', '.log-pane[data-tab-id="llama-server"]', '.log-pane[data-tab-id="ql:demo"]'];
+  function mountThree(over: Record<string, unknown> = {}) {
+    const tabs = [textTab('launcher'), textTab('llama-server'), termTab('ql:demo')];
+    return mount(LogPanel, { props: { buckets: emptyBuckets(), tabs, register: vi.fn(), unregister: vi.fn(), ...over } });
+  }
+
+  it('三个页签的面各有一颗，默认文案都是 [全屏]（aria-label 与气泡同源）', () => {
+    const w = mountThree();
+    for (const sel of PANES) {
+      const btns = w.findAll(sel + ' .btn-log-fullscreen');
+      expect(btns.length, sel + ' 应该正好有一颗 [全屏]').toBe(1);
+      expect(btns[0].attributes('aria-label'), sel + ' 的文案不是 [全屏]').toBe('全屏');
+      expect(btns[0].attributes('data-tooltip'), sel + ' 的气泡与 aria-label 不同源').toBe('全屏');
+    }
+    w.unmount();
+  });
+
+  it('三处入口上报的是同一个动作：点一次冒一次 toggle-fullscreen', async () => {
+    const w = mountThree();
+    for (const sel of PANES) await w.find(sel + ' .btn-log-fullscreen').trigger('click');
+    expect(w.emitted('toggle-fullscreen')?.length, '三处入口没有收敛成同一个动作').toBe(3);
+    w.unmount();
+  });
+
+  it('外壳那份态下发到三个面：全屏时三处都变 [恢复]', () => {
+    const w = mountThree({ fullscreen: true });
+    for (const sel of PANES) {
+      expect(w.find(sel + ' .btn-log-fullscreen').attributes('aria-label'), sel + ' 没跟着外壳的态变 [恢复]').toBe('恢复');
+    }
+    w.unmount();
+  });
+
+  // 盒尺寸沿用那一族 24×24（盒高一变，tooltip 锚点就跟着偏）；静态页签那一排靠这颗自己贴行右缘，
+  // 位置与终端页签那颗一致（那一排的 auto margin 在 [配色] 身上，见 TerminalTabView.test.ts 改写的那道门）。
+  it('两颗盒同族 24×24；静态页签那一排由它贴行右缘', () => {
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
+    expect(cssRule(css, '.log-pane .btn-log-fullscreen')).toMatch(/width:\s*24px;\s*height:\s*24px/);
+    expect(cssRule(css, '.log-pane:not(.log-pane--term) .btn-log-fullscreen')).toMatch(/margin-left:\s*auto/);
+  });
+});
 
 

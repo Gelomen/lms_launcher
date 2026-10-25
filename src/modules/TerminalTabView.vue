@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { faCircleDown, faCircleUp, faCircleXmark, faTrashCan } from '@fortawesome/free-regular-svg-icons';
-import { faArrowRotateRight, faPalette, faStop } from '@fortawesome/free-solid-svg-icons';
+import { faArrowRotateRight, faDownLeftAndUpRightToCenter, faPalette, faStop, faUpRightAndDownLeftFromCenter } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -21,7 +21,8 @@ import { TERM_PALETTE_IDS, type TermPaletteId } from '../../src-main/term-palett
 // 外壳复用静态页签的尺寸链（style.css 的 .log-pane → .log-view，见 :262 那条高度链注释）。不自建尺寸类，根上只多挂一条
 // 例外修饰类 .log-pane--term（2026-10-24 两轮：第一轮去掉 pane 的 8px 下内边距，第二轮让画布横向也出血到边框内缘、
 // 下圆角改由画布自己画）——两条规则与逐段取证读数都在 style.css 里，本组件只负责挂类 + 挂那三样同源的着色。
-library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop, faArrowRotateRight, faPalette);
+library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark, faStop, faArrowRotateRight, faPalette,
+  faUpRightAndDownLeftFromCenter, faDownLeftAndUpRightToCenter);   // 后两枚 = 票 #31 的 [全屏]/[恢复]（solid 才有这两个图标；LogTabView 在它自己组件内也 add 过，两处各自注册）
 
 // props 以计划 §任务 9 为准（索引 K2 / 本任务 A4）：含 label/fullLabel，不含 configId。
 // 2026-10-20 用户要求：工具条那颗（当时它在最右）由 [x]（关闭页签）换成 [停止]——它与页签条上的 [x] 重复，
@@ -51,13 +52,16 @@ const props = defineProps<{
   unregister: (id: string) => void;
   onInput: (id: string, data: string) => void;
   onResize: (id: string, cols: number, rows: number) => void;
+  // 日志全屏（LogFullscreen，票 #31 / ADR 0004）：显示态归渲染外壳（App 持有），一路经 LogPanel 搬到这里。
+  // 本组件只按它换文案与图标，不持有、不同步它 —— 三个页签共用同一个态，切页签不丢。
+  fullscreen?: boolean;
 }>();
 // stop(id) / restart(id)：与 QuickLaunch 列表行的 [停止] / [启动] 一一对应，一路冒泡到
 // App.doQlStop / doQlStart（invoke('ql_stop') / invoke('ql_start')）；
 // 本组件不碰 IPC（进程所有权在 App，规格 §9.2），只报「这条页签要停 / 要重启」。
 // palette(id, 档)（票 #13 留的接缝）：票 #14 的工具条浮层、票 #15 的弹窗色块选定一档时经这里冒给 App；
 // 落盘（窄通道 ql_set_palette）与改页签快照都在 App.onTerminalPalette，本组件不判缺省也不落盘。
-const emit = defineEmits<{ stop: [id: string]; restart: [id: string]; palette: [id: string, paletteId: TermPaletteId] }>();
+const emit = defineEmits<{ stop: [id: string]; restart: [id: string]; palette: [id: string, paletteId: TermPaletteId]; 'toggle-fullscreen': [] }>();
 
 // 当前档（id → 颜色表那一行）：theme / 查找 decorations / 画布描边**三样都从这里取**，
 // 于是换一次档三处一起换（spec 的结构性同源门在 TerminalTabView.test.ts：源码里不得再出现硬编码 hex）。
@@ -387,6 +391,12 @@ function onClearTerminal(): void {
 const stateLabel = computed(() => (props.running ? t('ql.btn.stop') : t('ql.terminal.restart')));
 const stateDisabled = computed(() => props.stopping || (!props.running && props.restartDisabled));
 
+// 日志全屏那颗（票 #31 / ADR 0004）：文案与图标都跟着外壳那份态走，aria-label 与气泡同源（就是同一份 t() 的结果）。
+// 词典 log.fullscreen.enter / log.fullscreen.exit 中英同批齐全；响应式 t() → 切语言当场重译，不冻结。
+// 三个页签共用同一个态：本组件只上报「翻一下」，翻不翻、上区让不让位都归外壳（App 持有）。
+const fullscreenLabel = computed(() => (props.fullscreen ? t('log.fullscreen.exit') : t('log.fullscreen.enter')));
+function onToggleFullscreen(): void { emit('toggle-fullscreen'); }
+
 // 只有「不在途」才动，且运行中只报 stop、未运行只报 restart：:disabled 是界面，这道守卫才是契约
 // （与 LogPanel.vue 的 onCloseClick 同构）。点了禁用的重启按钮也不冒泡，App 不会为已删除的配置发一次 ql_start。
 function onStateClick(): void {
@@ -520,6 +530,17 @@ defineExpose({
         :aria-label="t('ql.terminal.palette')" :data-tooltip="t('ql.terminal.palette')"
         :disabled="restartDisabled" :aria-expanded="paletteOpen ? 'true' : 'false'" @click="openPalettePop">
         <FontAwesomeIcon :icon="['fas', 'palette']" />
+      </button>
+      <!-- 日志全屏那颗（票 #31 / ADR 0004）：这一行**新的**最右颗，[配色] 退为次右——吸行内剩余空间的 auto margin
+           仍留在 [配色] 身上，所以排内 DOM 顺序仍然等于视觉顺序，两颗都没有另加 margin。
+           盒 24×24 沿用那一族（style.css 里那段 24px 族的取证理由一条不改：盒高一变，tooltip 锚点就跟着偏，
+           [配色] 已经为这件事返工过三轮）。图标：[全屏] = solid up-right-and-down-left-from-center、
+           [恢复] = solid down-left-and-up-right-to-center（两个面各自注册，同 [x] 那颗的先例）。
+           三个页签都有这颗、位置一致：静态日志页签那一排没有 [配色]，由 LogTabView 那份自己贴行右缘（style.css）。
+           本组件不持有这个态：点一下只上报外壳（App 持有一份，切页签不丢）。 -->
+      <button type="button" class="icon-btn icon-btn--noborder btn-log-fullscreen"
+        :aria-label="fullscreenLabel" :data-tooltip="fullscreenLabel" @click="onToggleFullscreen">
+        <FontAwesomeIcon :icon="fullscreen ? ['fas', 'down-left-and-up-right-to-center'] : ['fas', 'up-right-and-down-left-from-center']" />
       </button>
       <!-- 六行配色浮层（票 #14）：position: fixed + JS 定位（组件里 openPalettePop 那段），不塞进那一排 →
            那一排的 24px 定版与 .log-pane 的高度链都不受影响。分组 = 表里那一行的 dark、行序 = TERM_PALETTE_IDS；

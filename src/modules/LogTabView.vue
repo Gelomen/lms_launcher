@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { faCircleDown, faCircleUp, faCircleXmark, faTrashCan } from '@fortawesome/free-regular-svg-icons';
+import { faDownLeftAndUpRightToCenter, faUpRightAndDownLeftFromCenter } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { invoke } from '../ipc';
 import { findMatches, splitLineForSearch, type MarkRange, type RenderSeg } from '../util/log-search';
@@ -9,9 +10,13 @@ import { t } from '../i18n';
 
 // 清空日志（2026-08-28）：无文字 icon 按钮——复用编辑模板弹窗左下角的删除图标
 // （faTrashCan regular，TemplateModal .btn-delete 同源）；emit('clear')，App 只清本 tab 桶。
-library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark);
-const emit = defineEmits<{ (e: 'clear'): void }>();
+library.add(faTrashCan, faCircleUp, faCircleDown, faCircleXmark,
+  faUpRightAndDownLeftFromCenter, faDownLeftAndUpRightToCenter);   // 后两枚 = 票 #31 的 [全屏]/[恢复]（solid 才有；TerminalTabView 在它自己组件内也 add 过，两处各自注册）
+// clear：清本桶（App 只清这一桶）。toggle-fullscreen（票 #31 / ADR 0004）：日志全屏（LogFullscreen）**不在这个组件里**——
+// 它是全局显示态、三个页签共用，所以这里只上报「翻一下」，态本身归渲染外壳（App），经 props 下发回来。
+const emit = defineEmits<{ (e: 'clear'): void; (e: 'toggle-fullscreen'): void }>();
 function onClear(): void { emit('clear'); }
+function onToggleFullscreen(): void { emit('toggle-fullscreen'); }
 
 // 日志链接 Ctrl+左键打开（规格 2026-08-31-log-link-ctrl-click-design §3.2）：
 // invoke 的 reject（协议被主进程拒绝等）静默——主进程已白名单校验，无 UI 后果。
@@ -82,7 +87,14 @@ function goNext(): void { jump(1); }
 
 // 单个 tab 的日志视图（§4.4）：白底 Solarized Light、等宽 13px、自动滚动可关。
 // 自动滚动状态由本组件自持——每个 tab 一个实例，切走再切回各自保留。
-const props = defineProps<{ id: string; lines: Array<{ line: string; stream: 'sys' | 'out' | 'err' }> }>();
+const props = defineProps<{
+  id: string;
+  lines: Array<{ line: string; stream: 'sys' | 'out' | 'err' }>;
+  // 日志全屏（LogFullscreen，票 #31 / ADR 0004）：态归渲染外壳，本面只按它换文案与图标（不持有、不同步）。
+  fullscreen?: boolean;
+}>();
+// 文案走词典两个 key（中英同批齐全）：响应式 t() → 切语言当场重译；aria-label 与气泡同源（就是这一份）。
+const fullscreenLabel = computed(() => (props.fullscreen ? t('log.fullscreen.exit') : t('log.fullscreen.enter')));
 
 type Entry = { line: string; stream: 'sys' | 'out' | 'err' };
 
@@ -162,6 +174,14 @@ watch(autoScroll, (on) => {
           <FontAwesomeIcon :icon="['far', 'circle-down']" />
         </button>
       </div>
+      <!-- 日志全屏那颗（票 #31 / ADR 0004）：与终端页签那颗同一颗按钮的两个面之一（两个面各写一份，沿用查找那组的先例）。
+           这一排没有 [配色]，所以贴行右缘由 style.css 那条 .log-pane:not(.log-pane--term) .btn-log-fullscreen 的
+           margin-left:auto 做，位置与终端页签那颗一致。盒 24×24 沿用那一族（盒高一变 tooltip 锚就跟着偏）。
+           图标：[全屏] = solid up-right-and-down-left-from-center、[恢复] = solid down-left-and-up-right-to-center。 -->
+      <button type="button" class="icon-btn icon-btn--noborder btn-log-fullscreen"
+        :aria-label="fullscreenLabel" :data-tooltip="fullscreenLabel" @click="onToggleFullscreen">
+        <FontAwesomeIcon :icon="fullscreen ? ['fas', 'down-left-and-up-right-to-center'] : ['fas', 'up-right-and-down-left-from-center']" />
+      </button>
     </div>
     <div ref="view" class="log-view">
       <template v-if="lines.length === 0"><p class="ln-dim">{{ t('log.empty.missing') }}</p></template>

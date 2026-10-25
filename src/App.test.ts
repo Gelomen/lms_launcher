@@ -1088,6 +1088,102 @@ describe('票 #29 · 三档拆行（WrapTier）', () => {
     expect(grid).toMatch(/flex-wrap:\s*wrap/);
   });
 });
+// ==== spec #27 / 票 #31 · 日志全屏（LogFullscreen）====
+// 态归渲染外壳（App 持有一份）：三个页签的入口翻的是同一份；上区卡片只是**样式让位**（不卸载 → 卡片内的状态与
+// 订阅不丢）；跨页签保持、不跨启动记忆。happy-dom 无布局 → 「铺满 / 让位」在这里钉的是外壳类 + 挂载结构，
+// 真实读数（日志卡实宽 = 内容区可用宽度）归票 #32 的真机门。
+describe('票 #31 · 日志全屏（渲染外壳）', () => {
+  // 主进程里会落盘的那几条通道（main.ts 的 ipcMain.handle 名单）：日志全屏一律不碰，它就是「不跨启动记忆」。
+  const PERSIST = ['save_config', 'delete_config', 'ql_save', 'ql_delete', 'ql_set_palette', 'set_language',
+    'save_llama_dir', 'save_proxy', 'save_vram_total', 'set_llama_update_config'];
+  const btn = (w: any) => w.find('.log-pane[data-tab-id="launcher"] .btn-log-fullscreen');
+
+  it('点 [全屏] 让上区让位、那颗变 [恢复]；再点回原状', async () => {
+    const { w } = mountApp();
+    await flush();
+    expect(w.find('.layout').classes(), '默认态不该带让位类').not.toContain('layout--log-fullscreen');
+    await btn(w).trigger('click');
+    await flush();
+    expect(w.find('.layout').classes(), '点 [全屏] 没有让上区让位').toContain('layout--log-fullscreen');
+    expect(btn(w).attributes('aria-label'), '那颗没变成 [恢复]').toBe('恢复');
+    await btn(w).trigger('click');
+    await flush();
+    expect(w.find('.layout').classes(), '再点没有回原状').not.toContain('layout--log-fullscreen');
+    expect(btn(w).attributes('aria-label')).toBe('全屏');
+    w.unmount();
+  });
+
+  it('让位是样式让位：上区四张卡片一直挂在 DOM 里，切到的那张 GPU 卡也不丢', async () => {
+    const { w } = mountApp();
+    await flush();
+    const GB = 1073741824;
+    gpuStatsHandlers.at(-1)!({ gpus: [
+      { luid: '0x0000edff_00000000', name: 'RTX 4090', utilization: 28, dedicatedUsed: 22 * GB, dedicatedTotal: 24 * GB, sharedUsed: 1 * GB, sharedTotal: 48 * GB, dxgiIndex: 0 },
+      { luid: '0x0000edff_00000001', name: 'Arc A770', utilization: 7, dedicatedUsed: 2 * GB, dedicatedTotal: 16 * GB, sharedUsed: 0, sharedTotal: 48 * GB, dxgiIndex: 1 },
+    ] });
+    await flush();
+    await w.find('.gpu-nav-btn--right').trigger('click');
+    await flush();
+    const gpuCard = w.element.querySelector('.card--gpu') as HTMLElement;
+    const title = gpuCard.querySelector('.gpu-title')!.textContent;
+    expect(title, '夹具本身没有切卡').not.toBe('–');
+    await btn(w).trigger('click');
+    await flush();
+    const grid = w.element.querySelector('.grid') as HTMLElement;
+    expect([...grid.children].length, '让位把上区卡片卸掉了（应该是样式让位）').toBe(4);
+    expect(w.element.contains(gpuCard), 'GPU 卡被卸载重建了').toBe(true);
+    expect((w.element.querySelector('.card--gpu') as HTMLElement).querySelector('.gpu-title')!.textContent, '切到的那张卡丢了').toBe(title);
+    await btn(w).trigger('click');
+    await flush();
+    expect((w.element.querySelector('.card--gpu') as HTMLElement).querySelector('.gpu-title')!.textContent).toBe(title);
+    w.unmount();
+  });
+
+  it('跨页签保持：换到另一个页签，让位类仍在、那颗仍读 [恢复]', async () => {
+    const { w } = mountApp();
+    await flush();
+    await btn(w).trigger('click');
+    await flush();
+    await w.find('.tab-bar .log-tab[data-tab-id="llama-server"]').trigger('click');
+    await flush();
+    expect(w.find('.layout').classes(), '切页签把全屏态丢了').toContain('layout--log-fullscreen');
+    expect(w.find('.log-pane[data-tab-id="llama-server"] .btn-log-fullscreen').attributes('aria-label'), '另一个页签那颗没读 [恢复]').toBe('恢复');
+    w.unmount();
+  });
+
+  it('不跨启动记忆：进出全屏不发任何持久化写通道', async () => {
+    const { w } = mountApp();
+    await flush();
+    const mark = invoke.mock.calls.length;
+    await btn(w).trigger('click');
+    await flush();
+    await btn(w).trigger('click');
+    await flush();
+    const fired = invoke.mock.calls.slice(mark).map((c) => String(c[0]));
+    expect(fired.filter((cmd) => PERSIST.includes(cmd)), '日志全屏发了落盘通道：' + fired.join(',')).toEqual([]);
+    w.unmount();
+  });
+
+  // 真机取证（2026-10-26，票 #31）在 2560 / 1400 / 1200 / 1052 读到过一次「全屏后内容列只有 744px」：
+  // .content-column 的 margin-inline: auto 在交叉轴上把拉伸关掉，width:auto 于是退化成「按内容收缩」。
+  // 窗口 760 那一格反而看不出来（可用宽度本来就只有 736）—— 所以这条只能钉规则文本，钉完再用取证台复量宽度。
+  it('让位后内容列拿的是可用宽度：width:auto 之外还要把自动外边距归零，边距一条不动', () => {
+    const css = readFileSync(join(__dirname, 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (sel: string): string => {
+      const at = css.indexOf('\n' + sel + ' {');
+      if (at === -1) throw new Error('css 里找不到规则：' + sel);
+      return css.slice(at, css.indexOf('}', at));
+    };
+    const col = block('.layout--log-fullscreen .content-column');
+    expect(col, '让位下内容列宽度不是 auto = 它还在跟每行列数挂钩').toMatch(/width:\s*auto/);
+    expect(col, '自动外边距没归零：交叉轴拉伸被 auto margin 关掉，日志卡会收缩成内容宽度而不是铺满内容区（2560 宽时实量 744）').toMatch(/margin-inline:\s*(0|0px)(\s*;|\s*\})/);
+    expect(block('.layout--log-fullscreen .log-area'), '让位下日志卡还钉着 --content-w = 宽度不跟着窗口走').toMatch(/width:\s*auto/);
+    expect(block('.layout--log-fullscreen .grid'), '上区不是样式让位（display:none）→ 卡片会被卸载或仍占位').toMatch(/display:\s*none/);
+    // 与窗口的边距不变（user story 15）：外壳内边距仍是一个 --card-gap
+    const at = css.indexOf('\n.layout {');
+    expect(css.slice(at, css.indexOf('}', at)), '让位把外壳内边距也改了 = 全屏变成贴到窗口边框').toMatch(/padding:\s*var\(--card-gap\)/);
+  });
+});
 
 // ==== spec #27 / 票 #28 · 内容列（ContentColumn）====
 // 上区四张卡片与日志卡合成一条定宽竖列，整条在窗口里水平居中（ADR 0004 / GLOSSARY「内容列」「内容宽度」「日志卡」）。
@@ -1104,6 +1200,26 @@ describe('票 #28 · 内容列（ContentColumn）', () => {
     // 日志卡不再是 .layout 的直接子级：它一旦挂回外壳，宽度就重新独自随窗口走（ADR 0004 里明令「须明确重开」的写法）
     expect(w.element.querySelector('.layout > .log-area'), '日志卡还挂在 .layout 上 = 内容列没包住它').toBeNull();
     w.unmount();
+  });
+
+  // 竖向链条（真机取证 2026-10-26 抓到的一次回归：1400×950 下日志卡实高只有 115px，窗口底部空了一大片）：
+  // .layout 定高 → .content-column 沿主轴吃满 → .log-area 再吃掉这条列里剩下的（flex: 1 1 50% + min-height:0）。
+  // 中间那一环一旦缺（flex:none 的默认就是缺的），日志卡就退化成「按内容长」，user story 12 当场失效。
+  it('竖向链条：内容列沿外壳主轴吃满，日志卡才继续吃掉剩下的竖向空间', () => {
+    const css = readFileSync(join(__dirname, 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const block = (sel: string): string => {
+      const at = css.indexOf('\n' + sel + ' {');
+      if (at === -1) throw new Error('css 里找不到规则：' + sel);
+      return css.slice(at, css.indexOf('}', at));
+    };
+    const layout = block('.layout');
+    expect(layout, '外壳不再是定高容器 = 「日志卡吃掉剩余高度」的起点没了').toMatch(/height:\s*calc\(100vh\s*-\s*36px\)/);
+    const col = block('.content-column');
+    expect(col, '内容列不参与 .layout 的竖向伸缩 = 日志卡不再撑满剩余高度，窗口底部空出一片').toMatch(/flex:\s*1(?:\s+1\s+auto)?[ ;}]/);
+    expect(col, '内容列没有 min-height:0 = 内容比窗口高时它不收缩，纵向滚动条就回来了（ADR 0004 明令禁止）').toMatch(/min-height:\s*0[ ;}]/);
+    const log = block('.log-area');
+    expect(log, '日志卡不再吃剩下的空间').toMatch(/flex:\s*1\s+1\s+50%/);
+    expect(log, '日志卡不允许收缩 = 窗口矮时把整块顶出去').toMatch(/min-height:\s*0[ ;}]/);
   });
 });
 

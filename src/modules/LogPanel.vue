@@ -27,6 +27,9 @@ const props = defineProps<{
   unregister?: (id: string) => void;
   onInput?: (id: string, data: string) => void;
   onResize?: (id: string, cols: number, rows: number) => void;
+  // 日志全屏（LogFullscreen，票 #31 / ADR 0004）：态归渲染外壳（App 持有一份，切页签保持、不跨启动记忆）。
+  // 本组件只做搬运：下发给两个页签面，并把三处入口的动作原样报回去（不自己翻、不落盘）。
+  fullscreen?: boolean;
 }>();
 
 // [清空日志]（2026-08-28）：LogTabView emit('clear') → 携带本 tab id 透传 App，只清该桶。
@@ -36,7 +39,7 @@ const props = defineProps<{
 //   （= 列表行 [停止] / [启动] 同一条路），本组件只透传 id、不碰进程。
 // palette(id, paletteId)（票 #13 接线 / 票 #14 触发）：工具条浮层选了一档 → 交给 App 走窄通道 ql_set_palette；
 //   本组件不判缺省、不落盘、也不改那份配色（它的所有权在 App：票 #18 起由 App 对齐条目落盘档）。
-const emit = defineEmits<{ (e: 'clear', id: LogTabId): void; (e: 'close', id: string): void; (e: 'stop', id: string): void; (e: 'restart', id: string): void; (e: 'palette', id: string, palette: TermPaletteId): void; (e: 'update:active', id: string): void }>();
+const emit = defineEmits<{ (e: 'clear', id: LogTabId): void; (e: 'close', id: string): void; (e: 'stop', id: string): void; (e: 'restart', id: string): void; (e: 'palette', id: string, palette: TermPaletteId): void; (e: 'update:active', id: string): void; (e: 'toggle-fullscreen'): void }>();
 
 // 子组件的 palette(id, paletteId) 原样转发（多参事件在模板里没法用 $event 取第二个参数，故走这个具名处理器）
 function onTabPalette(id: string, palette: TermPaletteId): void { emit('palette', id, palette); }
@@ -251,13 +254,15 @@ const pipeResize = (id: string, cols: number, rows: number): void => { props.onR
          （TerminalTabView.vue:180-188），用 v-if 等于「切页签杀终端」。下面的 v-if 只按 kind 分流，与激活态无关。 -->
     <template v-for="item in items" :key="item.id">
       <LogTabView v-if="item.kind === 'text'" v-show="item.id === active"
-        :id="item.id" :lines="buckets[item.id as LogTabId]" @clear="emit('clear', item.id as LogTabId)" />
+        :id="item.id" :lines="buckets[item.id as LogTabId]" :fullscreen="fullscreen"
+        @clear="emit('clear', item.id as LogTabId)" @toggle-fullscreen="emit('toggle-fullscreen')" />
       <TerminalTabView v-else v-show="item.id === active"
         :id="item.id" :label="item.label" :full-label="item.fullLabel"
         :running="item.running" :stopping="item.stopping" :restart-disabled="item.restartDisabled"
         :palette="item.palette" :palette-preview="item.palettePreview"
         :register="pipeRegister" :unregister="pipeUnregister" :on-input="pipeInput" :on-resize="pipeResize"
-        @stop="emit('stop', $event)" @restart="emit('restart', $event)" @palette="onTabPalette" />
+        @stop="emit('stop', $event)" @restart="emit('restart', $event)" @palette="onTabPalette"
+        :fullscreen="fullscreen" @toggle-fullscreen="emit('toggle-fullscreen')" />
     </template>
     <!-- 长名 tooltip：仓内既有 .dd-tip 视口浮层（深灰底白字/12px/圆角/z-30，position:fixed 避开
          .tab-bar overflow-x 裁切），坐标由 onTabEnter/placeTip 写内联；挂页签右侧垂直居中，

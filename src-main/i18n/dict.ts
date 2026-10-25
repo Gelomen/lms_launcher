@@ -142,6 +142,10 @@ export const dict = {
     // 空态去全角括号（2026-10-03 用户指定；「中文布局冻结」唯一获批例外）
     'log.empty.missing': '暂无日志',
     'log.link.tip': 'Ctrl + Click 打开链接',
+    // 日志全屏（票 #31 / spec #27）：同一颗按钮的两个态，aria-label 与气泡同源（就是这一份）。
+    // 「全屏」指日志卡铺满窗口内容区，不是窗口最大化（GLOSSARY「日志全屏」）；en 与窗口那三键 app.winbar.* 不混词。
+    'log.fullscreen.enter': '全屏',
+    'log.fullscreen.exit': '恢复',
     // 快捷启动卡片 + 交互终端页签（2026-10-10-quick-launch-card 任务 8，规格 §10 / check 表 C1-C8、C10）
     // 终端标签只在渲染端 t()（check F3 / 规格 §6.1）；en 取值逐字来自计划 任务 8 步骤 3。
     // 占位符名是下游（任务 9/11/13）调用点的口径，改这里必须同步改调用点：
@@ -525,6 +529,10 @@ export const dict = {
     'log.search.nextMatch': 'Next match',
     'log.empty.missing': 'no logs',
     'log.link.tip': 'Ctrl + Click to open link',
+    // Log fullscreen (ticket #31 / spec #27): the two states of that one button; aria-label and tooltip share it.
+    // Fullscreen = the log card fills the window's content area, not maximizing the window.
+    'log.fullscreen.enter': 'Fullscreen',
+    'log.fullscreen.exit': 'Restore',
     // Quick Launch card + interactive terminal tab (task 8 of 2026-10-10-quick-launch-card,
     // spec §10 / check C1-C8, C10). Terminal labels are renderer-only (check F3 / spec §6.1).
     // Placeholder names are the contract for the call sites in tasks 9/11/13 - change both sides together:

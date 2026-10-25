@@ -880,21 +880,61 @@ describe('票 #14 · 工具条配色浮层', () => {
     gone.w.unmount();
   });
 
-  // 2026-10-24 用户两轮要求 [配色] 落到那一行的最右侧：第一轮做成「排内最后一颗」（仍紧贴左边那一串），同日截图澄清 = 要贴这
-  // 一行的右缘（行左端那一串与右缘之间留空）。两半各钉一条，缺一半都不是用户要的那个位置：
-  // ① DOM 里它是那一排最后一颗按钮（进程态那颗退到它左边）；② style.css 给它 margin-left:auto 吸掉行内剩余空间。
-  // happy-dom 无布局 → ② 按本仓既有口径断 style.css 的规则文本（同 LogPanel.test.ts 那组 cssRule 断言）。
-  it('palette_button_is_the_rightmost_item_in_the_toolbar', () => {
+  // 票 #14 定下 [配色] 贴那一行的右缘（margin-left:auto 在它身上）。票 #31（spec #27 / ADR 0004）改写这条：
+  // [全屏] 进来之后 [配色] 退为次右，新钮才是这一行的最右颗。两半照旧各钉一条：
+  // ① 排内 DOM 顺序 = 视觉顺序（新钮最后、[配色] 在它左边、进程态那颗再退一格）；
+  // ② 吸行内剩余空间那颗仍是 [配色]（新钮不得再带 auto margin —— 两颗都吸就变成把留白对半分，不再是「贴右缘」）。
+  it('fullscreen_button_is_the_new_rightmost_and_palette_falls_back_to_second_from_right', () => {
     const { w } = mountTab();
     const row = w.find('.log-pane > div').element;   // 工具条那一排 = .log-pane 的第一个子 div（浮层未开 = 不渲染）
     const order = Array.from(row.querySelectorAll('button')).map((b) => (b as HTMLElement).className);
-    expect(order.length, '工具条那颗数变了，这条钉顺序的门要一起改').toBe(6);
-    expect(order[order.length - 1]).toContain('btn-term-palette');
-    expect(order[order.length - 2]).toContain('btn-term-state');   // 进程态那颗退到它左边，不再是最后一颗
+    expect(order.length, '工具条那颗数变了，这条钉顺序的门要一起改').toBe(7);
+    expect(order[order.length - 1]).toContain('btn-log-fullscreen');
+    expect(order[order.length - 2]).toContain('btn-term-palette');
+    expect(order[order.length - 3]).toContain('btn-term-state');   // 进程态那颗再退一格
     w.unmount();
     const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
-    expect(css, '那颗没贴到行右缘：缺 margin-left:auto（只排进最后一颗不算最右侧）')
+    expect(css, '[配色] 失去 margin-left:auto = 它不再贴行右缘，新钮的位置也跟着偏')
       .toMatch(/\.log-pane \.btn-term-palette \{[^}]*margin-left:\s*auto/);
+    expect(css, '新钮自己也吸行内剩余空间 = 两颗把留白对半分，不再是贴右缘')
+      .not.toMatch(/\.log-pane \.btn-log-fullscreen \{[^}]*margin-left:\s*auto/);
+  });
+
+  // 这颗只报「翻日志全屏（LogFullscreen）」：态本身归渲染外壳持有，经 LogPanel 下发回来（票 #31）。
+  it('clicking_the_fullscreen_button_asks_the_shell_to_toggle_it', async () => {
+    const { w } = mountTab();
+    await w.find('.btn-log-fullscreen').trigger('click');
+    expect(w.emitted('toggle-fullscreen')?.length, '点 [全屏] 没有上报给外壳').toBe(1);
+    w.unmount();
+  });
+
+  // 文案走词典两个 key（中英同批齐全），aria-label 与气泡同源；全屏态下同一颗变 [恢复]。
+  it('the_button_reads_fullscreen_by_default_and_restore_when_the_shell_is_fullscreen', () => {
+    const off = mountTab();
+    expect(off.w.find('.btn-log-fullscreen').attributes('aria-label'), '默认态文案不是 [全屏]').toBe('全屏');
+    expect(off.w.find('.btn-log-fullscreen').attributes('data-tooltip'), '气泡与 aria-label 不同源').toBe('全屏');
+    expect(off.w.find('.btn-log-fullscreen svg').exists(), '图标没注册进 FontAwesome：渲染成 [object Object]').toBe(true);
+    off.w.unmount();
+    const on = mountTab({ fullscreen: true });
+    expect(on.w.find('.btn-log-fullscreen').attributes('aria-label'), '全屏态文案不是 [恢复]').toBe('恢复');
+    expect(on.w.find('.btn-log-fullscreen').attributes('data-tooltip')).toBe('恢复');
+    expect(on.w.find('.btn-log-fullscreen svg').exists()).toBe(true);
+    on.w.unmount();
+  });
+
+  // 切语言即时重译（票 #31 的 user story 20）。这条不是红绿对偶：文案走响应式 t() 就是这条行为，
+  // 钉它是防以后有人把那颗的文案「算一次缓存起来」——同排 [配色]、选区提示那两条门是同一个理由。
+  it('the_fullscreen_button_re_translates_when_the_language_changes', async () => {
+    const { w } = mountTab();
+    const btn = () => w.find('.btn-log-fullscreen');
+    expect(btn().attributes('aria-label')).toBe('全屏');
+    applyLangLocal('en');
+    await w.vm.$nextTick();
+    expect(btn().attributes('aria-label'), '切英文后文案冻在中文').toBe('Fullscreen');
+    applyLangLocal('zh');
+    await w.vm.$nextTick();
+    expect(btn().attributes('aria-label'), '切回中文没换回来').toBe('全屏');
+    w.unmount();
   });
 
   it('the_popover_lists_six_rows_in_light_and_dark_groups_marking_current_palette', async () => {
