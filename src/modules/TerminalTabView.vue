@@ -139,7 +139,7 @@ function refreshSearchDecorations(): void {
   if (!searchAddon) return;
   searchAddon.clearDecorations();
   const q = query.value.trim();
-  if (q) searchAddon.findNext(q, { ...searchOptions(), incremental: true });
+  if (q) withProgrammaticSelection(() => searchAddon!.findNext(q, { ...searchOptions(), incremental: true }));
 }
 
 // hover 与键盘 focus 共用这对处理器：Tab 进浮层也能预览，且预览态只有一份
@@ -249,8 +249,32 @@ async function pasteClipboard(): Promise<void> {
   }
 }
 
-// 右键 = 粘贴（规格 §9.3）
-function onContextMenu(): void { void pasteClipboard(); }
+// ---- 票 #22（spec #21 / ADR 0003）：选区口径 + 智能右键（SmartRightClick）----
+// 「鼠标选区」的唯一真源：由终端库的选区变化事件驱动，只认鼠标在画面上拉出的那一段。
+// addon-search 命中后会程序化 select() 选中匹配（真机契约由 search.test.ts 两条钉住），查找动作那一下用
+// 同步标志排除；智能右键（票 #22）与工具条选区提示（票 #23）共用这一份，永不分歧（user story 23）。
+// 复位的四条路：清空终端 / 清空查找（都走 resetSearchState）、右键复制完成（clearSelection 让事件转回来）、
+// 组件卸载（term.dispose 之后这份态随组件实例一起消失）。
+const hasMouseSelection = ref(false);
+// true = 查找动作在途（同步窗口：包住每一处 findNext / findPrevious 调用，事件在同一拍里回来）。
+// 在途收到的选区变化一律算「不是鼠标划的」；查找**之后**用户再划的那一段仍然照常置位（口径不过头）。
+let programmaticSelection = false;
+function withProgrammaticSelection(fn: () => void): void {
+  programmaticSelection = true;
+  try { fn(); } finally { programmaticSelection = false; }
+}
+
+// 智能右键（ADR 0003）：有鼠标选区 → 复制并清空选区（下一次右键直接粘贴）；无选区 → 粘贴（原习惯保留）。
+// 前提 = 构造时关掉 rightClickSelectsWord（见 onMounted 构造注释）：不关，「无选区」这一半永远不成立。
+// 粘贴只有一条实现路径（票 #3 把它收成三条入口共用）；多行确认（票 #4）也加在这一条上。
+function onContextMenu(): void {
+  if (hasMouseSelection.value) {
+    copySelection();
+    term?.clearSelection();   // 事件转回 onSelectionChange → 鼠标选区复位
+    return;
+  }
+  void pasteClipboard();
+}
 
 // ---- 键盘（规格 §9.3 / 计划 审查重点 5）----
 // 返回 false = 这条按键不进终端；除两个 Ctrl+Shift 组合外一律返回 true，
@@ -284,6 +308,7 @@ function searchOptions(): { decorations: Record<string, string> } {
 function resetSearchState(): void {
   searchAddon?.clearDecorations();
   searchCount.value = { cur: 0, total: 0 };
+  hasMouseSelection.value = false;   // 票 #22：清空查找 / 清空终端都连带复位「鼠标选区」（spec 选区口径）
 }
 
 // dir = 0：输入变化时的增量查找；±1：上/下一个
@@ -295,9 +320,10 @@ function runSearch(dir: -1 | 0 | 1): void {
     return;
   }
   const opts = searchOptions();
-  if (dir === -1) searchAddon.findPrevious(q, opts);
-  else if (dir === 1) searchAddon.findNext(q, opts);
-  else searchAddon.findNext(q, { ...opts, incremental: true });
+  // 三处查找调用都包进 withProgrammaticSelection：真 addon-search 命中后会程序化选中匹配（票 #22 口径）
+  if (dir === -1) withProgrammaticSelection(() => searchAddon!.findPrevious(q, opts));
+  else if (dir === 1) withProgrammaticSelection(() => searchAddon!.findNext(q, opts));
+  else withProgrammaticSelection(() => searchAddon!.findNext(q, { ...opts, incremental: true }));
 }
 watch(query, () => runSearch(0));
 function onQueryClear(): void { query.value = ''; }
@@ -340,7 +366,11 @@ onMounted(() => {
   // 「You must set the allowProposedApi option to true to use proposed API」；抛出点在 _highlightAllMatches 内、
   // 早于 _fireResults，故计数事件从不触发 → 输入终端里存在的文本也恒显「0 / 0」且无上/下一个可用。
   // 打桩套件看不见这条真机契约（假 addon 无条件发结果事件），由 TerminalTabView.search.test.ts 钉住。
-  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, theme: { ...shownPaletteOf.value.theme } });
+  // rightClickSelectsWord 必须显式关（票 #22 / ADR 0003）：这是库自己的右键处理器（5.5.0：mousedown(button=2)
+  // → rightClickHandler → 选光标下的词），开着就抢在 onContextMenu 之前造出选区，「无选区 → 粘贴」这一半
+  // 永远不成立，智能右键退化成「只复制、永不粘贴」。它的默认值按 isMac 走（macOS=true，Windows=false）——
+  // 默认值靠平台，所以显式写死才稳。逐字门在 TerminalTabView.test.ts（打桩构造参数）+ search.test.ts（真库认这个开关）。
+  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, rightClickSelectsWord: false, theme: { ...shownPaletteOf.value.theme } });
   fitAddon = new FitAddon();
   searchAddon = new SearchAddon();
   term.loadAddon(fitAddon);
@@ -349,6 +379,10 @@ onMounted(() => {
   term.open(el);
   term.onData((data) => props.onInput(props.id, data));
   term.attachCustomKeyEventHandler(onCustomKey);
+  // 票 #22：选区变化事件 = 「鼠标选区」那份态的唯一驱动（查找在途的那一拍不算，见 withProgrammaticSelection）
+  term.onSelectionChange(() => {
+    hasMouseSelection.value = programmaticSelection ? false : !!term?.hasSelection();
+  });
   searchAddon.onDidChangeResults((r) => {
     searchCount.value = { cur: r.resultIndex < 0 ? 0 : r.resultIndex + 1, total: r.resultCount };
   });
