@@ -493,6 +493,27 @@ describe('TerminalTabView 键盘与剪贴板（E5/E7，审查重点 5）', () =>
     w.unmount();
   });
 
+  // 审查轮补（user story 17「按 Ctrl+Shift+C 复制以后高亮还在」）：两条复制路径的差别钉死 ——
+  // Ctrl+Shift+C 复制**不**清选区（屏幕上的那一段留着，用户看得见刚复制了什么），
+  // 而右键复制完清空选区（user story 16，下一次右键直接是粘贴，由票 #22 那组用例钉）。
+  // 这条不是红绿对偶：它钉的是已实现的正确行为，防以后重构把两条路径顺手统一掉。
+  it('ctrl_shift_c_copies_without_clearing_the_selection_or_the_hint', async () => {
+    const { w } = mountTab();
+    const term = h.state.terms[0];
+    term.select('selected line');                        // 鼠标划选（经选区变化事件，票 #22 的口径）
+    await flush();
+    expect(w.find('.term-copy-hint').exists()).toBe(true);
+    const handled = (term.keyHandler as (e: unknown) => boolean)({
+      type: 'keydown', key: 'c', code: 'KeyC', ctrlKey: true, shiftKey: true, altKey: false, preventDefault: vi.fn(),
+    });
+    expect(handled).toBe(false);
+    expect(invoke).toHaveBeenCalledWith('clipboard_write', 'selected line');
+    expect(term.selection).toBe('selected line');        // 选区仍在原处
+    await flush();
+    expect(w.find('.term-copy-hint').exists(), '复制之后提示与选区一起留着').toBe(true);
+    w.unmount();
+  });
+
   it('ctrl_c_is_not_intercepted_and_reaches_the_terminal', () => {
     const { onInput, w } = mountTab();
     const term = h.state.terms[0];
