@@ -1219,7 +1219,59 @@ describe('票 #28 · 内容列（ContentColumn）', () => {
     expect(col, '内容列没有 min-height:0 = 内容比窗口高时它不收缩，纵向滚动条就回来了（ADR 0004 明令禁止）').toMatch(/min-height:\s*0[ ;}]/);
     const log = block('.log-area');
     expect(log, '日志卡不再吃剩下的空间').toMatch(/flex:\s*1\s+1\s+50%/);
-    expect(log, '日志卡不允许收缩 = 窗口矮时把整块顶出去').toMatch(/min-height:\s*0[ ;}]/);
+    // 下限不再是 0（票 #30 起换成令牌 --log-min-h）：允许收缩这一半由上面那条 flex:1 1 50% 钉着，
+    // 「至少还剩 220px」那一半由票 #30 那组门钉（令牌值 + 主进程最小高 ≥ 由它推出的公式）。
+    expect(log, '日志卡没有最小高令牌 = 窗口一矮它就没了').toMatch(/min-height:\s*var\(--log-min-h\)/);
+  });
+});
+
+// ==== spec #27 / 票 #30 · 窗口最小高（纵向永不出滚动条）====
+// 「任何拆行档下纵向都装得下」是结构性的：最小高由「两行卡片高 + 日志卡最小高」反推，没有任何运行时条件判断（ADR 0004）。
+// 卡片实高是一次性取证台的读数（2026-10-26，dpr 1.5 / zoom 1，2×2 档四张 = 237 / 237 / 226 / 226，取最高 237）：
+// 它与 style.css 里 2026-08-26 那条「固定 161px + h2 34 + padding 32 + border 2 = 卡 229–237（左列 .stack 实测 237）」互相印证 ——
+// 列表容器是定高的，卡片高不随配置 / 快捷启动条目数长，所以 237 可以当结构值用。其余每一项都从样式令牌取，不另立数字。
+describe('票 #30 · 窗口最小高（纵向永不出滚动条）', () => {
+  const css = readFileSync(join(__dirname, 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+  // 令牌取值不在这条缝里 assert —— describe 体在 collect 阶段就跑，缺令牌时整个文件会以「采集失败」的形式红，
+  // 别的门就被吞掉了。缺令牌由下面那条 it 自己钉，这里缺了只会让 Number('') 变 NaN、比较失败。
+  const tokenOf = (name: string): string => (css.match(new RegExp('--' + name + ':\\s*([^;]+);')) ?? ['', ''])[1].trim();
+  const block = (sel: string): string => {
+    const at = css.indexOf('\n' + sel + ' {');
+    if (at === -1) throw new Error('css 里找不到规则：' + sel);
+    return css.slice(at, css.indexOf('}', at));
+  };
+  const gap = Number(tokenOf('card-gap').slice(0, -2));        // 外壳内边距、行间距、内容列里那一段，全是同一个令牌
+  const logMin = Number(tokenOf('log-min-h').slice(0, -2));
+  const WINBAR = 36;                                          // 与 .layout 那句 height: calc(100vh - 36px) 同源（winbar 实高）
+  const CARD_ROW = 237;                                       // 2×2 档四张卡的最高读数（见上面那段取证口径）
+  const mainSrc = readFileSync(join(__dirname, '..', 'src-main', 'main.ts'), 'utf-8');
+
+  it('日志卡的最小高是令牌：--log-min-h = 220px，且 .log-area 用的就是它', () => {
+    expect(css, '样式里缺令牌 --log-min-h').toContain('--log-min-h:');
+    expect(tokenOf('log-min-h'), '日志卡最小高不是 220px（spec #27 登记的那个值）').toBe('220px');
+    expect(block('.log-area'), '.log-area 没有引用 --log-min-h = 220 这条只活在注释里').toMatch(/min-height:\s*var\(--log-min-h\)/);
+  });
+
+  it('主进程窗口最小高 ≥ 公式推出的值：顶栏 + 上下内边距 + 两行卡片 + 两处间距 + 日志卡最小高', () => {
+    const required = WINBAR + 2 * gap + 2 * CARD_ROW + gap + gap + logMin;
+    // 公式自己先对一遍：36 + 2×12 + 2×237 + 12 + 12 + 220 = 778（每一项都对应上面那条链条里的一环，缺一项就把滚动条放回来）
+    expect(required, '最小高公式的值不是登记的那个 778').toBe(778);
+    const minH = Number(mainSrc.match(/minHeight:\s*(\d+)/)![1]);
+    expect(minH, '窗口最小高压不住 2×2 档需要的纵向空间 = 窗口缩到最矮时纵向滚动条又回来了').toBeGreaterThanOrEqual(required);
+    // 抬高到结构层的代价是有界的：默认窗口高一条不动（user story 2），最小高也就不能超过它
+    expect(minH, '最小高超过了默认窗口的 950 = 默认那一格的观感被改掉了').toBeLessThanOrEqual(950);
+  });
+
+  it('默认窗口 1400×950 与最小宽 760 一条不动（票 #29 的断点算术依赖这两个数）', () => {
+    expect(mainSrc, '默认窗口尺寸被改动').toMatch(/width:\s*1400,\s*height:\s*950/);
+    expect(mainSrc, '最小宽被改动：三档断点与「760 宽的窗口装得下两列」那条算术重新悬空').toMatch(/minWidth:\s*760/);
+  });
+
+  it('溢出策略：外壳允许横向溢出兜底（真到装不下时左缘仍可达），并显式禁止纵向溢出', () => {
+    const layout = block('.layout');
+    expect(layout, '外壳没有横向兜底 = 内容比窗口宽时左缘会被裁在边界外（margin-inline:auto 退化要配这条才成立）').toMatch(/overflow-x:\s*(auto|scroll)/);
+    expect(layout, '外壳纵向允许滚动 = ADR 0004 明令禁止的那条回来了（要用最小高保证装得下，不是靠滚动）').toMatch(/overflow-y:\s*hidden/);
+    // 这两半必须同时在场：只写 overflow-x 时浏览器会把 overflow-y 按规范算成 auto（style.css 里 .tab-bar 那段注释登记过同一个坑）
   });
 });
 

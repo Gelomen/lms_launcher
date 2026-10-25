@@ -234,7 +234,20 @@ function createWindow(): void {
     title: 'lms_launcher',
     frame: false, // 去系统标题栏；窗口仍可边缘拖动/缩放（DWM 边框保留）
     icon: appIconPath(),
-    width: 1400, height: 950, minWidth: 760, minHeight: 540,
+    // 最小高（票 #30 / ADR 0004）由「最窄一档（2×2）纵向装得下」反推，不是挑出来的数字：
+    //   顶栏 winbar 36
+    // + 外壳上下内边距 2×12            （style.css 的 --card-gap）
+    // + 两行卡片实高 2×237            （一次性取证台 2026-10-26 在 2×2 档读到四张 = 237 / 237 / 226 / 226，取最高 237；
+    //                                  与 style.css 里 2026-08-26 那条「固定 161px + h2 34 + padding 32 + border 2 = 卡 229–237
+    //                                  （左列 .stack 实测 237）」互相印证：列表容器是定高的，卡片高不随配置 / 快捷启动条目数长，
+    //                                  所以这个读数能当结构值用。两行都按最高那张算，不占「第二行恰好矮一点」的便宜。）
+    // + 两行之间的卡片间距 12         （--card-gap）
+    // + 内容列里上区与日志卡之间 12   （同一个令牌）
+    // + 日志卡最小高 220              （style.css 的 --log-min-h，220px）
+    // = 778，再加 22 的余量（dpr 1.5 / zoom 1 下逐格四舍五入的量级 + 字体缩放的余地）→ 800。
+    // 抬到这一层之后任何拆行档都必然装得下 → 纵向永不出滚动条（style.css 里 .layout 那条 overflow-y:hidden 一次都不该触发），
+    // 不需要任何运行时条件判断。默认 1400×950 与最小宽 760 一条不动：票 #29 的三档断点与「760 宽装得下两列」的算术靠这两个数。
+    width: 1400, height: 950, minWidth: 760, minHeight: 800,
     webPreferences: {
       preload: require.resolve('./preload.js'),
       contextIsolation: true,

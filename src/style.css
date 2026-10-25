@@ -46,6 +46,7 @@
   --card-col-w: 335px;      /* 卡片列（CardColumn）：四列等宽，卡片自己的宽高不随窗口变 */
   --cols-per-row: 2;        /* 拆行档（WrapTier）的兜底档 = 最窄那一档（两列）；往上每一跳见下面的媒体查询 */
   --content-w: calc(var(--cols-per-row) * var(--card-col-w) + (var(--cols-per-row) - 1) * var(--card-gap));
+  --log-min-h: 220px;       /* 日志卡（LogCard）最小高：主进程窗口最小高由它 + 两行卡片实高反推（见 src-main/main.ts 那段公式与读数） */
 }
 
 /* 拆行档（WrapTier）三档 4 → 3 → 2（票 #29 / ADR 0004）：换档只改「每行放几张卡」，
@@ -92,6 +93,15 @@ body {
   height: calc(100vh - 36px); /* winbar(36px) = App 第二根节点（.layout 之外），顶部高度让位 */
   padding: var(--card-gap);
   gap: var(--card-gap);
+  /* 溢出策略（票 #30 / ADR 0004）两条要同时在场：
+     overflow-x: auto = 横向兜底。内容列的居中只用 margin-inline:auto，内容比窗口宽时它自动退化成贴左 —— 那半自由空间是负的，
+     必须有这条才滚得回来（左缘始终可达，不是被裁掉的一半）。
+     overflow-y: hidden = 显式禁止纵向滚动（spec #27「任何窗口高度下都不出纵向滚动条」）。装不装得下不靠运行时条件判断，
+     由主进程抬高的窗口最小高结构性保证（src-main/main.ts 那段反推公式 + 真机读数），这里只负责把滚动条挡在门外。
+     只写 overflow-x 不够：按规范另一个轴会被算成 auto，多出来的一条滚动条还会把内容顶高 —— 本文件 .tab-bar 那段注释登记过同一个坑。
+     常规区间（窗口宽 ≥760）它一次都不该触发：取证台五格读数里 layoutHScroll / docHScroll 全 false，App.test.ts 的门钉着这两半。 */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 /* 内容列（票 #28 / ADR 0004）：上区卡片与日志卡合成一条竖列，两者之间的间距从 .layout 挪到这里。
    宽度 = 内容宽度（--content-w，由每行列数与卡片列宽派生），居中只用 margin-inline: auto：
@@ -139,7 +149,11 @@ body {
    改一次 align-items 也不会把「日志卡 ≡ 内容宽度」这条悄悄破掉（ADR 0004）。 */
 .log-area {
   flex: 1 1 50%;
-  min-height: 0;              /* 允许日志区收缩，滚动交给内部 */
+  /* 日志卡最小高（票 #30）：下限是令牌 --log-min-h（220px），它同时是主进程窗口最小高公式里的一项（main.ts 那段反推 + 读数）。
+     原先写 min-height:0 —— 只有「允许收缩」没有下限，窗口一矮日志卡就被压成一条（2026-10-26 取证台在 1400×950 实读到过 115px）。
+     现在下限钉死 220，「纵向装得下」由窗口最小高保证，.layout 那条 overflow-y:hidden 保证压不下时也不会变成滚动。
+     「允许收缩」这一半仍在上面那条 flex:1 1 50% 里（App.test.ts 的两组门分别钉这两半）。 */
+  min-height: var(--log-min-h);
   display: flex;
   width: var(--content-w);
 }
