@@ -219,6 +219,8 @@ const xh = vi.hoisted(() => {
     hasSelection(): boolean { return false; }
     onData(cb: (d: string) => void): { dispose: () => void } { this.dataCb = cb; return { dispose: () => {} }; }
     onResize(): { dispose: () => void } { return { dispose: () => {} }; }
+    // #33：真 xterm 有 onScroll（钉住的那一屏在用户自己滚动时让位靠它），假终端接住这条订阅就行
+    onScroll(): { dispose: () => void } { return { dispose: () => {} }; }
     attachCustomKeyEventHandler(): void { /* noop */ }
     // 票 #22 新增的终端面：组件挂载即订阅选区变化、复制完清选区。假终端不给出这些槽，
     // 挂载当场抛错 → 本文件所有真终端页签用例全成假红。这些用例只测页签接线，选区不参与断言。

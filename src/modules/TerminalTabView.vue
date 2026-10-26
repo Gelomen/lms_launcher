@@ -211,24 +211,121 @@ async function openPalettePop(): Promise<void> {
   window.addEventListener('mousedown', onOutsideMouseDown, true);
 }
 
-// ---- 尺寸（规格 §9.3 / 计划 审查重点 2）----
+// ---- 尺寸（规格 §9.3 / 计划 审查重点 2 · #33 那条「谁先换行列」）----
 // v-show 切走的页宽高为 0，此时 fit() 会把 cols/rows 算成异常值写坏 PTY → 先按盒尺寸挡掉；
 // 重新可见时 ResizeObserver 必然收到一次尺寸变化，再 fit。
+//
+// #33（2026-10-26 用户实机：窗口高度拉到最小 → 点 [全屏] → 输出被裁减，点 [恢复] 也回不来）。
+// 不是 CSS 的账：一次性取证台在同一批真件上量过（真 Chromium + 真 style.css + 真 xterm/FitAddon + 真 node-pty），
+// 让位时 .log-area 242→740、.term-view 176→674、rows 10→43 全部命中，ResizeObserver 一次不落（.temp/fs-clip/out-run1.json）。
+// 账在先后次序：ConPTY 在 pseudoconsole 模式下**自己不存历史**，行数一变它就发一轮整屏重绘 —— 从 home 起把
+// **新尺寸的每一行**逐行画一遍，手里没有的行用 ESC[K 清空（raw 读数 .temp/fs-clip/raw2-real2.txt：
+// ESC[?25l ESC[H <它还记得的 10 行> (ESC[K CR LF)×33 ESC[10;22H）。于是行数**变大**那一刻：
+//   • xterm 先长 → baseY 由 27 掉到 0，历史被拉进视口 → 正好落在这一轮 ESC[K 的落点里（实测 buffer 37→43 =
+//     10 行尾段 + 33 行空；再点 [恢复] → buffer 只剩 10 行，历史永久没了）；
+//   • 先报尺寸 → 那轮重绘打在**旧的**小视口上、多出来的行落在下面 → 历史保住（实测 buffer 60、baseY 仍是 17）。
+// 行数**变小**反过来，现次序才对：xterm 先缩 → 历史进滚动缓冲 → 重绘只落在视口里（实测一条不丢）；先报尺寸反而
+// 让重绘盖掉旧视口的上沿。**按方向分流，不是一刀切换序。**
+// 换序只在「有东西可丢」时启动（xterm 已有滚动缓冲 = baseY > 0）：建页签首帧（80×24 → 真实尺寸）那一刻缓冲还空着，
+// 重绘盖不到任何历史，照旧立即 fit —— F8 / 索引 K23(3) 那组「首帧必须上报 + 同尺寸去重」的门读的就是这一格。
+const GROW_REPAINT_CAP_MS = 250;   // 换序后等这次整屏重绘的上限：到点还没数据 = 它不会来了（进程已退出等），照样换行列
+const GROW_REPAINT_QUIET_MS = 60;  // 重绘可能分成几段送来：最后一段之后再让 xterm 换行列，别在中间换
+let pendingGrow: { cols: number; rows: number } | null = null;
+let growCapTimer: ReturnType<typeof setTimeout> | null = null;
+let growQuietTimer: ReturnType<typeof setTimeout> | null = null;
+// 换完行列要不要把画布钉到「最后一条还有内容的行」（见下面 revealLastContentLine）：只有「原本贴在底部」才钉 = 用户在翻历史时不抢他的位置。
+// 钉住之后一旦有新输出就松手回到底部：新东西值得看，流式页签不该被钉在旧那一屏。
+let revealAfterGrow = false;
+let revealed = false;
+
+function clearGrowTimers(): void {
+  if (growCapTimer !== null) { clearTimeout(growCapTimer); growCapTimer = null; }
+  if (growQuietTimer !== null) { clearTimeout(growQuietTimer); growQuietTimer = null; }
+}
+
+// 用户贴不贴在底部（viewportY >= baseY）。拿不到 buffer（打桩套件的假终端）= 按贴底处理。
+function atBottom(): boolean {
+  const b = term?.buffer?.active;
+  return !b || b.viewportY >= b.baseY;
+}
+
 function fitAndReport(force = false): void {
   const el = view.value;
-  if (!el || !fitAddon) return;
+  if (!el || !fitAddon || !term) return;
   if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
+  const dims = fitAddon.proposeDimensions();
+  // 行数变大 + 已有滚动缓冲 = 换序；其余（不变大，或还没东西可丢）走原次序
+  if (dims && dims.cols > 0 && dims.rows > 0 && dims.rows > term.rows && (term.buffer?.active?.baseY ?? 0) > 0) {
+    startGrow(dims, force);
+    return;
+  }
+  clearGrowTimers();
+  pendingGrow = null;
   fitAddon.fit();
-  reportSize(force);
+  reportSize(term.cols, term.rows, force);
+}
+
+// 换序第一步：先把目标尺寸报给 PTY（= 让 ConPTY 换行列并重绘），xterm 的 resize 交给「这次重绘落地」或上限到点。
+function startGrow(dims: { cols: number; rows: number }, force: boolean): void {
+  if (!term) return;
+  // revealed 也算「贴底」：[全屏] → [恢复] → 又 [全屏] 这一串里，用户始终没被新输出推回底部，就该继续给他看历史
+  revealAfterGrow = atBottom() || revealed;
+  reportSize(dims.cols, dims.rows, force);
+  pendingGrow = dims;
+  if (growCapTimer !== null) clearTimeout(growCapTimer);
+  growCapTimer = setTimeout(applyGrow, GROW_REPAINT_CAP_MS);
+}
+
+function applyGrow(): void {
+  clearGrowTimers();
+  const dims = pendingGrow;
+  pendingGrow = null;
+  if (!dims || !term) return;
+  term.resize(dims.cols, dims.rows);
+  if (revealAfterGrow) { revealAfterGrow = false; revealLastContentLine(); }
+  reportSize(dims.cols, dims.rows);   // startGrow 已报过 → 同尺寸去重生效，这里不会再发一次
+}
+
+// 把「最后一条还有内容的行」钉到画布底缘：ConPTY 重绘之后画布的下缘必然是它手里没有的空行，不钉就是
+// 「全屏了还是只看到那几行，下面一片空」（#33 的用户读数）。clamp 到 0 = 历史不够多就整屏亮出来。
+// 判据不是「PTY 光标那一行」：换序时那轮重绘末尾的 CUP 是在 xterm 还是旧尺寸时落地的，落在旧视口的最后一行上
+// —— xterm 换完行列之后那个绝对行号已经不是 PTY 光标的语义（取证台换序读数：baseY 17、光标绝对行 59、rows 43，
+// 按光标钉恰好钉回不动）。所以取「从画布底缘往上第一条有内容的行」。
+function revealLastContentLine(): void {
+  const b = term?.buffer?.active;
+  if (!b || !term) return;
+  const bottom = b.baseY + term.rows - 1;
+  let last = bottom;
+  for (; last >= b.baseY; last--) {
+    const line = b.getLine(last);
+    if (line && line.translateToString(true).trim() !== '') break;
+  }
+  if (last < b.baseY) return;                  // 画布里一条有内容的行都找不到 = 没什么可钉（clamp 到 0 会把人拽去看最早那一行）
+  if (last === bottom) return;                 // 下缘本来就有内容（流式页签那种）= 不用钉
+  const target = Math.max(0, last - term.rows + 1);
+  if (target < b.viewportY) {
+    // 顺序要紧：scrollToLine 同步发 onScroll（那条会把 revealed 清掉），所以「钉上」写在它之后
+    term.scrollToLine(target);
+    revealed = true;
+  }
+}
+
+// 输出入口（#33：它顺带是「这次重绘到了」的判据 —— 换序在等的就是它）
+function writeOutput(data: string): void {
+  if (!term) return;
+  term.write(data);
+  if (pendingGrow) {
+    if (growQuietTimer !== null) clearTimeout(growQuietTimer);
+    growQuietTimer = setTimeout(applyGrow, GROW_REPAINT_QUIET_MS);
+    return;
+  }
+  if (revealed) { revealed = false; term.scrollToBottom(); }
 }
 
 // 首帧必须上报（索引 K11(2)）：主进程 start() 不带尺寸、按 80×24 兜底建 PTY，
 // 不上报这一次，终端就一直按 80×24 排版。ResizeObserver 会多次回调，同尺寸不重复发；
 // force = true 供上层在「同一页签再次启动」（PTY 被重建为 80×24）时强制再报一次。
-function reportSize(force = false): void {
-  if (!term) return;
-  const cols = term.cols;
-  const rows = term.rows;
+function reportSize(cols: number, rows: number, force = false): void {
   if (cols <= 0 || rows <= 0) return;
   if (!force && cols === reportedCols && rows === reportedRows) return;
   reportedCols = cols;
@@ -431,6 +528,10 @@ onMounted(() => {
   term.loadAddon(new WebLinksAddon((_e, uri) => openLink(uri)));
   term.open(el);
   term.onData((data) => props.onInput(props.id, data));
+  // #33：钉住的那一屏只归我们钉。滚位一旦不是这条钉造成的（用户自己划上去看历史）就交还给他 ——
+  // 下一条输出不该把他从历史里拽回底部（门：the_pin_lets_go_as_soon_as_the_user_moves_the_scroll_position_himself，
+  // 与「a_user_who_had_scrolled_up_is_not_moved_by_the_grow」同一口径）。
+  term.onScroll(() => { revealed = false; });
   term.attachCustomKeyEventHandler(onCustomKey);
   // 票 #22：选区变化事件 = 「鼠标选区」那份态的唯一驱动（查找在途的那一拍不算，见 withProgrammaticSelection）
   term.onSelectionChange(() => {
@@ -439,7 +540,7 @@ onMounted(() => {
   searchAddon.onDidChangeResults((r) => {
     searchCount.value = { cur: r.resultIndex < 0 ? 0 : r.resultIndex + 1, total: r.resultCount };
   });
-  props.register(props.id, (data) => term?.write(data));
+  props.register(props.id, writeOutput);
   observer = new ResizeObserver(() => fitAndReport());
   observer.observe(el);
   fitAndReport();
@@ -448,6 +549,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   closePalettePop();   // 浮层挂在 window 上的两个监听必须跟着组件走（v-show 卸载即注销）
   props.unregister(props.id);
+  clearGrowTimers();
+  pendingGrow = null;
   observer?.disconnect();
   observer = null;
   term?.dispose();

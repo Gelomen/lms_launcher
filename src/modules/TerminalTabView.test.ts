@@ -67,6 +67,8 @@ const h = vi.hoisted(() => {
     select(text: string): void { this.selection = text; this.selectionCb?.(); }
     onData(cb: (d: string) => void): { dispose: () => void } { this.dataCb = cb; return { dispose: () => {} }; }
     onResize(cb: (e: { cols: number; rows: number }) => void): { dispose: () => void } { this.resizeCb = cb; return { dispose: () => {} }; }
+    // #33：真 xterm 有 onScroll（钉住的那一屏在用户自己滚动时让位靠它），假终端接住这条订阅就行
+    onScroll(): { dispose: () => void } { return { dispose: () => {} }; }
     attachCustomKeyEventHandler(cb: (e: unknown) => boolean): void { this.keyHandler = cb; }
   }
 

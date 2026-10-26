@@ -1486,6 +1486,8 @@ const xh = vi.hoisted(() => {
     getSelection(): string { return ''; }
     onData(): { dispose: () => void } { return { dispose: () => {} }; }
     onResize(): { dispose: () => void } { return { dispose: () => {} }; }
+    // #33：真 xterm 有 onScroll（钉住的那一屏在用户自己滚动时让位靠它），假终端接住这条订阅就行
+    onScroll(): { dispose: () => void } { return { dispose: () => {} }; }
     attachCustomKeyEventHandler(): void {}
     // 票 #22 新增的终端面（选区事件 / 清选区 / 有无选区）：组件挂载即订阅，假终端不给槽就抛。
     // App 级用例只测 IPC 与页签接线，选区不参与断言，故给中性空实现。
