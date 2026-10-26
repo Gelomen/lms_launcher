@@ -765,6 +765,29 @@ describe('TerminalTabView 工具条进程态按钮（E6/E8/E10 · 2026-10-20 工
     w.unmount();
   });
 
+  it('clearing_the_terminal_also_asks_the_shell_to_clear_so_xterm_and_conpty_share_one_frame', async () => {
+    // #34：只清客户端那一屏就是用户看到的「空一截」—— xterm 的 clear() 把光标行抬到第 0 行，
+    // 伪控制台对此一无所知，下一次重画输入行仍按它自己窗口的行号发绝对定位（实测 ESC[27;34H）
+    // → 命令沉到缓冲最后一行、上面一整片空白。清屏因此是两步：xterm 清 + 让 shell 也清一次（Ctrl+L）。
+    // 画布那个形态归 TerminalTabView.clear.test.ts（真 xterm + 写死的 ConPTY 读数）钉，这里钉的是接线与字节。
+    const { w, onInput } = mountTab();
+    await w.find('.btn-term-clear').trigger('click');
+    expect(h.state.terms[0].cleared, '客户端这一屏要先清掉（规格 §9.1 的口径没变）').toBe(1);
+    expect(onInput).toHaveBeenCalledTimes(1);
+    expect(onInput).toHaveBeenCalledWith('ql:demo', '\x0c');   // Ctrl+L
+    w.unmount();
+  });
+
+  it('clearing_a_terminal_whose_pty_has_stopped_sends_nothing_to_the_pty', async () => {
+    // PTY 已停时 quick-launch.ts 的 write 对没有实例的 id 抛 STATE（App 那侧 catch 掉了没有界面后果）：
+    // 客户端照清，但不空跑这一趟 IPC。
+    const { w, onInput } = mountTab({ running: false });
+    await w.find('.btn-term-clear').trigger('click');
+    expect(h.state.terms[0].cleared).toBe(1);
+    expect(onInput, 'PTY 已停还往 PTY 发字节').not.toHaveBeenCalled();
+    w.unmount();
+  });
+
   it('root_exposes_short_and_full_tab_labels_in_separate_attributes', () => {
     // 顺手修 D：data-tab-label 装的是短 label，全名另有 data-tab-full-label，
     // 任务 10 做 tooltip 时取后者，不会取到截断名。props（C1）未动。

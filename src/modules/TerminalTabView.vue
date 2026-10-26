@@ -475,10 +475,22 @@ function onQueryClear(): void { query.value = ''; }
 // 清空终端（规格 §9.1）：只清本实例的 buffer 与滚动区，不动上层状态。
 // buffer 清空 = 既有匹配一并消失，所以查找计数与高亮也要复位，否则计数停在「1 / 3」、
 // 上/下一个指向已经不存在的匹配。
+//
+// #34：清屏是两步，不是一步。xterm 的 clear() 只搬客户端那一屏（光标行抬到第 0 行、下面补空行），
+// ConPTY 那侧对此一无所知 —— 它下一次重画输入行仍按**它自己那 27 行窗口的行号**发绝对定位
+// （取证台实测：[清空终端] 后逐键敲 ls，PSReadLine 发来 ESC[27;34H），于是命令落在清空后缓冲的最后一行、
+// 中间整片空白（复放读数：row0 = 清空前保留的那一行旧提示符、row1..25 全空、row26 = 新命令 —— 与用户贴的画布同一形态）。
+// 让 shell 自己清屏才对得齐：Ctrl+L 之后伪控制台的光标回到窗口第 1 行，此后它的绝对定位与 xterm 同框
+// （实测读数 ESC[1;35H / ESC[3;1H；复放这条空白块就没了）。这与 #33 同族（客户端状态 vs ConPTY 坐标框脱钩），但修法不同：
+// 那边是换行列的先后，这边是清屏要不要让 shell 也清一次 —— 拿 resize 往返去逼 ConPTY 重绘会把旧内容画回来，等于撤销清空。
+// 终端页签只可能来自 shell 条目（ql_start 对 exe 返回 tabId:null → App.vue 不建页签；GLOSSARY「快捷启动条目」也写明 exe 没有终端），
+// 所以这颗按钮发往 PTY 的字节一定是喂给 shell 的，Ctrl+L 不会被别的程序读成别的东西。
+// PTY 已停时不发这一字节：quick-launch.ts 的 write 对没有实例的 id 抛 STATE（App 那侧 catch 掉了没有界面后果，但没必要空跑一趟 IPC）。
 function onClearTerminal(): void {
   if (!term) return;
   term.clear();
   resetSearchState();
+  if (props.running) props.onInput(props.id, '\x0c');   // Ctrl+L：让 shell 自己清屏，它的坐标框跟着回到窗口第 1 行
 }
 
 // 工具条那颗进程态按钮（2026-10-20 两步用户要求：先 [x] → [停止]，再 [停止] → 停完变 [重新启动]）。
