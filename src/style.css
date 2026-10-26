@@ -490,7 +490,7 @@ body {
   border: 1px solid var(--border); border-top: none;
   border-radius: 0 0 var(--radius-btn) var(--radius-btn);
 }
-/* 终端页签专属（.log-pane--term）：画布出血到 pane 框的内缘，白缝一条不留。两轮用户实机截图：
+/* 终端页签专属（.log-pane--term）：画布出血到 pane 框内缘的三条边（左 / 右 / 下），那三条白缝一条不留（顶缘与工具条之间那条横缝是第四轮补的，见下面第四轮那句）。两轮用户实机截图：
    第一轮「黑色配色的终端底部有白色间隙」；第二轮「左右两侧的空隙能否也去掉? 但要保留左下角和右下角的圆角」。
    底部那条缝是两段拼的，两段都在取证台 .temp/term-bottom-gap 量过（真 Chromium + 真 style.css + 真 @xterm/xterm + FitAddon，100% 缩放）：
    ① fit 余量：FitAddon 只能按整行取 rows（H % 行高），画布底缘到 .term-view 底缘之间恒剩 0–14px 的容器自身背景（= 卡片白）。
@@ -502,13 +502,23 @@ body {
    这条弧生效的前提是组件 inline 那句 overflow:hidden —— xterm 的 screen / viewport 全是绝对定位的子孙，只画圆角背景不裁子孙，字形的角会顶出弧外。
    静态日志页签不带这个类：内边距、留白、方角一条不变（反向门在 LogTabView.test.ts）。
    第三轮（2026-10-25 用户截图「终端里的文字与边框没有边距」）：前两轮把**画布那块**推到框内缘、这一轮要的是**字形**离边 10px，
-   两者不冲突 —— 深色块仍贴框（去白缝、两条下圆角一条没退），留白改在画布盒的内侧，见下面那条 .log-pane--term .term-view > .xterm 的 padding（值 = .log-pane--term 上的 --term-inset）。 */
+   两者不冲突 —— 深色块仍贴框（去白缝、两条下圆角一条没退），留白改在画布盒的内侧，见下面那条 .log-pane--term .term-view > .xterm 的 padding（值 = .log-pane--term 上的 --term-inset）。
+   第四轮（2026-10-26 用户截图「工具栏下方与终端内容没有边距」）：三条白缝归零之后，工具条那一排的盒底与画布顶缘之间还剩 0px 的一条横缝 → 由 .term-view 的 margin-top 补上（值 = --term-toolbar-gap），左 / 右 / 下三条出血与两条下圆角一条不退。 */
 .log-pane--term {
   --term-inset: 10px;    /* 字形离画布框四边的留白（第三轮定值 10px，用户：「先定 10px，改完先看效果，不好再调整」）→ 调值只改这一处 */
+  --term-toolbar-gap: 8px;   /* 第四轮（2026-10-26 用户截图「[快捷启动] 的 终端页签，工具栏下方与终端内容没有边距」）：工具条那一排的盒底与画布顶缘之间的横缝。
+      取证台 .temp/term-toolbar-gap 在同一高度约束下量两态（把本令牌覆盖成 0px = 改前那一态）：gapToolbarToCanvas 0 → 8，而 bleedLeft/Right/Bottom 两态都各 1（只剩那 1px 边框，画布照旧贴到它的内缘）；
+      用户那张 150% 截图逐像素对上同一件事：查找输入框的下边框停在 y=48、画布深色从 y=49 起。
+      8px 不是挑的 = 上面 .log-pane 的内边距，也就是工具条**上方**那条留白 → 那一排上下两条自此同一把尺。调值只改这一行。 */
   padding-bottom: 0;
 }
 .log-pane--term .term-view {
-  margin: 0 -8px;        /* 这 8px 就是上面 .log-pane 的左右内边距，两处必须同值：画布正是靠它抵消才贴到 1px 边框的内缘 */
+  /* 顶上那一格 = 第四轮新补的横缝（--term-toolbar-gap）；左右那两格仍是上面 .log-pane 的左右内边距，两处必须同值：画布正是靠它抵消才贴到 1px 边框的内缘。
+     为什么挂 margin 而不是挂 padding：挂 padding 就是第三轮取证台已经证不成立的那个态（FitAddon 只减 .xterm 自己那一档的 padding，不减父盒那一圈 → cols/rows 一格不让、最后一行被组件 inline 那句 overflow:hidden 裁进留白）；
+     挂 margin 让掉的是这个盒本身 → FitAddon 读到的父盒计算高跟着让出这 8px。同一高度约束下两态对照（.temp/term-toolbar-gap：把 --term-toolbar-gap 覆盖成 0px 就是改前那一态）：
+     gapToolbarToCanvas 0 → 8；bleedLeft/Right/Bottom 两态都各 1（三条出血一条没退）；insetTop 两态都 10；盒高 268 → 260、rows 两态都 16（这 8px 落在 fit 余量里，没吃掉一整行）；
+     最后一行距盒底 18 → 10（始终为正 = 没被组件 inline 那句 overflow:hidden 裁进 --term-inset 那一圈）。 */
+  margin: var(--term-toolbar-gap) -8px 0;
   border-radius: 0 0 calc(var(--radius-btn) - 1px) calc(var(--radius-btn) - 1px);   /* 外弧 8px − 边框 1px = 内弧 7px，与框的弧同心 */
 }
 /* 第三轮（2026-10-25 用户截图「终端里的文字与边框没有边距」）：留白挂在 xterm 的根元素上（term.open 直接挂进 .term-view 的那个 div）——

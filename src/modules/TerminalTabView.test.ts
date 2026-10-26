@@ -332,7 +332,7 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     const { w } = mountTab();
     const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
     const viewRule = (css.match(/\.log-pane--term \.term-view \{[^}]*\}/) ?? [])[0] ?? '';
-    expect(viewRule, '画布没横向贴边：缺 .log-pane--term .term-view 的 margin: 0 -8px').toMatch(/margin:\s*0 -8px/);
+    expect(viewRule, '画布没横向贴边：缺 .log-pane--term .term-view 横向那两格 -8px 出血').toMatch(/margin:[^;]*-8px/);
     expect(viewRule, '两个下圆角没交回画布（或半径写死、丢了「= 框的外弧 − 1px 边框」这条关系）')
       .toMatch(/border-radius:\s*0 0 calc\(var\(--radius-btn\) - 1px\) calc\(var\(--radius-btn\) - 1px\)/);
     // 负外边挂错地方 = 整块 pane 出血，工具条那一排会跟着贴到边框上（用户要的是只有画布贴边）
@@ -363,10 +363,42 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     expect(viewRules.join('\n'), '留白挂回 .term-view = 已知不成立：FitAddon 不扣父盒的 padding，最后一行会被 overflow:hidden 裁进留白')
       .not.toMatch(/padding:/);
     const viewRule = viewRules[0] ?? '';
-    expect(viewRule, '画布没横向贴边：缺 .log-pane--term .term-view 的 margin: 0 -8px').toMatch(/margin:\s*0 -8px/);
+    expect(viewRule, '画布没横向贴边：缺 .log-pane--term .term-view 横向那两格 -8px 出血').toMatch(/margin:[^;]*-8px/);
     // 挂到公共那两侧 = 越界：工具条那一排与静态日志页签会跟着内缩
     expect(css, '.log-pane 的内边距被动过 = 越界：留白只在画布那一侧').toMatch(/\.log-pane \{[^}]*padding:\s*8px/);
     expect(css, '.log-view 加了内边距 = 越界：静态日志页签也跟着内缩了').not.toMatch(/\.log-view \{[^}]*padding:/);
+    w.unmount();
+  });
+
+  // 第四轮（2026-10-26 用户截图：「[快捷启动] 的 终端页签，工具栏下方与终端内容没有边距」）。前三轮把画布那块推到框内缘、又把字形往里收 --term-inset，
+  // 剩下来没人管的那一条 = 工具条那一排的盒底与画布顶缘之间的横缝。取证台 .temp/term-toolbar-gap（真 Chromium + 真 style.css + 真 @xterm/xterm + 真 FitAddon，
+  // 接线同 TerminalTabView：Terminal.open(盒) → loadAddon(FitAddon) → fit()）在同一高度约束下量两态（把 --term-toolbar-gap 覆盖成 0px = 改前那一态）：
+  // 用户那张截图逐像素对上同一件事（150% 缩放）：查找输入框的下边框停在 y=48、画布深色从 y=49 起。
+  // 补法 = 画布整块往下挪一条 --term-toolbar-gap（左 / 右 / 下三条出血与两条下圆角一条不退：前三轮的门继续绿）。
+  // 为什么不是把 --term-inset 加高：那只是把**字形**离画布顶再推远，深色那块仍贴在工具条那一排下面 —— 用户要的是那一排与那块之间的留白。
+  // 为什么挂 .term-view 而不是公共的 .log-pane / .log-view：后两者静态日志页签也在用，这条缝只在画布这一侧成立。
+  // FitAddon 不会重演第三轮那个坑：margin 让掉的是 .term-view 这个盒本身（FitAddon 读的就是这一档的计算高），不是盒里让出来的一圈 padding → 盒高 268 → 260、rows 两态都 16
+  // （那 8px 落在 fit 余量里），最后一行距盒底 18 → 10 始终为正 = 不会被组件 inline 那句 overflow:hidden 裁进 --term-inset 那一圈。
+  // happy-dom 无布局 → 按本仓既有口径断 style.css 的规则文本。
+  it('terminal_canvas_sits_below_the_toolbar_with_a_gap_between_them', () => {
+    const { w } = mountTab();
+    const css = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const paneRule = (css.match(/\.log-pane--term \{[^}]*\}/) ?? [])[0] ?? '';
+    expect(paneRule, '这条横缝没有单一出处：缺 .log-pane--term 上的 --term-toolbar-gap（下次调值只改那一行）')
+      .toMatch(/--term-toolbar-gap:\s*8px/);
+    const viewRule = (css.match(/\.log-pane--term \.term-view \{[^}]*\}/) ?? [])[0] ?? '';
+    expect(viewRule, '工具条那一排与画布顶缘之间仍是 0：缺 .term-view 的 margin-top = var(--term-toolbar-gap)')
+      .toMatch(/margin:\s*var\(--term-toolbar-gap\)/);
+    // 8px 不是挑的：它 = .log-pane 的内边距（工具条**上方**那条留白）→ 工具条上下两条留白自此同一把尺；参照物被动过就把这条关系丢了
+    expect(css, '.log-pane 的内边距被动过 = 这条尺的参照物没了，且工具条那一排会跟着贴到框上').toMatch(/\.log-pane \{[^}]*padding:\s*8px/);
+    // 反向门：这条缝只许出现在画布那一侧，公共那两侧（静态日志页签也在用）不得跟着挪
+    expect(css, '缝挂到公共的 .log-pane 上 = 越界：静态日志页签也会多出一条缝').not.toMatch(/\.log-pane \{[^}]*(row-gap|gap):/);
+    expect(css, '缝挂到公共的 .log-view 上 = 越界：静态日志页签那块日志纸也跟着挪（margin / padding 的任意长写都算）').not.toMatch(/\.log-view \{[^}]*(margin|padding)(-[a-z-]+)?:/);
+    // 顺带钉住 pane 那条共边补偿（margin-top: -1px）：本轮的 8px 是照着 pane 的 8px 内边距定的，那条尺被动过就一并红
+    expect(css, '.log-pane 与页签条共边那条 margin-top: -1px 被动过 = 这条尺的参照物漂了').toMatch(/\.log-pane \{[^}]*margin-top:\s*-1px/);
+    // 前三轮一条不退：画布里面那圈 --term-inset 仍在（本轮补的是那块**外**的横缝，不是里面那圈）
+    const termRule = (css.match(/\.log-pane--term \.term-view > \.xterm \{[^}]*\}/) ?? [])[0] ?? '';
+    expect(termRule, '画布里那圈留白被顶掉了：--term-inset 那条规则不在了').toMatch(/padding:\s*var\(--term-inset\)/);
     w.unmount();
   });
 
