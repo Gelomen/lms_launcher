@@ -966,3 +966,46 @@ describe('票 #31 · 日志全屏那颗按钮（三个页签、一个态）', ()
 });
 
 
+
+// ==== 2026-10-26 用户实机截图（两张 150% 缩放）：两个固定日志页签的工具条，与终端页签的工具条，不在一条水平线上 ====
+// 逐行数那两张图（两图的 y 原点对齐：页签文字都落在 y=12..31）：
+//   查找输入框上边框 log y=57 / term y=51，下边框 log y=92 / term y=86 → 两排的盒顶差 6 物理 px = 4 CSS px（@150%，24px 盒 ≈ 36 物理 px 也对得上）。
+// 那 4 CSS px 的来处：两排都是 align-items:center，把整排垂直居中在**不等高**的行里。
+//   终端页签那颗 [清空终端] 早就进了 24px 那一族（.log-pane .btn-term-clear）→ 那一排行高 24；
+//   静态日志页签那颗 [清空日志] 只带 .icon-btn（只加过 --noborder）→ 吃 .icon-btn 的默认 32×32 → 那一排行高 32。(32−24)/2 = 4，逐字对上截图。
+// 修法是把它收进同一族（.log-pane .btn-log-clear = 24×24），不改 ::after、不加位移魔法数 —— 上面 terminal_toolbar_row_boxes_are_all_24px… 那道门的取证理由一条不改。
+// 取证台 .temp/toolbar-row-align（真 style.css + headless Chrome，两排与终端那一排并排量）：rowH 32 → 24、输入框距 pane 顶 12 → 8，与终端那一排的差 4 → 0。
+// happy-dom 不加载 style.css 也没有布局 → 按本仓既有口径扫规则文本：三个页签里的每一颗 .icon-btn（都在工具条那一排里，
+// 页签条那颗 [x] 不在 .log-pane 内）必须被一条 24×24 的规则钉住；谁漏了谁就是把行高顶起来的 outlier。
+
+describe('2026-10-26 用户截图 · 三个页签的工具条那一排等高（工具条在同一条水平线上）', () => {
+  // [选择器, 那一排的 .icon-btn 颗数]：静态页签 5 颗（[清空日志] + 查找三颗 + [全屏]），终端页签 7 颗（多 [配色] 与进程态那颗）。
+  const PANES: Array<[string, number]> = [
+    ['.log-pane[data-tab-id="launcher"]', 5],
+    ['.log-pane[data-tab-id="llama-server"]', 5],
+    ['.log-pane[data-tab-id="ql:demo"]', 7],
+  ];
+
+  it('no_icon_button_in_a_pane_toolbar_escapes_the_24px_box_family', () => {
+    const w = mount(LogPanel, {
+      props: { buckets: emptyBuckets(), tabs: [textTab('launcher'), textTab('llama-server'), termTab('ql:demo')], register: vi.fn(), unregister: vi.fn() },
+    });
+    const raw = readFileSync(join(__dirname, '..', 'style.css'), 'utf-8');
+    const css = stripComments(raw);
+    // 查找那三颗的族规则（terminal_toolbar_row_boxes_are_all_24px… 那道门已经逐字扫过它们）：本门只给它们让路，不重复钉。
+    expect(cssRule(raw, '.log-search .icon-btn'))
+      .toMatch(/width:\s*24px;\s*height:\s*24px/);
+    for (const [sel, count] of PANES) {
+      const btns = w.findAll(sel + ' .icon-btn');
+      expect(btns.length, sel + ' 工具条的颗数变了（这条门的族清单要一起改）').toBe(count);
+      for (const btn of btns) {
+        if ((btn.element as HTMLElement).closest('.log-search')) continue;
+        const cls = btn.classes().find((c) => c.startsWith('btn-'));
+        expect(cls, sel + ' 工具条那颗没有 btn-* 类 → 扫不到它的尺寸规则，它就可能吃 .icon-btn 的默认 32×32').toBeTruthy();
+        const re = new RegExp('\\.log-pane[^{]*\\.' + cls + '\\s*\\{[^}]*width:\\s*24px;\\s*height:\\s*24px');
+        expect(css, sel + ' 那颗 .' + cls + ' 不在 24×24 那一族 → 它把整排行高顶起来，切页签时工具条就不在一条水平线上（本仓的 tooltip 锚点也跟着偏）').toMatch(re);
+      }
+    }
+    w.unmount();
+  });
+});

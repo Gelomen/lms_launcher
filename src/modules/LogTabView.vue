@@ -149,9 +149,12 @@ watch(autoScroll, (on) => {
         <input type="checkbox" v-model="autoScroll" style="margin: 0; accent-color: var(--primary);" />
         <span>{{ t('log.toolbar.autoScroll') }}</span>
       </label>
-      <!-- [清空日志]：icon-only（无文字）+ aria-label；icon 复用 TemplateModal 删除图标（trash-can regular）；
-           盒型 = style.css 既有 .icon-btn（32×32、hover 浅灰），hover tooltip 由 data-tooltip 提供 -->
-      <button type="button" class="icon-btn icon-btn--noborder" :aria-label="t('log.toolbar.clear')" :data-tooltip="t('log.toolbar.clear')" @click="onClear">
+      <!-- [清空日志]：icon-only（无文字）+ aria-label；icon 复用 TemplateModal 删除图标（trash-can regular）；hover tooltip 由 data-tooltip 提供。
+           盒 = 24×24（btn-log-clear → style.css 那条 24px 族）。2026-10-26 用户两张 150% 截图「两个固定页签的工具栏与终端页签的工具栏不在一条水平线上」：
+           逐行数出两排的盒顶差 6 物理 px = 4 CSS px = (32−24)/2 —— 这一排 align-items:center 把整排垂直居中在行高里，本颗先前只带 .icon-btn（默认 32×32）
+           把那一排顶成 32 高，排里的东西就整体往下掉 4px；终端页签那颗 [清空终端] 早已在 24px 族里，所以只有这一排低。同一族的取证理由（tooltip 的 ::after
+           锚在盒顶且随盒高放大）在 style.css 那段，一条不改：收盒不改 ::after、不加位移魔法数。门在 LogPanel.test.ts 的 no_icon_button_in_a_pane_toolbar_escapes_the_24px_box_family。 -->
+      <button type="button" class="icon-btn icon-btn--noborder btn-log-clear" :aria-label="t('log.toolbar.clear')" :data-tooltip="t('log.toolbar.clear')" @click="onClear">
         <FontAwesomeIcon :icon="['far', 'trash-can']" />
       </button>
       <!-- [日志查找]（2026-09-05）：输入即查 + 计数 + 上/下一个（far circle-up/down，regular 优先）。
