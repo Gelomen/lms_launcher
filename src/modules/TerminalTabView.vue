@@ -211,36 +211,54 @@ async function openPalettePop(): Promise<void> {
   window.addEventListener('mousedown', onOutsideMouseDown, true);
 }
 
-// ---- 尺寸（规格 §9.3 / 计划 审查重点 2 · #33 那条「谁先换行列」）----
+// ---- 尺寸（规格 §9.3 / 计划 审查重点 2 · #33「谁先换行列」· #35「一轮重绘落在一个坐标框里」）----
 // v-show 切走的页宽高为 0，此时 fit() 会把 cols/rows 算成异常值写坏 PTY → 先按盒尺寸挡掉；
 // 重新可见时 ResizeObserver 必然收到一次尺寸变化，再 fit。
 //
-// #33（2026-10-26 用户实机：窗口高度拉到最小 → 点 [全屏] → 输出被裁减，点 [恢复] 也回不来）。
-// 不是 CSS 的账：一次性取证台在同一批真件上量过（真 Chromium + 真 style.css + 真 xterm/FitAddon + 真 node-pty），
-// 让位时 .log-area 242→740、.term-view 176→674、rows 10→43 全部命中，ResizeObserver 一次不落（.temp/fs-clip/out-run1.json）。
-// 账在先后次序：ConPTY 在 pseudoconsole 模式下**自己不存历史**，行数一变它就发一轮整屏重绘 —— 从 home 起把
-// **新尺寸的每一行**逐行画一遍，手里没有的行用 ESC[K 清空（raw 读数 .temp/fs-clip/raw2-real2.txt：
-// ESC[?25l ESC[H <它还记得的 10 行> (ESC[K CR LF)×33 ESC[10;22H）。于是行数**变大**那一刻：
-//   • xterm 先长 → baseY 由 27 掉到 0，历史被拉进视口 → 正好落在这一轮 ESC[K 的落点里（实测 buffer 37→43 =
-//     10 行尾段 + 33 行空；再点 [恢复] → buffer 只剩 10 行，历史永久没了）；
-//   • 先报尺寸 → 那轮重绘打在**旧的**小视口上、多出来的行落在下面 → 历史保住（实测 buffer 60、baseY 仍是 17）。
-// 行数**变小**反过来，现次序才对：xterm 先缩 → 历史进滚动缓冲 → 重绘只落在视口里（实测一条不丢）；先报尺寸反而
-// 让重绘盖掉旧视口的上沿。**按方向分流，不是一刀切换序。**
-// 换序只在「有东西可丢」时启动（xterm 已有滚动缓冲 = baseY > 0）：建页签首帧（80×24 → 真实尺寸）那一刻缓冲还空着，
-// 重绘盖不到任何历史，照旧立即 fit —— F8 / 索引 K23(3) 那组「首帧必须上报 + 同尺寸去重」的门读的就是这一格。
-const GROW_REPAINT_CAP_MS = 250;   // 换序后等这次整屏重绘的上限：到点还没数据 = 它不会来了（进程已退出等），照样换行列
-const GROW_REPAINT_QUIET_MS = 60;  // 重绘可能分成几段送来：最后一段之后再让 xterm 换行列，别在中间换
-let pendingGrow: { cols: number; rows: number } | null = null;
-let growCapTimer: ReturnType<typeof setTimeout> | null = null;
-let growQuietTimer: ReturnType<typeof setTimeout> | null = null;
-// 换完行列要不要把画布钉到「最后一条还有内容的行」（见下面 revealLastContentLine）：只有「原本贴在底部」才钉 = 用户在翻历史时不抢他的位置。
-// 钉住之后一旦有新输出就松手回到底部：新东西值得看，流式页签不该被钉在旧那一屏。
-let revealAfterGrow = false;
+// 这一整段只有一条账本，就一条不变式：**xterm 缓冲的最后 rows 行 == 伪控制台手里那一屏**（rows = 最近报给它的那个行数）。
+// 伪控制台（ConPTY 的 pseudoconsole 模式）自己不存历史，行列一变就从 home 起把它此刻那一屏整屏重画一遍。取证台 bench7
+// （真 node-pty + 真 pwsh，跑完 ls 之后一格一行连续 resize，读数 .temp/fs-clip/raw7-drag.chunks.json）逐段量到：
+//   ① 每一轮 = ESC[?25l ESC[H <它手里此刻 newRows 行，行间 ESC[K CRLF> ESC[cursorRow;34H ESC[?25h，一轮 750~1650B；
+//   ② 窗口**变小 = 从顶上掉行**（贴底，与 xterm 换行列同向）；**变大 = 在底下补空行**（贴顶，与 xterm 反向 —— C_拖大_13 末尾 CUP = ESC[12;34H，第 13 行就是空行）。
+// 那一屏与「缓冲的最后 rows 行」一旦脱钩（xterm 的行数在错误的一拍变化，或两轮重绘叠在同一个旧坐标框里），
+// 那一轮的 CRLF 链就把同一批内容在缓冲里留下两份 ⇒ 同一条内容两遍，再往后每一轮踩着上一轮滚雪球（#35 用户贴的就是这个形状）。
+// 落点是缓冲底缘（ybase），不是视口顶（ydisp）—— 探针实测：把 ydisp 挪到 14，那轮 ESC[H 仍整屏画在 baseY=20 那一段上。
+//
+// 三个动作各自能把它弄断，所以各有一条硬口径：
+//  A 换行列一律 **xterm 先、报尺寸在后**，并且 xterm 建页签时就声明「对面那个 PTY 是 ConPTY」（构造参数 `windowsPty.backend`，见下面 onMounted 里构造处那条注释）。
+//    开了它，xterm 行数变大才是在缓冲**底下补上伪控制台那几行新的空行**，而不是把滚动缓冲里的历史拉进视口 —— xterm 源码
+//    common/buffer/Buffer.ts:177-201 里那条分支的理由正是这个：「conpty reprints the screen with it's view of the world.
+//    Once a line enters scrollback for conpty it remains there」。不开它：grow 把历史拉进视口 → 那轮重绘把历史盖成空行
+//    （#33 的实测 buffer 37→43 = 10 行尾段 + 33 行空，[恢复] 之后历史永久没了）。#33 当时是靠「先报尺寸、重绘落地后才换 xterm 行列」
+//    绕开这一格：绕得开历史被盖，绕不开 C，2026-10-26 由 #35 改回到这条正路上（两个方向同一支，不再按方向分流）。
+//    行数变小也是这一支：xterm 先缩 = 历史进滚动缓冲；伪控制台丢掉顶上行之后重复的那几条尾巴，由 xterm 换行列时对「光标以下的空行」的处理顺手消掉。
+//  B 一轮在途（报过尺寸、那轮重绘未落地）就**不报新尺寸、不换行列**（fitAndReport 只收「尺寸没变」那次空转 fit，其余直接交回，
+//    这一轮收尾时再按盒子当下的尺寸追下一轮）—— 两轮重绘落在同一个旧坐标框里，第二轮把第一轮的落点顶下去一行。
+//  C 换行列之前，视口**必须先贴回缓冲底部**（= 视口正好是那一屏的镜像）；这一轮的时长之内不再摆视口，轮末按开始前的位置
+//    还回去：我们自己钉的就重钉一次（#33 要的那条画布下缘），用户自己在翻历史就原样还他那一行（#33「不抢位置」不变；
+//    他在轮内自己挪了就改记他挪到的那一行，见 onScroll）。#33 的钉把视口停在镜像**之上**几行 = 换行列那一拍 xterm
+//    自己那几条分支与显示态都按「屏幕不是那一屏」走，而鼠标按着边框拖时 ResizeObserver 每帧一发（十几毫秒一次），
+//    每一轮都踩着上一轮 —— 摘掉这次贴底，行数变小那一轮实测把 10 条内容留下两遍（门 = resize 的 shrink 那格）。
+// 门：TerminalTabView.drag.test.ts（真 xterm + 按 ①② 写死的伪控制台模型，播种就从当时的视口取 = t0 那条不变式先成立）——
+// ① 一格一格慢拖，每一格之后查这条不变式；② 按住边框上下拖一趟，查「缓冲里任何一条非空内容都不得出现两遍」且最后追平盒子；
+// ③ 一轮在途不收新尺寸、收尾后按盒子当下的尺寸追那一格。TerminalTabView.resize.test.ts 管这条链上 #33 要的那三样**结果**
+// （历史活着、画布下缘是最后一条还有内容的行、不抢用户自己翻历史的位置）；构造参数那条由 TerminalTabView.test.ts 逐字钉住。
+const ROUND_REPAINT_CAP_MS = 250;   // 等这轮整屏重绘的上限：到点还没数据 = 它不会来了（进程已退出等），照样收尾
+const ROUND_REPAINT_QUIET_MS = 60;  // 重绘可能分成几段送来：最后一段之后再收尾，别在中间收尾
+let roundTarget: { cols: number; rows: number } | null = null;   // 这一轮报出去的尺寸；null = 没有在途的一轮
+let roundCapTimer: ReturnType<typeof setTimeout> | null = null;
+let roundQuietTimer: ReturnType<typeof setTimeout> | null = null;
+// 这一轮开始时视口所在的绝对行（null = 本来就贴在缓冲底部）+「不在底部是我们自己钉的、还是用户自己翻的」——轮末按这两条还位置。
+let roundScrollLine: number | null = null;
+let roundWasOurPin = false;
+// 画布此刻是不是被我们钉在「最后一条还有内容的行」那一屏（见 revealLastContentLine）。新输出不松手，而是跟着最新那条内容重钉
+// —— 只 scrollToBottom 的话，让位补在缓冲底下的那几行空行又回到下缘里，新输出看着像落在画布中间。
+// 用户自己划上去看历史才交还给他（挂在 term.onScroll）。
 let revealed = false;
 
-function clearGrowTimers(): void {
-  if (growCapTimer !== null) { clearTimeout(growCapTimer); growCapTimer = null; }
-  if (growQuietTimer !== null) { clearTimeout(growQuietTimer); growQuietTimer = null; }
+function clearRoundTimers(): void {
+  if (roundCapTimer !== null) { clearTimeout(roundCapTimer); roundCapTimer = null; }
+  if (roundQuietTimer !== null) { clearTimeout(roundQuietTimer); roundQuietTimer = null; }
 }
 
 // 用户贴不贴在底部（viewportY >= baseY）。拿不到 buffer（打桩套件的假终端）= 按贴底处理。
@@ -249,48 +267,94 @@ function atBottom(): boolean {
   return !b || b.viewportY >= b.baseY;
 }
 
-function fitAndReport(force = false): void {
+// 口径 C：换行列之前把视口贴回缓冲底部 = 视口正好是伪控制台那一屏的镜像。
+// 它钉的不是字节的落点（那一轮整屏重绘从缓冲底缘 ybase 起画，跟视口停在哪无关，探针实测），钉的是「换行列那一拍
+// xterm 自己那几条分支」与显示态是否都按「屏幕就是那一屏」走：摘掉这一次贴底，行数**变小**那一轮的链子就把
+// 同一批内容留在缓冲里两遍（实测 LINE-12×2 … 共 10 条，门 = resize 的 shrink 那格）。
+// 只借这一轮的时长 —— 开始前的位置记下来，endRound 里还回去，所以这不是「把用户的位置改掉」；
+// 用户在轮内自己挪了就改记他挪到的那一行（见 onScroll）。
+function pinViewportToMirror(): void {
+  if (atBottom()) return;                        // 本来就贴底 = 不用动（假终端没 buffer 也走这一支）
+  const b = term!.buffer!.active;
+  if (roundScrollLine === null) {                // 追下一轮时账已经带过来，别把用户那一行 / 我们那一钉的账覆盖掉
+    roundScrollLine = b.viewportY;
+    roundWasOurPin = revealed;
+  }
+  term!.scrollToBottom();                        // onScroll 会把 revealed 清掉，所以那份账记在 roundWasOurPin 里
+}
+
+// 摆这一轮的两个定时器：上限到点 = 重绘不会来；数据到达后静默一拍 = 这轮的最后一段落地了。
+function armRound(target: { cols: number; rows: number }): void {
+  roundTarget = target;
+  if (roundCapTimer !== null) clearTimeout(roundCapTimer);
+  roundCapTimer = setTimeout(endRound, ROUND_REPAINT_CAP_MS);
+}
+
+// carryScroll 只有 endRound 追下一轮时传 true：上一轮「开始前的位置」还没还回去，这一轮要继续背着走。
+function fitAndReport(force = false, carryScroll = false): void {
   const el = view.value;
   if (!el || !fitAddon || !term) return;
   if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
   const dims = fitAddon.proposeDimensions();
-  // 行数变大 + 已有滚动缓冲 = 换序；其余（不变大，或还没东西可丢）走原次序
-  if (dims && dims.cols > 0 && dims.rows > 0 && dims.rows > term.rows && (term.buffer?.active?.baseY ?? 0) > 0) {
-    startGrow(dims, force);
+  const sameSize = !!dims && dims.cols === term.cols && dims.rows === term.rows;
+  // 口径 B：一轮在途 = 此刻的坐标框已经不新鲜，新尺寸先不收（这一刻换行列，那轮重绘就落在半途的旧框里）。
+  // 尺寸没变的那次 fit 是空转，照跑（「每次 ResizeObserver 回调都 fit」这条既有口径不动）；force 例外：那是重建过的 PTY，没有旧框。
+  if (roundTarget && !force) {
+    if (sameSize) fitAddon.fit();
     return;
   }
-  clearGrowTimers();
-  pendingGrow = null;
-  fitAddon.fit();
-  reportSize(term.cols, term.rows, force);
+  if (!carryScroll) { roundScrollLine = null; roundWasOurPin = false; }
+  if (force) roundTarget = null;
+  // 行列没变（盒子挪了几个像素、行高却不够换一格）= 不用报尺寸、不会有重绘，也就别动视口（摆一次就是白闪一下）
+  if (sameSize && !force) { fitAddon.fit(); return; }
+  pinViewportToMirror();                          // 口径 C：换行列之前先贴回镜像
+  fitAddon.fit();                                 // 口径 A：xterm 先换行列，两个方向都是这一条
+  const target = { cols: term.cols, rows: term.rows };
+  // 与报尺寸的先后要紧：先把这一轮的账立起来再报 —— 那轮重绘可能就在同一拍里到（真机几毫秒，测试里更是同步），
+  // 先报后立就漏了「这次重绘到了」的判据，这一轮只能等上限到点才收尾 = 拖窗口时每一格都慢一整条上限。
+  armRound(target);
+  if (!reportSize(target.cols, target.rows, force)) { endRound(); return; }   // 没发出去（去重命中）= 不会有重绘，直接把视口还回去
 }
 
-// 换序第一步：先把目标尺寸报给 PTY（= 让 ConPTY 换行列并重绘），xterm 的 resize 交给「这次重绘落地」或上限到点。
-function startGrow(dims: { cols: number; rows: number }, force: boolean): void {
+// 一轮收尾（重绘落地后静默一拍，或上限到点）：盒子还在变就按当下的尺寸追下一轮 → 追平了才摆视口。
+// 中途摆视口（钉 / 还位置）会把视口顶离镜像，下一轮重绘的落点又对不上 —— 同一条漂移，只是换了来源。
+function endRound(): void {
+  clearRoundTimers();
+  const wasRound = roundTarget;
+  roundTarget = null;
   if (!term) return;
-  // revealed 也算「贴底」：[全屏] → [恢复] → 又 [全屏] 这一串里，用户始终没被新输出推回底部，就该继续给他看历史
-  revealAfterGrow = atBottom() || revealed;
-  reportSize(dims.cols, dims.rows, force);
-  pendingGrow = dims;
-  if (growCapTimer !== null) clearTimeout(growCapTimer);
-  growCapTimer = setTimeout(applyGrow, GROW_REPAINT_CAP_MS);
+  const el = view.value;
+  const next = el && fitAddon && el.offsetWidth !== 0 && el.offsetHeight !== 0 ? fitAddon.proposeDimensions() : null;
+  // 追下一轮的判据是「盒子在这一轮里又变了」= 拿它跟**这轮报出去的尺寸**比，不是跟 xterm 比：
+  // 后者在某一轮 fit 与 propose 永远差一格时会自己转起来。拖窗口要的是「变一次追一次」。
+  if (next && next.cols > 0 && next.rows > 0 && wasRound && (next.cols !== wasRound.cols || next.rows !== wasRound.rows)) {
+    fitAndReport(false, true);
+    return;
+  }
+  restoreViewportAfterRound();
 }
 
-function applyGrow(): void {
-  clearGrowTimers();
-  const dims = pendingGrow;
-  pendingGrow = null;
-  if (!dims || !term) return;
-  term.resize(dims.cols, dims.rows);
-  if (revealAfterGrow) { revealAfterGrow = false; revealLastContentLine(); }
-  reportSize(dims.cols, dims.rows);   // startGrow 已报过 → 同尺寸去重生效，这里不会再发一次
+// 口径 C 的后半段：把这一轮为了对齐而按到底部的视口还回去。
+// 用户自己在翻历史 → 原样还他那一行（#33「resize 不抢位置」）；贴底 / 我们自己钉的 → 重钉一次画布下缘（#33「下缘是最后一条有内容的行」）。
+function restoreViewportAfterRound(): void {
+  const b = term?.buffer?.active;
+  const saved = roundScrollLine;
+  const ours = roundWasOurPin;
+  roundScrollLine = null;
+  roundWasOurPin = false;
+  if (!term || !b) return;                       // 假终端：没有 buffer 就没有位置可还
+  if (saved !== null && !ours) {
+    const target = Math.min(saved, b.baseY);     // 行数变大时 baseY 会涨，那一行还在原来的绝对位置上
+    if (target < b.baseY) term.scrollToLine(target);
+    return;
+  }
+  revealLastContentLine();
 }
 
-// 把「最后一条还有内容的行」钉到画布底缘：ConPTY 重绘之后画布的下缘必然是它手里没有的空行，不钉就是
-// 「全屏了还是只看到那几行，下面一片空」（#33 的用户读数）。clamp 到 0 = 历史不够多就整屏亮出来。
-// 判据不是「PTY 光标那一行」：换序时那轮重绘末尾的 CUP 是在 xterm 还是旧尺寸时落地的，落在旧视口的最后一行上
-// —— xterm 换完行列之后那个绝对行号已经不是 PTY 光标的语义（取证台换序读数：baseY 17、光标绝对行 59、rows 43，
-// 按光标钉恰好钉回不动）。所以取「从画布底缘往上第一条有内容的行」。
+// 把「最后一条还有内容的行」钉到画布底缘：伪控制台换完行列之后画布的下缘必然是它手里没有的空行（口径 ②：变大 = 在底下补空行），
+// 不钉就是「全屏了还是只看到那几行，下面一片空」（#33 的用户读数）。往哪儿翻两头都要收住：不越过缓冲顶（clamp 到 0），也不把空行从画布**上缘**翻进来（见下面那条 while）。
+// 判据不是「PTY 光标那一行」：那轮重绘末尾的 CUP 落在旧视口的最后一行上，换完行列之后那个绝对行号已经不是 PTY 光标的语义
+// （取证台换序读数：baseY 17、光标绝对行 59、rows 43，按光标钉恰好钉回不动）。所以取「从画布底缘往上第一条有内容的行」。
 function revealLastContentLine(): void {
   const b = term?.buffer?.active;
   if (!b || !term) return;
@@ -302,7 +366,17 @@ function revealLastContentLine(): void {
   }
   if (last < b.baseY) return;                  // 画布里一条有内容的行都找不到 = 没什么可钉（clamp 到 0 会把人拽去看最早那一行）
   if (last === bottom) return;                 // 下缘本来就有内容（流式页签那种）= 不用钉
-  const target = Math.max(0, last - term.rows + 1);
+  let target = Math.max(0, last - term.rows + 1);
+  // 往上翻是把空行压到画布下缘之外，但不能反过来在画布**上缘**造出一条空行。缓冲里内容不足一屏时那一翻就会翻过界：
+  // #34 的 [清空终端] 之后正是这种画面（一行提示符 + 一整屏空行，baseY 1、rows 27、最后一条有内容的行是 14），
+  // clamp 到 0 之后画布第一条就是那条空白、命令落在第 2 行 = 用户报的症状被这条钉自己造了出来
+  // （探针读数：after=["", "PS …> ls && git st", …]，cmdIdx 1）。
+  // 所以只翻到「那一屏顶上不是空行」的那一档，最多翻到贴底（baseY）。
+  while (target < b.baseY) {
+    const top = b.getLine(target);
+    if (top && top.translateToString(true).trim() !== '') break;
+    target++;
+  }
   if (target < b.viewportY) {
     // 顺序要紧：scrollToLine 同步发 onScroll（那条会把 revealed 清掉），所以「钉上」写在它之后
     term.scrollToLine(target);
@@ -310,27 +384,38 @@ function revealLastContentLine(): void {
   }
 }
 
-// 输出入口（#33：它顺带是「这次重绘到了」的判据 —— 换序在等的就是它）
+// 输出入口（#33：它顺带是「这次重绘到了」的判据；#35：重绘分成几段送来，每一段喂进去之前都得先贴回镜像）
 function writeOutput(data: string): void {
   if (!term) return;
-  term.write(data);
-  if (pendingGrow) {
-    if (growQuietTimer !== null) clearTimeout(growQuietTimer);
-    growQuietTimer = setTimeout(applyGrow, GROW_REPAINT_QUIET_MS);
+  if (roundTarget) {                        // 这一轮在途：不再摆视口 —— 字节的落点是缓冲底缘（ybase），与视口停在哪无关
+    term.write(data);                       // （探针实测：把 ydisp 挪到 14，那轮 ESC[H 仍整屏画在 baseY=20 那一段上）
+    if (roundQuietTimer !== null) clearTimeout(roundQuietTimer);
+    roundQuietTimer = setTimeout(endRound, ROUND_REPAINT_QUIET_MS);
     return;
   }
-  if (revealed) { revealed = false; term.scrollToBottom(); }
+  // 这一屏是我们钉的 → 新输出继续钉着：先跟到底部（term.write 的解析在后面的宏任务里，此刻只能先到旧底部），
+  // 解析完再由 write 的回调把「最后一条还有内容的行」钉回下缘。#33 那条口径不是只在让位时成立一次 ——
+  // 让位之后伪控制台那几行补出来的空行还留在缓冲底下，只 scrollToBottom 的话下缘又回到空行里（实测：新输出落在画布中间、下面一片空）。
+  // 用户自己划上去看历史时 revealed 已被 term.onScroll 清掉 → 这里什么都不摆，不抢位置。
+  const follow = revealed;
+  if (follow) {
+    revealed = false;                       // 先撤账：write 里若有滚动，onScroll 之后由回调重新记账
+    term.scrollToBottom();
+  }
+  term.write(data, follow ? revealLastContentLine : undefined);
 }
+
 
 // 首帧必须上报（索引 K11(2)）：主进程 start() 不带尺寸、按 80×24 兜底建 PTY，
 // 不上报这一次，终端就一直按 80×24 排版。ResizeObserver 会多次回调，同尺寸不重复发；
 // force = true 供上层在「同一页签再次启动」（PTY 被重建为 80×24）时强制再报一次。
-function reportSize(cols: number, rows: number, force = false): void {
-  if (cols <= 0 || rows <= 0) return;
-  if (!force && cols === reportedCols && rows === reportedRows) return;
+function reportSize(cols: number, rows: number, force = false): boolean {
+  if (cols <= 0 || rows <= 0) return false;
+  if (!force && cols === reportedCols && rows === reportedRows) return false;   // 没发出去 = 伪控制台不会回那轮重绘
   reportedCols = cols;
   reportedRows = rows;
   props.onResize(props.id, cols, rows);
+  return true;
 }
 
 // ---- 复制 / 粘贴（规格 §8：file:// 下 navigator.clipboard 不可靠 → 走主进程）----
@@ -532,7 +617,18 @@ onMounted(() => {
   // → rightClickHandler → 选光标下的词），开着就抢在 onContextMenu 之前造出选区，「无选区 → 粘贴」这一半
   // 永远不成立，智能右键退化成「只复制、永不粘贴」。它的默认值按 isMac 走（macOS=true，Windows=false）——
   // 默认值靠平台，所以显式写死才稳。逐字门在 TerminalTabView.test.ts（打桩构造参数）+ search.test.ts（真库认这个开关）。
-  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, rightClickSelectsWord: false, theme: { ...shownPaletteOf.value.theme } });
+  // windowsPty（#35 / ADR 0006）：向 xterm 声明「对面那个 PTY 是 ConPTY」。只报 backend、故意不报 buildNumber。
+  // 为什么这一页签对面必然是 ConPTY：本应用只出 Windows 包（electron-builder.yml:36 win: target: portable），页签对面的 PTY
+  // 只有一个来源 = 主进程 node-pty 的 pty.spawn（quick-launch.ts:168-178，shellExe 全是 pwsh / powershell / cmd / wsl），Windows 上它就是
+  // ConPTY；提权页签那条也一样（host 进程内部同样 pty.spawn，ql-pty-host.ts:210）。
+  // 它只翻转一处行为：xterm 行数变大时是在缓冲**底下补空行**（与伪控制台「变大 = 在底下补空行」同向，见上面尺寸那段的读数 ②），
+  // 而不是按光标行号把滚动缓冲里的历史拉进视口（@xterm/xterm 5.5.0 common/buffer/Buffer.ts:180-183，库自己的理由：
+  // "conpty reprints the screen with it's view of the world. Once a line enters scrollback for conpty it remains there"）。
+  // 少了它，grow 那轮整屏重绘会把刚被拉进视口的历史盖成空行（#33 实测：buffer 37→43 = 10 行尾段 + 33 行空，[恢复] 之后历史永久没了）。
+  // 故意不给 buildNumber：它一旦有值就顺带开两件事 —— ① buildNumber < 21376 时启用 windowsMode 那套换行启发式（CoreTerminal.ts:259-271），
+  // 而 InputHandler.ts:721-725 明确写着 ConPTY 该关掉它（"windowsMode should be disabled, which is recommended on Windows build 21376 and above"）；
+  // ② 按 buildNumber 决定列数变化要不要 reflow（Buffer.ts:292-298）。这两件都会让整屏重绘的行落点更难算；只报 backend 时 xterm 5.5.0 两处都保持关闭。
+  term = new Terminal({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, rightClickSelectsWord: false, windowsPty: { backend: 'conpty' }, theme: { ...shownPaletteOf.value.theme } });
   fitAddon = new FitAddon();
   searchAddon = new SearchAddon();
   term.loadAddon(fitAddon);
@@ -543,7 +639,24 @@ onMounted(() => {
   // #33：钉住的那一屏只归我们钉。滚位一旦不是这条钉造成的（用户自己划上去看历史）就交还给他 ——
   // 下一条输出不该把他从历史里拽回底部（门：the_pin_lets_go_as_soon_as_the_user_moves_the_scroll_position_himself，
   // 与「a_user_who_had_scrolled_up_is_not_moved_by_the_grow」同一口径）。
-  term.onScroll(() => { revealed = false; });
+  term.onScroll(() => {
+    revealed = false;
+    // 一轮在途时用户自己把视口挪走（一只手按着边框拖、另一只手滚轮是常见姿势）：把他此刻那一行记进这一轮的账，
+    // 轮末由 restoreViewportAfterRound 原样还他。门 = drag 的 a_scroll_by_the_user_while_a_round_is_in_flight_…，
+    // 三个变异各自都让它红（读数 11 → 0 = 轮末按「我们自己钉的」重钉，他翻的历史被悄悄换成底部）：
+    //   ① 整支摘掉；② 去掉「顺带覆盖 roundWasOurPin」；③ 退回「只在没记过时才记」。
+    // ②③ 为什么要**覆盖**：拖一趟里 endRound 会一格一格追下一轮，他可能在我们贴底之后接着往上划 —— 记的得是他
+    // 最新停的那一行；而且他从那一钉上接手了，轮末就不该再按我们的口径重钉。
+    // 我们自己那几次摆视口不会误记进这一支：贴底跑在 armRound 之前（roundTarget 还没立起来），还位置与重钉下缘
+    // 都跑在 endRound 把 roundTarget 清空之后。所以这里不需要「程序化滚动」标志位（加上去没有任何门会红，实测）。
+    if (roundTarget) {
+      const b = term?.buffer?.active;
+      if (b) {
+        roundScrollLine = b.viewportY >= b.baseY ? null : b.viewportY;
+        roundWasOurPin = false;
+      }
+    }
+  });
   term.attachCustomKeyEventHandler(onCustomKey);
   // 票 #22：选区变化事件 = 「鼠标选区」那份态的唯一驱动（查找在途的那一拍不算，见 withProgrammaticSelection）
   term.onSelectionChange(() => {
@@ -561,8 +674,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   closePalettePop();   // 浮层挂在 window 上的两个监听必须跟着组件走（v-show 卸载即注销）
   props.unregister(props.id);
-  clearGrowTimers();
-  pendingGrow = null;
+  clearRoundTimers();
+  roundTarget = null;
+  roundScrollLine = null;
+  roundWasOurPin = false;
   observer?.disconnect();
   observer = null;
   term?.dispose();

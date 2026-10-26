@@ -146,6 +146,16 @@ function fireResize(): void {
 
 const realResizeObserver = globalThis.ResizeObserver;
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+const settle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+// 组件里那一轮的上限（ROUND_REPAINT_CAP_MS=250）+ 余量：本套件的 onResize 是 spy、不会回那轮整屏重绘，
+// 所以「收尾」只有等上限到点这一条路（真机上重绘几毫秒就回，走的是静默一拍 60ms）。
+const ROUND_CAP_SLACK_MS = 320;
+// 让「这一轮」收尾的另一条路：补一段输出字节（伪控制台的重绘到了 = 静默一拍之后 endRound）。
+// 打桩套件的假终端没有 buffer，endRound 里的还视口那步会被它自己的守卫挡掉。
+async function closeRound(register: ReturnType<typeof vi.fn>): Promise<void> {
+  (register.mock.calls[0][1] as (d: string) => void)('x');
+  await settle(80);
+}
 
 // happy-dom 无布局：原型级覆写 = 「页签可见」；单个元素再覆写为 0 = 「v-show 隐藏」
 function setProtoBox(width: number, height: number): void {
@@ -228,7 +238,11 @@ describe('TerminalTabView 生命周期与数据接线（E1/E2/E9、F1）', () =>
     // TerminalTabView.search.test.ts（真 xterm 集成，本套件的假 addon 看不见该真机契约）
     // rightClickSelectsWord=false（票 #22 / ADR 0003）：智能右键的前提 —— 终端库自带的「右键选词」
     // 会在页签处理之前先选中光标下的词，「无选区」永远不成立，右键就退化成「只复制、永不粘贴」。
-    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, rightClickSelectsWord: false, theme: TERM_PALETTES['paper'].theme });
+    // windowsPty.backend='conpty'（#35 / ADR 0006）：向 xterm 声明「对面那个 PTY 是 ConPTY」，它只翻转一处行为 ——
+    // 行数变大时在缓冲**底下**补空行而不是把历史拉进视口（@xterm/xterm 5.5.0 Buffer.ts:180-183）。这里必须钉住它：
+    // 少了这一条，#35 的两个方向同一支口径就退化成「让位吃历史」（resize 门那两条历史断言是拿真 xterm 读的，
+    // 本套件的假终端读不出来）。故意只有 backend、没有 buildNumber —— 见构造处那条注释（buildNumber 会另开两件事）。
+    expect(h.state.termOptions[0]).toEqual({ scrollback: 5000, fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace", allowProposedApi: true, rightClickSelectsWord: false, windowsPty: { backend: 'conpty' }, theme: TERM_PALETTES['paper'].theme });
     expect(h.state.linkHandlers.length).toBe(1);   // WebLinksAddon 构造时拿到 open_external 处理器
     w.unmount();
   });
@@ -498,16 +512,37 @@ describe('TerminalTabView 输入与尺寸（E3/E4）', () => {
     w.unmount();
   });
 
-  it('changed_size_is_reported_again', () => {
+  it('changed_size_is_reported_again', async () => {
     // F2 / 索引 K23(3) 的正半边：容器真的变了 → fit 给出新尺寸 → 必须再发一次 ql_resize。
     // 上面那条只钉住负半边（同尺寸不重发）；没有这条，去重写成「每实例只报一次」也照样全绿。
-    const { onResize, w } = mountTab();
+    const { onResize, register, w } = mountTab();
     expect(onResize).toHaveBeenCalledTimes(1);
+    await closeRound(register);                  // 首帧那一轮先收尾：一轮在途不收新尺寸（#35 口径 B，下一格钉的就是它）
     h.state.proposed = { cols: 90, rows: 30 };   // 假 FitAddon 这次给出不同的尺寸
     fireResize();
     expect(h.state.fitCalls).toBe(2);            // 照常 fit
     expect(onResize).toHaveBeenCalledTimes(2);   // 且新尺寸再上报一次
     expect(onResize).toHaveBeenLastCalledWith('ql:demo', 90, 30);
+    w.unmount();
+  });
+
+  it('a_second_size_while_a_round_is_in_flight_is_not_taken_until_that_round_ends', async () => {
+    // #35 口径 B：一次上报立起一轮整屏重绘（伪控制台换完行列会回一整屏字节），这一轮没落地之前
+    // 新尺寸既不收、也不换 xterm 行列 —— 否则两轮重绘落在同一个旧坐标框里，第二轮把第一轮的落点顶下去一行
+    // ⇒ 同一条内容两遍。收尾之后按盒子当下的尺寸追一轮（机制那两格在 TerminalTabView.drag.test.ts，这里只钉接线）。
+    const { onResize, register, w } = mountTab();
+    expect(onResize).toHaveBeenCalledTimes(1);            // 首帧那一轮已立起
+    await closeRound(register);                           // 先把它收尾（真机 = 重绘落地 + 静默一拍），才轮到下一格尺寸
+    h.state.proposed = { cols: 90, rows: 30 };
+    fireResize();
+    expect(onResize).toHaveBeenCalledTimes(2);            // 这一拍没有在途的一轮 → 收
+    h.state.proposed = { cols: 100, rows: 50 };
+    fireResize();
+    expect(onResize.mock.calls.map((c: unknown[]) => c[2]), '一轮在途却报了新尺寸').toEqual([41, 30]);
+    expect(h.state.terms[0].rows, '一轮在途却换了 xterm 行列').toBe(30);
+    await settle(ROUND_CAP_SLACK_MS);                     // 打桩套件没有重绘回来 → 只能等上限到点收尾
+    expect(onResize).toHaveBeenCalledTimes(3);
+    expect(onResize).toHaveBeenLastCalledWith('ql:demo', 100, 50);
     w.unmount();
   });
 });
