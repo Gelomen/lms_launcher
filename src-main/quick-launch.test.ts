@@ -1,7 +1,7 @@
 // src-main/quick-launch.test.ts
 // 任务 5：PtyProcess + QuickLaunchManager 的行为断言（check 表 E1–E11，钉住审查重点 R1 = E4/E5）
 // 规格：docs/superpowers/specs/2026-10-10-quick-launch-card-design.md §7.3 / §7.5 / §12.4
-// 真机用例只有 E3（真 cmd.exe）；其余全部注入假进程，用来断言「等首批输出再写命令」的**顺序**。
+// 真机用例只有 E3（真 cmd.exe）；其余全部注入假进程，用来断言「等写入门到点再写命令」的**顺序**（#36：门 = 画过可见文本 + 输出静默 200ms）。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { homedir } from 'node:os';
 import { PtyProcess, QuickLaunchManager, shellExe, type QlDeps } from './quick-launch';
@@ -314,8 +314,10 @@ describe('真机集成（规格 §12.4：真跑 cmd.exe）', () => {
 });
 
 describe('自动执行命令（审查重点 R1 / 规格 §7.3）', () => {
-  // E4
+  // E4（表 E4 / RF1 / 审查重点 R1）：先转给渲染端，再放自动命令。
+  // #36 之后这个「再」是**下一拍**：写入门 = 画过可见文本 + 输出静默 200ms；顺序判据一字不动。
   it('deps.onData 第一次被调用之后才发生 pty.write', async () => {
+    vi.useFakeTimers();
     const ctx = makeDeps();
     const m = new TestManager(ctx.deps, () => true);
     m.timeline = ctx.timeline;
@@ -325,7 +327,12 @@ describe('自动执行命令（审查重点 R1 / 规格 §7.3）', () => {
     expect(shell.writes).toEqual([]);
     expect(ctx.timeline).toEqual([]);
     shell.emit('C:\\> ');
-    // 顺序严格：先转发给 deps.onData，再写自动命令（审查重点 R1 的判据）
+    // 顺序严格：这一拍只转发给 deps.onData，写入门还没到点
+    expect(ctx.timeline).toEqual(['deps.onData']);
+    expect(shell.writes).toEqual([]);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(shell.writes).toEqual([]); // 静默差 1ms：还不写
+    await vi.advanceTimersByTimeAsync(1);
     expect(ctx.timeline).toEqual(['deps.onData', 'pty.write']);
     expect(shell.writes).toEqual(['echo HI\r']);
     // 后续输出照常转发，但自动命令只写一次
@@ -354,6 +361,85 @@ describe('自动执行命令（审查重点 R1 / 规格 §7.3）', () => {
     expect(shell.writes).toEqual(['echo HI\r']);
   });
 
+  // ── #36（2026-10-26 真 wsl.exe 取证）：写入门的两条门 ──
+  // 夹具 = 取证台 .temp/wsl-autocmd/{chunks,gate}.json 的实测字节，原样写死（真 ConPTY + 真 wsl.exe 的浓缩；
+  // 真 wsl.exe 不进 vitest：沙箱内 wsl.exe 直接 E_ACCESSDENIED，能跑的那一趟也要等 3~6s 起虚拟机）。
+  // 判据一律落在可观察后果上：门没过 = 假进程一次 write 都没有；门过了 = 恰好一次。
+
+  it('首批输出只有转义序列时不写；提示符画出来并静默 200ms 才写（#36）', async () => {
+    vi.useFakeTimers();
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    m.timeline = ctx.timeline;
+    await m.start('c1', SHELL_ENTRY);
+    const shell = m.shells[0];
+    // 实测首块（t=40ms，16B）：ESC[?9001h ESC[?1004h —— 一个可见字节都没有
+    shell.emit('\u001b[?9001h\u001b[?1004h');
+    await vi.advanceTimersByTimeAsync(4999); // 实测提示符最迟落在首块之后 5.9s（WSL 虚拟机冷启动）
+    expect(shell.writes).toEqual([]); // 门① 没过：纯转义序列不算「画过可见文本」
+    // 实测提示符那一段（t=3405ms，同一毫秒的两条 DATA）：清屏 + 设标题的 OSC，仍然零可见文本。
+    // 中间那条 ESC 7（保存光标位）是本票补的夹具、实测里没有：它专钉 ANSI_SEQ 的「ESC + 单字节」那一支 ——
+    // 少了那一支，DECSC 不被剥掉，后面的真提示符会被 carry 一路吞掉 = 门① 永远不过、自动命令一次都不写。
+    shell.emit('\u001b[?25l\u001b[2J\u001b[m\u001b[H\u001b7\u001b]0;C:\\WINDOWS\\system32\u0007');
+    expect(shell.writes).toEqual([]);
+    // 实测 t=3423ms：可见提示符到
+    shell.emit('\u001b[32mgelomen@Gelomen-PC\u001b[m:/mnt/c/Users/Gelomen$ ');
+    await vi.advanceTimersByTimeAsync(199);
+    expect(shell.writes).toEqual([]); // 门② 还差 1ms
+    await vi.advanceTimersByTimeAsync(1);
+    expect(shell.writes).toEqual(['echo HI\r']); // 只写一次，且落在提示符画完之后
+  });
+
+  it('转义序列拆在两条 DATA 里也不会被当成可见文本（#36 门① 的 carry）', async () => {
+    vi.useFakeTimers();
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    const shell = m.shells[0];
+    // 拆点落在一条 OSC 中间：第一条 DATA 断在序列里，第二条只剩中段
+    shell.emit('\u001b[32m\u001b]3008;start=fb3d6ec2-2335');
+    await vi.advanceTimersByTimeAsync(4999);
+    // 不拼回去的话，"3008;start=fb3d6ec2-2335" 这一截会被当成可见文本 = 门① 假绿、口径退回 #36 之前
+    expect(shell.writes).toEqual([]);
+    shell.emit('-4d26-8695-a5f4\u0007'); // 把那条 OSC 闭合：拼回去之后仍然零可见文本
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(shell.writes).toEqual([]);
+    shell.emit('gelomen@Gelomen-PC:/mnt/c/Users/Gelomen$ '); // 真提示符
+    await vi.advanceTimersByTimeAsync(200);
+    expect(shell.writes).toEqual(['echo HI\r']);
+  });
+
+  it('有输出但门未过：5s 兜底不得抢跑（#36 的兜底改口径）', async () => {
+    vi.useFakeTimers();
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    const shell = m.shells[0];
+    shell.emit('\u001b[?9001h\u001b[?1004h'); // 有输出了，只是全是转义序列
+    await vi.advanceTimersByTimeAsync(5000); // 越过 5s 兜底：实测有一趟提示符在 5969ms 才画出来
+    expect(shell.writes).toEqual([]); // 兜底只兜「一个字节都没有」，有输出就不得插手
+    shell.emit('gelomen@Gelomen-PC:/mnt/c/Users/Gelomen$ ');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(shell.writes).toEqual(['echo HI\r']); // 写这一次的是两条门
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(shell.writes).toEqual(['echo HI\r']); // 全程只写一次
+  });
+
+  it('输出还在一段一段往下走期间不写；停下来 200ms 才写（#36 门② 每块重排）', async () => {
+    vi.useFakeTimers();
+    const ctx = makeDeps();
+    const m = new TestManager(ctx.deps, () => true);
+    await m.start('c1', SHELL_ENTRY);
+    const shell = m.shells[0];
+    for (let i = 0; i < 5; i++) {
+      shell.emit('startup-banner-line-' + i + '\r\n');
+      await vi.advanceTimersByTimeAsync(150); // 150ms < 200ms：下一块又到，静默计时器重排
+    }
+    expect(shell.writes).toEqual([]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(shell.writes).toEqual(['echo HI\r']);
+  });
+
   it('cmd 为空则不写任何自动命令', async () => {
     const ctx = makeDeps();
     const m = new TestManager(ctx.deps, () => true);
@@ -377,6 +463,8 @@ describe('自动执行命令（审查重点 R1 / 规格 §7.3）', () => {
     await m.start('c1', { name: 'n', type: 'shell', shell: 'cmd', cmd: 'echo A\necho B\r\necho C\recho D' });
     const shell = m.shells[0];
     shell.emit('C:\\> ');
+    // #36 的写入门：画过可见文本 + 输出静默 200ms 之后才放行（本条的判据是行分隔归一，不是时序）
+    await vi.waitFor(() => expect(shell.writes.length, '写入门没放行').toBe(1));
     expect(shell.writes, '行分隔没归一成 \r').toEqual(['echo A\recho B\recho C\recho D\r']);
     expect(shell.writes[0].includes('\n'), '写入里还剩裸 \n —— ConPTY 会把它吞掉，两行会拼成一条命令').toBe(false);
     // 只写一次：归一不是「一行一次 write」，仍是一次性写入（E4 / E5 的时序口径不变）
@@ -960,8 +1048,10 @@ describe('提权分支（admin:true → 提权宿主；规格 §6.8 / 表 E1-E6 
     expect(wrapped).toBe('PROC: ' + t('err.ql.ptySpawn', { exe: 'cmd.exe', err: 'host boom' }));
   });
 
-  // E4（表 E4 / RF1 / quick-launch.ts:249-253）：先把输出转给渲染端，再放自动命令
+  // E4（表 E4 / RF1 / quick-launch.ts:249-253）：先把输出转给渲染端，再放自动命令。
+  // #36 之后写入门 = 画过可见文本 + 输出静默 200ms，提权与非提权同一条门（对照上面非提权那条）。
   it('admin_true_auto_command_released_after_first_output', async () => {
+    vi.useFakeTimers();
     const ctx = makeDeps();
     const m = new TestManager(ctx.deps, () => true);
     await m.start('c1', ADMIN_ENTRY_CMD);
@@ -969,7 +1059,11 @@ describe('提权分支（admin:true → 提权宿主；规格 §6.8 / 表 E1-E6 
     expect(host.writes).toEqual([]); // 首批输出之前一个字都不写
     expect(ctx.timeline).toEqual([]);
     host.emit('C:\\> ');
-    // 顺序与非提权路径逐字相同（对照上面「deps.onData 第一次被调用之后才发生 pty.write」那条）
+    // 顺序与非提权路径逐字相同：这一拍只转发，写入门在下一拍
+    expect(ctx.timeline).toEqual(['deps.onData']);
+    await vi.advanceTimersByTimeAsync(199);
+    expect(host.writes).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
     expect(ctx.timeline).toEqual(['deps.onData', 'pty.write']);
     expect(host.writes).toEqual(['echo HI\r']);
     host.emit('more'); // 后续输出照常转发，自动命令只写一次

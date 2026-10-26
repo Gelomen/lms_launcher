@@ -768,7 +768,7 @@ describe('任务 7 · 提权 shell 条目的端到端形状门（plan 步骤 5 /
       expect(seam.seen.hello[0].cols).toBe(80);
       expect(typeof seam.seen.hello[0].token).toBe('string');
       // 本地 pty 一次都没起：页签里出现的每个字符都只能来自宿主
-      expect(seam.seen.frames.filter((f) => f.type === HOST_FRAME.WRITE), '首批输出之前不写自动命令（RF1）').toEqual([]);
+      expect(seam.seen.frames.filter((f) => f.type === HOST_FRAME.WRITE), '写入门（画过可见文本 + 输出静默 200ms，#36）之前不写自动命令（RF1）').toEqual([]);
       seam.emitData(0, 'QLELEV-PROMPT');
       await waitFor(
         () => (sentPayloads('ql-data') as Array<Record<string, unknown>>).some((e) => e.tabId === 'ql:' + ADMIN_ID),
@@ -779,7 +779,7 @@ describe('任务 7 · 提权 shell 条目的端到端形状门（plan 步骤 5 /
         expect(Object.keys(e).sort(), 'C12：ql-data 载荷键名逐字').toEqual(['data', 'tabId']);
         expect(typeof e.data).toBe('string');
       }
-      // 自动命令在首批输出之后才写（与非提权路径同一时序判据）
+      // 自动命令在写入门到点之后才写（#36：画过可见文本 + 输出静默 200ms；与非提权路径同一条门）
       await waitFor(
         () => seam.seen.frames.some((f) => f.type === HOST_FRAME.WRITE && f.payload === 'echo QLELEV\r'),
         5000, '自动命令的 WRITE 帧',

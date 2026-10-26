@@ -22,8 +22,21 @@ import type { QuickLaunchEntry, TerminalId } from './quick-launch-config';
 const PTY_NAME = 'xterm-256color';
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
-// 规格 §7.3：等第一批输出（shell 已就绪）再写自动命令；5s 无输出则兜底写入。审查重点 R1。
+// 规格 §7.3 的原口径：等第一批输出（当成 shell 已就绪）再写自动命令；5s 无输出则兜底写入。审查重点 R1。
+// #36 改口径：**首批输出 ≠ 提示符画出来了**。真 wsl.exe 实测（取证台 .temp/wsl-autocmd/，与 spawnShell 同参）：
+//   首块都在 t=40~52ms、16B「ESC[?9001h ESC[?1004h」= **一个可见字节都没有**；提示符在其后 3.4s / 3.4s / 4.9s / 6.0s
+//   才画出来（WSL 虚拟机冷/热差一个量级）。按原口径，自动命令就在这 16B 之后写进去：那一刻 bash 还没开始读行、
+//   tty 还在规范模式且 echo 打开 ⇒ **内核**先把命令回显一遍（画布上那条光秃秃的 ll），
+//   bash 画完提示符再由 readline 回显第二遍 = 用户看到的两遍。pwsh / cmd 的提示符就在第一批可见输出里，踩不到。
+// 新的写入门 = 两条同时成立才写一次：
+//   门① 到目前为止画过**可见文本**（剥掉转义序列后含非空白字符）—— 纯转义序列那一段在这里被挡住；
+//   门② 输出已**静默** AUTO_CMD_IDLE_MS（每来一块重排一次）—— 提示符是一段输出的最后一段，
+//       实测它内部各块之间最多隔 18ms，200ms 是 10 倍以上的余量。
+// 兜底只兜「这 5s 里**一个字节输出都没有**」那一种（E5 的口径逐字保留）：一旦有输出，写不写就全看两条门。
+// 这条改动不是装饰：实测有一趟提示符到 5969ms 才画出来，无条件的 5s 兜底会当场抢跑、两遍回显原样复发。
 const AUTO_CMD_TIMEOUT_MS = 5000;
+// 门② 的静默窗口（读数见上面 #36）
+const AUTO_CMD_IDLE_MS = 200;
 // 规格 §7.5：[停止] 沿用 llama-server 口径 —— 终止 → 3s → taskkill /T /F（杀进程树）
 const STOP_TIMEOUT_SECS = 3;
 const POLL_MS = 100; // 与 src-main/process.ts:82 同口径
@@ -65,6 +78,28 @@ function messageOf(err: unknown): string {
  */
 function toPtyInput(cmd: string): string {
   return cmd.replace(/\r\n|\r|\n/g, '\r');
+}
+
+// 一条转义序列：CSI（ESC [ … 最终字节 @-~）、OSC（ESC ] … BEL 或 ST）、DCS/SOS/PM/APC（ESC P/X/^_ … ST），
+// 以及 ESC + 单字节（xterm 的 Fe 口径：ESC 后跟 0x20-0x7E 任意一个字节）。两支各挡一头：
+//   少了「ESC + 单字节」：DECSC（ESC 7）这类不被剥掉，未闭合判定就把它后面的真提示符一路吞进 carry = 门① 永远不过、
+//     自动命令根本不写（#36 的门里有一条夹具专钉这一支）；
+//   少了引导字段的排除（[ ] P X ^ _ 让给上面各自的分支）：未闭合的 OSC 会被这一支从「ESC]」处咬掉，
+//     中段露出来 = 假可见文本，写入门退回 #36 之前。
+// 未闭合的序列一律不匹配 = 留给 splitVisibleText 的 carry，与下一块拼回去再判。
+const ANSI_SEQ = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[PX^_][^\u001b]*\u001b\\|\u001b(?![\]\[PX^_])[\x20-\x7e]/g;
+
+/**
+ * 剥掉转义序列，返回**可见文本**与「没闭合的尾巴」，跨块连续（#36 门① 用它）。
+ * 为什么要 carry：ConPTY 把一段输出拆成多条 DATA（实测 wsl.exe 提示符那一段 = 同一毫秒的 232B + 62B 两条），
+ * 拆点可能落在一条转义序列中间。不拼回去就会把序列的中段（"3008;start=<guid>" 那一截）当成可见文本，
+ * 门① 当场假绿 = 写入门退回原口径。所以未闭合的那一截不算可见，留着与下一块拼。
+ */
+function splitVisibleText(raw: string): { visible: string; carry: string } {
+  const stripped = raw.replace(ANSI_SEQ, '');
+  const open = stripped.lastIndexOf('\u001b');
+  if (open < 0) return { visible: stripped, carry: '' };
+  return { visible: stripped.slice(0, open), carry: stripped.slice(open) };
 }
 
 /**
@@ -219,7 +254,16 @@ interface ExeProcess {
 
 interface AutoCommand {
   cmd: string;
+  /** 5s 兜底：只兜「到现在一个字节输出都没有」那一种（#36） */
   timer: ReturnType<typeof setTimeout> | null;
+  /** 门②：输出静默 AUTO_CMD_IDLE_MS 的计时器，每来一块重排一次 */
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  /** 门①：到现在为止画过可见文本（剥掉转义序列后含非空白字符） */
+  sawVisible: boolean;
+  /** 兜底计时器的闸：到现在为止有没有过任何输出 */
+  sawOutput: boolean;
+  /** 未闭合转义序列的尾巴，与下一块拼回去再判（splitVisibleText） */
+  carry: string;
   released: boolean;
 }
 
@@ -302,9 +346,9 @@ export class QuickLaunchManager {
         kind: 'shell', procs: [proc], procExited: [false], tabId, stopping: false, exited: false, exitCode: null, auto: null,
       };
       proc.onData((data) => {
-        // 顺序要紧：先把输出转给渲染端，再写自动命令（审查重点 R1 / check E4）
+        // 顺序要紧：先把输出转给渲染端，再记自动命令的写入门（审查重点 R1 / check E4）
         this.deps.onData(tabId, data);
-        this.releaseAutoCommand(inst);
+        this.noteShellOutput(inst, data);
       });
       this.trackProcessExit(configId, inst, 0, proc);
       this.instances.set(configId, inst);
@@ -374,7 +418,7 @@ export class QuickLaunchManager {
         // k=1（零进程）：不得留一个 running:false 的幽灵实例 —— 摘掉实例（含清 auto 计时器）再原样抛出。
         if (inst.procs.length === 0 && this.instances.get(configId) === inst) {
           this.instances.delete(configId);
-          if (inst.auto?.timer) clearTimeout(inst.auto.timer);
+          this.clearAutoTimers(inst);
         }
         throw err;
       }
@@ -465,7 +509,7 @@ export class QuickLaunchManager {
   private finalize(configId: string, inst: Instance): void {
     if (this.instances.get(configId) !== inst) return; // 已被替换或已摘除
     this.instances.delete(configId);
-    if (inst.auto?.timer) clearTimeout(inst.auto.timer);
+    this.clearAutoTimers(inst);
     this.deps.onExit(configId, inst.exitCode ?? -1);
   }
 
@@ -495,20 +539,58 @@ export class QuickLaunchManager {
     });
   }
 
-  /** 登记自动命令与 5s 兜底计时器（§7.3） */
+  /** 登记自动命令与 5s 兜底计时器（§7.3；兜底现在只兜「一个字节都没有」，见 AUTO_CMD_TIMEOUT_MS 的注释） */
   private scheduleAutoCommand(inst: Instance, cmd: string): void {
     const trimmed = cmd.trim();
     if (!trimmed) return;
-    inst.auto = { cmd: trimmed, timer: setTimeout(() => this.releaseAutoCommand(inst), AUTO_CMD_TIMEOUT_MS), released: false };
+    inst.auto = {
+      cmd: trimmed,
+      timer: setTimeout(() => this.releaseAutoCommand(inst, true), AUTO_CMD_TIMEOUT_MS),
+      idleTimer: null, sawVisible: false, sawOutput: false, carry: '', released: false,
+    };
   }
 
-  /** 只写一次：首批输出到达（shell 就绪）或 5s 超时（兜底） */
-  private releaseAutoCommand(inst: Instance): void {
+  /** 两条计时器一律走这里清：漏一条 = 摘掉实例之后仍然会写一次（getTimerCount 的门也钉在这） */
+  private clearAutoTimers(inst: Instance): void {
     const auto = inst.auto;
-    if (!auto || auto.released) return;
-    auto.released = true;
+    if (!auto) return;
     if (auto.timer) clearTimeout(auto.timer);
     auto.timer = null;
+    if (auto.idleTimer) clearTimeout(auto.idleTimer);
+    auto.idleTimer = null;
+  }
+
+  /**
+   * 输出记账（#36 的两条门）：门① 用 splitVisibleText 跨块判「画过可见文本」，
+   * 门② 每来一块就把静默计时器重排一次 —— 于是「输出还在往下走」的整段时间里一个字都不写。
+   * 两条门没同时成立 = 不写（实测 wsl.exe 启动先吐 16B 纯转义序列，其后几秒才画提示符）。
+   */
+  private noteShellOutput(inst: Instance, data: string): void {
+    const auto = inst.auto;
+    if (!auto || auto.released) return;
+    auto.sawOutput = true;
+    if (!auto.sawVisible) {
+      const { visible, carry } = splitVisibleText(auto.carry + data);
+      auto.carry = carry;
+      if (!/\S/.test(visible)) return; // 这一段只有转义序列 = 提示符还没画出来：门② 也不排，继续等
+      auto.sawVisible = true;
+      auto.carry = ''; // 过了门就不必再扫转义序列，尾巴一并丢掉
+    }
+    if (auto.idleTimer) clearTimeout(auto.idleTimer);
+    auto.idleTimer = setTimeout(() => this.releaseAutoCommand(inst), AUTO_CMD_IDLE_MS);
+  }
+
+  /**
+   * 只写一次。两条入口：
+   * ① 门① + 门② 同时成立（noteShellOutput 排的静默计时器到点）；
+   * ② 5s 兜底，且这 5s 内**一个字节输出都没有**（E5 口径逐字保留）—— 有输出就不让兜底插手（#36）。
+   */
+  private releaseAutoCommand(inst: Instance, fromFallbackTimer = false): void {
+    const auto = inst.auto;
+    if (!auto || auto.released) return;
+    if (fromFallbackTimer && auto.sawOutput) return; // 有输出 = 写不写由两条门决定，兜底不插手
+    auto.released = true;
+    this.clearAutoTimers(inst);
     if (inst.exited || inst.kind !== 'shell') return;
     // 多行命令按行提交：行分隔先规整成 \r（见 toPtyInput 的实测注释），末尾再补一个 \r 提交最后一行。
     (inst.procs[0] as ShellProcess).write(toPtyInput(auto.cmd) + '\r');
