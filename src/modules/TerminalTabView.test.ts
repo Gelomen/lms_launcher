@@ -40,6 +40,9 @@ const h = vi.hoisted(() => {
     written: string[] = [];
     pasted: string[] = [];
     cleared = 0;
+    // #37：重新启动前 App 经 expose 调 clearForRestart → term.reset()（客户端整块换新）。它与 cleared 分开设计：
+    // 两颗按钮的口径不一样，混在一个计数上就互相顶不掉了。
+    resetCalls = 0;
     disposed = false;
     focusCalls = 0;
     selection = '';
@@ -55,6 +58,7 @@ const h = vi.hoisted(() => {
     write(data: string): void { this.written.push(data); }
     paste(text: string): void { this.pasted.push(text); }
     clear(): void { this.cleared += 1; }
+    reset(): void { this.resetCalls += 1; }
     focus(): void { this.focusCalls += 1; }
     dispose(): void { this.disposed = true; }
     getSelection(): string { return this.selection; }
@@ -785,6 +789,23 @@ describe('TerminalTabView 工具条进程态按钮（E6/E8/E10 · 2026-10-20 工
     w.unmount();
   });
 
+  it('restart_hard_resets_the_canvas_and_sends_nothing_to_the_pty', async () => {
+    // #37：停完之后 App 经 expose 调 clearForRestart（App.vue doQlStart 在 invoke('ql_start') 之前）。
+    // 它与上面那颗 [清空终端] 分别是两回事，所以两处各钉各的：
+    //   · 那颗 = clear() + 一发 Ctrl+L（对面还是同一个 shell，要让它的行号也回到窗口第 1 行，#34 / ADR 0005）；
+    //   · 这一拍 = reset()（缓冲 + 滚动历史 + DEC 模式 + 查找装饰一并归零）且**不发 Ctrl+L** ——
+    //     对面即将是一个全新的伪控制台，它那一屏本来就是空的、行号本来就在第 1 行；写早了还会撞上 #36 那一格。
+    // 「清在 invoke 之前」那条时序门在 App.test.ts，画布形态在 TerminalTabView.restart.test.ts。
+    const { w, onInput, onResize } = mountTab({ running: false });
+    const t = h.state.terms[0];
+    const resizesBefore = onResize.mock.calls.length;
+    (w.vm as unknown as { clearForRestart: () => void }).clearForRestart();
+    expect(t.resetCalls, '客户端整块换新没做').toBe(1);
+    expect(t.cleared, '这一拍走的是 clear() = 光标那一行会留下旧会话最后那条提示符，正是这张票要清掉的东西').toBe(0);
+    expect(onInput, '这一拍往 PTY 发了字节（Ctrl+L 只属于 [清空终端] 那颗）').not.toHaveBeenCalled();
+    expect(onResize.mock.calls.length - resizesBefore, '清画布顺手报了尺寸').toBe(0);
+    w.unmount();
+  });
   it('clear_terminal_resets_search_count_and_decorations', async () => {
     // 顺手修 C：term.clear() 把 buffer（连同匹配）清掉了，
     // 计数与高亮必须一起复位，否则显示停在「1 / 3」、上/下一个指向不存在的匹配。

@@ -1473,7 +1473,7 @@ const xh = vi.hoisted(() => {
     terms: [], fitCalls: 0, proposed: { cols: 118, rows: 41 },
   };
   class FakeTerminal {
-    cols = 80; rows = 24; written: string[] = []; focusCalls = 0; disposed = false;
+    cols = 80; rows = 24; written: string[] = []; focusCalls = 0; disposed = false; resetCalls = 0;
     // 构造参数挂到实例（票 #13）：配色快照是否真的落到终端上，要看 new Terminal 的 theme
     options: Record<string, unknown> = {};
     constructor(options: unknown) { state.terms.push(this); this.options = { ...(options as object) }; }
@@ -1481,6 +1481,9 @@ const xh = vi.hoisted(() => {
     loadAddon(addon: any): void { if (addon && typeof addon.activate === 'function') addon.activate(this); }
     write(data: string): void { this.written.push(data); }
     paste(): void {} clear(): void {}
+    // #37：重新启动前 App 会清画布（App.doQlStart → TerminalTabView.clearForRestart → term.reset()）。
+    // 计数按次断言用；顺手把 clear() 与 reset() 分开记，两张按钮的口径才不会互相顶掉。
+    reset(): void { this.resetCalls += 1; }
     focus(): void { this.focusCalls += 1; }
     dispose(): void { this.disposed = true; }
     getSelection(): string { return ''; }
@@ -1688,6 +1691,86 @@ describe('App 快捷启动接线（任务 13 · E1-E9）', () => {
   });
 
   // 负向门（2026-10-20）：工具条不再渲染 [x]；进程自己退出后那颗是 [重新启动]（不是「禁用的停止」）
+  // ===== #37「[停止] → [重新启动] 之后，画布上仍是重启前跑过的命令」=====
+  // 这里钉的是 App 侧那一条接线：清画布只在「页签在位 + 该条目此刻没有进程」那一格发生，一次且只有一次，
+  // 并且不会顺手写 PTY。画布形态本身（真 xterm + 写死的伪控制台读数 + 为什么清完两边就同框）在 TerminalTabView.restart.test.ts。
+  it('restart_clears_the_canvas_once_and_never_writes_to_the_pty', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');               // 起页签 = 第一次起，画布本来就是空的
+    await flush();
+    const term = xh.state.terms[0];
+    expect(xh.state.terms.length).toBe(1);
+    expect(term.resetCalls, '第一次启动也清了画布（没有可清的东西，且会把首帧那一屏抹掉）').toBe(0);
+
+    qlDataHandlers.at(-1)!({ tabId: 'ql:c1', data: 'dir-01\r\n' });  // 跑过东西，画布上有内容
+    await tabState(w, 'ql:c1').trigger('click');          // 工具条 [停止]
+    await flush();
+    expect(qlInvokes('ql_stop')).toEqual([['c1']]);
+    expect(term.resetCalls, '停止就清画布 = 规格 §7.5「停止后页签保留」那最后一屏没了').toBe(0);
+
+    await tabState(w, 'ql:c1').trigger('click');          // 就地 [重新启动]
+    await flush();
+    expect(qlInvokes('ql_start')).toEqual([['c1'], ['c1']]);
+    expect(term.resetCalls, '重新启动没清画布（用户贴的就是这个）').toBe(1);
+    // 清画布只碰客户端：xterm 的 reset() 会补一发焦点报告，App 的 terminalWritable 必须把它挡在 IPC 之前
+    expect(qlInvokes('ql_write'), '清画布那一拍写了 PTY').toEqual([]);
+    expect(tabIds(w).filter((id) => id === 'ql:c1').length).toBe(1);  // 仍是同一页签，不重建
+    w.unmount();
+  });
+
+  // 时序也是契约：清必须走在 invoke('ql_start') **之前**。让 ql_start 吊在途，在它 resolve 之前读那颗计数——
+  // 清在之后就恒为 0，而新会话的第一块输出（实测 40~310ms）随时可能已经画进画布。
+  it('the_clean_up_is_done_while_ql_start_is_still_in_flight', async () => {
+    const start = Promise.withResolvers<{ tabId: string | null }>();
+    let seenStart = 0;
+    invoke.mockImplementation((cmd: string): Promise<unknown> => {
+      switch (cmd) {
+        case 'get_state': return Promise.resolve(READY);
+        case 'get_configs': return Promise.resolve(cfg());
+        case 'ql_list': return Promise.resolve({ items: QL_ITEMS, invalid: [] });
+        case 'ql_states': return Promise.resolve({});
+        case 'ql_start': seenStart += 1; return seenStart === 1 ? Promise.resolve({ tabId: 'ql:c1' }) : start.promise;
+        case 'ql_stop': return Promise.resolve(undefined);
+        default: return Promise.resolve(undefined);
+      }
+    });
+    const w = mount(App) as import('@vue/test-utils').VueWrapper<any>;
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    start.resolve({ tabId: 'ql:c1' });                    // 起页签
+    await flush();
+    const term = xh.state.terms[0];
+    await tabState(w, 'ql:c1').trigger('click');          // [停止]
+    await flush();
+    await tabState(w, 'ql:c1').trigger('click');          // [重新启动] —— 这一次 ql_start 吊着
+    await flush();
+    expect(term.resetCalls, 'ql_start 还在途就已经清完 = 清在 invoke 之前（清晚了会连新会话那一段一起抹掉）').toBe(1);
+    start.resolve({ tabId: 'ql:c1' });
+    await flush();
+    w.unmount();
+  });
+
+  // 负对偶：清画布只属于「同一页签重新启动」那一格。页签关掉再启动 = 新页签新终端（0 次）；
+  // 进程自己退出后那颗 [重新启动] 在位时也还没清（点了才清）。
+  it('only_a_restart_of_a_live_tab_clears', async () => {
+    const { w } = mountQl();
+    await flush();
+    await qlRowBtn(w, 0).trigger('click');
+    await flush();
+    expect(xh.state.terms[0].resetCalls).toBe(0);
+    await tabState(w, 'ql:c1').trigger('click');          // 停止
+    await flush();
+    await tabClose(w, 'ql:c1').trigger('click');          // 页签 [x]（停止后可关）
+    await flush();
+    expect(tabIds(w)).not.toContain('ql:c1');
+    await qlRowBtn(w, 0).trigger('click');                // 重新启动 = 新页签
+    await flush();
+    expect(xh.state.terms.length, '页签关掉再启动不该复用旧终端').toBe(2);
+    expect(xh.state.terms[1].resetCalls, '新建页签被顺手清了一遍').toBe(0);
+    w.unmount();
+  });
   it('toolbar_has_no_close_button_and_offers_restart_after_process_exit', async () => {
     const { w } = mountQl();
     await flush();

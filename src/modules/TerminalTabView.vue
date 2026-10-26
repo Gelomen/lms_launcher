@@ -591,6 +591,39 @@ const stateDisabled = computed(() => props.stopping || (!props.running && props.
 const fullscreenLabel = computed(() => (props.fullscreen ? t('log.fullscreen.exit') : t('log.fullscreen.enter')));
 function onToggleFullscreen(): void { emit('toggle-fullscreen'); }
 
+// 重新启动之前把这块画布整个换新（#37「[停止] → [重新启动] 之后，画布上仍是重启前跑过的命令」）。
+// 为什么必须有这一步：页签与它的 xterm 缓冲在「停止 → 重新启动」之间是**保活**的（LogPanel 的 v-show + 规格 §7.5「页签保留」），
+// 而对侧换成了一个**全新的伪控制台** —— 它只重画自己那一屏，既不知道客户端攒着多少历史，也没有能力删：
+// 取证台实测四款终端（pwsh / powershell / cmd / wsl）新建 PTY 的第一段都是 16B「ESC[?9001h ESC[?1004h」（t=40~310ms，与 #36 同源），
+// 紧随「ESC[2J + home + 横幅 + 提示符」—— **有 ESC[2J、没有 ESC[3J**；而 xterm 5.5.0 的 ESC[2J 只把「视口那 rows 行」抹平
+// （InputHandler.eraseInDisplay case 2 → _resetBufferLine(j) 取的是 lines.get(**ybase** + y)），视口之上的历史一条不动
+// （真删历史的是 case 3 = ESC[3J，新会话从不发这一条）。再叠上尺寸那一拍（PTY 重建为 80×24 → App 的 fit(true) 强制重报 →
+// 一整屏重绘落在缓冲底缘，把底缘往下顶一整屏）：每重启一次，缓冲里就多**一段**新会话的屏，旧那段的横幅与提示符留在上面
+// = 用户贴的那一串「PS ... > ls」。画布上多出来那一截空白是同一脱钩的另一头（ADR 0005 / 0006 那一族）。
+//
+// 这一拍只碰客户端（xterm 的 reset() 自己会补一发焦点报告，见下面 reset() 那两行）：ADR 0005 那两步在这里只剩「客户端清缓冲」这半 —— 对面那个伪控制台是刚建的，
+// 它那一屏本来就是空的、行号本来就在窗口第 1 行，不需要也不该再补一发 Ctrl+L：新 shell 还没开始读行，写进去的字节会撞上
+// #36 那一格（规范模式下被内核回显一遍）。
+//
+// 为什么是 reset() 而不是 clear()（[清空终端] 那颗用的是后者）：clear() 把**光标那一行**留作第 0 行
+// （@xterm/xterm 5.5.0 browser/Terminal.ts:1224-1231），留下的正是旧会话最后那条提示符 —— 正是这张票要清掉的东西。
+// reset() 才是「客户端整块换新」：缓冲与滚动历史、DEC 模式、查找装饰、选区一并归零，与对面那个全新的 PTY 对等。
+// 它不重建服务（同文件 :1253-1268 只走 _setup() 的 windowsPty 那一支，并把自定义键盘处理器接回去），
+// 所以三个 addon（fit / search / web-links）与构造参数 windowsPty 一条不少。
+function clearForRestart(): void {
+  if (!term) return;
+  // 一轮在途的账作废：对面换了，那一轮的整屏重绘永远不会再来
+  clearRoundTimers();
+  roundTarget = null;
+  roundScrollLine = null;
+  roundWasOurPin = false;
+  // 顺带如实登记：reset() 会带出一发**焦点报告**字节（开着 ESC[?1004h 时进出焦点发 ESC[I / ESC[O，
+  // @xterm/xterm 5.5.0 browser/Terminal.ts:295 / :1283）。组件不拦它（那要改 onData 那条契约），因为清画布这一拍
+  // 对侧没有进程 —— App.vue 的 terminalWritable 把它挡在 IPC 之前，ql_write 一次都不会发（门在 App.test.ts）。
+  term.reset();
+  resetSearchState();   // 缓冲清空 = 既有匹配一并消失，计数与高亮跟着复位（与 onClearTerminal 同一口径）
+}
+
 // 只有「不在途」才动，且运行中只报 stop、未运行只报 restart：:disabled 是界面，这道守卫才是契约
 // （与 LogPanel.vue 的 onCloseClick 同构）。点了禁用的重启按钮也不冒泡，App 不会为已删除的配置发一次 ql_start。
 function onStateClick(): void {
@@ -694,6 +727,7 @@ onBeforeUnmount(() => {
 defineExpose({
   fit: (force = false): void => fitAndReport(force),
   focus: (): void => term?.focus(),
+  clearForRestart: (): void => clearForRestart(),
 });
 </script>
 <template>

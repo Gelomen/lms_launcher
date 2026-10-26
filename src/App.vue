@@ -346,7 +346,7 @@ interface QlProcState { running: boolean; stopping: boolean }
 // 条目已从镜像里消失 → 不再对齐，页签冻结在最后一档、不回落默认档（ADR 0001:14 的这半边不动）。
 // 没有该键 = 渲染端按表回落（termPaletteOf）。
 interface QlTabRef { id: string; configId: string; name: string; palette?: TermPaletteId }
-interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void }
+interface TerminalViewHandle { fit: (force?: boolean) => void; focus: () => void; clearForRestart: () => void }
 
 const qlTabs = ref<QlTabRef[]>([]);
 const qlStates = ref<Record<string, QlProcState>>({});
@@ -549,6 +549,17 @@ async function refreshQlConfigs(): Promise<void> {
 // exe 返回 null → 不建页签，只有行按钮变红（E7）
 async function doQlStart(configId: string): Promise<void> {
   if (qlStarting.has(configId)) return; // 索引 K14(2)：单飞
+  // #37「[停止] → [重新启动] 之后，画布上仍是重启前跑过的命令」：先把画布清掉，再发 ql_start。
+  // 判据 = 页签在位 + 这条条目此刻没有进程（running / stopping 都没有）= 「同一页签重新启动」。
+  // 清在 invoke **之前**：那一刻对侧必然还没有新会话的字节（新会话第一块输出实测 40~310ms，见
+  // TerminalTabView.vue 的 clearForRestart 注释），它不可能抢在这次 IPC 之前进来；反过来（await 之后再清）
+  // 就会把新会话已经画出来的那一段一起抹掉。失败分支不清回来：ql_start 失败时旧进程本来就停了，那一屏属于已经死掉的会话。
+  // running / stopping 在位时不清 —— 那种 ql_start 只会拿回 STATE:（一配置一实例），不该顺手抹掉正在跑的画布；
+  // exe 条目没有页签（hasTerminalTab 恒 false），天然不走这一句。
+  if (hasTerminalTab(configId) && !qlStates.value[configId]) {
+    terminalViews.get(qlTabId(configId))?.clearForRestart();
+  }
+
   qlStarting.add(configId);
   // 修复轮 B · I-2：ql_start 带最坏 ≈9s 的终端探测，在途期间界面必须给反馈（旧行为 = 按钮毫无变化）。
   // 复用既有的「正在停止」视觉语言：QuickLaunch.vue:171 的 stopping 分支（红底 + 半角三点 + 禁用），
