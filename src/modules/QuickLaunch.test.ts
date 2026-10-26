@@ -98,6 +98,84 @@ describe('QuickLaunch card', () => {
     w.unmount();
   });
 
+  // ---- 长名浮层（check F3）：判据 = 「名字在屏幕上到底有没有被裁」，不是「JS 那一道刀有没有落下」 ----
+  // happy-dom 不做排版（scrollWidth / clientWidth 恒 0、getBoundingClientRect 全 0）→ 真机的两个量只能注入。
+  // 注入的两个量取真机读数：名字盒 clientWidth = 157、12 汉字的 scrollWidth = 168（QuickLaunch.vue 那段真机读数）。
+  function stubClip(label: { element: Element }, client: number, scroll: number): void {
+    Object.defineProperty(label.element, 'clientWidth', { value: client, configurable: true });
+    Object.defineProperty(label.element, 'scrollWidth', { value: scroll, configurable: true });
+  }
+  function stubRect(label: { element: Element }, left: number, width: number, top = 60): void {
+    (label.element as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () =>
+      ({ left, right: left + width, top, bottom: top + 26, width, height: 26, x: left, y: top }) as DOMRect;
+  }
+
+  // F3 的另一半（2026-10-26 用户报告：快捷启动卡片配置行的名字超长被截断，hover 却没有完整名浮层）。
+  // 回归落在这一格：视觉宽度 24（12 汉字）在 JS 预算 30 + grace 2 之内 → 不挂 data-tooltip；可名字盒只有
+  // 真机量到的 157px（12 汉字 = 168px）→ 真正落下的是 CSS 省略号那一刀。旧判据只看 data-tooltip → 整片名字永远不出浮层。
+  it('name_clipped_by_css_ellipsis_hovers_full_name_tip', async () => {
+    const name = '本地推理服务中文超长名字'; // 12 汉字 → 视觉宽度 24
+    const w = mountCard({ items: { a: entry(name) }, invalid: [] });
+    await flush();
+
+    const label = w.findAll('.tpl-row__id')[0];
+    expect(label.text()).toBe(name);                            // JS 那一道没动它
+    expect(label.attributes('data-tooltip')).toBeUndefined();   // 旧口径下 = hover 什么都不出（回归本体）
+    stubClip(label, 157, 168);                                  // 168px 的字 > 157px 的盒 → CSS 正在裁（真机读数）
+    await label.trigger('mouseenter');
+    expect(w.find('.tpl-tip').exists()).toBe(true);
+    expect(w.find('.tpl-tip').text()).toBe(name);                // 浮层 = 完整名字，不是屏上被裁那一串
+    await label.trigger('mouseleave');
+    expect(w.find('.tpl-tip').exists()).toBe(false);             // 移开即收
+    w.unmount();
+  });
+
+  // 反面对偶：同一份名字、盒够宽（没裁）→ 不出浮层。浮层只跟着「真的没显示全」走，不是每个名字都挂。
+  it('fully_visible_name_within_budget_does_not_hover_a_tip', async () => {
+    const name = '本地推理服务中文超长名字';
+    const w = mountCard({ items: { a: entry(name) }, invalid: [] });
+    await flush();
+
+    const label = w.findAll('.tpl-row__id')[0];
+    stubClip(label, 170, 168);                                  // 168px 的字 ≤ 170px 的盒 → 两处刀都没落下（反面对偶）
+    await label.trigger('mouseenter');
+    expect(w.find('.tpl-tip').exists()).toBe(false);
+    w.unmount();
+  });
+
+  // JS 预算那一刀独立成立：截断串本身在盒里放得下（CSS 没裁）也必须有浮层 —— 屏上少掉的字符只存在于 data-tooltip。
+  it('js_budget_truncation_hovers_full_name_tip_even_when_the_prefix_fits', async () => {
+    const latin = 'llama-cpp-large-model-quant-config-xx';       // 35 拉丁 > 30+2 → JS 截到前 30 + …
+    const w = mountCard({ items: { a: entry(latin) }, invalid: [] });
+    await flush();
+
+    const label = w.findAll('.tpl-row__id')[0];
+    expect(label.text()).toBe(latin.slice(0, 30) + '…');
+    expect(label.attributes('data-tooltip')).toBe(latin);
+    stubClip(label, 300, 220);                                  // 截断串 220px ≤ 盒 300px（设想卡片列以后变宽）→ 只有 JS 那一刀
+    await label.trigger('mouseenter');
+    expect(w.find('.tpl-tip').text()).toBe(latin);
+    w.unmount();
+  });
+
+  // 浮层锚点（新增判据，钉住这次改动没把锚点抖掉）：x = 名字水平中心、y = 名字顶边，
+  // 由 .tpl-tip 的 translateX(-50%) translateY(-100%) 归位到名字上方居中（QuickLaunch.vue 里那颗浮层的那对坐标）。
+  // 真机读数印证（.temp/probe-qltip2.mjs，2026-10-26）：浮层底边贴名字顶边、水平中心零偏移。
+  it('row_tip_anchors_at_label_center_and_top_edge', async () => {
+    const name = '本地推理服务中文超长名字';
+    const w = mountCard({ items: { a: entry(name) }, invalid: [] });
+    await flush();
+
+    const label = w.findAll('.tpl-row__id')[0];
+    stubRect(label, 100, 157, 60);                              // 中心 = 100 + 157/2 = 178.5（名字盒 = 真机读数 157）
+    stubClip(label, 157, 168);
+    await label.trigger('mouseenter');
+    const style = w.find('.tpl-tip').attributes('style') ?? '';
+    expect(style).toContain('left: 178.5px');
+    expect(style).toContain('top: 60px');
+    w.unmount();
+  });
+
   // E4（规格 §9.4）：未运行 = 紫底「启动」；运行中 = 红底「停止」；stopping = 半角三点 `...` 且禁用（索引 K30）。
   // 运行态只来自 props.states（C1），卡片自己不持进程状态。
   it('start_stop_button_three_states_by_states_prop', async () => {

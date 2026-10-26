@@ -172,11 +172,33 @@ function tipFor(id: string): string | undefined {
   const n = nameOf(id);
   return visualWidth(n) > BUDGET + 2 ? n : undefined;
 }
-// 长名浮层（check F3）：模板卡同款 .tpl-tip —— position:fixed 浮于视口，避开列表容器的 overflow 裁剪
+// 长名浮层（check F3）：模板卡同款 .tpl-tip —— position:fixed 浮于视口，避开列表容器的 overflow 裁剪。
+// 出现条件 = 「这一行的名字在屏幕上真的没显示全」，跟着**真正落下的那一刀**走，而不是跟着某一道刀走：
+//   ① JS 宽度预算那一刀 → tipFor 挂了 data-tooltip（视觉宽度 > BUDGET + grace 2）；
+//   ② 样式省略号那一刀 → 名字的 .tpl-row__id（nowrap + overflow:hidden + text-overflow）按真实像素裁，
+//      由 hover 时实测 scrollWidth > clientWidth 判 —— 本仓第一处「按真机排版判」的判据，happy-dom 没有布局
+//      （两个量恒 0）→ QuickLaunch.test.ts 的 stubClip 按下面的算术注入读数。
+// 只看 ① 会整片漏掉名字（2026-10-26 用户报告：配置行名字超长并被截断，hover 不出完整名）：这一列的名字盒只放得下
+// 视觉宽度 ≈22，而 ① 要到 > 32 才落下 → 23~32 那一整段（汉字 12~16 字 + 同宽的混排）只被 ② 裁、永远不挂 data-tooltip。
+// 盒子算术（卡片列 335 = ADR 0004 把快捷启动 380→335 之后的值）：
+//   .card 内 335 − 边框 2 − padding 32 = 301 → .template-list 再减竖向滚动条 10 = 291.67
+//   → .tpl-row 内容 291.67 − 边框 2 − 左右 padding 20 = 269.67
+//   → 名字盒 = 269.67 − 类型图标 17.5 − gap 8 − gap 8 − 按钮组 80（24×3 + 4×2）= 156.2px
+//   → 盒里放得下的视觉宽度 ≈ 156 / 14 = 11 个汉字（156.17px → 真机取整成 157）；① 要到 17 汉字（vw 34）才截，
+//     16 汉字（vw 32）及以下全量渲染 → 门槛比盒子宽出约 45%，中间 12~16 汉字那一整段就是这次的空档。
+// 真机读数（一次性取证台 2026-10-26：.temp/probe-qltip2.mjs 起 CDP 读几何 + 派发 hover，1400×950 / 四列档 / dpr 1.5；
+// 夹具 = 临时写一份 configs/quick_launch.yaml，跑完即删、不进版本库）：
+//   名字盒 clientWidth = 157；12 汉字（vw 24）scrollWidth 168 > 157 且无 data-tooltip；16 汉字（vw 32）224 > 157 同样无；
+//   混排「Qwen3-32B-Q4_K_M 本地推理服务」（vw 29）219 > 157 同样无 → 三条都在旧判据下永远不出浮层；
+//   24 汉字（vw 58）才走 ①（截到 15 字 + …，data-tooltip 在位）—— 这就是用户记忆里「以前有 tooltip」的那一格。
+//   修后 hover 那三条都出 .tpl-tip：完整名、水平中心零偏移（centerDrift 0）、底边贴名字顶边（gapAboveLabel 0）、mouseleave 即收。
+// ADR 0004「名字截断的 JS 预算（30）一条不动，兜底仍交给 CSS 省略号」讲的是**不再溢出/撑高**，浮层这一半当时没人接上；
+// 现在接上，并且 ② 是实测的：卡片列以后再调宽调窄这条不用重算（对比配置下拉那条 BUDGET 24 —— 它是显示预算，宽度一变就得重跑算术）。
 const tip = ref<{ text: string; x: number; y: number } | null>(null);
 function onLabelEnter(e: MouseEvent, id: string): void {
   const el = e.currentTarget as HTMLElement;
-  if (el.dataset.tooltip === undefined) return;
+  // 两处刀都没落下 = 名字本来就全展示着，不给它挂浮层
+  if (el.dataset.tooltip === undefined && el.scrollWidth <= el.clientWidth) return;
   const r = el.getBoundingClientRect();
   tip.value = { text: nameOf(id), x: r.left + r.width / 2, y: r.top };
 }

@@ -85,6 +85,57 @@ describe('TemplateModule', () => {
     wrapper.unmount();
   });
 
+  // ---- 长名浮层（同 QuickLaunch 的 F3 口径，2026-10-26 同一条回归）：注入的两个量取真机读数 ——
+  // 模板卡名字盒 clientWidth = 220、16 汉字 scrollWidth = 224（TemplateModule.vue 那段真机读数）。
+  function stubClipTm(label: { element: Element }, client: number, scroll: number): void {
+    Object.defineProperty(label.element, 'clientWidth', { value: client, configurable: true });
+    Object.defineProperty(label.element, 'scrollWidth', { value: scroll, configurable: true });
+  }
+  const mockOneConfig = (name: string) => {
+    (window as any).lms = {
+      invoke: (cmd: string) => Promise.resolve(
+        cmd === 'get_configs' ? { c_clip: { name, values: {} } } : cmd === 'get_params' ? repoParams() : null,
+      ),
+      onLogLine: () => () => {},
+      onProcessExit: () => () => {},
+      onTrayExitRequest: () => () => {},
+    };
+  };
+
+  // 16 汉字 → 视觉宽度 32 = 预算 30 + grace 2 的边界之内 → JS 不截、不挂 data-tooltip；
+  // 可 16 汉字 = 224px > 名字盒 220px（真机读数）→ CSS 省略号在裁 → hover 必须有完整名浮层。
+  it('name_clipped_by_css_ellipsis_hovers_full_name_tip', async () => {
+    const name = '本地推理服务中文超长名字验证示例';
+    mockOneConfig(name);
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+
+    const label = wrapper.findAll('.module-template .tpl-row__id')[0];
+    expect(label.text()).toBe(name);
+    expect(label.attributes('data-tooltip')).toBeUndefined();
+    stubClipTm(label, 220, 224);   // 真机读数：16 汉字 = 224px > 名字盒 220px → CSS 正在裁，而 JS 预算没动
+    await label.trigger('mouseenter');
+    expect(wrapper.find('.tpl-tip').exists()).toBe(true);
+    expect(wrapper.find('.tpl-tip').text()).toBe(name);
+    await label.trigger('mouseleave');
+    expect(wrapper.find('.tpl-tip').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  // 反面对偶：盒够宽 → 两处刀都没落下 → 不出浮层。
+  it('fully_visible_name_within_budget_does_not_hover_a_tip', async () => {
+    const name = '本地推理服务中文超长名字验证示例';
+    mockOneConfig(name);
+    const wrapper = mount(TemplateModule, { attachTo: document.body });
+    await flush();
+
+    const label = wrapper.findAll('.module-template .tpl-row__id')[0];
+    stubClipTm(label, 230, 224);   // 盒比字宽 → 两处刀都没落下（反面对偶）
+    await label.trigger('mouseenter');
+    expect(wrapper.find('.tpl-tip').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('row_label_short_than_15_chars_shows_full_name_without_tooltip_attr', async () => {
     const CONFIGS_SHORT = { c_short: { name: '日常', values: {} } };
     (window as any).lms = {

@@ -127,11 +127,18 @@ function tipFor(id: string): string | undefined {
   const n = nameOf(id);
   return visualWidth(n) > BUDGET + 2 ? n : undefined;
 }
-// tooltip：position:fixed 浮于视口 —— .template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题）
+// tooltip：position:fixed 浮于视口 —— .template-list overflow-y:auto 会裁剪行内 absolute 浮层（编辑按钮同款问题）。
+// 出现条件与快捷启动行同一口径（判据与算术见 QuickLaunch.vue 那段注释，两处必须一起改）：名字在屏幕上真的没显示全就出浮层，
+// 两处刀都认 —— ① JS 宽度预算那一刀挂的 data-tooltip；② CSS 省略号那一刀，由 hover 时实测 scrollWidth > clientWidth 判。
+// 本卡的名字盒比快捷启动那颗宽出「图标 17.5 + gap 8」的量（列表行没有那颗类型图标）：
+// .tpl-row 内容 301.67 − 边框 2 − 左右 padding 20 = 279.67 → 名字盒 = 279.67 − gap 8 − 按钮组 52（24×2 + 4×1）= 219.67px；
+// 真机读数（同一台取证台 .temp/probe-qltip2.mjs，2026-10-26；模板卡列表没到滚动线 → 无竖向滚动条）clientWidth = 220 → 放得下 ≈15.7 个汉字，
+// 而 ① 要到 > 32 才落下 → 汉字 16 字（vw 32，scrollWidth 224 > 220）这一格只被 ② 裁、旧判据下不出浮层（同一条回归，夹具跑完即删）。
 const tip = ref<{ text: string; x: number; y: number } | null>(null);
 function onLabelEnter(e: MouseEvent, id: string): void {
   const el = e.currentTarget as HTMLElement;
-  if (el.dataset.tooltip === undefined) return;
+  // 两处刀都没落下 = 名字本来就全展示着，不给它挂浮层
+  if (el.dataset.tooltip === undefined && el.scrollWidth <= el.clientWidth) return;
   const r = el.getBoundingClientRect();
   tip.value = { text: nameOf(id), x: r.left + r.width / 2, y: r.top };
 }
