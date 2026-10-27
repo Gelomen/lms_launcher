@@ -7,3 +7,4 @@ cache/
 configs/lms_launcher.yaml
 configs/llama_launch_configs.yaml
 %SystemDrive%/
+*.zip
